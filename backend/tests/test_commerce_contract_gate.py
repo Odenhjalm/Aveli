@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from app.config import settings
 from app.main import app
 from app.schemas.billing import SubscriptionInterval, SubscriptionSessionRequest
-from app.services import subscription_service
+from app.services import checkout_service, stripe_webhook_support_service, subscription_service
 from app.utils import membership_status
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -292,6 +292,330 @@ async def test_cancel_intent_is_non_authoritative(monkeypatch) -> None:
     assert captured["requested_subscription_id"] == "sub_test"
     assert captured["subscription_id"] == "sub_test"
     assert captured["modify_kwargs"]["cancel_at_period_end"] is True
+
+
+async def test_membership_withdrawal_is_backend_owned_and_revokes_immediately(
+    monkeypatch,
+) -> None:
+    _set_stripe_test_env(monkeypatch)
+    captured: dict[str, object] = {}
+    now = datetime.now(timezone.utc)
+    order = {
+        "id": "order_membership_123",
+        "user_id": "user_123",
+        "status": "paid",
+        "stripe_subscription_id": "sub_membership_123",
+    }
+
+    async def fake_resolve_order(user_id, *, requested_subscription_id=None):
+        captured["resolved_user_id"] = user_id
+        captured["requested_subscription_id"] = requested_subscription_id
+        return order
+
+    async def fake_resolve_payment(order_payload, *, requested_payment_intent=None):
+        captured["requested_payment_intent"] = requested_payment_intent
+        return "pi_membership_123"
+
+    async def fake_get_membership(user_id):
+        captured["membership_lookup_user_id"] = user_id
+        return {
+            "membership_id": "membership_123",
+            "user_id": user_id,
+            "status": "active",
+            "effective_at": now - timedelta(days=5),
+            "source": "purchase",
+        }
+
+    async def fake_upsert_membership_record(user_id, **kwargs):
+        captured["membership_write"] = {"user_id": user_id, **kwargs}
+        return {"membership_id": "membership_123", "user_id": user_id, **kwargs}
+
+    async def fake_insert_billing_log(**kwargs):
+        captured.setdefault("billing_logs", []).append(kwargs)
+
+    async def fake_sync_onboarding_state(user_id):
+        captured["synced_user_id"] = user_id
+
+    def fake_cancel(subscription_id):
+        captured["cancel_subscription_id"] = subscription_id
+        return {"id": subscription_id}
+
+    def fake_refund_create(**kwargs):
+        captured["refund_kwargs"] = kwargs
+        return {"id": "re_membership_123"}
+
+    monkeypatch.setattr(
+        subscription_service,
+        "_resolve_membership_purchase_order_for_resolution",
+        fake_resolve_order,
+    )
+    monkeypatch.setattr(
+        subscription_service,
+        "_resolve_membership_refund_payment_intent",
+        fake_resolve_payment,
+    )
+    monkeypatch.setattr(
+        subscription_service.memberships_repo,
+        "get_membership",
+        fake_get_membership,
+    )
+    monkeypatch.setattr(
+        subscription_service.memberships_repo,
+        "upsert_membership_record",
+        fake_upsert_membership_record,
+    )
+    monkeypatch.setattr(
+        subscription_service.membership_support_repo,
+        "insert_billing_log",
+        fake_insert_billing_log,
+    )
+    monkeypatch.setattr(
+        subscription_service,
+        "sync_onboarding_state",
+        fake_sync_onboarding_state,
+    )
+    monkeypatch.setattr(
+        "stripe.Subscription.cancel",
+        fake_cancel,
+    )
+    monkeypatch.setattr(
+        "stripe.Refund.create",
+        fake_refund_create,
+    )
+    monkeypatch.setattr(
+        subscription_service.stripe_mode,
+        "resolve_stripe_context",
+        lambda: SimpleNamespace(secret_key="sk_test_value"),
+    )
+
+    payload = await subscription_service.apply_valid_membership_withdrawal(
+        {"id": "user_123"},
+        subscription_id="sub_membership_123",
+    )
+
+    assert payload["ok"] is True
+    assert payload["resolution_kind"] == "withdrawal"
+    assert payload["subscription_id"] == "sub_membership_123"
+    assert payload["payment_intent_id"] == "pi_membership_123"
+    assert captured["cancel_subscription_id"] == "sub_membership_123"
+    assert captured["refund_kwargs"]["payment_intent"] == "pi_membership_123"
+    assert captured["refund_kwargs"]["metadata"]["resolution_kind"] == "withdrawal"
+    assert captured["membership_write"]["status"] == "expired"
+    assert captured["membership_write"]["source"] == "purchase"
+    assert captured["membership_write"]["expires_at"] is not None
+    assert captured["membership_write"]["canceled_at"] is not None
+    assert captured["membership_write"]["ended_at"] is not None
+    assert captured["synced_user_id"] == "user_123"
+
+
+async def test_one_off_withdrawal_requests_refund_and_revokes_only_unbacked_access(
+    monkeypatch,
+) -> None:
+    _set_stripe_test_env(monkeypatch)
+    captured: dict[str, object] = {}
+
+    async def fake_get_user_order(order_id, user_id):
+        captured["order_lookup"] = {"order_id": order_id, "user_id": user_id}
+        return {
+            "id": order_id,
+            "user_id": user_id,
+            "status": "paid",
+            "order_type": "one_off",
+            "course_id": "course_123",
+            "stripe_payment_intent": "pi_course_123",
+            "metadata": {"checkout_type": "course"},
+        }
+
+    async def fake_revoke_course_enrollment(user_id, course_id, *, excluding_order_id=None):
+        captured["revoke_call"] = {
+            "user_id": user_id,
+            "course_id": course_id,
+            "excluding_order_id": excluding_order_id,
+        }
+        return True
+
+    def fake_refund_create(**kwargs):
+        captured["refund_kwargs"] = kwargs
+        return {"id": "re_course_123"}
+
+    monkeypatch.setattr(
+        checkout_service.repositories,
+        "get_user_order",
+        fake_get_user_order,
+    )
+    monkeypatch.setattr(
+        checkout_service.courses_repo,
+        "revoke_course_enrollment",
+        fake_revoke_course_enrollment,
+    )
+    monkeypatch.setattr(
+        "stripe.Refund.create",
+        fake_refund_create,
+    )
+    monkeypatch.setattr(
+        checkout_service.stripe_mode,
+        "resolve_stripe_context",
+        lambda: SimpleNamespace(secret_key="sk_test_value"),
+    )
+
+    payload = await checkout_service.apply_valid_one_off_withdrawal(
+        {"id": "user_123"},
+        order_id="order_course_123",
+    )
+
+    assert payload["ok"] is True
+    assert payload["resolution_kind"] == "withdrawal"
+    assert payload["payment_intent_id"] == "pi_course_123"
+    assert payload["revoked_course_ids"] == ["course_123"]
+    assert payload["retained_course_ids"] == []
+    assert captured["refund_kwargs"]["payment_intent"] == "pi_course_123"
+    assert captured["refund_kwargs"]["metadata"]["order_id"] == "order_course_123"
+    assert captured["revoke_call"]["excluding_order_id"] == "order_course_123"
+
+
+async def test_bundle_remedy_keeps_overlapping_access_when_another_purchase_still_backs_it(
+    monkeypatch,
+) -> None:
+    _set_stripe_test_env(monkeypatch)
+    captured: dict[str, object] = {}
+
+    async def fake_get_user_order(order_id, user_id):
+        return {
+            "id": order_id,
+            "user_id": user_id,
+            "status": "paid",
+            "order_type": "bundle",
+            "course_id": None,
+            "stripe_payment_intent": "pi_bundle_123",
+            "metadata": {"bundle_id": "bundle_123"},
+        }
+
+    async def fake_list_bundle_checkout_courses(bundle_id):
+        captured["bundle_id"] = bundle_id
+        return [
+            {"course_id": "course_a"},
+            {"course_id": "course_b"},
+        ]
+
+    async def fake_revoke_course_enrollment(user_id, course_id, *, excluding_order_id=None):
+        captured.setdefault("revoke_calls", []).append(
+            {
+                "user_id": user_id,
+                "course_id": course_id,
+                "excluding_order_id": excluding_order_id,
+            }
+        )
+        return course_id == "course_b"
+
+    def fake_refund_create(**kwargs):
+        captured["refund_kwargs"] = kwargs
+        return {"id": "re_bundle_123"}
+
+    monkeypatch.setattr(
+        checkout_service.repositories,
+        "get_user_order",
+        fake_get_user_order,
+    )
+    monkeypatch.setattr(
+        checkout_service.bundle_repo,
+        "list_bundle_checkout_courses",
+        fake_list_bundle_checkout_courses,
+    )
+    monkeypatch.setattr(
+        checkout_service.courses_repo,
+        "revoke_course_enrollment",
+        fake_revoke_course_enrollment,
+    )
+    monkeypatch.setattr(
+        "stripe.Refund.create",
+        fake_refund_create,
+    )
+    monkeypatch.setattr(
+        checkout_service.stripe_mode,
+        "resolve_stripe_context",
+        lambda: SimpleNamespace(secret_key="sk_test_value"),
+    )
+
+    payload = await checkout_service.apply_one_off_remedy(
+        {"id": "user_123"},
+        order_id="order_bundle_123",
+    )
+
+    assert payload["ok"] is True
+    assert payload["resolution_kind"] == "remedy"
+    assert payload["revoked_course_ids"] == ["course_b"]
+    assert payload["retained_course_ids"] == ["course_a"]
+    assert captured["bundle_id"] == "bundle_123"
+    assert captured["refund_kwargs"]["payment_intent"] == "pi_bundle_123"
+
+
+async def test_refund_webhook_is_settlement_only_and_not_course_access_authority(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_get_order_by_payment_intent(payment_intent_id):
+        captured["payment_intent_id"] = payment_intent_id
+        return {
+            "id": "order_123",
+            "user_id": "user_123",
+            "course_id": "course_123",
+            "status": "paid",
+            "amount_cents": 1500,
+            "currency": "sek",
+        }
+
+    async def fake_mark_order_refunded(order_id, *, payment_intent=None):
+        captured["marked_refunded"] = {
+            "order_id": order_id,
+            "payment_intent": payment_intent,
+        }
+        return {
+            "id": order_id,
+            "user_id": "user_123",
+            "course_id": "course_123",
+            "status": "refunded",
+            "previous_status": "paid",
+            "amount_cents": 1500,
+            "currency": "sek",
+        }
+
+    async def fake_record_payment(**kwargs):
+        captured["record_payment"] = kwargs
+
+    async def fail_revoke(*args, **kwargs):
+        raise AssertionError("refund webhook must not revoke course access directly")
+
+    monkeypatch.setattr(
+        stripe_webhook_support_service.orders_repo,
+        "get_order_by_payment_intent",
+        fake_get_order_by_payment_intent,
+    )
+    monkeypatch.setattr(
+        stripe_webhook_support_service.orders_repo,
+        "mark_order_refunded",
+        fake_mark_order_refunded,
+    )
+    monkeypatch.setattr(
+        stripe_webhook_support_service.payments_repo,
+        "record_payment",
+        fake_record_payment,
+    )
+    monkeypatch.setattr(
+        checkout_service.courses_repo,
+        "revoke_course_enrollment",
+        fail_revoke,
+        raising=False,
+    )
+
+    await stripe_webhook_support_service.handle_refund_event(
+        "charge.refunded",
+        {"payment_intent": "pi_course_123"},
+    )
+
+    assert captured["payment_intent_id"] == "pi_course_123"
+    assert captured["marked_refunded"]["order_id"] == "order_123"
+    assert captured["record_payment"]["status"] == "refunded"
 
 
 async def test_invoice_settlement_records_payment_before_membership_state(

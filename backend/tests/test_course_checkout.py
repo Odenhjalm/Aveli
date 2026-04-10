@@ -5,6 +5,7 @@ import pytest
 
 from app import db, repositories
 from app.config import settings
+from app.services import checkout_service
 
 from .utils import register_user
 
@@ -140,7 +141,7 @@ async def test_course_checkout_unknown_slug(async_client, monkeypatch):
             json={"slug": "missing-course"},
         )
         assert response.status_code == 404
-        assert response.json()["detail"] == "course not found"
+        assert response.json()["detail"] == "Kursen hittades inte"
     finally:
         await _cleanup_user(str(user_id))
 
@@ -508,6 +509,30 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
         assert before_refund.status_code == 200, before_refund.text
         assert before_refund.json()["enrollment"] is not None
 
+        captured_refund: dict[str, object] = {}
+
+        def fake_refund_create(**kwargs):
+            captured_refund.update(kwargs)
+            return {"id": "re_refund_checkout"}
+
+        monkeypatch.setattr("stripe.Refund.create", fake_refund_create)
+
+        resolution = await checkout_service.apply_valid_one_off_withdrawal(
+            {"id": str(student_id)},
+            order_id=checkout_payload["order_id"],
+        )
+        assert resolution["ok"] is True
+        assert resolution["resolution_kind"] == "withdrawal"
+        assert resolution["payment_intent_id"] == "pi_refund_checkout"
+        assert captured_refund["payment_intent"] == "pi_refund_checkout"
+
+        after_resolution = await async_client.get(
+            f"/courses/{course_id}/enrollment",
+            headers=student_headers,
+        )
+        assert after_resolution.status_code == 200, after_resolution.text
+        assert after_resolution.json()["enrollment"] is None
+
         refund_response = await async_client.post(
             "/api/stripe/webhook",
             content=json.dumps({}),
@@ -559,4 +584,4 @@ async def test_webhook_returns_500_when_subscription_processing_fails(async_clie
         headers={"stripe-signature": "sig_test"},
     )
     assert response.status_code == 500, response.text
-    assert response.json()["detail"] == "Webhook processing failed"
+    assert response.json()["detail"] == "Webhook-bearbetningen misslyckades"

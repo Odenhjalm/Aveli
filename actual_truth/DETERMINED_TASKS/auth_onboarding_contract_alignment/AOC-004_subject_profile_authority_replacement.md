@@ -7,7 +7,7 @@
 
 ## Problem Statement
 
-The current contract layer routes onboarding and role field authority through `onboarding_teacher_rights_contract.md`, while `auth_onboarding_contract.md` only defines route and execution boundaries for those fields. `app.auth_subjects` is the only owner for `onboarding_state`, `role_v2`, `role`, and `is_admin`, while `app.profiles` is projection-only. Referral-driven membership grant is now canonically owned by `referral_membership_grant_contract.md`, while resulting membership state remains owned by `commerce_membership_contract.md`. The repo still contains write paths that persist auth-subject fields through `app.profiles`, and the auth register flow still contains contract-invalid referral coupling even though `referral_code` remains forbidden on `POST /auth/register`.
+The current contract layer routes onboarding and role field authority through `onboarding_teacher_rights_contract.md`, while `auth_onboarding_contract.md` only defines route and execution boundaries for those fields. `app.auth_subjects` is the only owner for `onboarding_state`, `role_v2`, `role`, and `is_admin`, while `app.profiles` is projection-only. Referral-driven membership grant is now canonically owned by `referral_membership_grant_contract.md`, while resulting membership state remains owned by `commerce_membership_contract.md`. The remaining active drift in this task is profile-authority leakage through `app.profiles`; auth-side referral coupling is already removed and should remain outside this task's active drift scope.
 
 ## Primary Authority Reference
 
@@ -23,10 +23,8 @@ The current contract layer routes onboarding and role field authority through `o
 ## Drift Evidence
 
 - `backend/app/repositories/auth.py:71-114` still conditionally writes `onboarding_state`, `role_v2`, `role`, and `is_admin` into `app.profiles`.
-- `backend/app/repositories/auth.py:168` and `backend/app/repositories/auth.py:214-277` still keep `referral_code` and referral redemption in the auth register persistence path instead of a post-auth referral flow.
 - `backend/app/repositories/auth.py:293-300` still persists auth-subject fields through `_upsert_profile_row`.
 - `backend/app/repositories/profiles.py:47` and `backend/app/repositories/profiles.py:64-65` still expose profile-driven onboarding mutation.
-- `frontend/lib/api/auth_repository.dart:59` still sends `referral_code`.
 
 ## Implementation Surfaces Affected
 
@@ -44,12 +42,10 @@ The current contract layer routes onboarding and role field authority through `o
 
 ## Exact Implementation Steps
 
-1. Keep `referral_code` forbidden on `POST /auth/register` and remove any remaining Auth + Onboarding payload builders that still send it.
-2. Strip `_upsert_profile_row` of any onboarding or role writes so it persists profile projection fields only.
-3. Remove `onboarding_state` as a writable parameter from `backend/app/repositories/profiles.py.update_profile`.
-4. Keep canonical subject creation and mutation only in `app.auth_subjects`.
-5. Remove referral redemption and referral-created membership writes from the auth register flow so referral behavior is preserved only through the separate referral domain owned by `referral_membership_grant_contract.md`.
-6. Rewrite tests, fixtures, and scripts that mutate `app.profiles.role_v2` or `app.profiles.is_admin` so they use `app.auth_subjects` or canonical admin approval instead.
+1. Strip `_upsert_profile_row` of any onboarding or role writes so it persists profile projection fields only.
+2. Remove `onboarding_state` as a writable parameter from `backend/app/repositories/profiles.py.update_profile`.
+3. Keep canonical subject creation and mutation only in `app.auth_subjects`.
+4. Rewrite tests, fixtures, and scripts that mutate `app.profiles.role_v2` or `app.profiles.is_admin` so they use `app.auth_subjects` or canonical admin approval instead.
 
 ## Acceptance Criteria
 

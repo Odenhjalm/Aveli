@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 from typing import Any, Sequence
 
+from psycopg import errors
 from psycopg.rows import dict_row
 
 from ..db import get_conn, pool
@@ -1123,3 +1124,79 @@ async def create_course_enrollment(
     if row is None:
         raise RuntimeError("canonical course enrollment was not returned")
     return dict(row)
+
+
+async def revoke_course_enrollment(
+    user_id: str,
+    course_id: str,
+    *,
+    excluding_order_id: str | None = None,
+) -> bool:
+    if await _has_remaining_paid_course_purchase(
+        user_id,
+        course_id,
+        excluding_order_id=excluding_order_id,
+    ):
+        return False
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                delete from app.course_enrollments
+                where user_id = %s::uuid
+                  and course_id = %s::uuid
+                """,
+                (user_id, course_id),
+            )
+            deleted = cur.rowcount > 0
+            await conn.commit()
+    return deleted
+
+
+async def _has_remaining_paid_course_purchase(
+    user_id: str,
+    course_id: str,
+    *,
+    excluding_order_id: str | None = None,
+) -> bool:
+    direct_query = """
+        select 1
+        from app.orders as o
+        where o.user_id = %s::uuid
+          and o.status = 'paid'
+          and o.course_id = %s::uuid
+          and (%s::uuid is null or o.id <> %s::uuid)
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                direct_query,
+                (user_id, course_id, excluding_order_id, excluding_order_id),
+            )
+            if await cur.fetchone() is not None:
+                return True
+
+    bundle_query = """
+        select 1
+        from app.orders as o
+        join app.course_bundle_courses as cbc
+          on cbc.bundle_id::text = o.metadata->>'bundle_id'
+        where o.user_id = %s::uuid
+          and o.status = 'paid'
+          and o.order_type::text = 'bundle'
+          and cbc.course_id = %s::uuid
+          and (%s::uuid is null or o.id <> %s::uuid)
+        limit 1
+    """
+    try:
+        async with pool.connection() as conn:  # type: ignore
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    bundle_query,
+                    (user_id, course_id, excluding_order_id, excluding_order_id),
+                )
+                return await cur.fetchone() is not None
+    except errors.UndefinedTable:
+        return False

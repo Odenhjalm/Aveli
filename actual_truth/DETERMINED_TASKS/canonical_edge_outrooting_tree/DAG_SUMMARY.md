@@ -4,6 +4,9 @@
 
 READY
 
+This summary is a historical pre-execution audit snapshot.
+`OET-001`, `OET-002`, `OET-003`, `OET-004`, `OET-006`, and `OET-007` are now verified complete in mounted runtime and guardrails, so the diff bullets below must not be re-read as active drift for those scopes.
+
 This DAG is derived from the completed outrooting audit, current contracts, current mounted runtime truth, and current baseline truth.
 It is a deterministic cleanup and preservation plan.
 
@@ -32,7 +35,7 @@ The following truths are consumed and protected, not reopened:
 - canonical monetization readiness fields
 - canonical checkout and webhook completion path
 
-## VERIFIED DIFF SUMMARY
+## HISTORICAL DIFF SUMMARY AT TASK GENERATION
 
 ### ACTIVE AUTHORITY DRIFT
 

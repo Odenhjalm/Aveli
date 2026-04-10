@@ -4,6 +4,11 @@
 - TITLE: `Repair canonical webhook settlement for membership while isolating mixed-domain branches`
 - DOMAIN: `payment confirmation`
 - GROUP: `WEBHOOK REPAIR`
+- CURRENT STATUS: `HISTORICAL / VERIFIED COMPLETE`
+
+## Historical Note
+
+The problem statement below records the pre-execution audit state and is retained only as historical task context.
 
 ## Problem Statement
 

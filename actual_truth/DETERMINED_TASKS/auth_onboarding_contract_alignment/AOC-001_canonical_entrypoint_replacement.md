@@ -7,7 +7,7 @@
 
 ## Problem Statement
 
-The canonical contract locks Auth + Onboarding entrypoints to `/auth/register`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/send-verification`, `/auth/verify-email`, `/auth/validate-invite`, `/profiles/me`, and `/admin/teacher-requests/{user_id}/approve|reject`. The mounted runtime still omits `admin.router`, while frontend and validation surfaces still consume forbidden `/auth/me`, `/auth/request-password-reset`, and `/admin/teachers/*` paths.
+The canonical contract locks Auth + Onboarding entrypoints to `/auth/register`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/send-verification`, `/auth/verify-email`, `/auth/validate-invite`, `/profiles/me`, and `/admin/teacher-requests/{user_id}/approve|reject`. Mounted runtime now includes `admin.router`, but frontend and validation surfaces still consume forbidden `/auth/me`, `/auth/request-password-reset`, and `/admin/teachers/*` paths.
 
 ## Primary Authority Reference
 
@@ -17,7 +17,7 @@ The canonical contract locks Auth + Onboarding entrypoints to `/auth/register`, 
 
 ## Drift Evidence
 
-- `backend/app/main.py:173` and `backend/app/main.py:175` mount `auth.router` and `profiles.router`, but no `admin.router` mount exists.
+- `backend/app/main.py:173-176` mounts `auth.router`, `profiles.router`, and `admin.router`; route mounting is no longer the active drift in this task.
 - `backend/app/routes/admin.py:53` and `backend/app/routes/admin.py:68` define forbidden `/admin/teachers/*` handlers beside canonical `/admin/teacher-requests/*`.
 - `frontend/lib/api/api_paths.dart:4` and `frontend/lib/api/api_paths.dart:7` still point to `/auth/request-password-reset` and `/auth/me`.
 - `frontend/lib/features/community/data/admin_repository.dart:22` and `frontend/lib/features/community/data/admin_repository.dart:30` still call `/admin/teachers/*`.
@@ -40,7 +40,7 @@ The canonical contract locks Auth + Onboarding entrypoints to `/auth/register`, 
 
 ## Exact Implementation Steps
 
-1. Mount `admin.router` in `backend/app/main.py`.
+1. Preserve the mounted `admin.router` surface while removing forbidden parallel teacher-admin paths.
 2. Remove `/admin/teachers/{user_id}/approve` and `/admin/teachers/{user_id}/reject` from `backend/app/routes/admin.py` so only `/admin/teacher-requests/*` remains canonical.
 3. Replace every Auth + Onboarding current-user consumer of `/auth/me` with `/profiles/me`.
 4. Replace every Auth + Onboarding password-reset initiation consumer of `/auth/request-password-reset` with `/auth/forgot-password`.
@@ -64,4 +64,3 @@ The canonical contract locks Auth + Onboarding entrypoints to `/auth/register`, 
 
 - Avatar upload routes
 - Membership or checkout flows that do not act as Auth + Onboarding authority
-

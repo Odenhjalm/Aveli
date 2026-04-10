@@ -52,7 +52,7 @@
 - Evidence:
   - `backend/app/main.py:173` mounts `auth.router`
   - `backend/app/main.py:175` mounts `profiles.router`
-  - `backend/app/main.py` does not mount `admin.router`
+  - `backend/app/main.py` now mounts `admin.router`; remaining drift in this register is legacy `/admin/teachers/*` callers and old current-user/password-reset consumers
   - `backend/app/routes/admin.py:53` and `backend/app/routes/admin.py:68` still define forbidden `/admin/teachers/*` handlers beside canonical `/admin/teacher-requests/*`
   - `frontend/lib/api/api_paths.dart:4` and `frontend/lib/api/api_paths.dart:7` still point frontend current-user and password-reset traffic at forbidden paths
   - `frontend/lib/features/community/data/admin_repository.dart:22` and `frontend/lib/features/community/data/admin_repository.dart:30` still call `/admin/teachers/*`
@@ -94,11 +94,9 @@
   - `actual_truth/contracts/SYSTEM_LAWS.md:72-74`
 - Evidence:
   - `backend/app/repositories/auth.py:71-114` still conditionally writes `onboarding_state`, `role_v2`, `role`, and `is_admin` into `app.profiles`
-  - `backend/app/repositories/auth.py:168` and `backend/app/repositories/auth.py:214-277` still keep `referral_code` in the register persistence path
   - `backend/app/repositories/auth.py:293-300` still persists auth-subject fields through `_upsert_profile_row`
   - `backend/app/repositories/profiles.py:47` and `backend/app/repositories/profiles.py:64-65` still expose profile-driven onboarding mutation
-  - `backend/app/schemas/__init__.py:73` still accepts `referral_code` on `AuthRegisterRequest`
-  - `frontend/lib/api/auth_repository.dart:59` still sends `referral_code`
+  - auth-side referral coupling is already removed; active drift in this register is limited to profile-authority leakage through `app.profiles`
 - Owning task: `AOC-004`
 
 ### DRIFT-005

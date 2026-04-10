@@ -250,16 +250,60 @@ Access rules:
 
 ## 15. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
 
-- The canonical launch commerce routes are not currently mounted in `backend/app/main.py`.
-- `POST /api/checkout/create` is still polymorphic in the current repo schema and service layer.
-- `POST /api/billing/create-subscription` currently creates membership without creating an order.
-- `POST /api/billing/create-checkout-session` still exists as a duplicate membership initiation path.
 - `POST /api/stripe/webhook` currently handles broader mixed-domain branches beyond the clean separations locked by this contract.
-- Current membership webhook processing updates `app.memberships` but does not yet settle membership purchase orders.
-- Current repo surfaces still include direct frontend Stripe payment UI paths outside the locked payment UI boundary.
-- Current notification audience logic does not yet fully enforce membership versus course-enrollment audience separation.
 
-## 16. FINAL ASSERTION
+## 16. REFUND, WITHDRAWAL, CANCELLATION, AND ACCESS-REVOCATION LAW
+
+- Membership is a subscription purchase and remains order-backed and payment-backed.
+- One-off digital product purchase means an order-backed and payment-backed purchase of course or bundle entitlement.
+- Backend is the only authority allowed to:
+  - trigger refund workflow
+  - mark subscription cancellation effect
+  - decide when membership access ends
+  - decide when one-off product access ends
+  - revoke access following a valid withdrawal outcome or separate statutory remedy outcome
+- Stripe is infrastructure and transport only.
+- Stripe subscription state, invoice state, charge state, refund state, dispute state, checkout-session state, customer-portal state, and webhook payload shape are never authority by themselves.
+- Frontend state is never refund authority, cancellation-state authority, or access-revocation authority.
+- Token claims are never refund authority, cancellation-state authority, or access-revocation authority.
+- Ad hoc support surfaces, support notes, CRM state, and manual support acknowledgments are never refund authority, cancellation-state authority, or access-revocation authority.
+
+Membership subscription cancellation law:
+
+- Cancellation after the legally applicable withdrawal window stops future automatic charging only.
+- Cancellation after the legally applicable withdrawal window does not by itself refund already-paid completed periods.
+- Cancellation after the legally applicable withdrawal window does not by itself revoke already-paid membership access before the canonical entitlement end boundary.
+- Membership access remains valid until the end of the already-paid period if canonical backend state remains `active`, or `canceled` with `current_time < expires_at`, unless a valid withdrawal outcome or separate statutory remedy outcome requires earlier revocation.
+- Stripe-side cancel intent or Stripe-side cancel acknowledgement is not canonical membership state by itself.
+
+Membership valid-withdrawal law:
+
+- A valid withdrawal within the legally applicable withdrawal window is distinct from ordinary cancellation.
+- When backend determines that a membership withdrawal outcome is valid, backend MUST:
+  - stop future automatic charging
+  - trigger refund handling for the relevant charge according to the legally valid withdrawal outcome
+  - revoke membership access immediately through canonical backend-owned state in `app.memberships`
+- Refund, withdrawal, or cancellation does not automatically imply deletion of user data; retention and deletion belong to a separate policy layer.
+
+One-off digital product withdrawal law:
+
+- A valid withdrawal within the legally applicable withdrawal window for a one-off digital product purchase MUST trigger backend refund handling and immediate access revocation.
+- Immediate one-off access revocation MUST occur only through canonical backend-owned access mutation under `course_access_contract.md`.
+- After the legally applicable withdrawal window, no refund exists solely because of change of mind.
+
+Remedy separation law:
+
+- Withdrawal rights are separate from defect, delivery failure, dispute handling, chargeback handling, fraud handling, mandatory statutory consumer remedies, and other legally required remedies.
+- Nothing in this contract may be used to deny or block a separate defect, dispute, or statutory remedy path.
+- A separate defect, dispute, or statutory remedy outcome may still trigger refund handling or access revocation, but only through canonical backend-owned authority.
+
+Authority effect law:
+
+- Membership access authority remains `app.memberships`.
+- Product access authority remains the canonical purchase/result substrate and resulting access tables, not Stripe state.
+- Refund, withdrawal, cancellation, and remedy handling must never bypass canonical backend access authority.
+
+## 17. FINAL ASSERTION
 
 - This contract is the canonical launch commerce and membership purchase truth.
 - It is lockable as a contract artifact.

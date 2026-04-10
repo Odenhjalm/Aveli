@@ -94,7 +94,7 @@ async def stripe_payment_element_webhook(request: Request):
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing Stripe signature",
+            detail="Stripe-signatur saknas",
         )
 
     try:
@@ -113,7 +113,7 @@ async def stripe_payment_element_webhook(request: Request):
             level="warning",
         )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payload"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Ogiltig payload"
         ) from exc
     except stripe.error.SignatureVerificationError as exc:  # type: ignore[attr-defined]
         logger.warning("Invalid Stripe signature: %s", exc)
@@ -125,7 +125,7 @@ async def stripe_payment_element_webhook(request: Request):
             level="warning",
         )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Ogiltig signatur"
         ) from exc
 
     event_type = event.get("type")
@@ -173,7 +173,7 @@ async def stripe_payment_element_webhook(request: Request):
         logger.exception("Stripe webhook processing failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Webhook processing failed",
+            detail="Webhook-bearbetningen misslyckades",
         ) from exc
 
     _capture_message(

@@ -132,9 +132,9 @@ async def create_subscription_checkout(
     checkout_url = session.get("url")
     session_id = session.get("id")
     if not isinstance(checkout_url, str):
-        raise SubscriptionError("Stripe session missing checkout url", status_code=502)
+        raise SubscriptionError("Stripe-session saknar checkout-URL", status_code=502)
     if not isinstance(session_id, str) or not session_id:
-        raise SubscriptionError("Stripe session missing id", status_code=502)
+        raise SubscriptionError("Stripe-session saknar id", status_code=502)
 
     await orders_repo.set_order_checkout_reference(
         order_id=order["id"],
@@ -211,7 +211,138 @@ async def cancel_subscription_intent(
         "ok": True,
         "subscription_id": resolved_subscription_id,
         "cancel_at_period_end": cancel_at_period_end,
-        "message": "Cancel intent submitted. Membership state changes only after webhook confirmation.",
+        "message": "Avsiktsavbokningen ar skickad. Medlemskapsstatus andras forst efter webhook-bekraftelse.",
+    }
+
+
+async def apply_valid_membership_withdrawal(
+    user: Mapping[str, Any],
+    *,
+    subscription_id: str | None = None,
+    payment_intent_id: str | None = None,
+) -> dict[str, Any]:
+    return await _apply_membership_refund_resolution(
+        user,
+        resolution_kind="withdrawal",
+        subscription_id=subscription_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+
+async def apply_membership_remedy(
+    user: Mapping[str, Any],
+    *,
+    subscription_id: str | None = None,
+    payment_intent_id: str | None = None,
+) -> dict[str, Any]:
+    return await _apply_membership_refund_resolution(
+        user,
+        resolution_kind="remedy",
+        subscription_id=subscription_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+
+async def _apply_membership_refund_resolution(
+    user: Mapping[str, Any],
+    *,
+    resolution_kind: str,
+    subscription_id: str | None,
+    payment_intent_id: str | None,
+) -> dict[str, Any]:
+    try:
+        stripe_context = stripe_mode.resolve_stripe_context()
+    except stripe_mode.StripeConfigurationError as exc:
+        raise SubscriptionConfigError(str(exc)) from exc
+
+    user_id = str(user["id"])
+    order = await _resolve_membership_purchase_order_for_resolution(
+        user_id,
+        requested_subscription_id=subscription_id,
+    )
+    resolved_subscription_id = _as_string(order.get("stripe_subscription_id"))
+    if not resolved_subscription_id:
+        raise SubscriptionError(
+            "Prenumerationen saknar subscription-id i canonical purchase-substratet",
+            status_code=400,
+        )
+    resolved_payment_intent = await _resolve_membership_refund_payment_intent(
+        order,
+        requested_payment_intent=payment_intent_id,
+    )
+    stripe.api_key = stripe_context.secret_key
+
+    def _cancel_now() -> dict[str, Any]:
+        return stripe.Subscription.cancel(  # type: ignore[attr-defined]
+            resolved_subscription_id
+        )
+
+    def _create_refund() -> dict[str, Any]:
+        return stripe.Refund.create(
+            payment_intent=resolved_payment_intent,
+            metadata={
+                "resolution_kind": resolution_kind,
+                "order_id": str(order["id"]),
+                "checkout_type": "membership",
+                "user_id": user_id,
+            },
+        )
+
+    try:
+        await run_in_threadpool(_cancel_now)
+    except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
+        raise SubscriptionError(
+            "Stripe kunde inte stoppa framtida dragningar for medlemskapet",
+            status_code=400,
+        ) from exc
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise SubscriptionError(
+            "Stripe-fel vid stopp av framtida medlemskapsdragningar",
+            status_code=502,
+        ) from exc
+
+    try:
+        await run_in_threadpool(_create_refund)
+    except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
+        raise SubscriptionError(
+            "Stripe kunde inte skapa medlemskapsaterbetalningen",
+            status_code=400,
+        ) from exc
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise SubscriptionError(
+            "Stripe-fel vid medlemskapsaterbetalning",
+            status_code=502,
+        ) from exc
+
+    now = datetime.now(timezone.utc)
+    existing_membership = await memberships_repo.get_membership(user_id)
+    source = str((existing_membership or {}).get("source") or "purchase")
+    membership = await memberships_repo.upsert_membership_record(
+        user_id,
+        status="expired",
+        effective_at=(existing_membership or {}).get("effective_at"),
+        expires_at=now,
+        canceled_at=now,
+        ended_at=now,
+        source=source,
+    )
+    await membership_support_repo.insert_billing_log(
+        user_id=user_id,
+        step=f"membership_{resolution_kind}_applied",
+        info={
+            "order_id": str(order["id"]),
+            "subscription_id": resolved_subscription_id,
+            "payment_intent_id": resolved_payment_intent,
+        },
+    )
+    await sync_onboarding_state(user_id)
+    return {
+        "ok": True,
+        "membership": membership,
+        "order_id": str(order["id"]),
+        "subscription_id": resolved_subscription_id,
+        "payment_intent_id": resolved_payment_intent,
+        "resolution_kind": resolution_kind,
     }
 
 
@@ -222,7 +353,7 @@ async def handle_webhook(payload: bytes, signature: str | None) -> None:
     except stripe_mode.StripeConfigurationError as exc:
         raise SubscriptionConfigError(str(exc)) from exc
     if not signature:
-        raise SubscriptionError("Missing Stripe signature")
+        raise SubscriptionError("Stripe-signatur saknas")
 
     try:
         event = stripe.Webhook.construct_event(
@@ -231,9 +362,9 @@ async def handle_webhook(payload: bytes, signature: str | None) -> None:
             secret=secret,
         )
     except ValueError as exc:
-        raise SubscriptionError("Invalid Stripe payload") from exc
+        raise SubscriptionError("Ogiltig Stripe-payload") from exc
     except stripe.error.SignatureVerificationError as exc:  # type: ignore[attr-defined]
-        raise SubscriptionError("Invalid Stripe signature") from exc
+        raise SubscriptionError("Ogiltig Stripe-signatur") from exc
 
     await process_event(event)
 
@@ -445,7 +576,7 @@ def _extract_amount_and_currency(price: Mapping[str, Any]) -> tuple[int, str]:
     amount_cents = int(price.get("unit_amount") or 0)
     currency = str(price.get("currency") or "sek").lower()
     if amount_cents <= 0:
-        raise SubscriptionError("Stripe price is missing amount", status_code=400)
+        raise SubscriptionError("Stripe-priset saknar belopp", status_code=400)
     return amount_cents, currency
 
 
@@ -454,8 +585,8 @@ def _price_missing_message(
     context: stripe_mode.StripeContext,
 ) -> str:
     return (
-        f"{price_config.env_var} ({price_config.price_id}) is not available in Stripe "
-        f"{context.mode.value} mode for {context.secret_source}"
+        f"{price_config.env_var} ({price_config.price_id}) ar inte tillgangligt i Stripe "
+        f"{context.mode.value}-lage for {context.secret_source}"
     )
 
 
@@ -463,8 +594,8 @@ def _format_invalid_request(exc: stripe.error.InvalidRequestError) -> str:  # ty
     message = exc.user_message or str(exc)
     param = getattr(exc, "param", None)
     if param:
-        return f"Stripe checkout failed: {message} (param: {param})"
-    return f"Stripe checkout failed: {message}"
+        return f"Stripe-checkout misslyckades: {message} (param: {param})"
+    return f"Stripe-checkout misslyckades: {message}"
 
 
 def _build_frontend_url(path: str) -> str:
@@ -490,7 +621,7 @@ async def _get_or_create_customer(user: Mapping[str, Any]) -> str:
     customer = await run_in_threadpool(_create_customer)
     customer_id = customer.get("id")
     if not isinstance(customer_id, str):
-        raise SubscriptionError("Failed to create Stripe customer", status_code=502)
+        raise SubscriptionError("Kunde inte skapa Stripe-kund", status_code=502)
     await stripe_customers_repo.upsert_customer(user_id, customer_id)
     return customer_id
 
@@ -527,6 +658,79 @@ async def _resolve_membership_subscription_id(
     return str(membership_subscription_id)
 
 
+async def _resolve_membership_purchase_order_for_resolution(
+    user_id: str,
+    *,
+    requested_subscription_id: str | None = None,
+) -> dict[str, Any]:
+    user_orders = await orders_repo.list_user_orders(user_id, limit=200)
+    subscription_orders = [
+        order
+        for order in user_orders
+        if str(order.get("order_type") or "").lower() == "subscription"
+    ]
+    if not subscription_orders:
+        raise SubscriptionError(
+            "Ingen medlemskapsbestallning hittades",
+            status_code=404,
+        )
+
+    if requested_subscription_id:
+        for order in subscription_orders:
+            if _as_string(order.get("stripe_subscription_id")) == requested_subscription_id:
+                return order
+        raise SubscriptionError(
+            "Angivet subscription-id matchar inte ditt konto",
+            status_code=403,
+        )
+
+    for order in subscription_orders:
+        if _as_string(order.get("stripe_subscription_id")):
+            return order
+
+    raise SubscriptionError(
+        "Prenumerationen saknar subscription-id i canonical purchase-substratet",
+        status_code=400,
+    )
+
+
+async def _resolve_membership_refund_payment_intent(
+    order: Mapping[str, Any],
+    *,
+    requested_payment_intent: str | None = None,
+) -> str:
+    order_id = str(order["id"])
+    if requested_payment_intent:
+        payment = await payments_repo.get_payment_for_order_by_reference(
+            order_id,
+            requested_payment_intent,
+            status="paid",
+        )
+        if not payment:
+            raise SubscriptionError(
+                "Angivet payment_intent tillhor inte medlemskapskopet",
+                status_code=403,
+            )
+        return requested_payment_intent
+
+    latest_paid_payment = await payments_repo.get_latest_payment_for_order(
+        order_id,
+        status="paid",
+    )
+    provider_reference = _as_string((latest_paid_payment or {}).get("provider_reference"))
+    if provider_reference:
+        return provider_reference
+
+    fallback_payment_intent = _as_string(order.get("stripe_payment_intent"))
+    if fallback_payment_intent:
+        return fallback_payment_intent
+
+    raise SubscriptionError(
+        "Kunde inte faststalla vilken medlemskapsbetalning som ska aterbetalas",
+        status_code=400,
+    )
+
+
 async def _resolve_membership_order(
     *,
     metadata: Mapping[str, Any] | None = None,
@@ -551,7 +755,7 @@ async def _resolve_membership_order(
         order = await orders_repo.get_order_by_payment_intent(payment_intent_id)
     if not order:
         raise SubscriptionError(
-            "Membership webhook could not resolve a canonical order",
+            "Medlemskapswebhooken kunde inte faststalla en canonical order",
             status_code=500,
         )
     return order

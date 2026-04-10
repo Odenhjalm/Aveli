@@ -4,6 +4,11 @@
 - TITLE: `Make membership purchase order-backed and align the initiation endpoint to contract truth`
 - DOMAIN: `membership purchase authority`
 - GROUP: `MEMBERSHIP PURCHASE REPAIR`
+- CURRENT STATUS: `HISTORICAL / VERIFIED COMPLETE`
+
+## Historical Note
+
+The problem statement below records the pre-execution audit state and is retained only as historical task context.
 
 ## Problem Statement
 

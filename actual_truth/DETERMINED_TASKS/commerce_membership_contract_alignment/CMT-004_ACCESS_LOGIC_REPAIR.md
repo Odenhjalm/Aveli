@@ -4,6 +4,11 @@
 - TITLE: `Replace legacy membership status logic with canonical access and audience rules`
 - DOMAIN: `membership access authority`
 - GROUP: `ACCESS LOGIC REPAIR`
+- CURRENT STATUS: `HISTORICAL / VERIFIED COMPLETE`
+
+## Historical Note
+
+The problem statement below records the pre-execution audit state and is retained only as historical task context.
 
 ## Problem Statement
 

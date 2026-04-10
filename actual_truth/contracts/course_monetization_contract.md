@@ -201,7 +201,14 @@ This contract operates under `SYSTEM_LAWS.md`,
 - Mutating historical purchase truth by changing current price mappings.
 - Polymorphic purchase authority that collapses course, bundle, and membership into one canonical meaning.
 
-## 13. FINAL ASSERTION
+## 13. POST-PURCHASE REMEDY OWNERSHIP
+
+- Withdrawal, refund, cancellation-effect, dispute, and access-revocation semantics are not owned by pricing or sellability law.
+- Withdrawal, refund, cancellation-effect, and remedy authority are owned by `commerce_membership_contract.md`.
+- Protected one-off product access revocation effect is owned by `course_access_contract.md`.
+- Monetization surfaces, teacher selling UI, frontend payment UI, and Stripe catalog/runtime state must not infer refund or access-revocation authority.
+
+## 14. FINAL ASSERTION
 
 - This contract is the canonical course monetization and teacher pricing truth for launch scope.
 - It is lockable as a contract artifact.

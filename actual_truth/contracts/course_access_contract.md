@@ -56,7 +56,17 @@ No purchase flow may bypass that order/payment trail and create course access as
 - Current webhook implementation does not yet fully align purchase settlement with canonical course-access creation in all branches.
 - Current repo code may still mix purchase and access reasoning in the same runtime paths.
 
-## 7. FINAL ASSERTION
+## 7. ACCESS REVOCATION LAW
+
+- Canonical one-off digital product access revocation is owned only by backend mutation of `app.course_enrollments`.
+- A valid withdrawal outcome for a paid course or paid bundle within the legally applicable withdrawal window MUST revoke the resulting protected course access immediately.
+- A separate defect, dispute, chargeback, fraud, delivery-failure, or statutory remedy outcome MAY also revoke protected course access, but only through canonical backend-owned access mutation.
+- After the legally applicable withdrawal window, change of mind alone MUST NOT revoke protected course access.
+- Stripe refund state, Stripe cancellation state, Stripe dispute state, frontend state, token claims, and ad hoc support surfaces are not protected course-access authority and are not protected course-access revocation authority.
+- Orders and payments remain purchase substrate, but they do not revoke access by themselves without backend-owned course-access mutation.
+- Membership cancellation, membership withdrawal, or membership refund does not rewrite protected course access unless backend separately resolves a one-off product remedy path that canonically mutates `app.course_enrollments`.
+
+## 8. FINAL ASSERTION
 
 - This contract is the canonical protected course-access truth.
 - It is lockable as a contract artifact.

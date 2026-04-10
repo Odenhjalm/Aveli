@@ -8,6 +8,21 @@ from psycopg.types.json import Jsonb
 
 from ..db import pool
 
+_PAYMENT_SELECT = """
+    SELECT id,
+           order_id,
+           provider,
+           provider_reference,
+           status,
+           amount_cents,
+           currency,
+           metadata,
+           raw_payload,
+           created_at,
+           updated_at
+      FROM app.payments
+"""
+
 
 async def mark_order_paid(
     order_id: str | UUID,
@@ -39,6 +54,58 @@ async def mark_order_paid(
             row = await cur.fetchone()
             await conn.commit()
             return dict(row) if row else None
+
+
+async def get_latest_payment_for_order(
+    order_id: str | UUID,
+    *,
+    status: str | None = None,
+) -> dict[str, Any] | None:
+    clauses = ["order_id = %s"]
+    params: list[Any] = [order_id]
+    if status:
+        clauses.append("status = %s")
+        params.append(str(status).strip().lower())
+
+    query = f"""
+        {_PAYMENT_SELECT}
+         WHERE {' AND '.join(clauses)}
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_payment_for_order_by_reference(
+    order_id: str | UUID,
+    provider_reference: str,
+    *,
+    status: str | None = None,
+) -> dict[str, Any] | None:
+    clauses = [
+        "order_id = %s",
+        "provider_reference = %s",
+    ]
+    params: list[Any] = [order_id, provider_reference]
+    if status:
+        clauses.append("status = %s")
+        params.append(str(status).strip().lower())
+
+    query = f"""
+        {_PAYMENT_SELECT}
+         WHERE {' AND '.join(clauses)}
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+    return dict(row) if row else None
 
 
 async def record_payment(

@@ -4,6 +4,9 @@
 
 - STATUS: `TASKS_READY`
 
+This summary is a historical pre-execution DAG snapshot.
+Baseline `0029`, mounted launch commerce routes, order-backed membership initiation, settlement-first membership webhook handling, canonical membership access logic, frontend non-authoritative return handling, and contract gate coverage are now verified in runtime and tests.
+
 ## Task IDs
 
 - `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`
@@ -43,7 +46,7 @@
 - `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`
 - Rationale: the contracts already ratify `app.orders` and `app.payments` as purchase authority, but clean baseline replay does not materialize them. Membership purchase and webhook repair cannot be clean-room canonical before the purchase substrate itself is baseline-backed.
 
-## Highest-Risk Tasks
+## Historical Highest-Risk Tasks At Task Generation
 
 - `CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
   - Membership purchase is still orderless and currently mutates membership state before canonical payment confirmation.
@@ -78,7 +81,7 @@
 - Test + gate:
   - `CMT-009_TEST_AND_GATE`
 
-## Audit Notes That Drive The DAG
+## Historical Audit Notes That Drove The DAG
 
 - `app.orders` and `app.payments` are contract-ratified purchase substrate but currently lack an explicit baseline-owner task.
 - `backend/app/main.py` does not mount the launch commerce and adjacent routes required by the contract.

@@ -4,6 +4,11 @@
 - TITLE: `Align frontend checkout, return, and management flows to backend-only authority`
 - DOMAIN: `frontend commerce behavior`
 - GROUP: `FRONTEND ALIGNMENT`
+- CURRENT STATUS: `HISTORICAL / VERIFIED COMPLETE`
+
+## Historical Note
+
+The problem statement below records the pre-execution audit state and is retained only as historical task context.
 
 ## Problem Statement
 

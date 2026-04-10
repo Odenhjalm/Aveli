@@ -129,10 +129,9 @@ This contract composes with `auth_onboarding_contract.md` for identity creation 
 
 ## 12. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
 
-- Current backend auth persistence still contains referral redemption and membership grant logic.
-- Current frontend auth registration payload still sends `referral_code`.
-- Current referral tests still model `/auth/register` as the referral redemption surface.
-- Those surfaces are implementation drift and do not redefine this contract.
+- Mounted auth runtime keeps `referral_code` forbidden on `POST /auth/register`.
+- Referral redemption and resulting non-purchase membership grant now route through dedicated referral and membership-grant surfaces instead of auth registration.
+- Any future reintroduction of auth-side referral redemption, auth-side membership grant, or register-time `referral_code` acceptance is implementation drift only and does not redefine this contract.
 
 ## 13. FINAL ASSERTION
 

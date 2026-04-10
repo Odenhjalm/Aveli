@@ -6,6 +6,9 @@
 
 READY
 
+This tree is a historical generate-mode audit snapshot.
+`OET-001`, `OET-002`, `OET-003`, `OET-004`, `OET-006`, and `OET-007` are now verified complete, so the audit IDs and entrypoint language below are historical unless a later task explicitly reopens them.
+
 This tree is the canonical generate-mode outrooting plan for the remaining edge drift that still surrounds the stable canonical core.
 
 It is derived only from:
@@ -60,7 +63,7 @@ This generate pass re-read only the current authoritative inputs needed to mater
 - current baseline truth
 - the completed audit findings
 
-## VERIFIED AUDIT IDS
+## HISTORICAL AUDIT IDS AT TASK GENERATION
 
 - `OEA-01` the canonical core is stable and must remain untouched: `auth.users`, `app.auth_subjects`, `app.memberships`, `app.orders`, `app.payments`, `app.course_enrollments`, canonical course and bundle monetization fields, and canonical checkout plus webhook completion
 - `OEA-02` mounted studio home-audio course-link ownership still resolves through `backend/app/repositories/home_audio_sources.py` using `c.created_by AS teacher_id`, and mounted `backend/app/routes/studio.py` consumes that path
@@ -107,7 +110,7 @@ These tasks are evidence-backed but may be deferred until the required cleanup l
 4. [OET-010_SESSIONS_ALIAS_AND_LEGACY_FIELD_QUARANTINE.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/canonical_edge_outrooting_tree/OET-010_SESSIONS_ALIAS_AND_LEGACY_FIELD_QUARANTINE.md)
 5. [OET-012_OPTIONAL_HARDENING_GATE.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/canonical_edge_outrooting_tree/OET-012_OPTIONAL_HARDENING_GATE.md)
 
-## DAG ENTRYPOINT
+## DAG ENTRYPOINT AT TASK GENERATION
 
 Within this tree, the first outrooting task remains [OET-001_STUDIO_HOME_AUDIO_OWNERSHIP_CLEANUP.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/canonical_edge_outrooting_tree/OET-001_STUDIO_HOME_AUDIO_OWNERSHIP_CLEANUP.md).
 

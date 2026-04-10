@@ -4,6 +4,11 @@
 - GROUP: `ACTIVE AUXILIARY DRIFT`
 - REQUIRED BEFORE FUTURE CORE FEATURE WORK: `YES`
 - EXECUTION CLASS: `BLOCKER`
+- CURRENT STATUS: `HISTORICAL / VERIFIED COMPLETE`
+
+## Historical Note
+
+The problem statement below records the pre-execution audit state and is retained only as historical task context.
 
 ## Problem Statement
 
