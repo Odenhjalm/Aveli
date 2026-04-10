@@ -224,6 +224,32 @@ Placement law:
 - placement does not create runtime truth
 - placement does not create execution response-shape authority
 
+### Lesson-Media Placement Reorder/Delete Decision
+
+Lesson-media placement reorder is canonical placement-layer behavior.
+
+Lesson-media placement delete is canonical placement-layer behavior only when it means removing the authored `app.lesson_media` placement link.
+
+The placement-layer source entity is `app.lesson_media`.
+
+Canonical reorder surface:
+`PATCH /api/lessons/{lesson_id}/media-placements/reorder`
+
+Canonical delete surface:
+`DELETE /api/media-placements/{lesson_media_id}`
+
+Reorder may mutate only `app.lesson_media.position`.
+
+Delete may delete only the target `app.lesson_media` row.
+
+Neither reorder nor delete may create, update, or delete `app.media_assets`.
+
+Neither reorder nor delete may write to `app.runtime_media`.
+
+Asset cleanup after a placement is removed is a separate media lifecycle / cleanup concern and is not placement-delete authority.
+
+The existing `/api/lesson-media/{lesson_id}/reorder` and `/api/lesson-media/{lesson_id}/{lesson_media_id}` write routes are temporary implementation drift and are not canonical surfaces.
+
 ## 6. REQUEST / RESPONSE CONTRACTS
 
 ### 6.1 Upload-URL Request
@@ -381,7 +407,9 @@ Authoring frontend may call only the canonical lesson-media pipeline endpoints:
 - `POST /api/lessons/{lesson_id}/media-assets/upload-url`
 - `POST /api/media-assets/{media_asset_id}/upload-completion`
 - `POST /api/lessons/{lesson_id}/media-placements`
+- `PATCH /api/lessons/{lesson_id}/media-placements/reorder`
 - `GET /api/media-placements/{lesson_media_id}`
+- `DELETE /api/media-placements/{lesson_media_id}`
 
 If implementation drift exposes extra media fields:
 
