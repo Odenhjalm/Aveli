@@ -1,0 +1,5 @@
+- TASK ID: UWD-005
+- TYPE: FRONTEND_ALIGNMENT
+- DOMAIN TAG: media
+- DESCRIPTION: Switch studio lesson-media upload callers from `/api/lesson-media/{lesson_id}/upload-url` plus implicit placement to the canonical upload-url, upload-completion, and placement-attach sequence. Remove frontend dependence on upload responses that return `lesson_media_id` before placement exists.
+- DEPENDS_ON: [UWD-003]

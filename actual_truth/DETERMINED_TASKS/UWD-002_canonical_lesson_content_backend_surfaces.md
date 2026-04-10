@@ -1,0 +1,5 @@
+- TASK ID: UWD-002
+- TYPE: BACKEND_ALIGNMENT
+- DOMAIN TAG: lesson
+- DESCRIPTION: Add the canonical Course + Lesson Editor backend write surfaces while preserving isolated legacy paths during switchover: `POST /studio/courses/{course_id}/lessons`, `PATCH /studio/lessons/{lesson_id}/structure`, and `PATCH /studio/lessons/{lesson_id}/content`. Split service and repository calls so lesson structure writes only touch `app.lessons` and content writes only touch backend-normalized `app.lesson_contents.content_markdown`.
+- DEPENDS_ON: [UWD-001]

@@ -1,0 +1,5 @@
+- TASK ID: UWD-011
+- TYPE: TEST_ALIGNMENT
+- DOMAIN TAG: course
+- DESCRIPTION: Rewrite backend Course + Lesson Editor tests to assert the canonical split: course writes remain canonical, lesson create/update structure surfaces are separate from content writes, mixed lesson write routes are absent, and studio lesson list reads do not expose `content_markdown`.
+- DEPENDS_ON: [UWD-009]

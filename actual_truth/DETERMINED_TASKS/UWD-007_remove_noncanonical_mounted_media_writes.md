@@ -1,0 +1,5 @@
+- TASK ID: UWD-007
+- TYPE: LEGACY_REMOVAL
+- DOMAIN TAG: media
+- DESCRIPTION: Remove or unmount non-canonical mounted media write surfaces after frontend switchover: implicit-placement `/api/lesson-media/{lesson_id}/upload-url`, `/api/lesson-media/{lesson_id}/{lesson_media_id}/complete`, disabled `/studio/lessons/{lesson_id}/media*`, legacy `/studio/media/{media_id}` delete, and legacy `/studio/lessons/{lesson_id}/media/reorder`.
+- DEPENDS_ON: [UWD-005]

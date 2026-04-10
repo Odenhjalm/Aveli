@@ -1,0 +1,5 @@
+- TASK ID: UWD-012
+- TYPE: TEST_ALIGNMENT
+- DOMAIN TAG: media
+- DESCRIPTION: Rewrite backend and frontend media pipeline tests to assert the canonical three-step media write chain, no upload-time placement, no completion-time attach, no `/api/media/*` positive-path dependencies, no legacy studio media write route dependence, and canonical placement read media shape only.
+- DEPENDS_ON: [UWD-009, UWD-010]

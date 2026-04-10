@@ -1,0 +1,5 @@
+- TASK ID: UWD-008
+- TYPE: LEGACY_REMOVAL
+- DOMAIN TAG: cross-domain
+- DESCRIPTION: Quarantine or remove dead but dangerous write callers and helpers after active paths are replaced: unmounted `backend/app/routes/api_media.py`, unmounted `backend/app/routes/upload.py`, helper-only media model mutation paths, importer calls to mixed lesson/media endpoints, landing `studioUploads.ts` calls to `/api/media/*`, and stale media upload tests that still invoke unmounted routes as positive paths.
+- DEPENDS_ON: [UWD-006, UWD-007]

@@ -1,0 +1,5 @@
+- TASK ID: UWD-004
+- TYPE: FRONTEND_ALIGNMENT
+- DOMAIN TAG: content
+- DESCRIPTION: Switch the studio course editor from mixed lesson writes to the canonical lesson structure/content split. Replace `upsertLesson` mixed payload usage with separate structure create/update calls and content update calls, and keep frontend markdown normalization as convenience only, not authority.
+- DEPENDS_ON: [UWD-002]

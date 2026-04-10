@@ -1,0 +1,5 @@
+- TASK ID: UWD-006
+- TYPE: LEGACY_REMOVAL
+- DOMAIN TAG: lesson
+- DESCRIPTION: Remove the mounted mixed lesson write surfaces `POST /studio/lessons` and `PATCH /studio/lessons/{lesson_id}` after frontend switchover. Preserve only canonical lesson delete and reorder behavior where contract-compatible.
+- DEPENDS_ON: [UWD-004]

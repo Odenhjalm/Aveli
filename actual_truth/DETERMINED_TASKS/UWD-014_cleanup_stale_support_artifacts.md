@@ -1,0 +1,5 @@
+- TASK ID: UWD-014
+- TYPE: LEGACY_REMOVAL
+- DOMAIN TAG: cross-domain
+- DESCRIPTION: Clean up stale support artifacts only after test alignment passes: importer route comments, stale docs/task mirrors that still name old dominant write paths as canonical, skipped or quarantined tests that no longer describe valid runtime risk, and obsolete helper wrappers that are no longer imported.
+- DEPENDS_ON: [UWD-013]

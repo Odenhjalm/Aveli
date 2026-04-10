@@ -1,0 +1,5 @@
+- TASK ID: UWD-009
+- TYPE: BACKEND_ALIGNMENT
+- DOMAIN TAG: runtime
+- DESCRIPTION: Enforce canonical write-path invariants after removal: structure endpoints reject `content_markdown`, content endpoint rejects structure fields, media ingest rejects placement output, placement rejects asset creation, no write path mutates `runtime_media`, and runtime playback remains `media_assets -> lesson_media -> runtime_media -> backend read composition`.
+- DEPENDS_ON: [UWD-006, UWD-007, UWD-008]

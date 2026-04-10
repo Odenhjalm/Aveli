@@ -1,0 +1,5 @@
+- TASK ID: UWD-013
+- TYPE: TEST_ALIGNMENT
+- DOMAIN TAG: cross-domain
+- DESCRIPTION: Add dominance regression gates that fail if non-canonical write dominance returns: mixed lesson writes, implicit media attach, unmounted `/api/media/*` write callers, disabled studio media writes, direct `runtime_media` writes, or frontend construction of governed media playback.
+- DEPENDS_ON: [UWD-011, UWD-012]

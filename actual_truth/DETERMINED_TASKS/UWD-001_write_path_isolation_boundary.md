@@ -1,0 +1,5 @@
+- TASK ID: UWD-001
+- TYPE: BACKEND_ALIGNMENT
+- DOMAIN TAG: cross-domain
+- DESCRIPTION: Establish a write-path isolation boundary for all active, shadow, and dead write routes in this scope without changing canonical authorities. Mark mixed lesson writes, implicit media attach, disabled studio media writes, unmounted `api_media`, unmounted `upload`, and helper-only model writes as non-canonical implementation surfaces.
+- DEPENDS_ON: []

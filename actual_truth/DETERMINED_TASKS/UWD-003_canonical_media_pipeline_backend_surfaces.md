@@ -1,0 +1,5 @@
+- TASK ID: UWD-003
+- TYPE: BACKEND_ALIGNMENT
+- DOMAIN TAG: media
+- DESCRIPTION: Add the canonical lesson-media backend write surfaces while preserving isolated legacy paths during switchover: `POST /api/lessons/{lesson_id}/media-assets/upload-url`, `POST /api/media-assets/{media_asset_id}/upload-completion`, `POST /api/lessons/{lesson_id}/media-placements`, and `GET /api/media-placements/{lesson_media_id}`. Ensure ingest creates exactly one `media_assets` row and zero `lesson_media` rows, and placement creates exactly one `lesson_media` row and zero `media_assets` rows.
+- DEPENDS_ON: [UWD-001]

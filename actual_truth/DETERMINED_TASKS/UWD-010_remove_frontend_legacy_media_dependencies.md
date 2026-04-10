@@ -1,0 +1,5 @@
+- TASK ID: UWD-010
+- TYPE: FRONTEND_ALIGNMENT
+- DOMAIN TAG: runtime
+- DESCRIPTION: Remove frontend contract dependencies that only existed for legacy write/read paths: `ApiPaths.mediaUploadUrl`, `ApiPaths.mediaComplete`, `ApiPaths.mediaAttach` for governed lesson-media writes, `preview_ready`, `original_name`, `resolved_preview_url`, and any frontend media resolver path that constructs playback outside backend-authored media objects.
+- DEPENDS_ON: [UWD-009]
