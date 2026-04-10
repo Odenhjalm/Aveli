@@ -44,6 +44,7 @@ async def create_bundle(
     payload: CourseBundleCreateRequest,
 ) -> CourseBundleResponse:
     teacher_id = str(current_user["id"])
+    price_amount_cents = _validate_bundle_price_amount(payload.price_amount_cents)
     validated_course_ids = await _validate_bundle_course_candidates(
         payload.course_ids,
         teacher_id=teacher_id,
@@ -52,7 +53,7 @@ async def create_bundle(
         teacher_id=teacher_id,
         title=payload.title,
         description=payload.description,
-        price_amount_cents=payload.price_amount_cents,
+        price_amount_cents=price_amount_cents,
     )
     if validated_course_ids:
         for idx, course_id in enumerate(validated_course_ids):
@@ -257,6 +258,13 @@ async def _validate_bundle_course_candidates(
         validated_course_ids.append(course_id)
 
     return validated_course_ids
+
+
+def _validate_bundle_price_amount(price_amount_cents: int) -> int:
+    normalized_amount = int(price_amount_cents)
+    if normalized_amount <= 0:
+        raise CourseBundleError("Paketpriset måste vara större än noll", status_code=400)
+    return normalized_amount
 
 
 async def _ensure_customer_id(user: Mapping[str, Any]) -> str:

@@ -3,16 +3,16 @@ from __future__ import annotations
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CourseBundleCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     title: str = Field(min_length=2)
     description: Optional[str] = None
     price_amount_cents: int = Field(ge=1)
-    currency: str = Field(default="sek", min_length=3, max_length=10)
     course_ids: List[str] = Field(default_factory=list)
-    is_active: bool = True
 
 
 class CourseBundleCourseRequest(BaseModel):
