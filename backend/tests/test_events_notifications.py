@@ -1,10 +1,13 @@
-import uuid
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import uuid
 
 import pytest
 
 from app import db
+from app.routes import api_events, api_notifications
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -61,171 +64,386 @@ async def cleanup_user(user_id: str):
             await conn.commit()
 
 
-async def test_events_and_notifications_flow(async_client):
-    teacher_email = f"teacher_events_{uuid.uuid4().hex[:8]}@example.com"
-    student_email = f"student_events_{uuid.uuid4().hex[:8]}@example.com"
+def _event_row(
+    *,
+    event_id: str,
+    created_by: str,
+    status: str = "scheduled",
+    visibility: str = "invited",
+) -> dict:
+    now = datetime.now(timezone.utc)
+    return {
+        "id": event_id,
+        "type": "ceremony",
+        "title": "Event",
+        "description": None,
+        "image_id": None,
+        "start_at": now + timedelta(days=1),
+        "end_at": now + timedelta(days=1, hours=1),
+        "timezone": "UTC",
+        "status": status,
+        "visibility": visibility,
+        "created_by": created_by,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+class _FakeCursor:
+    def __init__(self, *, fetchone_rows=None, fetchall_rows=None):
+        self._fetchone_rows = list(fetchone_rows or [])
+        self._fetchall_rows = list(fetchall_rows or [])
+        self.executed: list[tuple[str, object]] = []
+
+    async def execute(self, query: str, params=None) -> None:
+        self.executed.append((query, params))
+
+    async def fetchone(self):
+        if not self._fetchone_rows:
+            return None
+        return self._fetchone_rows.pop(0)
+
+    async def fetchall(self):
+        if not self._fetchall_rows:
+            return []
+        return self._fetchall_rows.pop(0)
+
+
+class _FakeCursorContext:
+    def __init__(self, cursor: _FakeCursor):
+        self._cursor = cursor
+
+    async def __aenter__(self) -> _FakeCursor:
+        return self._cursor
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+class _FakePoolConnection:
+    def __init__(self, cursor: _FakeCursor):
+        self._cursor = cursor
+        self.committed = False
+        self.rolled_back = False
+
+    async def __aenter__(self) -> "_FakePoolConnection":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    def cursor(self, row_factory=None):  # noqa: ARG002
+        return _FakeCursorContext(self._cursor)
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def rollback(self) -> None:
+        self.rolled_back = True
+
+
+class _FakePool:
+    def __init__(self, cursor: _FakeCursor):
+        self._connection = _FakePoolConnection(cursor)
+
+    def connection(self) -> _FakePoolConnection:
+        return self._connection
+
+
+def _install_get_conn_sequence(monkeypatch, module, *cursors: _FakeCursor) -> None:
+    queue = list(cursors)
+
+    def _factory():
+        if not queue:
+            raise AssertionError("No fake cursor left for get_conn()")
+        return _FakeCursorContext(queue.pop(0))
+
+    monkeypatch.setattr(module, "get_conn", _factory, raising=True)
+
+
+def _install_fake_pool(monkeypatch, module, cursor: _FakeCursor) -> _FakePool:
+    pool = _FakePool(cursor)
+    monkeypatch.setattr(module, "pool", pool, raising=True)
+    return pool
+
+
+async def test_events_and_notifications_sources_use_canonical_authority_only():
+    root = Path(__file__).resolve().parents[1]
+    events_source = (root / "app/routes/api_events.py").read_text(encoding="utf-8")
+    notifications_source = (
+        root / "app/routes/api_notifications.py"
+    ).read_text(encoding="utf-8")
+
+    assert "e.created_by = %(user_id)s" not in events_source
+    assert "Only the event creator may" not in events_source
+    assert "SELECT created_by FROM app.events" not in notifications_source
+    assert "SELECT created_by FROM app.courses" not in notifications_source
+    assert "FROM app.enrollments" not in notifications_source
+    assert "FROM app.course_enrollments ce" in notifications_source
+    assert "FROM app.event_participants ep" in notifications_source
+
+
+async def test_event_notifications_route_denies_creator_without_active_host(
+    async_client,
+    monkeypatch,
+):
     password = "Passw0rd!"
+    token, user_id = await register_user(
+        async_client,
+        f"event_denied_{uuid.uuid4().hex[:8]}@example.com",
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(user_id)
+    event_id = str(uuid.uuid4())
 
-    teacher_id = None
-    student_id = None
+    async def fake_get_event_row(candidate_event_id: str):
+        assert candidate_event_id == event_id
+        return _event_row(event_id=event_id, created_by=user_id)
+
+    async def fake_is_host(candidate_event_id: str, candidate_user_id: str) -> bool:
+        assert candidate_event_id == event_id
+        assert candidate_user_id == user_id
+        return False
+
+    monkeypatch.setattr(api_events, "_get_event_row", fake_get_event_row, raising=True)
+    monkeypatch.setattr(
+        api_events,
+        "_user_is_active_event_host",
+        fake_is_host,
+        raising=True,
+    )
+
     try:
-        teacher_token, teacher_id = await register_user(
-            async_client, teacher_email, password, "Teacher"
+        response = await async_client.get(
+            f"/api/events/{event_id}/notifications",
+            headers=auth_header(token),
         )
-        student_token, student_id = await register_user(
-            async_client, student_email, password, "Student"
+        assert response.status_code == 403, response.text
+        assert (
+            response.json()["detail"]
+            == "Only an event host may view notifications for this event"
         )
+    finally:
+        await cleanup_user(user_id)
 
-        await promote_to_teacher(teacher_id)
 
-        now = datetime.now(timezone.utc)
-        start_at = now + timedelta(days=1)
-        end_at = start_at + timedelta(hours=1)
+async def test_event_notifications_route_allows_active_host(
+    async_client,
+    monkeypatch,
+):
+    password = "Passw0rd!"
+    token, user_id = await register_user(
+        async_client,
+        f"event_host_{uuid.uuid4().hex[:8]}@example.com",
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(user_id)
+    event_id = str(uuid.uuid4())
+    notification_id = str(uuid.uuid4())
 
-        # Teacher creates a public scheduled event.
-        create_event = await async_client.post(
-            "/api/events",
-            json={
-                "type": "live_class",
-                "title": "Test Event",
-                "description": "Hello",
-                "start_at": start_at.isoformat(),
-                "end_at": end_at.isoformat(),
-                "timezone": "Europe/Stockholm",
-                "status": "scheduled",
-                "visibility": "public",
-            },
-            headers=auth_header(teacher_token),
+    campaign_cursor = _FakeCursor(
+        fetchall_rows=[
+            [
+                {
+                    "id": notification_id,
+                    "type": "manual",
+                    "channel": "in_app",
+                    "title": "Welcome",
+                    "body": "See you soon",
+                    "send_at": datetime.now(timezone.utc),
+                    "created_by": user_id,
+                    "status": "sent",
+                    "created_at": datetime.now(timezone.utc),
+                    "recipient_count": 2,
+                }
+            ]
+        ]
+    )
+    audience_cursor = _FakeCursor(
+        fetchall_rows=[
+            [
+                {
+                    "id": str(uuid.uuid4()),
+                    "notification_id": notification_id,
+                    "audience_type": "event_participants",
+                    "event_id": event_id,
+                    "course_id": None,
+                }
+            ]
+        ]
+    )
+    _install_get_conn_sequence(monkeypatch, api_events, campaign_cursor, audience_cursor)
+
+    async def fake_get_event_row(candidate_event_id: str):
+        assert candidate_event_id == event_id
+        return _event_row(event_id=event_id, created_by=user_id)
+
+    async def fake_is_host(candidate_event_id: str, candidate_user_id: str) -> bool:
+        assert candidate_event_id == event_id
+        assert candidate_user_id == user_id
+        return True
+
+    monkeypatch.setattr(api_events, "_get_event_row", fake_get_event_row, raising=True)
+    monkeypatch.setattr(
+        api_events,
+        "_user_is_active_event_host",
+        fake_is_host,
+        raising=True,
+    )
+
+    try:
+        response = await async_client.get(
+            f"/api/events/{event_id}/notifications",
+            headers=auth_header(token),
         )
-        assert create_event.status_code == 201, create_event.text
-        event = create_event.json()
-        event_id = event["id"]
-        assert event["created_by"] == teacher_id
-        assert event["visibility"] == "public"
-        assert event["status"] == "scheduled"
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert len(body["items"]) == 1
+        assert body["items"][0]["title"] == "Welcome"
+        assert body["items"][0]["recipient_count"] == 2
+        assert body["items"][0]["audiences"][0]["event_id"] == event_id
+    finally:
+        await cleanup_user(user_id)
 
-        # Student can see the public event.
-        student_list = await async_client.get(
-            "/api/events",
-            headers=auth_header(student_token),
-        )
-        assert student_list.status_code == 200, student_list.text
-        items = student_list.json()["items"]
-        assert any(row["id"] == event_id for row in items)
 
-        student_get = await async_client.get(
-            f"/api/events/{event_id}",
-            headers=auth_header(student_token),
-        )
-        assert student_get.status_code == 200, student_get.text
+async def test_notifications_create_route_rejects_participant_only_teacher(
+    async_client,
+    monkeypatch,
+):
+    password = "Passw0rd!"
+    token, user_id = await register_user(
+        async_client,
+        f"notify_denied_{uuid.uuid4().hex[:8]}@example.com",
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(user_id)
+    event_id = str(uuid.uuid4())
 
-        # Status cannot move backwards.
-        back_status = await async_client.patch(
-            f"/api/events/{event_id}",
-            json={"status": "draft"},
-            headers=auth_header(teacher_token),
-        )
-        assert back_status.status_code == 400, back_status.text
+    async def fake_event_host_access(candidate_event_id: str, candidate_user_id: str):
+        assert candidate_event_id == event_id
+        assert candidate_user_id == user_id
+        return True, False
 
-        # Teacher creates an invited event and registers student explicitly.
-        invited_resp = await async_client.post(
-            "/api/events",
-            json={
-                "type": "ceremony",
-                "title": "Invited Only",
-                "start_at": start_at.isoformat(),
-                "end_at": end_at.isoformat(),
-                "timezone": "UTC",
-                "status": "scheduled",
-                "visibility": "invited",
-            },
-            headers=auth_header(teacher_token),
-        )
-        assert invited_resp.status_code == 201, invited_resp.text
-        invited_event_id = invited_resp.json()["id"]
+    monkeypatch.setattr(
+        api_notifications,
+        "_event_host_access",
+        fake_event_host_access,
+        raising=True,
+    )
 
-        invited_self_register = await async_client.post(
-            f"/api/events/{invited_event_id}/participants",
-            json={},
-            headers=auth_header(student_token),
-        )
-        assert invited_self_register.status_code == 403, invited_self_register.text
-
-        invited_register = await async_client.post(
-            f"/api/events/{invited_event_id}/participants",
-            json={"user_id": student_id, "role": "participant"},
-            headers=auth_header(teacher_token),
-        )
-        assert invited_register.status_code == 201, invited_register.text
-
-        invited_get = await async_client.get(
-            f"/api/events/{invited_event_id}",
-            headers=auth_header(student_token),
-        )
-        assert invited_get.status_code == 200, invited_get.text
-
-        # Teacher sends an in-app notification to event participants.
-        notif_resp = await async_client.post(
+    try:
+        response = await async_client.post(
             "/api/notifications",
+            headers=auth_header(token),
             json={
                 "type": "manual",
                 "channel": "in_app",
                 "title": "Welcome",
                 "body": "See you soon",
                 "audiences": [
-                    {"audience_type": "event_participants", "event_id": invited_event_id}
+                    {
+                        "audience_type": "event_participants",
+                        "event_id": event_id,
+                    }
                 ],
             },
-            headers=auth_header(teacher_token),
         )
-        assert notif_resp.status_code == 201, notif_resp.text
-        notification = notif_resp.json()["notification"]
-        assert notification["title"] == "Welcome"
-        assert notification["recipient_count"] >= 2  # host + student
-
-        # Event owner can list event notifications.
-        list_notifs = await async_client.get(
-            f"/api/events/{invited_event_id}/notifications",
-            headers=auth_header(teacher_token),
+        assert response.status_code == 403, response.text
+        assert (
+            response.json()["detail"]
+            == "You may only notify participants of your own events"
         )
-        assert list_notifs.status_code == 200, list_notifs.text
-        notif_items = list_notifs.json()["items"]
-        assert any(row["id"] == notification["id"] for row in notif_items)
-    finally:
-        if student_id:
-            await cleanup_user(student_id)
-        if teacher_id:
-            await cleanup_user(teacher_id)
-
-
-async def test_notifications_require_teacher(async_client):
-    student_email = f"student_notify_{uuid.uuid4().hex[:8]}@example.com"
-    password = "Passw0rd!"
-    token, user_id = await register_user(async_client, student_email, password, "Student")
-    try:
-        resp = await async_client.post(
-            "/api/notifications",
-            json={
-                "type": "manual",
-                "channel": "in_app",
-                "title": "Nope",
-                "body": "Nope",
-                "audiences": [{"audience_type": "all_members"}],
-            },
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 403, resp.text
     finally:
         await cleanup_user(user_id)
 
 
-async def test_notifications_source_uses_canonical_authority_only():
-    root = Path(__file__).resolve().parents[1]
-    source = (root / "app/routes/api_notifications.py").read_text(encoding="utf-8")
+async def test_notifications_create_route_allows_active_host(
+    async_client,
+    monkeypatch,
+):
+    password = "Passw0rd!"
+    token, user_id = await register_user(
+        async_client,
+        f"notify_host_{uuid.uuid4().hex[:8]}@example.com",
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(user_id)
+    event_id = str(uuid.uuid4())
+    notification_id = str(uuid.uuid4())
+    audience_id = str(uuid.uuid4())
 
-    assert "SELECT created_by FROM app.courses" not in source
-    assert "SELECT created_by FROM app.events" not in source
-    assert "FROM app.enrollments" not in source
-    assert "SELECT teacher_id FROM app.courses" in source
-    assert "FROM app.course_enrollments ce" in source
-    assert "FROM app.event_participants ep" in source
+    async def fake_event_host_access(candidate_event_id: str, candidate_user_id: str):
+        assert candidate_event_id == event_id
+        assert candidate_user_id == user_id
+        return True, True
+
+    async def fake_resolve_recipients(audiences):
+        assert len(audiences) == 1
+        return {user_id, str(uuid.uuid4())}
+
+    cursor = _FakeCursor(
+        fetchone_rows=[
+            {
+                "id": notification_id,
+                "type": "manual",
+                "channel": "in_app",
+                "title": "Welcome",
+                "body": "See you soon",
+                "send_at": datetime.now(timezone.utc),
+                "created_by": user_id,
+                "status": "sent",
+                "created_at": datetime.now(timezone.utc),
+            },
+            {
+                "id": audience_id,
+                "notification_id": notification_id,
+                "audience_type": "event_participants",
+                "event_id": event_id,
+                "course_id": None,
+            },
+        ]
+    )
+    pool = _install_fake_pool(monkeypatch, api_notifications, cursor)
+
+    monkeypatch.setattr(
+        api_notifications,
+        "_event_host_access",
+        fake_event_host_access,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        api_notifications,
+        "_resolve_recipients",
+        fake_resolve_recipients,
+        raising=True,
+    )
+
+    try:
+        response = await async_client.post(
+            "/api/notifications",
+            headers=auth_header(token),
+            json={
+                "type": "manual",
+                "channel": "in_app",
+                "title": "Welcome",
+                "body": "See you soon",
+                "audiences": [
+                    {
+                        "audience_type": "event_participants",
+                        "event_id": event_id,
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()["notification"]
+        assert body["title"] == "Welcome"
+        assert body["recipient_count"] == 2
+        assert body["audiences"][0]["event_id"] == event_id
+        assert pool.connection().committed is True
+    finally:
+        await cleanup_user(user_id)

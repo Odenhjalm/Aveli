@@ -9,7 +9,15 @@ from app import db, models
 from app.services import storage_service as storage_module
 
 
-pytestmark = pytest.mark.anyio("asyncio")
+pytestmark = [
+    pytest.mark.anyio("asyncio"),
+    pytest.mark.skip(
+        reason=(
+            "legacy quarantine: /api/media/upload-url is not mounted in canonical "
+            "runtime; guarded by test_unmounted_surface_guardrails.py"
+        )
+    ),
+]
 
 logger = logging.getLogger(__name__)
 

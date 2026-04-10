@@ -10,7 +10,15 @@ from app.repositories import media_assets as media_assets_repo
 from app.routes import api_media
 from app.services import media_cleanup
 from app.services import storage_service as storage_module
-pytestmark = pytest.mark.anyio("asyncio")
+pytestmark = [
+    pytest.mark.anyio("asyncio"),
+    pytest.mark.skip(
+        reason=(
+            "legacy quarantine: /api/media cover routes are not mounted in canonical "
+            "runtime; guarded by test_unmounted_surface_guardrails.py"
+        )
+    ),
+]
 
 
 async def register_teacher(async_client):
