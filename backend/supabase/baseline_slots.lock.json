@@ -165,6 +165,12 @@
       "filename": "0027_canonical_course_bundles_core.sql",
       "path": "backend/supabase/baseline_slots/0027_canonical_course_bundles_core.sql",
       "sha256": "96176c04bb24146142f69ed94a2c74cbf2c15e787fd474260131dfc908b4be71"
+    },
+    {
+      "slot": 28,
+      "filename": "0028_canonical_course_ownership_and_monetization_foundation.sql",
+      "path": "backend/supabase/baseline_slots/0028_canonical_course_ownership_and_monetization_foundation.sql",
+      "sha256": "89164f9241ca5797d8594901952ea2827f14bde6638f27559e6f6b37827efc21"
     }
   ]
 }

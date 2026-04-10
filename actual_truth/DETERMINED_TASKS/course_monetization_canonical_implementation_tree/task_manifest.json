@@ -36,7 +36,7 @@
     },
     {
       "id": "CMTZ-001",
-      "title": "BASELINE_MONETIZATION_FOUNDATION",
+      "title": "BASELINE_OWNERSHIP_AND_MONETIZATION_FOUNDATION",
       "type": "OWNER",
       "group": "BASELINE",
       "depends_on": ["CMTZ-000"],

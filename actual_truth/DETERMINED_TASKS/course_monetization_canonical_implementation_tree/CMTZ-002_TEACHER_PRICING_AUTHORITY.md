@@ -5,9 +5,9 @@
 
 ## Problem Statement
 
-Verified current state shows that course price editing exists in the teacher UI and persists via studio routes, but ownership validation is not consistently enforced and the runtime teacher course creation experience is incomplete.
+Verified current state shows that course price editing exists in the teacher UI and persists via studio routes, but downstream ownership validation is not consistently enforced and the runtime teacher course creation experience is incomplete.
 
-This task aligns teacher pricing to the contract by making backend validation and teacher ownership the only authority for course pricing intent.
+This task aligns teacher pricing to the contract by consuming the preexisting canonical ownership substrate from `CMTZ-001` and making backend validation the only authority for course pricing intent.
 
 ## Contract References
 
@@ -36,21 +36,28 @@ This task aligns teacher pricing to the contract by making backend validation an
 
 ## Acceptance Criteria
 
-- teacher pricing changes require canonical course ownership
+- teacher pricing changes require preexisting canonical course ownership from `CMTZ-001`
+- backend validates teacher match against `app.courses.teacher_id`
 - backend validates and persists pricing intent
 - frontend remains intent-only and projection-only
 - mounted teacher selling flow supports canonical price submission without frontend authority
 - completed purchases remain price-immutable
 - no admin or teacher action rewrites historical purchase truth
+- no ownership substrate is created, inferred, renamed, or migrated in this task
+- `created_by` is not used as ownership authority
 
 ## Stop Conditions
 
 - stop if teacher UI becomes price authority
 - stop if ownership checks can still be bypassed
+- stop if this task defines or mutates ownership substrate instead of consuming `CMTZ-001`
+- stop if `created_by` or any runtime drift is used as ownership authority
 - stop if price history would be mutated for completed purchases
 
 ## Out Of Scope
 
+- baseline/schema ownership substrate
+- course ownership data-model decisions
 - Stripe product creation
 - bundle pricing
 - checkout flow repair

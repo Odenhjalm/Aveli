@@ -477,9 +477,11 @@ async def studio_add_certificate(
 
 @course_lesson_router.post("/courses", response_model=schemas.Course)
 async def create_course(payload: schemas.StudioCourseCreate, current: TeacherUser):
-    del current
     try:
-        row = await courses_service.create_course(payload.model_dump())
+        row = await courses_service.create_course(
+            payload.model_dump(),
+            teacher_id=str(current["id"]),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
@@ -1545,8 +1547,7 @@ async def studio_reserve_recording(
 
 @course_lesson_router.get("/courses", response_model=schemas.CourseListResponse)
 async def studio_courses(current: TeacherUser):
-    del current
-    rows = list(await courses_service.list_courses())
+    rows = list(await courses_service.list_courses(teacher_id=str(current["id"])))
     await _apply_course_read_contract(rows)
     return _course_list_response(rows)
 
@@ -1587,12 +1588,14 @@ async def update_course(
     payload: schemas.StudioCourseUpdate,
     current: TeacherUser,
 ):
-    del current
     try:
         row = await courses_service.update_course(
             course_id,
             payload.model_dump(exclude_unset=True),
+            teacher_id=str(current["id"]),
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:

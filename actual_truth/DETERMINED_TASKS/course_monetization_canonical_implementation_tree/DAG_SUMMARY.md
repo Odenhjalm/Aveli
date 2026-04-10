@@ -46,8 +46,8 @@ It is a repair-and-preservation plan for Course Monetization and Teacher Pricing
 ## TASK LIST
 
 1. [CMTZ-000_BUNDLE_BASELINE_FOUNDATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-000_BUNDLE_BASELINE_FOUNDATION.md)
-2. [CMTZ-001_BASELINE_MONETIZATION_FOUNDATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-001_BASELINE_MONETIZATION_FOUNDATION.md)
-3. [CMTZ-002_TEACHER_PRICING_AUTHORITY.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-002_TEACHER_PRICING_AUTHORITY.md)
+2. [CMTZ-001_BASELINE_MONETIZATION_FOUNDATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-001_BASELINE_MONETIZATION_FOUNDATION.md) - sole baseline owner for canonical course ownership plus course and bundle monetization foundation
+3. [CMTZ-002_TEACHER_PRICING_AUTHORITY.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-002_TEACHER_PRICING_AUTHORITY.md) - downstream teacher pricing enforcement only; consumes ownership from `CMTZ-001`
 4. [CMTZ-003_STRIPE_COURSE_MAPPING.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-003_STRIPE_COURSE_MAPPING.md)
 5. [CMTZ-004_BUNDLE_COMPOSITION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-004_BUNDLE_COMPOSITION.md)
 6. [CMTZ-005_BUNDLE_PRICING_AUTHORITY.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-005_BUNDLE_PRICING_AUTHORITY.md)
@@ -59,6 +59,10 @@ It is a repair-and-preservation plan for Course Monetization and Teacher Pricing
 12. [CMTZ-011_TEST_AND_GATE.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-011_TEST_AND_GATE.md)
 
 ## DEPENDENCY GRAPH
+
+`CMTZ-001` is the sole baseline owner task for canonical course ownership as `app.courses.teacher_id -> app.auth_subjects.user_id`, course monetization foundation, and bundle monetization foundation. `created_by` is forbidden as ownership authority in corrected task logic.
+
+`CMTZ-002` is downstream-only. It consumes the ownership substrate created by `CMTZ-001` for pricing enforcement and MUST NOT define, infer, or rename course ownership authority.
 
 - `CMTZ-000 -> CMTZ-001`
 - `CMTZ-000 -> CMTZ-004`
@@ -100,7 +104,7 @@ It is a repair-and-preservation plan for Course Monetization and Teacher Pricing
 ## TOPOLOGICAL ORDER
 
 1. `CMTZ-000_BUNDLE_BASELINE_FOUNDATION`
-2. `CMTZ-001_BASELINE_MONETIZATION_FOUNDATION`
+2. `CMTZ-001_BASELINE_OWNERSHIP_AND_MONETIZATION_FOUNDATION`
 3. `CMTZ-004_BUNDLE_COMPOSITION`
 4. `CMTZ-002_TEACHER_PRICING_AUTHORITY`
 5. `CMTZ-003_STRIPE_COURSE_MAPPING`

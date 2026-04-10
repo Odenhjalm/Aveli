@@ -106,8 +106,14 @@ async def list_courses(
     limit: int | None = None,
     search: str | None = None,
 ) -> Sequence[dict[str, Any]]:
-    del teacher_id
-    rows = [dict(row) for row in await courses_repo.list_courses(limit=limit, search=search)]
+    rows = [
+        dict(row)
+        for row in await courses_repo.list_courses(
+            teacher_id=teacher_id,
+            limit=limit,
+            search=search,
+        )
+    ]
     await attach_course_cover_read_contract(rows)
     return rows
 
@@ -663,22 +669,47 @@ async def attach_course_cover_read_contract(
         )
 
 
-async def create_course(payload: dict[str, Any]) -> dict[str, Any]:
+async def create_course(
+    payload: dict[str, Any],
+    *,
+    teacher_id: str | None = None,
+) -> dict[str, Any]:
     _reject_legacy_cover_url_write(payload)
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise ValueError("teacher_id is required")
+
     _validate_course_drip_configuration(
         drip_enabled=bool(payload["drip_enabled"]),
         drip_interval_days=payload["drip_interval_days"],
     )
-    row = await courses_repo.create_course(payload)
+    create_payload = dict(payload)
+    create_payload.pop("created_by", None)
+    create_payload.pop("teacher_id", None)
+    create_payload["teacher_id"] = normalized_teacher_id
+    row = await courses_repo.create_course(create_payload)
     return dict(row)
 
 
-async def update_course(course_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
+async def update_course(
+    course_id: str,
+    patch: dict[str, Any],
+    *,
+    teacher_id: str | None = None,
+) -> dict[str, Any] | None:
     _reject_legacy_cover_url_write(patch)
     existing_course = await courses_repo.get_course(course_id=course_id)
     if existing_course is None:
         return None
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise PermissionError("Course owner required")
+    if not await courses_repo.is_course_owner(course_id, normalized_teacher_id):
+        raise PermissionError("Not course owner")
 
+    patch = dict(patch)
+    patch.pop("created_by", None)
+    patch.pop("teacher_id", None)
     drip_enabled = (
         patch["drip_enabled"]
         if "drip_enabled" in patch
@@ -754,14 +785,16 @@ async def delete_lesson(lesson_id: str) -> bool:
     return await courses_repo.delete_lesson(lesson_id)
 
 
-async def is_course_owner(course_id: str, user_id: str) -> bool:
-    del course_id, user_id
-    return False
+async def is_course_owner(user_id: str, course_id: str) -> bool:
+    normalized_user_id = str(user_id or "").strip()
+    normalized_course_id = str(course_id or "").strip()
+    if not normalized_user_id or not normalized_course_id:
+        return False
+    return await courses_repo.is_course_owner(normalized_course_id, normalized_user_id)
 
 
-async def is_course_teacher_or_instructor(course_id: str, user_id: str) -> bool:
-    del course_id, user_id
-    return False
+async def is_course_teacher_or_instructor(user_id: str, course_id: str) -> bool:
+    return await is_course_owner(user_id, course_id)
 
 
 async def is_user_enrolled(user_id: str, course_id: str) -> bool:

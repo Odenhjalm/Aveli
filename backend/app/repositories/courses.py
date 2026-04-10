@@ -117,7 +117,7 @@ async def list_courses(
     clauses: list[str] = []
     params: list[Any] = []
     if teacher_id:
-        clauses.append("c.created_by = %s::uuid")
+        clauses.append("c.teacher_id = %s::uuid")
         params.append(teacher_id)
     if search:
         pattern = f"%{search}%"
@@ -251,6 +251,7 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
     query = """
         insert into app.courses (
             id,
+            teacher_id,
             title,
             slug,
             course_group_id,
@@ -261,6 +262,7 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
             cover_media_id
         )
         values (
+            %s::uuid,
             %s::uuid,
             %s,
             %s,
@@ -275,6 +277,7 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
     """
     params = (
         course_id,
+        str(payload["teacher_id"]),
         payload["title"],
         payload["slug"],
         str(payload["course_group_id"]),
@@ -342,6 +345,20 @@ async def delete_course(course_id: str) -> bool:
             deleted = cur.rowcount > 0
             await conn.commit()
     return deleted
+
+
+async def is_course_owner(course_id: str, teacher_id: str) -> bool:
+    query = """
+        select 1
+        from app.courses as c
+        where c.id = %s::uuid
+          and c.teacher_id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id, teacher_id))
+            return await cur.fetchone() is not None
 
 
 async def get_course_public_content(course_id: str) -> dict[str, Any] | None:
