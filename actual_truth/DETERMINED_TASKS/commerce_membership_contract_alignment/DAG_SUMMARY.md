@@ -6,6 +6,7 @@
 
 ## Task IDs
 
+- `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`
 - `CMT-001_BASELINE_MEMBERSHIP_FOUNDATION`
 - `CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
 - `CMT-003_WEBHOOK_REPAIR`
@@ -19,21 +20,28 @@
 
 ## Dependency Graph In Topological Order
 
-1. `CMT-001_BASELINE_MEMBERSHIP_FOUNDATION`
-2. `CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
-3. `CMT-003_WEBHOOK_REPAIR`
-4. `CMT-003.5_CANCEL_INTENT`
-5. `CMT-004_ACCESS_LOGIC_REPAIR`
-6. `CMT-008_BUNDLE_PRESERVATION`
-7. `CMT-005_ROUTE_ALIGNMENT`
-8. `CMT-006_FRONTEND_ALIGNMENT`
-9. `CMT-007_LEGACY_REMOVAL`
-10. `CMT-009_TEST_AND_GATE`
+1. `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`
+2. `CMT-001_BASELINE_MEMBERSHIP_FOUNDATION`
+3. `CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
+4. `CMT-003_WEBHOOK_REPAIR`
+5. `CMT-003.5_CANCEL_INTENT`
+6. `CMT-004_ACCESS_LOGIC_REPAIR`
+7. `CMT-008_BUNDLE_PRESERVATION`
+8. `CMT-005_ROUTE_ALIGNMENT`
+9. `CMT-006_FRONTEND_ALIGNMENT`
+10. `CMT-007_LEGACY_REMOVAL`
+11. `CMT-009_TEST_AND_GATE`
+
+## Key Dependency Corrections
+
+- `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION -> CMT-001_BASELINE_MEMBERSHIP_FOUNDATION`
+- `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION -> CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
+- `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION -> CMT-003_WEBHOOK_REPAIR`
 
 ## Smallest Safe Execution Entrypoint
 
-- `CMT-001_BASELINE_MEMBERSHIP_FOUNDATION`
-- Rationale: the contract requires explicit membership source metadata and canonical current-state semantics, but the baseline and repo persistence still expose only a minimal row plus legacy compat behavior.
+- `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`
+- Rationale: the contracts already ratify `app.orders` and `app.payments` as purchase authority, but clean baseline replay does not materialize them. Membership purchase and webhook repair cannot be clean-room canonical before the purchase substrate itself is baseline-backed.
 
 ## Highest-Risk Tasks
 
@@ -49,6 +57,7 @@
 ## Domain Partitioning
 
 - Baseline fixes:
+  - `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`
   - `CMT-001_BASELINE_MEMBERSHIP_FOUNDATION`
 - Membership purchase repair:
   - `CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
@@ -71,6 +80,7 @@
 
 ## Audit Notes That Drive The DAG
 
+- `app.orders` and `app.payments` are contract-ratified purchase substrate but currently lack an explicit baseline-owner task.
 - `backend/app/main.py` does not mount the launch commerce and adjacent routes required by the contract.
 - `POST /api/billing/create-subscription` still creates membership state without an order.
 - Membership webhook processing still updates `app.memberships` without settling `app.orders` and `app.payments`.

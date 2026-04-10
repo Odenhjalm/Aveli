@@ -5,7 +5,7 @@
 
 ## Problem Statement
 
-Verified repository state already has canonical order-backed course checkout and substantially correct order-backed bundle checkout, but course mapping is incomplete and student-facing bundle purchase initiation is not fully verified end-to-end.
+Verified repository state already has contract-ratified order-backed course checkout and substantially correct order-backed bundle checkout, but purchase substrate baseline ownership lives outside this tree, course mapping is incomplete, and student-facing bundle purchase initiation is not fully verified end-to-end.
 
 This task aligns course and bundle purchase integration to contract truth while preserving order/payment/webhook authority.
 
@@ -39,6 +39,7 @@ This task aligns course and bundle purchase integration to contract truth while 
 
 ## Depends On
 
+- `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION` from `commerce_membership_contract_alignment`
 - `CMTZ-003`
 - `CMTZ-006`
 - `CMTZ-007`

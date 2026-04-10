@@ -50,7 +50,7 @@ Repository retrieval focused on:
 
 ## VERIFIED AUDIT IDS
 
-- `CMA-01` order/payment support plane is already canonical and must be preserved
+- `CMA-01` order/payment authority is already ratified by contract and must be consumed from the commerce-membership purchase substrate rather than re-owned in this tree
 - `CMA-02` canonical course checkout route exists and is course-only
 - `CMA-03` course checkout depends on missing backend-owned course Stripe asset orchestration
 - `CMA-04` explicit backend-computed course sellability is missing
@@ -88,6 +88,8 @@ Execution order and dependency graph are defined in:
 - [DAG_SUMMARY.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/DAG_SUMMARY.md)
 
 The DAG entrypoint now begins with [CMTZ-000_BUNDLE_BASELINE_FOUNDATION.md](/C:/Users/aveli/Aveli/actual_truth/DETERMINED_TASKS/course_monetization_canonical_implementation_tree/CMTZ-000_BUNDLE_BASELINE_FOUNDATION.md) so later bundle-backed monetization tasks extend canonical baseline truth rather than an implicit schema assumption.
+
+Purchase substrate baseline ownership does not live in this tree. `app.orders` and `app.payments` are consumed from `commerce_membership_contract_alignment/CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`, and purchase integration work in this tree must not proceed before that cross-tree prerequisite is complete.
 
 Machine-readable task metadata is defined in:
 

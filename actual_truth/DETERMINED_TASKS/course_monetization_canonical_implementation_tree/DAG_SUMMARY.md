@@ -17,7 +17,7 @@ It is a repair-and-preservation plan for Course Monetization and Teacher Pricing
 
 ### CORRECT
 
-- `CMA-01` order/payment authority support plane is already canonical
+- `CMA-01` order/payment authority is already ratified by contract, but baseline ownership lives in `commerce_membership_contract_alignment`
 - `CMA-02` course checkout route shape is already canonical and course-only
 - `CMA-07` bundle commerce backend is already order-backed, payment-backed, ownership-validated, and membership-separated
 - `CMA-15` frontend course checkout return flow is already backend-authoritative
@@ -64,6 +64,8 @@ It is a repair-and-preservation plan for Course Monetization and Teacher Pricing
 
 `CMTZ-002` is downstream-only. It consumes the ownership substrate created by `CMTZ-001` for pricing enforcement and MUST NOT define, infer, or rename course ownership authority.
 
+`CMTZ-008` consumes purchase substrate but does not own it. Cross-tree baseline ownership for `app.orders` and `app.payments` lives in `commerce_membership_contract_alignment/CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`.
+
 - `CMTZ-000 -> CMTZ-001`
 - `CMTZ-000 -> CMTZ-004`
 - `CMTZ-000 -> CMTZ-011`
@@ -87,6 +89,7 @@ It is a repair-and-preservation plan for Course Monetization and Teacher Pricing
 - `CMTZ-006 -> CMTZ-007`
 - `CMTZ-006 -> CMTZ-008`
 - `CMTZ-007 -> CMTZ-008`
+- `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION -> CMTZ-008`
 - `CMTZ-007 -> CMTZ-009`
 - `CMTZ-007 -> CMTZ-010`
 - `CMTZ-008 -> CMTZ-009`

@@ -27,7 +27,7 @@ The contract requires a single canonical current-state membership row with expli
 
 ## DEPENDS_ON
 
-- None
+- `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`
 
 ## Acceptance Criteria
 

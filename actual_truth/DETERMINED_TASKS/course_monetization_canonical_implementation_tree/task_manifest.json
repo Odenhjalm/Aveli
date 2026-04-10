@@ -95,7 +95,7 @@
       "title": "PURCHASE_INTEGRATION",
       "type": "OWNER",
       "group": "PURCHASE INTEGRATION",
-      "depends_on": ["CMTZ-003", "CMTZ-006", "CMTZ-007"],
+      "depends_on": ["CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION", "CMTZ-003", "CMTZ-006", "CMTZ-007"],
       "audit_inputs": ["CMA-02", "CMA-03", "CMA-07", "CMA-09", "CMA-10", "CMA-16"]
     },
     {

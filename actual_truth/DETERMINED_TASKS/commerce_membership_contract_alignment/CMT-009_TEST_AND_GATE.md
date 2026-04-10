@@ -25,6 +25,7 @@ The current repo has no visible gate proving that launch commerce now follows th
 
 ## DEPENDS_ON
 
+- `CMT-000_PURCHASE_SUBSTRATE_BASELINE_FOUNDATION`
 - `CMT-001_BASELINE_MEMBERSHIP_FOUNDATION`
 - `CMT-002_MEMBERSHIP_PURCHASE_REPAIR`
 - `CMT-003_WEBHOOK_REPAIR`
