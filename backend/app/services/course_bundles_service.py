@@ -22,6 +22,7 @@ RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
 CANCEL_PATH = "checkout/cancel"
 RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
 CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
+_CANONICAL_BUNDLE_STRIPE_CURRENCY = "sek"
 
 
 class CourseBundleError(Exception):
@@ -55,6 +56,11 @@ async def create_bundle(
         description=payload.description,
         price_amount_cents=price_amount_cents,
     )
+    try:
+        await ensure_bundle_stripe_mapping(str(bundle["id"]), teacher_id)
+    except Exception:
+        await bundle_repo.delete_bundle(str(bundle["id"]))
+        raise
     if validated_course_ids:
         for idx, course_id in enumerate(validated_course_ids):
             await bundle_repo.add_course_to_bundle(bundle["id"], course_id, position=idx)
@@ -132,18 +138,18 @@ async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> Cours
 async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> CheckoutCreateResponse:
     _require_stripe()
 
-    bundle = await bundle_repo.get_bundle(bundle_id)
-    if not bundle or not bundle.get("is_active"):
+    bundle = await bundle_repo.get_bundle_mapping_subject(bundle_id)
+    if not bundle:
         raise CourseBundleError("Paketet är inte tillgängligt just nu", status_code=404)
 
-    courses = await bundle_repo.list_bundle_courses(bundle_id)
+    courses = await bundle_repo.list_bundle_checkout_courses(bundle_id)
     if not courses:
         raise CourseBundleError("Paketet saknar kurser", status_code=400)
 
-    ensured_bundle = await _ensure_stripe_assets(bundle)
-    price_id = ensured_bundle.get("stripe_price_id")
-    if not isinstance(price_id, str):
-        raise CourseBundleError("Stripe-pris saknas för paketet", status_code=502)
+    product_id = str(bundle.get("stripe_product_id") or "").strip()
+    price_id = str(bundle.get("active_stripe_price_id") or "").strip()
+    if not product_id or not price_id:
+        raise CourseBundleError("Stripe-mappning saknas för paketet", status_code=400)
 
     customer_id = await _ensure_customer_id(user)
     user_id = str(user["id"])
@@ -162,7 +168,7 @@ async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> Ch
         service_id=None,
         course_id=None,
         amount_cents=int(bundle.get("price_amount_cents") or 0),
-        currency=(bundle.get("currency") or "sek").lower(),
+        currency=_CANONICAL_BUNDLE_STRIPE_CURRENCY,
         order_type="bundle",
         metadata=metadata,
         stripe_customer_id=customer_id,
@@ -214,7 +220,7 @@ async def grant_bundle_entitlements(
     stripe_customer_id: str | None,
     payment_intent_id: str | None,
 ) -> None:
-    courses = await bundle_repo.list_bundle_courses(bundle_id)
+    courses = await bundle_repo.list_bundle_checkout_courses(bundle_id)
     if not courses:
         return
     for course in courses:
@@ -274,74 +280,134 @@ async def _ensure_customer_id(user: Mapping[str, Any]) -> str:
         raise CourseBundleError(str(exc), status_code=502) from exc
 
 
-async def _ensure_stripe_assets(bundle: Mapping[str, Any]) -> Mapping[str, Any]:
+async def _stripe_create_bundle_product(
+    bundle: Mapping[str, Any],
+    *,
+    teacher_id: str,
+) -> str:
+    bundle_id = str(bundle.get("id") or "").strip()
+    title = str(bundle.get("title") or "").strip() or "Course bundle"
+
+    try:
+        product = await run_in_threadpool(
+            lambda: stripe.Product.create(
+                name=title,
+                metadata={
+                    "bundle_id": bundle_id,
+                    "teacher_id": teacher_id,
+                    "type": "course_bundle",
+                },
+            )
+        )
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise CourseBundleError("Kunde inte skapa Stripe-produkt för paketet", status_code=502) from exc
+
+    product_id = product.get("id")
+    if not isinstance(product_id, str) or not product_id.strip():
+        raise CourseBundleError("Stripe returnerade inget produkt-id för paketet", status_code=502)
+    return product_id
+
+
+async def _stripe_create_bundle_price(*, product_id: str, amount_cents: int) -> str:
+    try:
+        price = await run_in_threadpool(
+            lambda: stripe.Price.create(
+                product=product_id,
+                unit_amount=amount_cents,
+                currency=_CANONICAL_BUNDLE_STRIPE_CURRENCY,
+            )
+        )
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise CourseBundleError("Kunde inte skapa Stripe-pris för paketet", status_code=502) from exc
+
+    price_id = price.get("id")
+    if not isinstance(price_id, str) or not price_id.strip():
+        raise CourseBundleError("Stripe returnerade inget pris-id för paketet", status_code=502)
+    return price_id
+
+
+async def _stripe_retrieve_bundle_price(price_id: str) -> Mapping[str, Any]:
+    try:
+        price = await run_in_threadpool(lambda: stripe.Price.retrieve(price_id))
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise CourseBundleError("Kunde inte läsa Stripe-pris för paketet", status_code=502) from exc
+    if not isinstance(price, Mapping):
+        raise CourseBundleError("Stripe returnerade ogiltigt prissvar för paketet", status_code=502)
+    return price
+
+
+async def ensure_bundle_stripe_mapping(bundle_id: str, teacher_id: str) -> Mapping[str, Any]:
+    normalized_bundle_id = str(bundle_id or "").strip()
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_bundle_id:
+        raise ValueError("bundle_id is required")
+    if not normalized_teacher_id:
+        raise CourseBundleError("Paketägare krävs", status_code=403)
+
+    bundle = await bundle_repo.get_bundle_mapping_subject(normalized_bundle_id)
+    if bundle is None:
+        raise CourseBundleError("Paketet saknas", status_code=404)
+    if str(bundle.get("teacher_id") or "").strip() != normalized_teacher_id:
+        raise CourseBundleError("Du kan bara ändra dina egna paket", status_code=403)
+
+    amount_cents = _validate_bundle_price_amount(bundle.get("price_amount_cents"))
+
     _require_stripe()
-    bundle_id = str(bundle.get("id"))
-    amount_cents = int(bundle.get("price_amount_cents") or 0)
-    currency = (bundle.get("currency") or "sek").lower()
-    if amount_cents <= 0:
-        raise CourseBundleError("Paketpriset måste vara större än noll", status_code=400)
 
-    product_id = bundle.get("stripe_product_id")
-    price_id = bundle.get("stripe_price_id")
+    product_id = str(bundle.get("stripe_product_id") or "").strip() or None
+    active_price_id = str(bundle.get("active_stripe_price_id") or "").strip() or None
 
-    if price_id and not product_id:
-        try:
-            price = await run_in_threadpool(lambda: stripe.Price.retrieve(price_id))
-            product_ref = price.get("product")
-            if isinstance(product_ref, str):
-                product_id = product_ref
-                await bundle_repo.update_bundle(
-                    bundle_id,
-                    {
-                        "stripe_product_id": product_id,
-                        "stripe_price_id": price_id,
-                    },
-                )
-        except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-            raise CourseBundleError("Kunde inte hämta Stripe-pris", status_code=502) from exc
+    if active_price_id and not product_id:
+        raise CourseBundleError("Paketets Stripe-mappning är ofullständig", status_code=502)
 
-    if not product_id:
-        try:
-            product = await run_in_threadpool(
-                lambda: stripe.Product.create(
-                    name=bundle.get("title") or "Kurs-paket",
-                    metadata={"bundle_id": bundle_id, "type": "course_bundle"},
-                )
+    if product_id is None:
+        product_id = await _stripe_create_bundle_product(
+            bundle,
+            teacher_id=normalized_teacher_id,
+        )
+
+    desired_price_id = active_price_id
+    if active_price_id:
+        price = await _stripe_retrieve_bundle_price(active_price_id)
+        mapped_product_id = str(price.get("product") or "").strip()
+        if mapped_product_id != product_id:
+            raise CourseBundleError("Paketets Stripe-mappning är inkonsekvent", status_code=502)
+
+        unit_amount = price.get("unit_amount")
+        currency = str(price.get("currency") or "").strip().lower()
+        is_active = bool(price.get("active", True))
+        if (
+            not is_active
+            or unit_amount != amount_cents
+            or currency != _CANONICAL_BUNDLE_STRIPE_CURRENCY
+        ):
+            desired_price_id = await _stripe_create_bundle_price(
+                product_id=product_id,
+                amount_cents=amount_cents,
             )
-            product_id = product.get("id")
-            if not isinstance(product_id, str):
-                raise CourseBundleError("Stripe returnerade inget produkt-id", status_code=502)
-            await bundle_repo.update_bundle(
-                bundle_id,
-                {"stripe_product_id": product_id},
-            )
-        except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-            raise CourseBundleError("Kunde inte skapa Stripe-produkt", status_code=502) from exc
+    else:
+        desired_price_id = await _stripe_create_bundle_price(
+            product_id=product_id,
+            amount_cents=amount_cents,
+        )
 
-    if not price_id:
-        try:
-            price = await run_in_threadpool(
-                lambda: stripe.Price.create(
-                    product=product_id,
-                    unit_amount=amount_cents,
-                    currency=currency,
-                )
-            )
-            price_id = price.get("id")
-            if not isinstance(price_id, str):
-                raise CourseBundleError("Stripe returnerade inget pris-id", status_code=502)
-            await bundle_repo.update_bundle(
-                bundle_id,
-                {"stripe_price_id": price_id},
-            )
-        except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
-            raise CourseBundleError("Kunde inte skapa Stripe-pris", status_code=502) from exc
+    if desired_price_id is None:
+        raise CourseBundleError("Paketets Stripe-pris kunde inte fastställas", status_code=502)
 
-    updated = dict(bundle)
-    updated["stripe_product_id"] = product_id
-    updated["stripe_price_id"] = price_id
-    return updated
+    if (
+        str(bundle.get("stripe_product_id") or "").strip() == product_id
+        and str(bundle.get("active_stripe_price_id") or "").strip() == desired_price_id
+    ):
+        return dict(bundle)
+
+    updated = await bundle_repo.update_bundle_stripe_mapping(
+        normalized_bundle_id,
+        stripe_product_id=product_id,
+        active_stripe_price_id=desired_price_id,
+    )
+    if updated is None:
+        raise CourseBundleError("Paketets Stripe-mappning kunde inte sparas", status_code=500)
+    return dict(updated)
 
 
 def _require_stripe() -> None:
@@ -375,6 +441,7 @@ __all__ = [
     "attach_course",
     "get_bundle",
     "list_teacher_bundles",
+    "ensure_bundle_stripe_mapping",
     "create_checkout_session",
     "grant_bundle_entitlements",
     "CourseBundleError",

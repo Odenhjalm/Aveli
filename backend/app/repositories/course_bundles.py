@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 from psycopg.rows import dict_row
 
@@ -52,112 +52,6 @@ async def create_bundle(
             return dict(row or {})
 
 
-async def update_bundle(bundle_id: str, payload: Mapping[str, Any]) -> BundleRow | None:
-    if not payload:
-        return await get_bundle(bundle_id)
-
-    updates: list[str] = []
-    params: list[Any] = []
-    for key in (
-        "title",
-        "description",
-        "price_amount_cents",
-        "currency",
-        "stripe_product_id",
-        "stripe_price_id",
-        "is_active",
-    ):
-        if key in payload:
-            updates.append(f"{key} = %s")
-            params.append(payload[key])
-
-    if not updates:
-        return await get_bundle(bundle_id)
-
-    params.append(bundle_id)
-    query = f"""
-        UPDATE app.course_bundles
-           SET {', '.join(updates)},
-               updated_at = now()
-         WHERE id = %s
-        RETURNING id,
-                  teacher_id,
-                  title,
-                  description,
-                  price_amount_cents,
-                  currency,
-                  stripe_product_id,
-                  stripe_price_id,
-                  is_active,
-                  created_at,
-                  updated_at
-    """
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, params)
-            row = await cur.fetchone()
-            await conn.commit()
-            return dict(row) if row else None
-
-
-async def get_bundle(bundle_id: str) -> BundleRow | None:
-    query = """
-        SELECT id,
-               teacher_id,
-               title,
-               description,
-               price_amount_cents,
-               currency,
-               stripe_product_id,
-               stripe_price_id,
-               is_active,
-               created_at,
-               updated_at
-          FROM app.course_bundles
-         WHERE id = %s
-         LIMIT 1
-    """
-    async with get_conn() as cur:
-        await cur.execute(query, (bundle_id,))
-        row = await cur.fetchone()
-    return dict(row) if row else None
-
-
-async def list_bundles(
-    *,
-    teacher_id: str | None = None,
-    active_only: bool = True,
-) -> Sequence[BundleRow]:
-    clauses: list[str] = []
-    params: list[Any] = []
-    if teacher_id:
-        clauses.append("teacher_id = %s")
-        params.append(teacher_id)
-    if active_only:
-        clauses.append("is_active = true")
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    query = f"""
-        SELECT id,
-               teacher_id,
-               title,
-               description,
-               price_amount_cents,
-               currency,
-               stripe_product_id,
-               stripe_price_id,
-               is_active,
-               created_at,
-               updated_at
-          FROM app.course_bundles
-          {where}
-      ORDER BY updated_at DESC
-    """
-    async with get_conn() as cur:
-        await cur.execute(query, params)
-        rows = await cur.fetchall()
-    return [dict(row) for row in rows]
-
-
 async def add_course_to_bundle(bundle_id: str, course_id: str, *, position: int | None = None) -> None:
     position_value = position if position is not None else 0
     query = """
@@ -179,6 +73,27 @@ async def get_bundle_composition(bundle_id: str) -> BundleRow | None:
                title,
                description,
                price_amount_cents,
+               created_at,
+               updated_at
+          FROM app.course_bundles
+         WHERE id = %s
+         LIMIT 1
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, (bundle_id,))
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_bundle_mapping_subject(bundle_id: str) -> BundleRow | None:
+    query = """
+        SELECT id,
+               teacher_id,
+               title,
+               description,
+               price_amount_cents,
+               stripe_product_id,
+               active_stripe_price_id,
                created_at,
                updated_at
           FROM app.course_bundles
@@ -238,17 +153,14 @@ async def list_bundle_courses_composition(bundle_id: str) -> Sequence[BundleCour
     return [dict(row) for row in rows]
 
 
-async def list_bundle_courses(bundle_id: str) -> Sequence[BundleCourseRow]:
+async def list_bundle_checkout_courses(bundle_id: str) -> Sequence[BundleCourseRow]:
     query = """
         SELECT b.bundle_id,
                b.course_id,
                b.position,
                c.slug,
                c.title,
-               c.price_amount_cents,
-               c.currency,
-               c.stripe_price_id,
-               c.stripe_product_id
+               c.price_amount_cents
           FROM app.course_bundle_courses b
           JOIN app.courses c ON c.id = b.course_id
          WHERE b.bundle_id = %s
@@ -260,16 +172,83 @@ async def list_bundle_courses(bundle_id: str) -> Sequence[BundleCourseRow]:
     return [dict(row) for row in rows]
 
 
+async def update_bundle_stripe_mapping(
+    bundle_id: str,
+    *,
+    stripe_product_id: str,
+    active_stripe_price_id: str,
+) -> BundleRow | None:
+    query = """
+        UPDATE app.course_bundles
+           SET stripe_product_id = %s,
+               active_stripe_price_id = %s,
+               updated_at = now()
+         WHERE id = %s
+        RETURNING id
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                query,
+                (
+                    stripe_product_id,
+                    active_stripe_price_id,
+                    bundle_id,
+                ),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        return None
+    return await get_bundle_mapping_subject(bundle_id)
+
+
+async def update_bundle_price_amount(
+    bundle_id: str,
+    *,
+    price_amount_cents: int,
+) -> BundleRow | None:
+    query = """
+        UPDATE app.course_bundles
+           SET price_amount_cents = %s,
+               updated_at = now()
+         WHERE id = %s
+        RETURNING id
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (price_amount_cents, bundle_id))
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        return None
+    return await get_bundle_mapping_subject(bundle_id)
+
+
+async def delete_bundle(bundle_id: str) -> bool:
+    query = """
+        DELETE FROM app.course_bundles
+         WHERE id = %s
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (bundle_id,))
+            deleted = cur.rowcount > 0
+            await conn.commit()
+    return deleted
+
+
 __all__ = [
     "BundleRow",
     "BundleCourseRow",
     "create_bundle",
-    "update_bundle",
-    "get_bundle",
+    "delete_bundle",
     "get_bundle_composition",
-    "list_bundles",
-    "list_bundle_compositions",
+    "get_bundle_mapping_subject",
     "add_course_to_bundle",
-    "list_bundle_courses",
+    "list_bundle_compositions",
     "list_bundle_courses_composition",
+    "list_bundle_checkout_courses",
+    "update_bundle_price_amount",
+    "update_bundle_stripe_mapping",
 ]
