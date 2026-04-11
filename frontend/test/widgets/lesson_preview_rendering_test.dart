@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,9 +8,11 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart';
+import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/shared/utils/resolved_media_contract.dart';
@@ -198,6 +198,14 @@ Future<void> _pumpPreviewHarness(
     ProviderScope(
       overrides: [
         authControllerProvider.overrideWith((ref) => _FakeAuthController()),
+        appConfigProvider.overrideWithValue(
+          const AppConfig(
+            apiBaseUrl: 'http://localhost',
+            stripePublishableKey: '',
+            stripeMerchantDisplayName: 'Test',
+            subscriptionsEnabled: false,
+          ),
+        ),
         mediaRepositoryProvider.overrideWithValue(mediaRepository),
       ],
       child: MaterialApp(
@@ -367,12 +375,12 @@ void main() {
       (invocation) => invocation.positionalArguments.single as String,
     );
 
-      await _pumpPreviewHarness(
-        tester,
-        mediaRepository: mediaRepository,
-        markdown:
-            'Intro\n\n!image(media-image-valid)\n\n!audio(media-audio-broken)\n',
-        lessonMedia: [
+    await _pumpPreviewHarness(
+      tester,
+      mediaRepository: mediaRepository,
+      markdown:
+          'Intro\n\n!image(media-image-valid)\n\n!audio(media-audio-broken)\n',
+      lessonMedia: [
         _lessonMediaItem(
           'media-image-valid',
           'image',

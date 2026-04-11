@@ -144,7 +144,6 @@ class _LessonContent extends ConsumerWidget {
         ? screenWidth
         : 1200.0;
     final contentWidth = (safeScreenWidth - 32).clamp(720.0, 1200.0).toDouble();
-    final mediaItems = detail.media;
     final courseLessons = _visibleCourseLessons(detail.lessons);
     LessonSummary? previous;
     LessonSummary? next;
@@ -164,49 +163,16 @@ class _LessonContent extends ConsumerWidget {
     if (markdownContent == null || markdownContent.isEmpty) {
       throw StateError('Lektionsinnehåll saknas.');
     }
-    final embeddedMediaIds = extractLessonEmbeddedMediaIds(markdownContent);
-
-    bool isEmbedded(LessonMediaItem item) {
-      if (embeddedMediaIds.contains(item.id)) return true;
-      return false;
-    }
-
-    final trailingMedia = mediaItems
-        .where((item) => !isEmbedded(item))
-        .where(_isAllowedTrailingLessonMediaType)
-        .toList(growable: false);
-
     final coreContent = MouseRegion(
       cursor: SystemMouseCursors.basic,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          GlassCard(
-            padding: const EdgeInsets.all(16),
-            opacity: 0.16,
-            sigmaX: 10,
-            sigmaY: 10,
-            borderRadius: BorderRadius.circular(22),
-            borderColor: Colors.white.withValues(alpha: 0.16),
-            child: LessonPageRenderer(
-              markdown: markdownContent,
-              lessonMedia: mediaItems,
-              onLaunchUrl: (url) => unawaited(_handleLinkTap(context, url)),
-            ),
+          LearnerLessonContentRenderer(
+            markdown: markdownContent,
+            lessonMedia: detail.media,
+            onLaunchUrl: (url) => unawaited(_handleLinkTap(context, url)),
           ),
-          if (trailingMedia.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            GlassCard(
-              padding: const EdgeInsets.all(12),
-              borderRadius: BorderRadius.circular(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ...trailingMedia.map((item) => _MediaItem(item: item)),
-                ],
-              ),
-            ),
-          ],
           const SizedBox(height: 16),
           Row(
             children: [
@@ -271,6 +237,62 @@ List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
 
 bool _isAllowedTrailingLessonMediaType(LessonMediaItem item) {
   return lessonMediaTypeOf(item) == CanonicalLessonMediaType.document;
+}
+
+class LearnerLessonContentRenderer extends StatelessWidget {
+  const LearnerLessonContentRenderer({
+    super.key,
+    required this.markdown,
+    required this.lessonMedia,
+    this.onLaunchUrl,
+  });
+
+  final String markdown;
+  final List<LessonMediaItem> lessonMedia;
+  final ValueChanged<String>? onLaunchUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final embeddedMediaIds = extractLessonEmbeddedMediaIds(markdown);
+    final trailingMedia = lessonMedia
+        .where((item) => !embeddedMediaIds.contains(item.id))
+        .where(_isAllowedTrailingLessonMediaType)
+        .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GlassCard(
+          padding: const EdgeInsets.all(16),
+          opacity: 0.16,
+          sigmaX: 10,
+          sigmaY: 10,
+          borderRadius: BorderRadius.circular(22),
+          borderColor: Colors.white.withValues(alpha: 0.16),
+          child: LessonPageRenderer(
+            markdown: markdown,
+            lessonMedia: lessonMedia,
+            onLaunchUrl: onLaunchUrl,
+          ),
+        ),
+        if (trailingMedia.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          GlassCard(
+            padding: const EdgeInsets.all(12),
+            borderRadius: BorderRadius.circular(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...trailingMedia.map(
+                  (item) => _MediaItem(item: item, onLaunchUrl: onLaunchUrl),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class LessonPageRenderer extends ConsumerStatefulWidget {
@@ -889,9 +911,10 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
 }
 
 class _MediaItem extends ConsumerWidget {
-  const _MediaItem({required this.item});
+  const _MediaItem({required this.item, this.onLaunchUrl});
 
   final LessonMediaItem item;
+  final ValueChanged<String>? onLaunchUrl;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -955,7 +978,14 @@ class _MediaItem extends ConsumerWidget {
           padding: const EdgeInsets.only(bottom: 12),
           child: _LessonDownloadCard(
             fileName: 'Dokument',
-            onTap: () => launchUrlString(resolvedUrl),
+            onTap: () {
+              final launchHandler = onLaunchUrl;
+              if (launchHandler != null) {
+                launchHandler(resolvedUrl);
+                return;
+              }
+              unawaited(launchUrlString(resolvedUrl));
+            },
           ),
         );
     }

@@ -55,7 +55,7 @@ import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_replace_dialog.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart'
-    show LessonPageRenderer;
+    show LearnerLessonContentRenderer;
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
 import 'package:aveli/shared/utils/lesson_media_render_telemetry.dart';
@@ -3414,19 +3414,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 )
               : SingleChildScrollView(
                   padding: EdgeInsets.zero,
-                  child: GlassCard(
-                    padding: const EdgeInsets.all(16),
-                    borderRadius: BorderRadius.circular(22),
-                    opacity: 0.12,
-                    sigmaX: 10,
-                    sigmaY: 10,
-                    borderColor: Colors.white.withValues(alpha: 0.16),
-                    child: LessonPageRenderer(
-                      markdown: snapshot.markdown,
-                      lessonMedia: snapshot.lessonMedia,
-                      onLaunchUrl: (url) =>
-                          unawaited(_launchLessonPreviewUrl(url)),
-                    ),
+                  child: LearnerLessonContentRenderer(
+                    markdown: snapshot.markdown,
+                    lessonMedia: snapshot.lessonMedia,
+                    onLaunchUrl: (url) =>
+                        unawaited(_launchLessonPreviewUrl(url)),
                   ),
                 ),
         ),

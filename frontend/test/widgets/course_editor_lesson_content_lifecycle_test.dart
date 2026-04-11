@@ -102,6 +102,8 @@ const _courseWithCover = CourseStudio(
 );
 
 const _canonicalLessonMediaUrl = 'https://cdn.test/canonical-lesson-image.webp';
+const _canonicalTrailingDocumentUrl =
+    'https://cdn.test/canonical-lesson-document.pdf';
 const _editorTransientMediaPreviewUrl =
     'https://cdn.test/editor-transient-preview.webp';
 
@@ -149,6 +151,24 @@ StudioLessonMediaItem _placementImage(String lessonMediaId) {
       resolvedUrl: _canonicalLessonMediaUrl,
     ),
     originalName: 'canonical-lesson-image.webp',
+  );
+}
+
+StudioLessonMediaItem _placementDocument(String lessonMediaId) {
+  return StudioLessonMediaItem(
+    lessonMediaId: lessonMediaId,
+    lessonId: 'lesson-1',
+    position: 2,
+    mediaType: 'document',
+    state: 'ready',
+    previewReady: true,
+    mediaAssetId: 'asset-$lessonMediaId',
+    media: ResolvedMediaData(
+      mediaId: 'asset-$lessonMediaId',
+      state: 'ready',
+      resolvedUrl: _canonicalTrailingDocumentUrl,
+    ),
+    originalName: 'canonical-lesson-document.pdf',
   );
 }
 
@@ -365,21 +385,30 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1400, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    const lessonMediaId = 'lesson-media-image-1';
+    const embeddedImageId = 'lesson-media-image-1';
+    const trailingDocumentId = 'lesson-media-document-1';
     final repo = _MockStudioRepository();
     _stubBaseStudioData(
       repo,
       course: _courseWithCover,
       readContent: (lessonId) async => _contentRead(
         lessonId: lessonId,
-        contentMarkdown: 'Persisted canonical text\n\n!image($lessonMediaId)\n',
+        contentMarkdown:
+            'Persisted canonical text\n\n!image($embeddedImageId)\n',
         media: const [
           StudioLessonContentMediaItem(
-            lessonMediaId: lessonMediaId,
+            lessonMediaId: embeddedImageId,
             position: 1,
             mediaType: 'image',
             state: 'ready',
-            mediaAssetId: 'asset-$lessonMediaId',
+            mediaAssetId: 'asset-$embeddedImageId',
+          ),
+          StudioLessonContentMediaItem(
+            lessonMediaId: trailingDocumentId,
+            position: 2,
+            mediaType: 'document',
+            state: 'ready',
+            mediaAssetId: 'asset-$trailingDocumentId',
           ),
         ],
         etag: '"content-v1"',
@@ -391,7 +420,12 @@ void main() {
       final ids = List<String>.from(
         invocation.positionalArguments.single as List,
       );
-      return [for (final id in ids) _placementImage(id)];
+      return [
+        for (final id in ids)
+          id == trailingDocumentId
+              ? _placementDocument(id)
+              : _placementImage(id),
+      ];
     });
     when(() => repo.fetchLessonMediaPreviews(any())).thenAnswer((
       invocation,
@@ -442,6 +476,8 @@ void main() {
       tester,
       find.textContaining('Persisted canonical text', findRichText: true),
     );
+    await _pumpUntilFinderFound(tester, find.text('Dokument'));
+    await _pumpUntilFinderFound(tester, find.text('Ladda ner dokument'));
 
     expect(
       find.textContaining('unsaved draft', findRichText: true),
@@ -453,7 +489,10 @@ void main() {
     final placementRead = verify(
       () => repo.fetchLessonMediaPlacements(captureAny()),
     )..called(1);
-    expect(placementRead.captured.single, [lessonMediaId]);
+    expect(placementRead.captured.single, [
+      embeddedImageId,
+      trailingDocumentId,
+    ]);
     verify(() => repo.readLessonContent('lesson-1')).called(1);
     verify(() => repo.fetchCourseMeta('course-1')).called(1);
     verifyNever(() => repo.fetchLessonMediaPreviews(any()));

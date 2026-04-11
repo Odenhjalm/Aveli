@@ -8,6 +8,7 @@ import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart';
 import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
+import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
 LessonDetailData _buildLessonData({required List<LessonMediaItem> media}) {
   return LessonDetailData(
@@ -29,8 +30,7 @@ LessonMediaItem _lessonMediaItem({
   required String id,
   required String mediaType,
   required String state,
-  required bool previewReady,
-  String? originalName,
+  String? resolvedUrl,
 }) {
   return LessonMediaItem(
     id: id,
@@ -39,8 +39,13 @@ LessonMediaItem _lessonMediaItem({
     position: 1,
     mediaType: mediaType,
     state: state,
-    originalName: originalName ?? '$id.$mediaType',
-    previewReady: previewReady,
+    media: resolvedUrl == null
+        ? null
+        : ResolvedMediaData(
+            mediaId: 'asset-1',
+            state: state,
+            resolvedUrl: resolvedUrl,
+          ),
   );
 }
 
@@ -90,8 +95,6 @@ void main() {
             id: 'media-audio-1',
             mediaType: 'audio',
             state: 'processing',
-            previewReady: false,
-            originalName: 'lesson-audio.mp3',
           ),
         ],
       );
@@ -114,8 +117,7 @@ void main() {
           id: 'media-audio-1',
           mediaType: 'audio',
           state: 'ready',
-          previewReady: true,
-          originalName: 'lesson-audio.mp3',
+          resolvedUrl: 'https://cdn.test/lesson-audio.mp3',
         ),
       ],
     );
@@ -138,8 +140,7 @@ void main() {
           id: 'media-image-1',
           mediaType: 'image',
           state: 'ready',
-          previewReady: true,
-          originalName: 'lesson-image.webp',
+          resolvedUrl: 'https://cdn.test/lesson-image.webp',
         ),
       ],
     );
@@ -149,6 +150,29 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(AveliLessonImage), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lesson renders non-embedded trailing document rows', (
+    tester,
+  ) async {
+    final data = _buildLessonData(
+      media: [
+        _lessonMediaItem(
+          id: 'media-document-1',
+          mediaType: 'document',
+          state: 'ready',
+          resolvedUrl: 'https://cdn.test/lesson-document.pdf',
+        ),
+      ],
+    );
+
+    await _pumpLessonPage(tester, data: data);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Dokument'), findsOneWidget);
+    expect(find.text('Ladda ner dokument'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
