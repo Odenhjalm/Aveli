@@ -792,6 +792,60 @@ async def canonical_get_lesson_media_placement(
     )
 
 
+@media_pipeline_router.patch("/lessons/{lesson_id}/media-placements/reorder")
+async def canonical_reorder_lesson_media_placements(
+    lesson_id: UUID,
+    payload: schemas.StudioLessonMediaReorder,
+    current: TeacherUser,
+):
+    await _require_canonical_lesson_media_authoring_context(
+        lesson_id=str(lesson_id),
+        current=current,
+    )
+    ordered_ids = [str(item) for item in payload.lesson_media_ids]
+    if not ordered_ids:
+        return {"ok": True}
+    if len(set(ordered_ids)) != len(ordered_ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Duplicate lesson media id in reorder payload",
+        )
+    try:
+        await courses_repo.reorder_lesson_media(str(lesson_id), ordered_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@media_pipeline_router.delete("/media-placements/{lesson_media_id}")
+async def canonical_delete_lesson_media_placement(
+    lesson_media_id: UUID,
+    current: TeacherUser,
+):
+    row = await courses_repo.get_lesson_media_by_id_for_studio(str(lesson_media_id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Lesson media not found")
+
+    lesson_id = str(row["lesson_id"])
+    await _require_canonical_lesson_media_authoring_context(
+        lesson_id=lesson_id,
+        current=current,
+    )
+    deleted = await courses_repo.delete_lesson_media(
+        lesson_id,
+        str(lesson_media_id),
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Lesson media not found")
+    await media_cleanup.request_lifecycle_evaluation(
+        media_asset_ids=[str(deleted.get("media_asset_id") or "")],
+        trigger_source="placement_delete",
+        subject_type="lesson_media",
+        subject_id=str(lesson_media_id),
+    )
+    return {"deleted": True}
+
+
 @lesson_media_router.get(
     "/{lesson_id}",
     response_model=schemas.StudioLessonMediaListResponse,
@@ -905,55 +959,6 @@ async def studio_request_lesson_media_previews(
         if lesson_media_id in preview_items
     }
     return schemas.MediaPreviewBatchResponse(items=ordered_items)
-
-
-# UWD-001 non-canonical write isolation: this mounted lesson-media ordering write
-# is an implementation surface, not canonical ingest or placement-attach authority.
-@lesson_media_router.patch("/{lesson_id}/reorder")
-async def studio_reorder_lesson_media(
-    lesson_id: UUID,
-    payload: schemas.StudioLessonMediaReorder,
-    current: TeacherUser,
-):
-    del current
-    await _require_studio_lesson(str(lesson_id))
-    ordered_ids = [str(item) for item in payload.lesson_media_ids]
-    if not ordered_ids:
-        return {"ok": True}
-    if len(set(ordered_ids)) != len(ordered_ids):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Duplicate lesson media id in reorder payload",
-        )
-    try:
-        await courses_repo.reorder_lesson_media(str(lesson_id), ordered_ids)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"ok": True}
-
-
-# UWD-001 non-canonical write isolation: these mounted studio lesson-media writes are
-# legacy implementation surfaces and must not be treated as canonical media-pipeline authority.
-@lesson_media_router.delete("/{lesson_id}/{lesson_media_id}")
-async def studio_delete_lesson_media(
-    lesson_id: UUID,
-    lesson_media_id: UUID,
-    current: TeacherUser,
-):
-    del current
-    await _require_studio_lesson(str(lesson_id))
-    deleted = await courses_repo.delete_lesson_media(
-        str(lesson_id),
-        str(lesson_media_id),
-    )
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Lesson media not found")
-
-    media_asset_id = str(deleted.get("media_asset_id") or "").strip()
-    if media_asset_id and not await courses_repo.lesson_media_asset_is_linked(media_asset_id):
-        await media_assets_repo.delete_media_asset(media_asset_id)
-    return {"deleted": True}
-
 
 @router.get("/lessons/{lesson_id}/media")
 async def list_lesson_media(request: Request, lesson_id: UUID, current: TeacherUser):
@@ -1123,7 +1128,12 @@ async def studio_delete_home_player_upload(upload_id: UUID, current: TeacherUser
         raise HTTPException(status_code=404, detail="Home upload not found")
     media_asset_id = deleted.get("media_asset_id")
     if media_asset_id:
-        await media_cleanup.delete_media_asset_and_objects(media_id=str(media_asset_id))
+        await media_cleanup.request_lifecycle_evaluation(
+            media_asset_ids=[str(media_asset_id)],
+            trigger_source="home_player_upload_delete",
+            subject_type="home_player_upload",
+            subject_id=str(upload_id),
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

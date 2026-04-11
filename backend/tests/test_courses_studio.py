@@ -3,7 +3,10 @@ import uuid
 import pytest
 
 from app import db
+from app.repositories import courses as courses_repo
+from app.repositories import media_assets as media_assets_repo
 from app.routes import studio as studio_routes
+from app.services import courses_service
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -81,6 +84,7 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
 
     course_id = None
     lesson_id = None
+    cover_media_id = None
 
     try:
         student_courses = await async_client.get(
@@ -132,6 +136,33 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
         )
         assert update_course.status_code == 200, update_course.text
         assert update_course.json()["title"] == "Intro to Aveli (Updated)"
+
+        cover_media_id = str(uuid.uuid4())
+        await media_assets_repo.create_media_asset(
+            media_asset_id=cover_media_id,
+            media_type="image",
+            purpose="course_cover",
+            original_object_path=f"courses/{course_id}/covers/{cover_media_id}.png",
+            ingest_format="png",
+            state="pending_upload",
+        )
+
+        update_cover = await async_client.patch(
+            f"/studio/courses/{course_id}",
+            headers=auth_header(teacher_token),
+            json={"cover_media_id": cover_media_id},
+        )
+        assert update_cover.status_code == 200, update_cover.text
+        assert update_cover.json()["cover_media_id"] == cover_media_id
+
+        async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    "SELECT cover_media_id FROM app.courses WHERE id = %s",
+                    (course_id,),
+                )
+                persisted_cover = await cur.fetchone()
+        assert str(persisted_cover[0]) == cover_media_id
 
         student_create_lesson = await async_client.post(
             f"/studio/courses/{course_id}/lessons",
@@ -217,7 +248,175 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
                 f"/studio/courses/{course_id}",
                 headers=auth_header(teacher_token),
             )
+        if cover_media_id:
+            async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                    await cur.execute(
+                        "UPDATE app.courses SET cover_media_id = NULL WHERE cover_media_id = %s::uuid",
+                        (cover_media_id,),
+                    )
+                    await cur.execute(
+                        "DELETE FROM app.media_assets WHERE id = %s::uuid",
+                        (cover_media_id,),
+                    )
+                    await conn.commit()
         await cleanup_user(student_id)
+        await cleanup_user(teacher_id)
+
+
+async def test_studio_lesson_delete_removes_content_and_placements_only(
+    async_client,
+    monkeypatch,
+):
+    teacher_email = f"delete_teacher_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+    teacher_token, _, teacher_id = await register_user(
+        async_client,
+        teacher_email,
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+
+    course_id = None
+    lesson_id = None
+    media_asset_id = None
+    lifecycle_calls: list[dict[str, object]] = []
+
+    async def fake_lifecycle_request(**kwargs):
+        lifecycle_calls.append(dict(kwargs))
+        return len(list(kwargs["media_asset_ids"]))
+
+    async def fail_delete_media_asset(*args, **kwargs):
+        raise AssertionError("lesson delete must not delete media_assets")
+
+    monkeypatch.setattr(
+        courses_service.media_cleanup,
+        "request_lifecycle_evaluation",
+        fake_lifecycle_request,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        media_assets_repo,
+        "delete_media_asset",
+        fail_delete_media_asset,
+        raising=False,
+    )
+
+    try:
+        create_course = await async_client.post(
+            "/studio/courses",
+            headers=auth_header(teacher_token),
+            json={
+                "title": "Delete media boundary",
+                "slug": f"delete-media-{uuid.uuid4().hex[:8]}",
+                "course_group_id": str(uuid.uuid4()),
+                "step": "intro",
+                "price_amount_cents": None,
+                "drip_enabled": False,
+                "drip_interval_days": None,
+            },
+        )
+        assert create_course.status_code == 200, create_course.text
+        course_id = str(create_course.json()["id"])
+
+        create_lesson = await async_client.post(
+            f"/studio/courses/{course_id}/lessons",
+            headers=auth_header(teacher_token),
+            json={"lesson_title": "Media lesson", "position": 1},
+        )
+        assert create_lesson.status_code == 200, create_lesson.text
+        lesson_id = str(create_lesson.json()["id"])
+
+        update_content = await async_client.patch(
+            f"/studio/lessons/{lesson_id}/content",
+            headers=auth_header(teacher_token),
+            json={"content_markdown": "Lesson body"},
+        )
+        assert update_content.status_code == 200, update_content.text
+
+        media_asset_id = str(uuid.uuid4())
+        await media_assets_repo.create_media_asset(
+            media_asset_id=media_asset_id,
+            media_type="image",
+            purpose="lesson_media",
+            original_object_path=f"lessons/{lesson_id}/images/{media_asset_id}.png",
+            ingest_format="png",
+            state="pending_upload",
+        )
+        placement = await courses_repo.create_lesson_media(
+            lesson_id=lesson_id,
+            media_asset_id=media_asset_id,
+        )
+
+        delete_lesson = await async_client.delete(
+            f"/studio/lessons/{lesson_id}",
+            headers=auth_header(teacher_token),
+        )
+        assert delete_lesson.status_code == 200, delete_lesson.text
+        assert delete_lesson.json() == {"deleted": True}
+
+        async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    """
+                    SELECT
+                      EXISTS (
+                        SELECT 1 FROM app.lesson_contents WHERE lesson_id = %s::uuid
+                      ),
+                      EXISTS (
+                        SELECT 1 FROM app.lesson_media WHERE lesson_id = %s::uuid
+                      ),
+                      EXISTS (
+                        SELECT 1 FROM app.lessons WHERE id = %s::uuid
+                      ),
+                      EXISTS (
+                        SELECT 1 FROM app.media_assets WHERE id = %s::uuid
+                      )
+                    """,
+                    (lesson_id, lesson_id, lesson_id, media_asset_id),
+                )
+                content_exists, placement_exists, lesson_exists, asset_exists = (
+                    await cur.fetchone()
+                )
+
+        assert content_exists is False
+        assert placement_exists is False
+        assert lesson_exists is False
+        assert asset_exists is True
+        assert lifecycle_calls == [
+            {
+                "media_asset_ids": [media_asset_id],
+                "trigger_source": "lesson_delete",
+                "subject_type": "lesson",
+                "subject_id": lesson_id,
+            }
+        ]
+        assert str(placement["media_asset_id"]) == media_asset_id
+        lesson_id = None
+    finally:
+        if lesson_id:
+            await async_client.delete(
+                f"/studio/lessons/{lesson_id}",
+                headers=auth_header(teacher_token),
+            )
+        if course_id:
+            await async_client.delete(
+                f"/studio/courses/{course_id}",
+                headers=auth_header(teacher_token),
+            )
+        if media_asset_id:
+            async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                    await cur.execute(
+                        "DELETE FROM app.lesson_media WHERE media_asset_id = %s::uuid",
+                        (media_asset_id,),
+                    )
+                    await cur.execute(
+                        "DELETE FROM app.media_assets WHERE id = %s::uuid",
+                        (media_asset_id,),
+                    )
+                    await conn.commit()
         await cleanup_user(teacher_id)
 
 

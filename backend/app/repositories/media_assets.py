@@ -457,18 +457,6 @@ async def mark_course_cover_ready_from_worker(
     }
 
 
-async def delete_media_asset(media_asset_id: str) -> bool:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                "delete from app.media_assets where id = %s::uuid",
-                (media_asset_id,),
-            )
-            deleted = cur.rowcount > 0
-            await conn.commit()
-    return deleted
-
-
 async def get_media_asset_access(media_asset_id: str) -> dict[str, Any] | None:
     row = await get_media_asset(media_asset_id)
     if not row:

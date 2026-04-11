@@ -778,6 +778,23 @@ async def list_lesson_media_for_asset(
     return [dict(row) for row in rows]
 
 
+async def list_lesson_media_asset_ids(lesson_id: str) -> list[str]:
+    query = """
+        select media_asset_id
+        from app.lesson_media
+        where lesson_id = %s::uuid
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id,))
+            rows = await cur.fetchall()
+    return [
+        str(row["media_asset_id"])
+        for row in rows
+        if row.get("media_asset_id") is not None
+    ]
+
+
 async def list_lesson_media_for_studio(lesson_id: str) -> Sequence[dict[str, Any]]:
     query = f"""
         select
@@ -1215,6 +1232,10 @@ async def delete_lesson(lesson_id: str) -> bool:
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 "delete from app.lesson_contents where lesson_id = %s::uuid",
+                (lesson_id,),
+            )
+            await cur.execute(
+                "delete from app.lesson_media where lesson_id = %s::uuid",
                 (lesson_id,),
             )
             await cur.execute(

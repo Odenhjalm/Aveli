@@ -169,7 +169,7 @@ async def test_home_player_upload_update_and_delete_use_canonical_source_rows(
             "original_name": "home.wav",
             "media_state": "uploaded",
         }
-        deleted_media_assets: list[str] = []
+        lifecycle_requests: list[dict[str, object]] = []
 
         async def fake_get_media_asset(candidate_media_asset_id: str):
             assert candidate_media_asset_id == media_asset_id
@@ -198,8 +198,12 @@ async def test_home_player_upload_update_and_delete_use_canonical_source_rows(
                 return None
             return dict(stored)
 
-        async def fake_cleanup_media_asset_and_objects(*, media_id: str):
-            deleted_media_assets.append(media_id)
+        async def fake_lifecycle_request(**kwargs):
+            lifecycle_requests.append(dict(kwargs))
+            return len(list(kwargs["media_asset_ids"]))
+
+        async def fail_cleanup_media_asset_and_objects(*args, **kwargs):
+            raise AssertionError("request path must not delete media_assets")
 
         monkeypatch.setattr(
             studio_routes.home_audio_sources_repo,
@@ -228,7 +232,13 @@ async def test_home_player_upload_update_and_delete_use_canonical_source_rows(
         monkeypatch.setattr(
             studio_routes.media_cleanup,
             "delete_media_asset_and_objects",
-            fake_cleanup_media_asset_and_objects,
+            fail_cleanup_media_asset_and_objects,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            studio_routes.media_cleanup,
+            "request_lifecycle_evaluation",
+            fake_lifecycle_request,
             raising=True,
         )
 
@@ -261,7 +271,14 @@ async def test_home_player_upload_update_and_delete_use_canonical_source_rows(
             headers=headers,
         )
         assert delete_resp.status_code == 204, delete_resp.text
-        assert deleted_media_assets == [media_asset_id]
+        assert lifecycle_requests == [
+            {
+                "media_asset_ids": [media_asset_id],
+                "trigger_source": "home_player_upload_delete",
+                "subject_type": "home_player_upload",
+                "subject_id": upload_id,
+            }
+        ]
 
         async def missing_upload(*, upload_id: str, teacher_id: str, fields: dict):
             return None

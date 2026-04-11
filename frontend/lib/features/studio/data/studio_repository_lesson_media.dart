@@ -152,7 +152,7 @@ class _StudioLessonMediaScope {
   }
 
   Future<void> deleteLessonMedia(String lessonId, String lessonMediaId) async {
-    await _client.delete('/api/lesson-media/$lessonId/$lessonMediaId');
+    await _client.delete('/api/media-placements/$lessonMediaId');
   }
 
   Future<void> reorderLessonMedia(
@@ -160,7 +160,7 @@ class _StudioLessonMediaScope {
     List<String> orderedMediaIds,
   ) async {
     await _client.patch(
-      '/api/lesson-media/$lessonId/reorder',
+      '/api/lessons/$lessonId/media-placements/reorder',
       body: {'lesson_media_ids': orderedMediaIds},
     );
   }

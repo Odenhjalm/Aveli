@@ -15,6 +15,33 @@ from ..services import storage_service
 logger = logging.getLogger(__name__)
 
 
+async def request_lifecycle_evaluation(
+    *,
+    media_asset_ids: Iterable[str],
+    trigger_source: str,
+    subject_type: str,
+    subject_id: str | None = None,
+) -> int:
+    normalized_ids = sorted(
+        {
+            str(media_asset_id).strip()
+            for media_asset_id in media_asset_ids
+            if str(media_asset_id or "").strip()
+        }
+    )
+    logger.info(
+        "MEDIA_LIFECYCLE_EVALUATION_REQUESTED",
+        extra={
+            "trigger_source": trigger_source,
+            "subject_type": subject_type,
+            "subject_id": subject_id,
+            "media_asset_ids": normalized_ids,
+            "requested_count": len(normalized_ids),
+        },
+    )
+    return len(normalized_ids)
+
+
 def _empty_storage_cleanup_report() -> dict[str, list[dict[str, str]]]:
     return {"deleted": [], "remaining": []}
 

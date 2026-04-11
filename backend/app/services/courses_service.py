@@ -18,6 +18,7 @@ from ..repositories import home_audio_runtime as home_audio_runtime_repo
 from ..repositories import runtime_media as runtime_media_repo
 from ..utils import lesson_content as lesson_content_utils
 from . import lesson_playback_service
+from . import media_cleanup
 from . import storage_service
 
 logger = logging.getLogger(__name__)
@@ -1046,7 +1047,16 @@ async def reorder_lessons(course_id: str, ordered_lesson_ids: Sequence[str]) -> 
 
 
 async def delete_lesson(lesson_id: str) -> bool:
-    return await courses_repo.delete_lesson(lesson_id)
+    media_asset_ids = await courses_repo.list_lesson_media_asset_ids(lesson_id)
+    deleted = await courses_repo.delete_lesson(lesson_id)
+    if deleted:
+        await media_cleanup.request_lifecycle_evaluation(
+            media_asset_ids=media_asset_ids,
+            trigger_source="lesson_delete",
+            subject_type="lesson",
+            subject_id=lesson_id,
+        )
+    return deleted
 
 
 async def is_course_owner(user_id: str, course_id: str) -> bool:

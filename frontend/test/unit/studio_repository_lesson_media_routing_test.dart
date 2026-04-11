@@ -118,6 +118,48 @@ void main() {
     expect(requests, hasLength(1));
     expect(requests.single.method, 'GET');
   });
+
+  test('deleteLessonMedia uses canonical placement delete', () async {
+    final harness = await _Harness.create(uploadServer: uploadServer);
+    final repo = StudioRepository(client: harness.client);
+
+    await repo.deleteLessonMedia('lesson-1', 'lesson-media-1');
+
+    final requests = harness.adapter.requestsFor(
+      '/api/media-placements/lesson-media-1',
+    );
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'DELETE');
+    expect(
+      harness.adapter.requestsFor(
+        '/api/lesson-media/lesson-1/lesson-media-1',
+      ),
+      isEmpty,
+    );
+  });
+
+  test('reorderLessonMedia uses canonical placement reorder', () async {
+    final harness = await _Harness.create(uploadServer: uploadServer);
+    final repo = StudioRepository(client: harness.client);
+
+    await repo.reorderLessonMedia('lesson-1', [
+      'lesson-media-2',
+      'lesson-media-1',
+    ]);
+
+    final requests = harness.adapter.requestsFor(
+      '/api/lessons/lesson-1/media-placements/reorder',
+    );
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'PATCH');
+    expect(Map<String, dynamic>.from(requests.single.data as Map), {
+      'lesson_media_ids': ['lesson-media-2', 'lesson-media-1'],
+    });
+    expect(
+      harness.adapter.requestsFor('/api/lesson-media/lesson-1/reorder'),
+      isEmpty,
+    );
+  });
 }
 
 class _Harness {
@@ -198,6 +240,9 @@ class _Harness {
         );
       }
       if (options.path == '/api/media-placements/lesson-media-1') {
+        if (options.method.toUpperCase() == 'DELETE') {
+          return _jsonResponse(statusCode: 200, body: {'deleted': true});
+        }
         return _jsonResponse(
           statusCode: 200,
           body: {
@@ -214,6 +259,9 @@ class _Harness {
             },
           },
         );
+      }
+      if (options.path == '/api/lessons/lesson-1/media-placements/reorder') {
+        return _jsonResponse(statusCode: 200, body: {'ok': true});
       }
       return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
     });

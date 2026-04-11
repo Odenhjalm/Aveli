@@ -30,6 +30,8 @@ def test_noncanonical_write_routes_cannot_regain_dominance() -> None:
         ("PATCH", "/studio/lessons/{lesson_id}"),
         ("POST", "/api/lesson-media/{lesson_id}/upload-url"),
         ("POST", "/api/lesson-media/{lesson_id}/{lesson_media_id}/complete"),
+        ("PATCH", "/api/lesson-media/{lesson_id}/reorder"),
+        ("DELETE", "/api/lesson-media/{lesson_id}/{lesson_media_id}"),
         ("POST", "/studio/lessons/{lesson_id}/media/presign"),
         ("POST", "/studio/lessons/{lesson_id}/media/complete"),
         ("POST", "/studio/lessons/{lesson_id}/media"),
@@ -61,6 +63,8 @@ def test_canonical_write_routes_remain_mounted() -> None:
     ) in route_pairs
     assert ("POST", "/api/lessons/{lesson_id}/media-placements") in route_pairs
     assert ("GET", "/api/media-placements/{lesson_media_id}") in route_pairs
+    assert ("PATCH", "/api/lessons/{lesson_id}/media-placements/reorder") in route_pairs
+    assert ("DELETE", "/api/media-placements/{lesson_media_id}") in route_pairs
 
 
 def test_application_code_does_not_write_runtime_media_directly() -> None:
@@ -106,6 +110,8 @@ def test_governed_frontend_media_paths_use_backend_authored_media_objects() -> N
         "/api/media/complete",
         "/api/lesson-media/$lessonId/upload-url",
         "/api/lesson-media/$lessonId/$lessonMediaId/complete",
+        "/api/lesson-media/$lessonId/$lessonMediaId",
+        "/api/lesson-media/$lessonId/reorder",
         "preview_ready",
         "original_name",
         "resolved_preview_url",
