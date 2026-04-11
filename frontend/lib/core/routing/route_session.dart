@@ -19,7 +19,7 @@ class RouteSessionSnapshot {
 final routeSessionSnapshotProvider = Provider<RouteSessionSnapshot>((ref) {
   final authState = ref.watch(authControllerProvider);
   return RouteSessionSnapshot(
-    isAuthenticated: authState.profile != null,
+    isAuthenticated: authState.isAuthenticated,
     isAuthLoading: authState.isLoading,
     hasTentativeSession: authState.hasStoredToken && authState.profile == null,
   );

@@ -253,33 +253,34 @@ void main() {
     expect(find.byType(HomeDashboardPage), findsNothing);
   });
 
-  testWidgets('authenticated users start on home without landing flash', (
-    tester,
-  ) async {
-    final profile = Profile(
-      id: 'user-1',
-      email: 'user@example.com',
-      createdAt: DateTime.utc(2024, 1, 1),
-      updatedAt: DateTime.utc(2024, 1, 1),
-      displayName: 'Test User',
-    );
+  testWidgets(
+    'profile-only users do not start on home without backend entry truth',
+    (tester) async {
+      final profile = Profile(
+        id: 'user-1',
+        email: 'user@example.com',
+        createdAt: DateTime.utc(2024, 1, 1),
+        updatedAt: DateTime.utc(2024, 1, 1),
+        displayName: 'Test User',
+      );
 
-    final authedState = AuthState(profile: profile, isLoading: false);
+      final authedState = AuthState(profile: profile, isLoading: false);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: _commonOverrides(authedState),
-        child: const AveliApp(),
-      ),
-    );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: _commonOverrides(authedState),
+          child: const AveliApp(),
+        ),
+      );
 
-    await tester.pump();
-    expect(find.byType(LandingPage), findsNothing);
-    await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump();
+      expect(find.byType(LandingPage), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.byType(HomeDashboardPage), findsOneWidget);
-    expect(find.byType(LandingPage), findsNothing);
-  });
+      expect(find.byType(HomeDashboardPage), findsNothing);
+      expect(find.byType(LandingPage), findsOneWidget);
+    },
+  );
 
   testWidgets('AppScaffold shows a home action by default', (tester) async {
     final view = tester.view;

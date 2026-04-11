@@ -834,7 +834,9 @@ def _canonical_status_from_subscription_payload(payload: Mapping[str, Any]) -> s
         return "expired"
     if expires_at and expires_at <= now and status_value not in {"active"}:
         return "expired"
-    return "active"
+    if status_value == "active":
+        return "active"
+    return "inactive"
 
 
 def _subscription_expires_at(payload: Mapping[str, Any]) -> datetime | None:

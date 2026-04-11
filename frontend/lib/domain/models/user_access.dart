@@ -9,7 +9,7 @@ class UserAccessState {
   final Profile? profile;
   final Profile? effectiveProfile;
 
-  bool get isAuthenticated => effectiveProfile != null;
+  bool get isAuthenticated => false;
 
   // Frontend must not derive role/admin authority from JWT claims.
   bool get isAdmin => false;

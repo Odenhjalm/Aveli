@@ -41,18 +41,8 @@ async def fetch_one(db: Any, query: str, *params: Any) -> Any:
 
 
 async def has_course_access(db: Any, user_id: str, course_id: str) -> bool:
-    # LEGACY ACCESS PATH — DO NOT EXTEND.
-    # ENROLLMENTS IS CANONICAL ACCESS AUTHORITY.
-    row = await fetch_one(
-        db,
-        """
-        SELECT 1
-        FROM app.entitlements
-        WHERE user_id = $1
-          AND course_id = $2
-        LIMIT 1
-        """,
-        user_id,
-        course_id,
+    del db, user_id, course_id
+    raise RuntimeError(
+        "legacy entitlement_service is non-authoritative; "
+        "use app.course_enrollments authority"
     )
-    return row is not None

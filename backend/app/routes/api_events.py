@@ -43,6 +43,13 @@ def _is_admin(current: dict) -> bool:
     return bool(current.get("is_admin"))
 
 
+def _deny_route_local_app_entry_authority() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="canonical_app_entry_required",
+    )
+
+
 def _validate_status_transition(old: str, new: str) -> None:
     if old == new:
         return
@@ -126,6 +133,7 @@ async def _user_is_active_event_host(event_id: str, user_id: str) -> bool:
 
 
 async def _assert_event_read_access(event: dict, current: dict) -> None:
+    _deny_route_local_app_entry_authority()
     current_id = str(current["id"])
     if _is_admin(current):
         return
@@ -149,6 +157,7 @@ async def _assert_event_read_access(event: dict, current: dict) -> None:
 
 @router.post("", response_model=EventRecord, status_code=status.HTTP_201_CREATED)
 async def create_event(payload: EventCreateRequest, current: TeacherUser) -> EventRecord:
+    _deny_route_local_app_entry_authority()
     title = payload.title.strip()
     description = payload.description.strip() if payload.description else None
     timezone_name = payload.timezone.strip()
@@ -242,6 +251,7 @@ async def list_events(
     status_value: EventStatus | None = Query(None, alias="status", description="Filter by event status"),
     limit: int = Query(50, ge=1, le=200),
 ) -> EventListResponse:
+    _deny_route_local_app_entry_authority()
     user_id = str(current["id"])
     is_admin = _is_admin(current)
     has_membership_access = await _has_active_membership(user_id)
@@ -337,6 +347,7 @@ async def list_events(
 
 @router.get("/{event_id}", response_model=EventRecord)
 async def get_event(event_id: UUID, current: CurrentUser) -> EventRecord:
+    _deny_route_local_app_entry_authority()
     row = await _get_event_row(str(event_id))
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -350,6 +361,7 @@ async def update_event(
     payload: EventUpdateRequest,
     current: TeacherUser,
 ) -> EventRecord:
+    _deny_route_local_app_entry_authority()
     event = await _get_event_row(str(event_id))
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -442,6 +454,7 @@ async def register_participant(
     payload: EventParticipantCreateRequest,
     current: CurrentUser,
 ) -> EventParticipantRecord:
+    _deny_route_local_app_entry_authority()
     event = await _get_event_row(str(event_id))
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -536,6 +549,7 @@ async def register_participant(
 
 @router.get("/{event_id}/notifications", response_model=NotificationListResponse)
 async def list_event_notifications(event_id: UUID, current: TeacherUser) -> NotificationListResponse:
+    _deny_route_local_app_entry_authority()
     event = await _get_event_row(str(event_id))
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")

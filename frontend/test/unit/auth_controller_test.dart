@@ -43,7 +43,7 @@ void main() {
       expect(controller.state.profile, equals(profile));
       expect(controller.state.hasStoredToken, isTrue);
       expect(controller.state.isLoading, isFalse);
-      expect(gate.allowed, isTrue);
+      expect(gate.allowed, isFalse);
       verify(() => repo.getCurrentProfile()).called(1);
       verifyNever(() => repo.logout());
     });
@@ -84,7 +84,7 @@ void main() {
       expect(controller.state.profile, equals(profile));
       expect(controller.state.hasStoredToken, isTrue);
       expect(controller.state.isLoading, isFalse);
-      expect(gate.allowed, isTrue);
+      expect(gate.allowed, isFalse);
       verify(() => repo.completeWelcome()).called(1);
     });
   });

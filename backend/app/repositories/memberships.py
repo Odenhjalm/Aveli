@@ -70,8 +70,9 @@ async def upsert_membership_record(
     membership_id = str((existing or {}).get("membership_id") or uuid4())
 
     resolved_status = str(status or (existing or {}).get("status") or "inactive").strip().lower()
-    resolved_source = _resolve_explicit(source, (existing or {}).get("source"))
-    if resolved_source is None:
+    raw_source = _resolve_explicit(source, (existing or {}).get("source"))
+    resolved_source = str(raw_source or "").strip().lower()
+    if not resolved_source:
         raise RuntimeError("app.memberships requires explicit canonical source")
 
     values = {
@@ -84,6 +85,8 @@ async def upsert_membership_record(
         "ended_at": _resolve_explicit(ended_at, (existing or {}).get("ended_at")),
         "source": resolved_source,
     }
+    if values["source"] == "invite" and values["expires_at"] is None:
+        raise RuntimeError("invite memberships require expires_at")
 
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]

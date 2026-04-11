@@ -80,57 +80,51 @@ async def create_referral_code(
 
 async def get_referral_by_code(code: str) -> ReferralRow | None:
     async with get_conn() as cur:
-        try:
-            await cur.execute(
-                """
-                SELECT id,
-                       code,
-                       teacher_id,
-                       email,
-                       free_days,
-                       free_months,
-                       active,
-                       redeemed_by_user_id,
-                       redeemed_at,
-                       created_at
-                  FROM app.referral_codes
-                 WHERE code = %s
-                 LIMIT 1
-                """,
-                (normalize_referral_code(code),),
-            )
-        except errors.UndefinedTable:
-            return None
+        await cur.execute(
+            """
+            SELECT id,
+                   code,
+                   teacher_id,
+                   email,
+                   free_days,
+                   free_months,
+                   active,
+                   redeemed_by_user_id,
+                   redeemed_at,
+                   created_at
+              FROM app.referral_codes
+             WHERE code = %s
+             LIMIT 1
+            """,
+            (normalize_referral_code(code),),
+        )
         row = await cur.fetchone()
     return dict(row) if row else None
 
 
 async def get_redeemable_referral(code: str, email: str) -> ReferralRow | None:
     async with get_conn() as cur:
-        try:
-            await cur.execute(
-                """
-                SELECT id,
-                       code,
-                       teacher_id,
-                       email,
-                       free_days,
-                       free_months,
-                       active,
-                       redeemed_by_user_id,
-                       redeemed_at,
-                       created_at
-                  FROM app.referral_codes
-                 WHERE code = %s
-                   AND lower(email) = lower(%s)
-                   AND active = true
-                   AND redeemed_by_user_id IS NULL
-                 LIMIT 1
-                """,
-                (normalize_referral_code(code), normalize_referral_email(email)),
-            )
-        except errors.UndefinedTable:
-            return None
+        await cur.execute(
+            """
+            SELECT id,
+                   code,
+                   teacher_id,
+                   email,
+                   free_days,
+                   free_months,
+                   active,
+                   redeemed_by_user_id,
+                   redeemed_at,
+                   created_at
+              FROM app.referral_codes
+             WHERE code = %s
+               AND lower(email) = lower(%s)
+               AND active = true
+               AND redeemed_by_user_id IS NULL
+             LIMIT 1
+            """,
+            (normalize_referral_code(code), normalize_referral_email(email)),
+        )
         row = await cur.fetchone()
     return dict(row) if row else None
 

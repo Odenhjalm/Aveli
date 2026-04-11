@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_extras.dart';
-import 'package:aveli/gate.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/course_video.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
@@ -62,7 +61,6 @@ class CourseIntroPage extends ConsumerWidget {
                     alignment: Alignment.centerRight,
                     child: GradientButton.icon(
                       onPressed: () {
-                        gate.allow();
                         context.goNamed(AppRoute.home);
                       },
                       icon: const Icon(Icons.arrow_forward),

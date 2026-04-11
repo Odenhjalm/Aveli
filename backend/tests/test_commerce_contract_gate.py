@@ -729,6 +729,27 @@ async def test_membership_access_rule_matches_contract() -> None:
     assert membership_status.is_membership_active("trialing", None, now=now) is False
 
 
+async def test_subscription_payload_unknown_status_maps_inactive() -> None:
+    assert (
+        subscription_service._canonical_status_from_subscription_payload(
+            {"status": "trialing"}
+        )
+        == "inactive"
+    )
+    assert (
+        subscription_service._canonical_status_from_subscription_payload(
+            {"status": "unexpected"}
+        )
+        == "inactive"
+    )
+    assert (
+        subscription_service._canonical_status_from_subscription_payload(
+            {"status": "active"}
+        )
+        == "active"
+    )
+
+
 async def test_legacy_backend_surfaces_are_removed_from_source() -> None:
     root = _repo_root()
 

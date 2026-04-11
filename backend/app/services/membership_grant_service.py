@@ -22,6 +22,8 @@ async def grant_non_purchase_membership(
     normalized_source = str(source or "").strip().lower()
     if normalized_source not in _NON_PURCHASE_SOURCES:
         raise ValueError("grant_non_purchase_membership requires canonical non-purchase source")
+    if normalized_source == "invite" and expires_at is None:
+        raise ValueError("invite membership grants require expires_at")
 
     membership = await memberships_repo.upsert_membership_record(
         user_id,

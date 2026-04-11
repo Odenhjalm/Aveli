@@ -36,7 +36,7 @@ class AuthState {
     error: error,
   );
 
-  bool get isAuthenticated => profile != null;
+  bool get isAuthenticated => false;
 }
 
 class AuthController extends StateNotifier<AuthState> {
@@ -85,7 +85,7 @@ class AuthController extends StateNotifier<AuthState> {
         hasStoredToken: true,
         isLoading: false,
       );
-      gate.allow();
+      gate.reset();
     } catch (err, stackTrace) {
       await _repo.logout();
       gate.reset();
@@ -113,7 +113,7 @@ class AuthController extends StateNotifier<AuthState> {
         hasStoredToken: true,
         isLoading: false,
       );
-      gate.allow();
+      gate.reset();
     } catch (err, stackTrace) {
       final failure = AppFailure.from(err, stackTrace);
       state = AuthState(
@@ -153,7 +153,7 @@ class AuthController extends StateNotifier<AuthState> {
         hasStoredToken: true,
         isLoading: false,
       );
-      gate.allow();
+      gate.reset();
     } catch (err, stackTrace) {
       final failure = AppFailure.from(err, stackTrace);
       state = AuthState(
@@ -182,7 +182,7 @@ class AuthController extends StateNotifier<AuthState> {
         hasStoredToken: true,
         isLoading: false,
       );
-      gate.allow();
+      gate.reset();
     } catch (err, stackTrace) {
       final failure = AppFailure.from(err, stackTrace);
       state = state.copyWith(isLoading: false, error: failure.message);
@@ -212,12 +212,12 @@ class AuthController extends StateNotifier<AuthState> {
   }
 }
 
-final authControllerProvider = StateNotifierProvider<AuthController, AuthState>((
-  ref,
-) {
-  final repo = ref.watch(authRepositoryProvider);
-  final observer = ref.watch(authHttpObserverProvider);
-  final controller = AuthController(repo, observer);
-  controller.loadSession();
-  return controller;
-});
+final authControllerProvider = StateNotifierProvider<AuthController, AuthState>(
+  (ref) {
+    final repo = ref.watch(authRepositoryProvider);
+    final observer = ref.watch(authHttpObserverProvider);
+    final controller = AuthController(repo, observer);
+    controller.loadSession();
+    return controller;
+  },
+);

@@ -110,3 +110,14 @@ async def test_grant_non_purchase_membership_writes_once_and_logs_once(monkeypat
     )
     log_mock.assert_awaited_once()
     sync_mock.assert_awaited_once_with("user_1")
+
+
+async def test_invite_membership_grant_requires_expires_at() -> None:
+    with pytest.raises(ValueError, match="invite membership grants require expires_at"):
+        await membership_grant_service.grant_non_purchase_membership(
+            user_id="user_1",
+            source="invite",
+            effective_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            expires_at=None,
+            audit_step="invite_membership_grant_applied",
+        )
