@@ -239,11 +239,11 @@ async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeyp
     assert calls["probe_path"] == calls["ffmpeg_output"]
     assert calls["mark_ready"] == {
         "media_id": "media-m4a",
-        "streaming_object_path": "media/derived/audio/courses/course-1/lessons/lesson-1/demo.mp3",
-        "streaming_format": "mp3",
+        "playback_object_path": "media/derived/audio/courses/course-1/lessons/lesson-1/demo.mp3",
+        "playback_format": "mp3",
         "duration_seconds": 42,
         "codec": "mp3",
-        "streaming_storage_bucket": "course-media",
+        "playback_storage_bucket": "course-media",
     }
 
 

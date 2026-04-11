@@ -300,8 +300,7 @@ async def _insert_media_asset(
                   original_content_type,
                   original_filename,
                   original_size_bytes,
-                  storage_bucket,
-                  streaming_storage_bucket
+                  storage_bucket
                 )
                 values (
                   %s::uuid,
@@ -318,7 +317,6 @@ async def _insert_media_asset(
                   'audio/wav',
                   'demo.wav',
                   512,
-                  'course-media',
                   'course-media'
                 )
                 """,
@@ -340,7 +338,7 @@ async def _insert_media_asset(
         assert ready_path is not None
         await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=media_asset_id,
-            streaming_object_path=ready_path,
+            playback_object_path=ready_path,
         )
 
 

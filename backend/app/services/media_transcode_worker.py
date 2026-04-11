@@ -448,11 +448,11 @@ async def _transcode_audio_asset(
 
     updated = await media_assets_repo.mark_media_asset_ready_from_worker(
         media_id=str(asset["id"]),
-        streaming_object_path=output_path,
-        streaming_format="mp3",
+        playback_object_path=output_path,
+        playback_format="mp3",
         duration_seconds=duration,
         codec="mp3",
-        streaming_storage_bucket=source_storage.bucket,
+        playback_storage_bucket=source_storage.bucket,
     )
     if not updated:
         try:
@@ -523,9 +523,9 @@ async def _transcode_cover_asset(
 
     result = await media_assets_repo.mark_course_cover_ready_from_worker(
         media_id=str(asset["id"]),
-        streaming_object_path=output_path,
-        streaming_storage_bucket=public_storage.bucket,
-        streaming_format="jpg",
+        playback_object_path=output_path,
+        playback_storage_bucket=public_storage.bucket,
+        playback_format="jpg",
         codec="jpeg",
     )
     if not result.get("updated"):

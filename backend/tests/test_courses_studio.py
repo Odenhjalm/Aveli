@@ -168,7 +168,7 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
         await media_assets_repo.mark_media_asset_uploaded(media_id=cover_media_id)
         await media_assets_repo.mark_course_cover_ready_from_worker(
             media_id=cover_media_id,
-            streaming_object_path=(
+            playback_object_path=(
                 f"media/derived/cover/courses/{course_id}/{cover_media_id}.jpg"
             ),
         )

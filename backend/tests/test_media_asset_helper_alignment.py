@@ -79,9 +79,9 @@ async def test_mark_media_asset_ready_passthrough_is_removed():
     ):
         await media_assets_repo.mark_media_asset_ready_passthrough(
             media_id=str(uuid.uuid4()),
-            streaming_object_path="media/derived/audio/demo.mp3",
+            playback_object_path="media/derived/audio/demo.mp3",
             storage_bucket=settings.media_source_bucket,
-            streaming_format="mp3",
+            playback_format="mp3",
         )
 
 
@@ -96,7 +96,6 @@ async def test_get_media_asset_access_derives_public_cover_bucket(monkeypatch):
             "playback_format": "jpg",
             "state": "ready",
             "storage_bucket": None,
-            "streaming_storage_bucket": None,
         }
 
     monkeypatch.setattr(media_assets_repo, "get_media_asset", fake_get_media_asset)

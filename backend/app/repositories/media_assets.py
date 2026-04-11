@@ -38,9 +38,6 @@ _OBSERVABILITY_DEFAULTS: dict[str, Any] = {
     "next_retry_at": None,
     "created_at": None,
     "updated_at": None,
-    "streaming_storage_bucket": None,
-    "streaming_object_path": None,
-    "streaming_format": None,
     "home_player_upload_id": None,
     "home_player_upload_title": None,
     "home_player_upload_active": None,
@@ -389,17 +386,17 @@ async def mark_lesson_media_pipeline_asset_uploaded(
 async def mark_media_asset_ready_passthrough(
     *,
     media_id: str,
-    streaming_object_path: str,
+    playback_object_path: str,
     storage_bucket: str,
-    streaming_format: str,
+    playback_format: str,
     original_content_type: str | None = None,
     original_size_bytes: int | None = None,
 ) -> dict[str, Any] | None:
     del (
         media_id,
-        streaming_object_path,
+        playback_object_path,
         storage_bucket,
-        streaming_format,
+        playback_format,
         original_content_type,
         original_size_bytes,
     )
@@ -409,13 +406,13 @@ async def mark_media_asset_ready_passthrough(
 async def mark_media_asset_ready_from_worker(
     *,
     media_id: str,
-    streaming_object_path: str,
-    streaming_format: str | None = None,
+    playback_object_path: str,
+    playback_format: str | None = None,
     duration_seconds: int | None = None,
     codec: str | None = None,
-    streaming_storage_bucket: str | None = None,
+    playback_storage_bucket: str | None = None,
 ) -> dict[str, Any] | None:
-    del streaming_format, duration_seconds, codec, streaming_storage_bucket
+    del playback_format, duration_seconds, codec, playback_storage_bucket
     media_asset = await get_media_asset(media_id)
     if media_asset is None:
         return None
@@ -436,22 +433,22 @@ async def mark_media_asset_ready_from_worker(
     return await _call_canonical_worker_transition(
         media_id,
         target_state="ready",
-        playback_object_path=streaming_object_path,
+        playback_object_path=playback_object_path,
     )
 
 
 async def mark_course_cover_ready_from_worker(
     *,
     media_id: str,
-    streaming_object_path: str,
-    streaming_storage_bucket: str | None = None,
-    streaming_format: str | None = None,
+    playback_object_path: str,
+    playback_storage_bucket: str | None = None,
+    playback_format: str | None = None,
     codec: str | None = None,
 ) -> dict[str, Any]:
-    del streaming_storage_bucket, streaming_format, codec
+    del playback_storage_bucket, playback_format, codec
     updated = await mark_media_asset_ready_from_worker(
         media_id=media_id,
-        streaming_object_path=streaming_object_path,
+        playback_object_path=playback_object_path,
     )
     return {"updated": updated is not None}
 

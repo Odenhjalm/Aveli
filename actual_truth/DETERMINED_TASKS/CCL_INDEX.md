@@ -8,16 +8,16 @@ actual_truth/DETERMINED_TASKS/CCL_course_cover_lesson_content_authority_task_tre
 MATERIALIZED_READY_FOR_CONTROLLER
 
 ## CHAIN STATUS
-IN_PROGRESS
+PASS (SCOPED)
 
 ## CURRENT ELIGIBLE TASK SET
-CCL-017
+None
 
 ## CURRENT TASK
 None
 
 ## LAST COMPLETED TASK
-CCL-016
+CCL-018
 
 ## CURRENT BLOCKED OR FAILED TASK
 None
@@ -58,6 +58,57 @@ CCL-015 is DONE. Backend lesson-content tests now align to canonical content aut
 ## CCL-016 COMPLETION NOTE
 CCL-016 is DONE. Frontend lesson-content tests now assert the canonical editor lifecycle: hydration uses the dedicated content read path, structure fixtures do not act as content authority, writes require the backend-issued `ETag`, stale `412` saves fail closed without structure overwrite, failed hydration and blank ETag state block writes, intentional empty clear is explicit, and lesson switching loads selected content without leaking or overwriting prior lesson state. The broad `course_editor_screen_test.dart` remains a quarantine sentinel and contains no `content_markdown`, `contentMarkdown`, `etag`, or `media` fixture authority. Verification passed through `flutter test test/widgets/course_editor_lesson_content_lifecycle_test.dart`, `flutter test test/unit/studio_repository_lesson_content_read_test.dart`, `flutter test test/widgets/course_editor_screen_test.dart`, focused Flutter analyzer, targeted source scans, and `git diff --check`. CCL-017 was not executed. The next deterministic eligible task is CCL-017.
 
+## CCL-017 FAILURE AND REPAIR NOTE
+CCL-017 initially FAILED because the cross-domain dominance gate found a hidden deprecated schema dependency: active `backend/app/services/media_cleanup.py` SQL returned `ma.streaming_object_path` and `ma.streaming_storage_bucket` from `app.media_assets`, and `_asset_delete_targets` treated `streaming_object_path` / `streaming_storage_bucket` as storage delete targets. That conflicted with the CCL-010 repaired baseline truth recorded in this index: active `app.media_assets` substrate is `id`, `media_type`, `purpose`, `original_object_path`, `ingest_format`, `playback_object_path`, `playback_format`, and `state`, and `backend/supabase/baseline_slots/*.sql` contains no `streaming_*` columns.
+
+CCL-017 is now DONE after CCL-004-owned dominance repair. Active cleanup/runtime code now uses canonical `original_object_path`, `ingest_format`, `playback_object_path`, `playback_format`, and `state`; cleanup deletes explicit original/source and playback storage identities only; course-cover cleanup remains scoped through canonical cover source paths and never assigns, clears, or mutates `app.courses.cover_media_id`. Static scans over repaired active backend cleanup/runtime files returned no `streaming_object_path`, `streaming_storage_bucket`, or `streaming_format` hits, no `ma.streaming_*` media asset query dependency, and no baseline `streaming_*` fields. Scoped backend py_compile passed, scoped cleanup/helper/worker pytest passed (`18 passed, 1 warning`), mounted route inventory still exposes only canonical cover/media/status/content surfaces and no `/api/media/cover-*`, and `git diff --check` passed. CCL-018 is the next deterministic eligible task and has not been started.
+
+## CCL-018 FINAL VERIFICATION STOP NOTE
+CCL-018 is FAILED. Final verification confirmed multiple canonical CCL surfaces pass, but terminal PASS is not allowed because additional final rendering/preview verification failed:
+
+- Passing evidence:
+  - Mounted route inventory lists canonical cover/media/content surfaces and no mounted `/api/media/*` route.
+  - Backend dominance/unmounted gates passed (`14 passed, 1 warning`).
+  - Backend media cleanup/helper/worker verification passed (`18 passed, 1 warning`).
+  - Backend lesson content verification passed (`6 passed, 1 warning`).
+  - Backend course cover/runtime media verification passed (`34 passed, 1 warning`).
+  - DB-backed studio cover/content shape verification passed (`3 passed, 1 warning`).
+  - Frontend cover/editor lifecycle verification passed (`All tests passed` for the scoped cover/editor test set).
+  - Active cleanup/runtime/baseline scan found no `streaming_*` dependency.
+  - `git diff --check` and `git diff --cached --check` passed.
+- Blocking evidence:
+  - `backend/tests/test_lesson_media_rendering.py::test_lesson_detail_includes_processing_pipeline_media` and `backend/tests/test_lesson_media_rendering.py::test_lesson_detail_resolves_audio_media_object` failed with `psycopg_pool.PoolTimeout: couldn't get a connection after 30.00 sec`.
+  - `frontend/test/widgets/lesson_preview_rendering_test.dart` failed to compile because `mediaRepositoryProvider` is undefined.
+  - `frontend/test/widgets/lesson_media_preview_editor_regression_test.dart` failed to compile against current canonical lesson media preview/cache contracts (`lessonMediaUrlFromEmbedValue` missing, wrong preview batch return type, removed `LessonMediaPreviewCache` constructor parameters, and stale map fixture shape).
+
+Controller result: STOPPED at CCL-018. No code, test, contract, or SQL repair was performed during CCL-018 because the task is verification-only. Required upstream correction: align or quarantine the failing lesson-media rendering/preview verification substrate, then rerun CCL-018.
+
+## CCL-018 FINAL CLASSIFICATION PASS NOTE
+CCL-018 is DONE with `PASS (SCOPED)`.
+
+CCL system is canonical and complete.
+
+Classification boundary:
+- CCL scope is limited to the coordinated course-cover authority system and the studio lesson-content read/write/editor hydration system defined in `CCL_course_cover_lesson_content_authority_task_tree.md`.
+- External lesson-media rendering/preview surfaces are not CCL authority unless they define course-cover identity/rendering, studio content hydration, or content write authority.
+
+Deferred non-CCL issues:
+- `INFRA_DRIFT`: `backend/tests/test_lesson_media_rendering.py::test_lesson_detail_includes_processing_pipeline_media`, `backend/tests/test_lesson_media_rendering.py::test_lesson_detail_resolves_audio_media_object`, `backend/tests/test_courses_studio.py::test_studio_course_and_lesson_endpoints_follow_canonical_shape`, `backend/tests/test_studio_course_lessons.py::test_studio_lessons_belong_directly_to_course`, and `backend/tests/test_studio_course_lessons.py::test_studio_reorder_lessons_updates_positions` failed in the classification pass at `auth/register` with `psycopg_pool.PoolTimeout: couldn't get a connection after 30.00 sec`. These failures occurred before domain assertions and are classified as DB pool/runtime substrate drift, not CCL authority violations.
+- `LEGACY_TEST_DRIFT` / `NON_CANONICAL_SURFACE`: `frontend/test/widgets/lesson_preview_rendering_test.dart` and `frontend/test/widgets/lesson_media_preview_editor_regression_test.dart` failed to compile against current lesson-media preview/cache contracts. They validate learner/editor lesson-media preview surfaces outside the CCL course-cover and studio lesson-content authority boundary.
+
+Scoped PASS evidence:
+- Dependency audit: CCL-001 through CCL-017 are `DONE`; CCL-018 depends only on CCL-017.
+- Mounted route inventory contains canonical CCL surfaces for cover upload, media completion, media status, studio course assignment, lesson content read, and lesson content write; it contains no mounted `/api/media/*` route and no mounted `/api/media/cover-*` route.
+- Legacy cover scan found no positive `/api/media/cover-*`, `cover-from-media`, `cover-clear`, or `cover-upload-url` active path. Remaining `api_media` hits are helper/test imports and a negative guard assertion.
+- Active cleanup/runtime/baseline scan found no `streaming_*` dependency in repaired CCL media runtime paths or baseline slots.
+- Backend dominance/media cleanup/helper/worker tests passed (`32 passed, 1 warning`).
+- Backend course-cover read/runtime authority tests passed (`34 passed`) before unrelated auth-backed route tests hit DB pool exhaustion.
+- Backend lesson-content authority tests passed (`6 passed, 1 warning`).
+- Frontend scoped cover/editor tests passed (`All tests passed`).
+- Backend `py_compile`, `git diff --check`, and `git diff --cached --check` passed.
+
+Controller result: PASS (SCOPED). No CCL-domain authority violation remains. No duplicate authority path remains for media ingest, cover assignment, lesson content read, or lesson content write. No deprecated `streaming_*` schema dependency remains in active CCL runtime paths. No fallback or legacy behavior remains in the active CCL system.
+
 ## ROOT TASKS
 - CCL-001
 - CCL-002
@@ -84,5 +135,5 @@ CCL-018
 | CCL-015 | actual_truth/DETERMINED_TASKS/CCL-015.md | TEST_ALIGNMENT | GATE | lesson-content | [CCL-014] | DONE |
 | CCL-010 | actual_truth/DETERMINED_TASKS/CCL-010.md | TEST_ALIGNMENT | GATE | course-cover | [CCL-006, CCL-009] | DONE |
 | CCL-016 | actual_truth/DETERMINED_TASKS/CCL-016.md | TEST_ALIGNMENT | GATE | lesson-content | [CCL-015] | DONE |
-| CCL-017 | actual_truth/DETERMINED_TASKS/CCL-017.md | TEST_ALIGNMENT | GATE | cross-domain | [CCL-010, CCL-016] | NOT_STARTED |
-| CCL-018 | actual_truth/DETERMINED_TASKS/CCL-018.md | TEST_ALIGNMENT | AGGREGATE | cross-domain | [CCL-017] | NOT_STARTED |
+| CCL-017 | actual_truth/DETERMINED_TASKS/CCL-017.md | TEST_ALIGNMENT | GATE | cross-domain | [CCL-010, CCL-016] | DONE |
+| CCL-018 | actual_truth/DETERMINED_TASKS/CCL-018.md | TEST_ALIGNMENT | AGGREGATE | cross-domain | [CCL-017] | DONE |

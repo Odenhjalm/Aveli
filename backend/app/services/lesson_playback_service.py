@@ -142,15 +142,9 @@ def _media_asset_audio_resolution(
     resolved_media_asset_id = _exact_text(media_asset.get("id")) or media_asset_id
     media_type = _exact_text(media_asset.get("media_type"))
     media_state = _exact_text(media_asset.get("state"))
-    playback_format = _exact_text(
-        media_asset.get("playback_format") or media_asset.get("streaming_format")
-    )
-    storage_path = _exact_text(
-        media_asset.get("playback_object_path") or media_asset.get("streaming_object_path")
-    )
-    storage_bucket = _exact_text(
-        media_asset.get("storage_bucket") or media_asset.get("streaming_storage_bucket")
-    )
+    playback_format = _exact_text(media_asset.get("playback_format"))
+    storage_path = _exact_text(media_asset.get("playback_object_path"))
+    storage_bucket = _exact_text(media_asset.get("storage_bucket"))
     lesson_id = _exact_text(media_asset.get("lesson_id"))
     course_id = _exact_text(media_asset.get("course_id"))
 

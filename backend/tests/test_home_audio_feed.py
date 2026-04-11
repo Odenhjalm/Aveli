@@ -242,13 +242,13 @@ async def _create_lesson_audio_source(
         else:
             await media_assets_repo.mark_media_asset_ready_from_worker(
                 media_id=str(asset["id"]),
-                streaming_object_path=(
+                playback_object_path=(
                     f"media/derived/audio/courses/{course_id}/{uuid.uuid4().hex}.mp3"
                 ),
-                streaming_format="mp3",
+                playback_format="mp3",
                 duration_seconds=12,
                 codec="mp3",
-                streaming_storage_bucket="course-media",
+                playback_storage_bucket="course-media",
             )
 
     lesson_media = await models.add_lesson_media_entry(
@@ -302,11 +302,11 @@ async def _create_home_audio_asset(
         else:
             await media_assets_repo.mark_media_asset_ready_from_worker(
                 media_id=str(asset["id"]),
-                streaming_object_path=f"media/derived/audio/home/{uuid.uuid4().hex}.mp3",
-                streaming_format="mp3",
+                playback_object_path=f"media/derived/audio/home/{uuid.uuid4().hex}.mp3",
+                playback_format="mp3",
                 duration_seconds=91,
                 codec="mp3",
-                streaming_storage_bucket="course-media",
+                playback_storage_bucket="course-media",
             )
 
     return asset

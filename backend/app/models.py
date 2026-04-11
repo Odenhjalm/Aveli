@@ -971,7 +971,7 @@ async def add_lesson_media_entry(
                     ELSE NULL
                   END AS media_state,
                   ma.ingest_format,
-                  ma.streaming_format,
+                  ma.playback_format,
                   ma.codec,
                   ma.error_message,
                   i.created_at
@@ -1078,7 +1078,7 @@ async def get_media(media_id: str) -> dict | None:
                 ELSE NULL
               END AS media_state,
               ma.ingest_format,
-              ma.streaming_format,
+              ma.playback_format,
               ma.codec,
               ma.error_message
             FROM app.lesson_media lm

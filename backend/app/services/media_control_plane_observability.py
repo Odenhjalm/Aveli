@@ -162,13 +162,9 @@ def _normalize_asset_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
         "storage": {
             "source_bucket": _normalize_text(row.get("storage_bucket")),
             "source_path": _normalize_path(row.get("original_object_path")),
-            "playback_bucket": _normalize_text(
-                row.get("streaming_storage_bucket") or row.get("storage_bucket")
-            ),
-            "playback_path": _normalize_path(
-                row.get("streaming_object_path") or row.get("original_object_path")
-            ),
-            "playback_format": _normalize_text(row.get("streaming_format")),
+            "playback_bucket": _normalize_text(row.get("storage_bucket")),
+            "playback_path": _normalize_path(row.get("playback_object_path")),
+            "playback_format": _normalize_text(row.get("playback_format")),
         },
     }
 
@@ -402,12 +398,8 @@ def _asset_storage_targets(asset_row: dict[str, Any]) -> list[dict[str, Any]]:
         },
         {
             "label": "playback",
-            "bucket": _normalize_text(
-                asset_row.get("streaming_storage_bucket") or asset_row.get("storage_bucket")
-            ),
-            "storage_path": _normalize_path(
-                asset_row.get("streaming_object_path") or asset_row.get("original_object_path")
-            ),
+            "bucket": _normalize_text(asset_row.get("storage_bucket")),
+            "storage_path": _normalize_path(asset_row.get("playback_object_path")),
         },
     ]
 

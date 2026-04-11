@@ -96,8 +96,8 @@ def _normalize_media_asset_failure(row: dict[str, Any]) -> dict[str, Any]:
             "next_retry_at": _iso(row.get("next_retry_at")),
             "source_bucket": row.get("storage_bucket"),
             "source_path": row.get("original_object_path"),
-            "stream_bucket": row.get("streaming_storage_bucket"),
-            "stream_path": row.get("streaming_object_path"),
+            "playback_bucket": row.get("storage_bucket"),
+            "playback_path": row.get("playback_object_path"),
             "home_player_upload_id": (
                 str(row.get("home_player_upload_id"))
                 if row.get("home_player_upload_id")

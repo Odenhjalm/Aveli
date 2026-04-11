@@ -71,35 +71,57 @@ def _merge_storage_cleanup_report(
     summary["remaining"].extend(list(report.get("remaining") or []))
 
 
+def _normalized_storage_key(path: str | None) -> str:
+    return str(path or "").strip().lstrip("/")
+
+
+def _course_cover_source_prefix(course_id: str) -> str:
+    return f"media/source/cover/courses/{str(course_id or '').strip().lstrip('/')}/"
+
+
+def _canonical_media_asset_bucket(
+    asset: Mapping[str, Any],
+    object_path: str,
+    *,
+    identity: str,
+) -> str | None:
+    normalized_path = _normalized_storage_key(object_path)
+    if not normalized_path:
+        return None
+
+    media_type = str(asset.get("media_type") or "").strip().lower()
+    purpose = str(asset.get("purpose") or "").strip().lower()
+    if identity == "playback" and purpose == "course_cover" and media_type == "image":
+        return settings.media_public_bucket
+    if normalized_path.startswith("lessons/"):
+        return settings.media_public_bucket
+    return settings.media_source_bucket
+
+
 def _asset_delete_targets(asset: Mapping[str, Any]) -> set[tuple[str, str]]:
     targets: set[tuple[str, str]] = set()
 
-    original_path = asset.get("original_object_path")
-    original_bucket = asset.get("storage_bucket") or settings.media_source_bucket
-    if original_path and original_bucket:
-        targets.add((str(original_bucket), str(original_path)))
+    original_path = _normalized_storage_key(asset.get("original_object_path"))
+    if original_path:
+        original_bucket = _canonical_media_asset_bucket(
+            asset,
+            original_path,
+            identity="original",
+        )
+        if original_bucket:
+            targets.add((str(original_bucket), original_path))
 
-        if (asset.get("media_type") or "").lower() == "audio":
-            normalized = str(original_path).lstrip("/")
-            prefix = "media/source/audio/"
-            if normalized.startswith(prefix):
-                normalized = "media/derived/audio/" + normalized[len(prefix) :]
-            else:
-                normalized = "media/derived/audio/" + normalized
-            derived_path = Path(normalized).with_suffix(".mp3").as_posix()
-            targets.add((str(original_bucket), derived_path))
-
-    streaming_path = asset.get("streaming_object_path")
-    if streaming_path:
-        streaming_bucket = asset.get("streaming_storage_bucket") or original_bucket
-        if streaming_bucket:
-            targets.add((str(streaming_bucket), str(streaming_path)))
+    playback_path = _normalized_storage_key(asset.get("playback_object_path"))
+    if playback_path:
+        playback_bucket = _canonical_media_asset_bucket(
+            asset,
+            playback_path,
+            identity="playback",
+        )
+        if playback_bucket:
+            targets.add((str(playback_bucket), playback_path))
 
     return targets
-
-
-def _normalized_storage_key(path: str | None) -> str:
-    return str(path or "").strip().lstrip("/")
 
 
 def _is_lesson_storage_path(path: str | None) -> bool:
@@ -398,7 +420,7 @@ async def _delete_unreferenced_lesson_audio_assets(*, limit: int) -> list[dict[s
                     AND NOT EXISTS (
                       SELECT 1 FROM app.courses c WHERE c.cover_media_id = ma.id
                     )
-                  ORDER BY ma.created_at ASC
+                  ORDER BY ma.id ASC
                   LIMIT %s
                   FOR UPDATE SKIP LOCKED
                 ),
@@ -411,9 +433,10 @@ async def _delete_unreferenced_lesson_audio_assets(*, limit: int) -> list[dict[s
                     ma.media_type,
                     ma.purpose,
                     ma.original_object_path,
-                    ma.storage_bucket,
-                    ma.streaming_object_path,
-                    ma.streaming_storage_bucket
+                    ma.ingest_format,
+                    ma.playback_object_path,
+                    ma.playback_format,
+                    ma.state::text as state
                 )
                 SELECT * FROM deleted
                 """,
@@ -436,14 +459,20 @@ async def _delete_orphan_course_cover_assets_for_deleted_courses(
                   SELECT ma.id
                   FROM app.media_assets ma
                   WHERE ma.purpose = 'course_cover'
-                    AND ma.course_id IS NULL
+                    AND ma.original_object_path LIKE 'media/source/cover/courses/%'
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM app.courses existing_course
+                      WHERE ma.original_object_path LIKE
+                        ('media/source/cover/courses/' || existing_course.id::text || '/%')
+                    )
                     AND NOT EXISTS (
                       SELECT 1 FROM app.lesson_media lm WHERE lm.media_asset_id = ma.id
                     )
                     AND NOT EXISTS (
                       SELECT 1 FROM app.courses c WHERE c.cover_media_id = ma.id
                     )
-                  ORDER BY ma.created_at ASC
+                  ORDER BY ma.id ASC
                   LIMIT %s
                   FOR UPDATE SKIP LOCKED
                 ),
@@ -456,9 +485,10 @@ async def _delete_orphan_course_cover_assets_for_deleted_courses(
                     ma.media_type,
                     ma.purpose,
                     ma.original_object_path,
-                    ma.storage_bucket,
-                    ma.streaming_object_path,
-                    ma.streaming_storage_bucket
+                    ma.ingest_format,
+                    ma.playback_object_path,
+                    ma.playback_format,
+                    ma.state::text as state
                 )
                 SELECT * FROM deleted
                 """,
@@ -470,7 +500,7 @@ async def _delete_orphan_course_cover_assets_for_deleted_courses(
 
 
 async def prune_course_cover_assets(*, course_id: str, limit: int = 100) -> int:
-    """Prune cover assets for a course, keeping the current + latest cover ids."""
+    """Prune unreferenced cover assets for a course, keeping the current cover id."""
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -480,28 +510,19 @@ async def prune_course_cover_assets(*, course_id: str, limit: int = 100) -> int:
                   FROM app.courses c
                   WHERE c.id = %s
                 ),
-                latest AS (
-                  SELECT ma.id
-                  FROM app.media_assets ma
-                  WHERE ma.course_id = %s
-                    AND ma.purpose = 'course_cover'
-                  ORDER BY ma.created_at DESC
-                  LIMIT 1
-                ),
                 candidates AS (
                   SELECT ma.id
                   FROM app.media_assets ma
-                  WHERE ma.course_id = %s
+                  WHERE ma.original_object_path LIKE %s
                     AND ma.purpose = 'course_cover'
                     AND ma.id IS DISTINCT FROM (SELECT cover_media_id FROM current)
-                    AND ma.id IS DISTINCT FROM (SELECT id FROM latest)
                     AND NOT EXISTS (
                       SELECT 1 FROM app.lesson_media lm WHERE lm.media_asset_id = ma.id
                     )
                     AND NOT EXISTS (
                       SELECT 1 FROM app.courses c WHERE c.cover_media_id = ma.id
                     )
-                  ORDER BY ma.created_at ASC
+                  ORDER BY ma.id ASC
                   LIMIT %s
                   FOR UPDATE SKIP LOCKED
                 ),
@@ -514,13 +535,14 @@ async def prune_course_cover_assets(*, course_id: str, limit: int = 100) -> int:
                     ma.media_type,
                     ma.purpose,
                     ma.original_object_path,
-                    ma.storage_bucket,
-                    ma.streaming_object_path,
-                    ma.streaming_storage_bucket
+                    ma.ingest_format,
+                    ma.playback_object_path,
+                    ma.playback_format,
+                    ma.state::text as state
                 )
                 SELECT * FROM deleted
                 """,
-                (course_id, course_id, course_id, limit),
+                (course_id, _course_cover_source_prefix(course_id) + "%", limit),
             )
             deleted_rows = await cur.fetchall()
             await conn.commit()
@@ -558,7 +580,7 @@ async def delete_course_cover_assets_for_course(
                 WITH candidates AS (
                   SELECT ma.id
                   FROM app.media_assets ma
-                  WHERE ma.course_id = %s
+                  WHERE ma.original_object_path LIKE %s
                     AND ma.purpose = 'course_cover'
                     AND NOT EXISTS (
                       SELECT 1 FROM app.lesson_media lm WHERE lm.media_asset_id = ma.id
@@ -566,7 +588,7 @@ async def delete_course_cover_assets_for_course(
                     AND NOT EXISTS (
                       SELECT 1 FROM app.courses c WHERE c.cover_media_id = ma.id
                     )
-                  ORDER BY ma.created_at ASC
+                  ORDER BY ma.id ASC
                   LIMIT %s
                   FOR UPDATE SKIP LOCKED
                 ),
@@ -579,13 +601,14 @@ async def delete_course_cover_assets_for_course(
                     ma.media_type,
                     ma.purpose,
                     ma.original_object_path,
-                    ma.storage_bucket,
-                    ma.streaming_object_path,
-                    ma.streaming_storage_bucket
+                    ma.ingest_format,
+                    ma.playback_object_path,
+                    ma.playback_format,
+                    ma.state::text as state
                 )
                 SELECT * FROM deleted
                 """,
-                (course_id, limit),
+                (_course_cover_source_prefix(course_id) + "%", limit),
             )
             deleted_rows = await cur.fetchall()
             await conn.commit()
@@ -772,9 +795,10 @@ async def delete_media_asset_and_objects(*, media_id: str) -> bool:
                   ma.media_type,
                   ma.purpose,
                   ma.original_object_path,
-                  ma.storage_bucket,
-                  ma.streaming_object_path,
-                  ma.streaming_storage_bucket
+                  ma.ingest_format,
+                  ma.playback_object_path,
+                  ma.playback_format,
+                  ma.state::text as state
                 """,
                 (media_id,),
             )
