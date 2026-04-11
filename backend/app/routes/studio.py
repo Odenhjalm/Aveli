@@ -518,13 +518,6 @@ async def _preview_item_from_row(
     )
 
 
-@router.get("/courses")
-async def studio_courses(current: TeacherUser):
-    rows = list(await courses_service.list_courses(teacher_id=str(current["id"])))
-    await _apply_course_read_contract(rows)
-    return _course_list_response(rows)
-
-
 @router.get("/status")
 async def studio_status(current: TeacherUser):
     info = await models.teacher_status(current["id"])

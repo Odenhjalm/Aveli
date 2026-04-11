@@ -37,6 +37,8 @@ def test_noncanonical_write_routes_cannot_regain_dominance() -> None:
         ("POST", "/studio/lessons/{lesson_id}/media"),
         ("DELETE", "/studio/media/{media_id}"),
         ("PATCH", "/studio/lessons/{lesson_id}/media/reorder"),
+        ("PATCH", "/admin/teachers/{teacher_id}/priority"),
+        ("DELETE", "/admin/teachers/{teacher_id}/priority"),
     }
 
     assert forbidden.isdisjoint(route_pairs)
@@ -44,6 +46,17 @@ def test_noncanonical_write_routes_cannot_regain_dominance() -> None:
         path == "/api/media" or path.startswith("/api/media/")
         for _, path in route_pairs
     )
+
+
+def test_studio_courses_read_route_is_mounted_exactly_once() -> None:
+    matches = [
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/studio/courses"
+        and "GET" in getattr(route, "methods", set())
+    ]
+
+    assert len(matches) == 1
 
 
 def test_canonical_write_routes_remain_mounted() -> None:

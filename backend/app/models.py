@@ -698,48 +698,6 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
             return rows
 
 
-async def upsert_teacher_course_priority(
-    *,
-    teacher_id: str,
-    priority: int,
-    updated_by: str | None,
-    notes: str | None = None,
-) -> dict:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.course_display_priorities (
-                    teacher_id,
-                    priority,
-                    notes,
-                    updated_by
-                )
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (teacher_id) DO UPDATE
-                  SET priority = excluded.priority,
-                      notes = COALESCE(excluded.notes, app.course_display_priorities.notes),
-                      updated_by = excluded.updated_by,
-                      updated_at = now()
-                RETURNING teacher_id, priority, notes, updated_at, updated_by
-                """,
-                (teacher_id, priority, notes, updated_by),
-            )
-            row = await _fetchone(cur)
-            await conn.commit()
-            return row or {}
-
-
-async def delete_teacher_course_priority(teacher_id: str) -> None:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                "DELETE FROM app.course_display_priorities WHERE teacher_id = %s",
-                (teacher_id,),
-            )
-            await conn.commit()
-
-
 async def get_teacher_course_priority(teacher_id: str) -> dict | None:
     teacher_role_sql = _effective_role_sql("subj")
     async with pool.connection() as conn:  # type: ignore

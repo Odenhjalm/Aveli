@@ -15,12 +15,5 @@ class ApiPaths {
   static const billingCreateSubscription = '/api/billing/create-subscription';
   static const checkoutCreate = '/api/checkout/create';
 
-  static const mediaUploadUrl = '/api/media/upload-url';
-  static const mediaUploadUrlRefresh = '/api/media/upload-url/refresh';
-  static const mediaComplete = '/api/media/complete';
   static const mediaPreviews = '/api/lesson-media/previews';
-  static const mediaCoverUploadUrl = '/api/media/cover-upload-url';
-  static const mediaCoverFromMedia = '/api/media/cover-from-media';
-  static const mediaCoverClear = '/api/media/cover-clear';
-  static String mediaStatus(String mediaId) => '/api/media/$mediaId';
 }

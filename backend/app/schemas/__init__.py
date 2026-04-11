@@ -597,11 +597,6 @@ class TarotRequestCreate(BaseModel):
     question: str
 
 
-class TeacherPriorityUpdate(BaseModel):
-    priority: int = Field(gt=0, le=1000)
-    notes: Optional[str] = None
-
-
 class TeacherPriorityRecord(BaseModel):
     teacher_id: UUID
     display_name: Optional[str] = None

@@ -90,9 +90,9 @@ void main() {
     () async {
       final studioRepository = _MockStudioRepository();
       final requestError = DioException(
-        requestOptions: RequestOptions(path: '/api/media/previews'),
+        requestOptions: RequestOptions(path: '/api/media-placements/media-1'),
         response: Response<dynamic>(
-          requestOptions: RequestOptions(path: '/api/media/previews'),
+          requestOptions: RequestOptions(path: '/api/media-placements/media-1'),
           statusCode: 405,
           data: {'detail': 'Method Not Allowed'},
         ),

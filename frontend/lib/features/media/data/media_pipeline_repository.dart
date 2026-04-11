@@ -1,5 +1,4 @@
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/shared/models/request_headers.dart';
 
 Object? _requireResponseField(Object? payload, String key, String label) {
@@ -177,104 +176,25 @@ class CoverMediaResponse {
       );
 }
 
+class CanonicalMediaSurfaceUnavailable implements Exception {
+  const CanonicalMediaSurfaceUnavailable(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class MediaPipelineRepository {
   MediaPipelineRepository({required ApiClient client}) : _client = client;
 
   final ApiClient _client;
-  static const String _homePlayerPurpose = 'home_player_audio';
-  static const Set<String> _allowedPurposes = {_homePlayerPurpose};
+  static const _surfaceUnavailable =
+      'Den har medieytan ar inte monterad i den kanoniska frontendmodellen.';
 
-  static Map<String, dynamic> _buildUploadUrlPayload({
-    required String filename,
-    required String mimeType,
-    required int sizeBytes,
-    required String mediaType,
-    String? purpose,
-    String? courseId,
-    String? lessonId,
-  }) {
-    if (filename.isEmpty) {
-      throw ArgumentError.value(filename, 'filename', 'Must not be empty.');
-    }
-
-    if (mimeType.isEmpty) {
-      throw ArgumentError.value(mimeType, 'mimeType', 'Must not be empty.');
-    }
-
-    if (sizeBytes <= 0) {
-      throw ArgumentError.value(sizeBytes, 'sizeBytes', 'Must be > 0.');
-    }
-
-    if (mediaType != 'audio' &&
-        mediaType != 'image' &&
-        mediaType != 'video' &&
-        mediaType != 'document') {
-      throw ArgumentError.value(
-        mediaType,
-        'mediaType',
-        'Unsupported mediaType for media upload.',
-      );
-    }
-
-    if (purpose != null && purpose.isEmpty) {
-      throw ArgumentError.value(
-        purpose,
-        'purpose',
-        'If provided, purpose must not be empty.',
-      );
-    }
-    if (purpose != null && !_allowedPurposes.contains(purpose)) {
-      throw ArgumentError.value(
-        purpose,
-        'purpose',
-        'Unsupported purpose "$purpose".',
-      );
-    }
-
-    if (courseId != null && courseId.isEmpty) {
-      throw ArgumentError.value(
-        courseId,
-        'courseId',
-        'If provided, courseId must not be empty.',
-      );
-    }
-    if (lessonId != null && lessonId.isEmpty) {
-      throw ArgumentError.value(
-        lessonId,
-        'lessonId',
-        'If provided, lessonId must not be empty.',
-      );
-    }
-
-    if (lessonId != null || courseId != null) {
-      throw ArgumentError(
-        'Lesson media uploads use StudioRepository.uploadLessonMedia.',
-      );
-    }
-
-    if (mediaType == 'audio') {
-      if (purpose != _homePlayerPurpose) {
-        throw ArgumentError.value(
-          purpose,
-          'purpose',
-          'purpose must be home_player_audio for this upload surface.',
-        );
-      }
-    } else {
-      throw ArgumentError(
-        'Non-audio lesson media uploads use StudioRepository.uploadLessonMedia.',
-      );
-    }
-
-    return <String, dynamic>{
-      'filename': filename,
-      'mime_type': mimeType,
-      'size_bytes': sizeBytes,
-      'media_type': mediaType,
-      if (purpose != null) 'purpose': purpose,
-      if (courseId != null) 'course_id': courseId,
-      if (lessonId != null) 'lesson_id': lessonId,
-    };
+  Never _unavailable() {
+    final _ = _client;
+    throw const CanonicalMediaSurfaceUnavailable(_surfaceUnavailable);
   }
 
   Future<MediaUploadTarget> requestUploadUrl({
@@ -286,36 +206,15 @@ class MediaPipelineRepository {
     String? courseId,
     String? lessonId,
   }) async {
-    final payload = _buildUploadUrlPayload(
-      filename: filename,
-      mimeType: mimeType,
-      sizeBytes: sizeBytes,
-      mediaType: mediaType,
-      purpose: purpose,
-      courseId: courseId,
-      lessonId: lessonId,
-    );
-    final response = await _client.post<Object?>(
-      ApiPaths.mediaUploadUrl,
-      body: payload,
-    );
-    return MediaUploadTarget.fromResponse(response);
+    _unavailable();
   }
 
   Future<MediaUploadTarget> refreshUploadUrl({required String mediaId}) async {
-    final response = await _client.post<Object?>(
-      ApiPaths.mediaUploadUrlRefresh,
-      body: {'media_id': mediaId},
-    );
-    return MediaUploadTarget.fromResponse(response);
+    _unavailable();
   }
 
   Future<MediaStatus> completeUpload({required String mediaId}) async {
-    final response = await _client.post<Object?>(
-      ApiPaths.mediaComplete,
-      body: {'media_id': mediaId},
-    );
-    return MediaStatus.fromResponse(response);
+    _unavailable();
   }
 
   Future<MediaStatus> attachUpload({
@@ -324,9 +223,7 @@ class MediaPipelineRepository {
     String? lessonId,
     String? lessonMediaId,
   }) async {
-    throw UnsupportedError(
-      'Lesson media attachments use canonical media placement endpoints.',
-    );
+    _unavailable();
   }
 
   Future<MediaUploadTarget> requestCoverUploadUrl({
@@ -335,43 +232,21 @@ class MediaPipelineRepository {
     required int sizeBytes,
     required String courseId,
   }) async {
-    final payload = <String, dynamic>{
-      'filename': filename,
-      'mime_type': mimeType,
-      'size_bytes': sizeBytes,
-      'course_id': courseId,
-    };
-    final response = await _client.post<Object?>(
-      ApiPaths.mediaCoverUploadUrl,
-      body: payload,
-    );
-    return MediaUploadTarget.fromResponse(response);
+    _unavailable();
   }
 
   Future<CoverMediaResponse> requestCoverFromLessonMedia({
     required String courseId,
     required String lessonMediaId,
   }) async {
-    final payload = <String, dynamic>{
-      'course_id': courseId,
-      'lesson_media_id': lessonMediaId,
-    };
-    final response = await _client.post<Object?>(
-      ApiPaths.mediaCoverFromMedia,
-      body: payload,
-    );
-    return CoverMediaResponse.fromResponse(response);
+    _unavailable();
   }
 
   Future<void> clearCourseCover(String courseId) async {
-    await _client.post<void>(
-      ApiPaths.mediaCoverClear,
-      body: {'course_id': courseId},
-    );
+    _unavailable();
   }
 
   Future<MediaStatus> fetchStatus(String mediaId) async {
-    final response = await _client.get<Object?>(ApiPaths.mediaStatus(mediaId));
-    return MediaStatus.fromResponse(response);
+    _unavailable();
   }
 }

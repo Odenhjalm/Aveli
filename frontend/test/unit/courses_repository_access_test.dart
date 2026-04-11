@@ -1,53 +1,19 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/features/courses/data/course_access_api.dart';
+import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
-
-class _MockApiClient extends Mock implements ApiClient {}
-
-class _FakeAccessApi implements CourseAccessApi {
-  const _FakeAccessApi({
-    this.primary = false,
-    this.fallback = false,
-    this.throwPrimary = false,
-    this.throwFallback = false,
-  });
-
-  final bool primary;
-  final bool fallback;
-  final bool throwPrimary;
-  final bool throwFallback;
-
-  @override
-  Future<bool> fallbackHasAccess(String courseId) async {
-    if (throwFallback) throw Exception('fallback');
-    return fallback;
-  }
-
-  @override
-  Future<bool> hasAccess(String courseId) async {
-    if (throwPrimary) throw Exception('primary');
-    return primary;
-  }
-}
+import 'package:aveli/shared/utils/course_journey_step.dart';
 
 void main() {
-  group('CourseSummary.fromJson', () {
-    test('preserves the backend cover object', () {
-      final summary = CourseSummary.fromJson({
-        'id': 'course-1',
-        'title': 'Aveli 101',
-        'cover_media_id': 'media-1',
-        'cover': {
-          'media_id': 'media-1',
-          'state': 'ready',
-          'resolved_url': '/api/files/public-media/course-cover.png',
-          'source': 'control_plane',
-        },
-      });
+  group('CourseSummary.fromResponse', () {
+    test('preserves the backend-authored cover object', () {
+      final summary = CourseSummary.fromResponse(_coursePayload());
 
       expect(summary.cover, isNotNull);
       expect(summary.cover!.mediaId, 'media-1');
@@ -55,243 +21,271 @@ void main() {
         summary.cover!.resolvedUrl,
         '/api/files/public-media/course-cover.png',
       );
-      expect(summary.cover!.source, 'control_plane');
     });
   });
 
-  group('CoursesRepository.hasAccess', () {
-    late _MockApiClient client;
+  group('CoursesRepository.fetchCourseState', () {
+    test('maps canonical enrollment-backed access state', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/course-1/access') {
+          return _jsonResponse(statusCode: 200, body: _accessPayload());
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
 
-    setUp(() {
-      client = _MockApiClient();
+      final state = await repo.fetchCourseState('course-1');
+
+      expect(state.courseId, 'course-1');
+      expect(state.courseStep, CourseJourneyStep.intro);
+      expect(state.requiredEnrollmentSource, isNull);
+      expect(state.hasEnrollment, isTrue);
+      expect(state.enrollment!.source, 'purchase');
+      expect(state.enrollment!.currentUnlockPosition, 1);
+      expect(adapter.requestsFor('/courses/course-1/access'), hasLength(1));
     });
 
-    test('returns true when primary api grants access', () async {
-      when(
-        () => client.get<Map<String, dynamic>>('/courses/course-1/access'),
-      ).thenAnswer(
-        (_) async => {
-          'can_access': true,
-          'has_access': true,
-          'access_reason': 'enrolled',
-          'enrolled': true,
-          'has_active_subscription': false,
-        },
-      );
+    test('maps absent enrollment without fallback access authority', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/course-2/access') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: _accessPayload(
+              courseId: 'course-2',
+              enrollment: null,
+              requiredEnrollmentSource: 'purchase',
+            ),
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
 
-      final repo = CoursesRepository(client: client);
+      final state = await repo.fetchCourseState('course-2');
 
-      final result = await repo.hasAccess('course-1');
-
-      expect(result, isTrue);
-    });
-
-    test('falls back when primary throws', () async {
-      when(
-        () => client.get<Map<String, dynamic>>('/courses/course-2/access'),
-      ).thenThrow(Exception('primary'));
-
-      final repo = CoursesRepository(
-        client: client,
-        accessApi: const _FakeAccessApi(
-          primary: false,
-          fallback: true,
-          throwPrimary: true,
-        ),
-      );
-
-      final result = await repo.hasAccess('course-2');
-
-      expect(result, isTrue);
-    });
-
-    test('returns false when both fail', () async {
-      when(
-        () => client.get<Map<String, dynamic>>('/courses/course-3/access'),
-      ).thenThrow(Exception('primary'));
-
-      final repo = CoursesRepository(
-        client: client,
-        accessApi: const _FakeAccessApi(
-          primary: false,
-          fallback: false,
-          throwPrimary: true,
-          throwFallback: true,
-        ),
-      );
-
-      final result = await repo.hasAccess('course-3');
-
-      expect(result, isFalse);
+      expect(state.courseId, 'course-2');
+      expect(state.requiredEnrollmentSource, 'purchase');
+      expect(state.hasEnrollment, isFalse);
+      expect(state.enrollment, isNull);
+      expect(adapter.requestsFor('/courses/course-2/access'), hasLength(1));
     });
   });
 
   group('CoursesRepository.fetchCourseDetailBySlug', () {
-    const slug = 'aveli-course';
-    const courseId = 'course-1';
-
-    test('enriches detail with enrollment and order info', () async {
-      final client = _MockApiClient();
-      final repo = CoursesRepository(
-        client: client,
-        accessApi: const _FakeAccessApi(primary: true),
-      );
-
-      when(
-        () => client.get<Map<String, dynamic>>(
-          '/courses/by-slug/$slug',
-          queryParameters: null,
-        ),
-      ).thenAnswer(
-        (_) async => {
-          'course': {
-            'id': courseId,
-            'slug': slug,
-            'title': 'Aveli 101',
-            'description': 'Intro description',
-            'video_url': null,
-            'is_free_intro': true,
-            'is_published': true,
-            'price_cents': 0,
-          },
-          'lessons': [
-            {
-              'id': 'lesson-1',
-              'title': 'Welcome',
-              'position': 1,
-              'is_intro': true,
-              'content_markdown': '# Intro',
+    test('maps canonical detail without access enrichment', () async {
+      const slug = 'aveli-course';
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/by-slug/$slug') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'course': _coursePayload(slug: slug),
+              'lessons': [
+                {'id': 'lesson-2', 'lesson_title': 'Second', 'position': 2},
+                {'id': 'lesson-1', 'lesson_title': 'First', 'position': 1},
+              ],
             },
-          ],
-        },
-      );
-
-      when(
-        () => client.get<Map<String, dynamic>>(
-          '/courses/$courseId/access',
-          queryParameters: null,
-        ),
-      ).thenAnswer(
-        (_) async => {
-          'can_access': true,
-          'has_access': true,
-          'access_reason': 'enrolled',
-          'enrolled': true,
-          'has_active_subscription': false,
-          'latest_order': {
-            'id': 'order-7',
-            'status': 'paid',
-            'amount_cents': 4500,
-            'created_at': '2024-01-10T12:00:00Z',
-          },
-        },
-      );
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
 
       final detail = await repo.fetchCourseDetailBySlug(slug);
 
-      expect(detail.hasAccess, isTrue);
-      expect(detail.accessReason, 'enrolled');
-      expect(detail.isEnrolled, isTrue);
-      expect(detail.latestOrder, isNotNull);
-      expect(detail.latestOrder!.id, 'order-7');
-      expect(detail.lessons, isNotEmpty);
-      expect(detail.lessons.single.title, 'Welcome');
-    });
-
-    test(
-      'handles unauthorized access metadata and missing order gracefully',
-      () async {
-        final client = _MockApiClient();
-        final repo = CoursesRepository(
-          client: client,
-          accessApi: const _FakeAccessApi(primary: false),
-        );
-
-        when(
-          () => client.get<Map<String, dynamic>>(
-            '/courses/by-slug/$slug',
-            queryParameters: null,
-          ),
-        ).thenAnswer(
-          (_) async => {
-            'course': {
-              'id': courseId,
-              'slug': slug,
-              'title': 'Aveli 101',
-              'description': null,
-              'video_url': null,
-              'is_free_intro': false,
-              'is_published': true,
-              'price_cents': 1500,
-            },
-            'lessons': [],
-          },
-        );
-
-        when(
-          () => client.get<Map<String, dynamic>>(
-            '/courses/$courseId/access',
-            queryParameters: null,
-          ),
-        ).thenThrow(UnauthorizedFailure(message: 'not allowed'));
-
-        final detail = await repo.fetchCourseDetailBySlug(slug);
-
-        expect(detail.hasAccess, isFalse);
-        expect(detail.accessReason, 'none');
-        expect(detail.isEnrolled, isFalse);
-        expect(detail.latestOrder, isNull);
-      },
-    );
-
-    test('maps direct lessons payload', () async {
-      final client = _MockApiClient();
-      final repo = CoursesRepository(
-        client: client,
-        accessApi: const _FakeAccessApi(primary: true),
+      expect(detail.course.slug, slug);
+      expect(
+        detail.lessons.map((lesson) => lesson.lessonTitle),
+        orderedEquals(['First', 'Second']),
       );
-
-      when(
-        () => client.get<Map<String, dynamic>>(
-          '/courses/by-slug/$slug',
-          queryParameters: null,
-        ),
-      ).thenAnswer(
-        (_) async => {
-          'course': {
-            'id': courseId,
-            'slug': slug,
-            'title': 'Aveli 101',
-            'description': 'Flat lessons payload',
-            'is_free_intro': false,
-            'is_published': true,
-            'price_cents': 0,
-          },
-          'lessons': [
-            {'id': 'lesson-1', 'title': 'L1', 'position': 1, 'is_intro': true},
-            {'id': 'lesson-2', 'title': 'L2', 'position': 2, 'is_intro': false},
-          ],
-        },
-      );
-
-      when(
-        () => client.get<Map<String, dynamic>>(
-          '/courses/$courseId/access',
-          queryParameters: null,
-        ),
-      ).thenAnswer(
-        (_) async => {
-          'can_access': true,
-          'has_access': true,
-          'access_reason': 'enrolled',
-          'enrolled': true,
-          'has_active_subscription': false,
-        },
-      );
-
-      final detail = await repo.fetchCourseDetailBySlug(slug);
-
-      expect(detail.lessons.map((l) => l.title), orderedEquals(['L1', 'L2']));
+      expect(adapter.requestsFor('/courses/by-slug/$slug'), hasLength(1));
+      expect(adapter.requestsFor('/courses/course-1/access'), isEmpty);
     });
   });
+}
+
+CoursesRepository _repository(_RecordingAdapter adapter) {
+  final client = ApiClient(
+    baseUrl: 'http://127.0.0.1:1',
+    tokenStorage: TokenStorage(storage: _MemoryFlutterSecureStorage()),
+  );
+  client.raw.httpClientAdapter = adapter;
+  return CoursesRepository(client: client);
+}
+
+Map<String, Object?> _coursePayload({String slug = 'aveli-course'}) {
+  return {
+    'id': 'course-1',
+    'slug': slug,
+    'title': 'Aveli 101',
+    'step': 'intro',
+    'course_group_id': 'group-1',
+    'cover_media_id': 'media-1',
+    'cover': {
+      'media_id': 'media-1',
+      'state': 'ready',
+      'resolved_url': '/api/files/public-media/course-cover.png',
+      'source': 'control_plane',
+    },
+    'price_amount_cents': 0,
+    'drip_enabled': false,
+    'drip_interval_days': null,
+  };
+}
+
+Map<String, Object?> _accessPayload({
+  String courseId = 'course-1',
+  Object? enrollment = _defaultEnrollment,
+  String? requiredEnrollmentSource,
+}) {
+  return {
+    'course_id': courseId,
+    'course_step': 'intro',
+    'required_enrollment_source': requiredEnrollmentSource,
+    'enrollment': enrollment,
+  };
+}
+
+const Map<String, Object?> _defaultEnrollment = {
+  'id': 'enrollment-1',
+  'user_id': 'user-1',
+  'course_id': 'course-1',
+  'source': 'purchase',
+  'granted_at': '2024-01-10T12:00:00Z',
+  'drip_started_at': '2024-01-10T12:00:00Z',
+  'current_unlock_position': 1,
+};
+
+ResponseBody _jsonResponse({
+  required int statusCode,
+  required Map<String, Object?> body,
+}) {
+  return ResponseBody.fromString(
+    json.encode(body),
+    statusCode,
+    headers: {
+      Headers.contentTypeHeader: [Headers.jsonContentType],
+    },
+  );
+}
+
+class _RecordingAdapter implements HttpClientAdapter {
+  _RecordingAdapter(this._handler);
+
+  final ResponseBody Function(RequestOptions options) _handler;
+  final List<_RecordedRequest> _requests = <_RecordedRequest>[];
+
+  List<_RecordedRequest> requestsFor(String path) => _requests
+      .where((request) => request.path == path)
+      .toList(growable: false);
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    _requests.add(
+      _RecordedRequest(
+        path: options.path,
+        method: options.method.toUpperCase(),
+      ),
+    );
+    return _handler(options);
+  }
+}
+
+class _RecordedRequest {
+  const _RecordedRequest({required this.path, required this.method});
+
+  final String path;
+  final String method;
+}
+
+class _MemoryFlutterSecureStorage extends FlutterSecureStorage {
+  final Map<String, String> _values = <String, String>{};
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    _values.remove(key);
+  }
+
+  @override
+  Future<void> deleteAll({
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    _values.clear();
+  }
+
+  @override
+  Future<Map<String, String>> readAll({
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    return Map<String, String>.from(_values);
+  }
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    return _values[key];
+  }
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    if (value == null) {
+      _values.remove(key);
+      return;
+    }
+    _values[key] = value;
+  }
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    WindowsOptions? wOptions,
+    MacOsOptions? mOptions,
+  }) async {
+    return _values.containsKey(key);
+  }
 }
