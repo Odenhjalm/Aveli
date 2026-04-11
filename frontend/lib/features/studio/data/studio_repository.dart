@@ -50,6 +50,14 @@ class StudioRepository {
     throw StateError('$label field "$field" must be a list');
   }
 
+  static String _requiredEtagHeader(Response<Object?> response, String label) {
+    final etag = response.headers.value('etag')?.trim();
+    if (etag == null || etag.isEmpty) {
+      throw StateError('$label is missing required ETag header');
+    }
+    return etag;
+  }
+
   Future<StudioStatus> fetchStatus() async {
     return _unsupportedRuntime('Studio status');
   }
@@ -134,22 +142,9 @@ class StudioRepository {
     required String contentMarkdown,
     int position = 0,
   }) async {
-    final structure = id == null
-        ? await createLessonStructure(
-            courseId: courseId,
-            lessonTitle: lessonTitle,
-            position: position,
-          )
-        : await updateLessonStructure(
-            id,
-            lessonTitle: lessonTitle,
-            position: position,
-          );
-    final normalizedContent = await updateLessonContent(
-      structure.id,
-      contentMarkdown: contentMarkdown,
+    return _unsupportedRuntime(
+      'Blandad lektionsstruktur och lektionsinnehåll stöds inte',
     );
-    return structure.copyWith(contentMarkdown: normalizedContent);
   }
 
   Future<LessonStudio> createLessonStructure({
@@ -190,24 +185,33 @@ class StudioRepository {
     );
   }
 
-  Future<String> updateLessonContent(
+  Future<StudioLessonContentRead> readLessonContent(String id) async {
+    final response = await _client.raw.get<Object?>(
+      '/studio/lessons/$id/content',
+    );
+    return StudioLessonContentRead.fromResponse(
+      response.data,
+      etag: _requiredEtagHeader(response, 'Studio lesson content read'),
+    );
+  }
+
+  Future<StudioLessonContentWriteResult> updateLessonContent(
     String id, {
     required String contentMarkdown,
+    required String ifMatch,
   }) async {
+    final contentToken = ifMatch.trim();
+    if (contentToken.isEmpty) {
+      throw StateError('Lektionsinnehåll kräver en giltig If-Match-token');
+    }
     final response = await _client.raw.patch<Object?>(
       '/studio/lessons/$id/content',
       data: {'content_markdown': contentMarkdown},
+      options: Options(headers: {'If-Match': contentToken}),
     );
-    final content = _requiredResponseField(
+    return StudioLessonContentWriteResult.fromResponse(
       response.data,
-      'content_markdown',
-      'Updated studio lesson content',
-    );
-    if (content is String) {
-      return content;
-    }
-    throw StateError(
-      'Updated studio lesson content field "content_markdown" must be a string',
+      etag: _requiredEtagHeader(response, 'Updated studio lesson content'),
     );
   }
 

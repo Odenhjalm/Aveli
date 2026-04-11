@@ -1122,30 +1122,17 @@ async def lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
     return await courses_service.lesson_course_ids(lesson_id)
 
 
-# UWD-001 non-canonical write isolation: this mixed lesson helper accepts structure
-# and content together and must not define canonical Course + Lesson Editor authority.
 async def upsert_lesson(
     *,
     lesson_id: str | None,
     course_id: str,
     lesson_title: str | None = None,
-    content_markdown: str | None = None,
     position: int | None = None,
 ) -> dict | None:
-    payload: dict[str, Any] = {}
-    if lesson_id is not None:
-        payload["id"] = lesson_id
-    if lesson_title is not None:
-        payload["lesson_title"] = lesson_title
-    if content_markdown is not None:
-        payload["content_markdown"] = content_markdown
-    if position is not None:
-        payload["position"] = position
-
-    if lesson_id is not None and not payload.keys() - {"id"}:
-        return await courses_service.fetch_studio_lesson(lesson_id)
-
-    return await courses_service.upsert_lesson(course_id, payload)
+    del lesson_id, course_id, lesson_title, position
+    raise RuntimeError(
+        "Legacy mixed lesson upsert is disabled; use separate structure and content surfaces"
+    )
 
 
 async def delete_lesson(lesson_id: str) -> bool:

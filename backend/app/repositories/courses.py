@@ -697,6 +697,25 @@ async def get_lesson_structure(lesson_id: str) -> LessonRow | None:
     return dict(row) if row else None
 
 
+async def get_studio_lesson_content(lesson_id: str) -> dict[str, Any] | None:
+    query = """
+        select
+            l.id as lesson_id,
+            l.course_id,
+            coalesce(lc.content_markdown, '') as content_markdown
+        from app.lessons as l
+        left join app.lesson_contents as lc
+          on lc.lesson_id = l.id
+        where l.id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id,))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
 async def get_lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
     query = """
         select
@@ -1161,54 +1180,62 @@ async def update_lesson_content(
     return dict(row) if row else None
 
 
-async def update_lesson(lesson_id: str, patch: dict[str, Any]) -> LessonRow | None:
-    lesson_assignments: list[str] = []
-    lesson_params: list[Any] = []
-    if "lesson_title" in patch:
-        lesson_assignments.append("lesson_title = %s")
-        lesson_params.append(patch["lesson_title"])
-    if "position" in patch:
-        lesson_assignments.append("position = %s")
-        lesson_params.append(patch["position"])
-
+async def update_lesson_content_if_current(
+    lesson_id: str,
+    content_markdown: str,
+    *,
+    expected_content_markdown: str,
+) -> dict[str, Any] | None:
+    query = """
+        with target_lesson as (
+            select id
+            from app.lessons
+            where id = %s::uuid
+        ),
+        current_content as (
+            select content_markdown
+            from app.lesson_contents
+            where lesson_id = %s::uuid
+        ),
+        updated_content as (
+            insert into app.lesson_contents (lesson_id, content_markdown)
+            select target_lesson.id, %s
+            from target_lesson
+            where coalesce(
+                (select current_content.content_markdown from current_content),
+                ''
+            ) = %s
+            on conflict (lesson_id)
+            do update set content_markdown = excluded.content_markdown
+            where app.lesson_contents.content_markdown = %s
+            returning lesson_id, content_markdown
+        )
+        select lesson_id, content_markdown
+        from updated_content
+        limit 1
+    """
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            if lesson_assignments:
-                await cur.execute(
-                    f"""
-                    update app.lessons
-                    set {", ".join(lesson_assignments)}
-                    where id = %s::uuid
-                    returning id
-                    """,
-                    (*lesson_params, lesson_id),
-                )
-                lesson_row = await cur.fetchone()
-                if lesson_row is None:
-                    await conn.rollback()
-                    return None
-            else:
-                await cur.execute(
-                    "select id from app.lessons where id = %s::uuid limit 1",
-                    (lesson_id,),
-                )
-                lesson_row = await cur.fetchone()
-                if lesson_row is None:
-                    return None
-
-            if "content_markdown" in patch:
-                await cur.execute(
-                    """
-                    insert into app.lesson_contents (lesson_id, content_markdown)
-                    values (%s::uuid, %s)
-                    on conflict (lesson_id)
-                    do update set content_markdown = excluded.content_markdown
-                    """,
-                    (lesson_id, patch["content_markdown"]),
-                )
+            await cur.execute(
+                query,
+                (
+                    lesson_id,
+                    lesson_id,
+                    content_markdown,
+                    expected_content_markdown,
+                    expected_content_markdown,
+                ),
+            )
+            row = await cur.fetchone()
             await conn.commit()
+    return dict(row) if row else None
 
-    return await get_studio_lesson(lesson_id)
+
+async def update_lesson(lesson_id: str, patch: dict[str, Any]) -> LessonRow | None:
+    del lesson_id, patch
+    raise RuntimeError(
+        "Legacy mixed lesson update is disabled; use separate structure and content surfaces"
+    )
 
 
 async def reorder_lessons(course_id: str, ordered_lesson_ids: Sequence[str]) -> None:

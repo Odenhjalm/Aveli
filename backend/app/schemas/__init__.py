@@ -1220,7 +1220,27 @@ class StudioLessonContentUpdate(BaseModel):
     content_markdown: str
 
 
+class StudioLessonContentMediaItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_media_id: UUID
+    media_asset_id: UUID | None = None
+    position: int
+    media_type: Literal["audio", "image", "video", "document"]
+    state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
+
+
+class StudioLessonContentRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_id: UUID
+    content_markdown: str
+    media: List[StudioLessonContentMediaItem] = Field(default_factory=list)
+
+
 class StudioLessonContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     lesson_id: UUID
     content_markdown: str
 

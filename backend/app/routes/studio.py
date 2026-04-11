@@ -2015,6 +2015,28 @@ async def update_lesson_structure(
     return schemas.StudioLessonStructure(**row)
 
 
+@course_lesson_router.get(
+    "/lessons/{lesson_id}/content",
+    response_model=schemas.StudioLessonContentRead,
+)
+async def read_lesson_content(
+    lesson_id: str,
+    response: Response,
+    current: TeacherUser,
+):
+    try:
+        result = await courses_service.read_studio_lesson_content(
+            lesson_id,
+            teacher_id=str(current["id"]),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    response.headers["ETag"] = str(result["etag"])
+    return schemas.StudioLessonContentRead(**result["body"])
+
+
 @course_lesson_router.patch(
     "/lessons/{lesson_id}/content",
     response_model=schemas.StudioLessonContent,
@@ -2022,19 +2044,35 @@ async def update_lesson_structure(
 async def update_lesson_content(
     lesson_id: str,
     payload: schemas.StudioLessonContentUpdate,
+    request: Request,
+    response: Response,
     current: TeacherUser,
 ):
-    del current
     try:
         row = await courses_service.update_lesson_content(
             lesson_id,
             content_markdown=payload.content_markdown,
+            if_match=request.headers.get("if-match"),
+            teacher_id=str(current["id"]),
         )
+    except courses_service.LessonContentPreconditionRequired as exc:
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail=str(exc),
+        ) from exc
+    except courses_service.LessonContentPreconditionFailed as exc:
+        raise HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail=str(exc),
+        ) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Lesson not found")
-    return schemas.StudioLessonContent(**row)
+    response.headers["ETag"] = str(row["etag"])
+    return schemas.StudioLessonContent(**row["body"])
 
 
 @course_lesson_router.delete("/lessons/{lesson_id}")

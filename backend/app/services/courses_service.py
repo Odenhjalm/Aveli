@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from uuid import UUID, uuid4
@@ -35,6 +36,27 @@ _LEARNER_MEDIA_TYPES = frozenset({"audio", "image", "video", "document"})
 _LEARNER_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
 )
+
+
+class LessonContentPreconditionRequired(Exception):
+    pass
+
+
+class LessonContentPreconditionFailed(Exception):
+    pass
+
+
+def build_lesson_content_etag(lesson_id: str, content_markdown: str) -> str:
+    payload = f"{str(lesson_id).strip()}\0{content_markdown}".encode("utf-8")
+    digest = hashlib.sha256(payload).hexdigest()
+    return f'"lesson-content:{digest}"'
+
+
+def _if_match_contains_etag(if_match: str | None, expected_etag: str) -> bool:
+    value = str(if_match or "").strip()
+    if not value:
+        return False
+    return expected_etag in {candidate.strip() for candidate in value.split(",")}
 
 
 def _source_matches_course_step(*, course_step: str, enrollment_source: str) -> bool:
@@ -373,6 +395,42 @@ async def read_protected_lesson_content_surface(
 async def fetch_studio_lesson(lesson_id: str) -> dict[str, Any] | None:
     row = await courses_repo.get_studio_lesson(lesson_id)
     return dict(row) if row else None
+
+
+def _studio_content_media_item(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "lesson_media_id": row["lesson_media_id"],
+        "media_asset_id": row.get("media_asset_id"),
+        "position": row["position"],
+        "media_type": row["media_type"],
+        "state": row["state"],
+    }
+
+
+async def read_studio_lesson_content(
+    lesson_id: str,
+    *,
+    teacher_id: str,
+) -> dict[str, Any] | None:
+    row = await courses_repo.get_studio_lesson_content(lesson_id)
+    if row is None:
+        return None
+
+    course_id = str(row.get("course_id") or "").strip()
+    if not await is_course_owner(teacher_id, course_id):
+        raise PermissionError("Not course owner")
+
+    content_markdown = str(row.get("content_markdown") or "")
+    media_rows = await list_studio_lesson_media(lesson_id)
+    body = {
+        "lesson_id": row["lesson_id"],
+        "content_markdown": content_markdown,
+        "media": [_studio_content_media_item(item) for item in media_rows],
+    }
+    return {
+        "body": body,
+        "etag": build_lesson_content_etag(str(row["lesson_id"]), content_markdown),
+    }
 
 
 async def lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
@@ -1075,22 +1133,11 @@ async def ensure_course_stripe_mapping(course_id: str, teacher_id: str) -> dict[
     return dict(refreshed) if refreshed is not None else dict(updated)
 
 
-async def create_lesson(
-    course_id: str,
-    *,
-    lesson_title: str,
-    content_markdown: str,
-    position: int,
-    lesson_id: str | None = None,
-) -> dict[str, Any]:
-    row = await courses_repo.create_lesson(
-        lesson_id=lesson_id,
-        course_id=course_id,
-        lesson_title=lesson_title,
-        content_markdown=content_markdown,
-        position=position,
+async def create_lesson(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    del args, kwargs
+    raise RuntimeError(
+        "Legacy mixed lesson create is disabled; use separate structure and content surfaces"
     )
-    return dict(row)
 
 
 async def create_lesson_structure(
@@ -1124,9 +1171,23 @@ async def update_lesson_content(
     lesson_id: str,
     *,
     content_markdown: str,
+    if_match: str | None,
+    teacher_id: str,
 ) -> dict[str, Any] | None:
-    if await courses_repo.get_lesson_structure(lesson_id) is None:
+    current = await read_studio_lesson_content(
+        lesson_id,
+        teacher_id=teacher_id,
+    )
+    if current is None:
         return None
+
+    current_body = current["body"]
+    current_etag = current["etag"]
+    if not str(if_match or "").strip():
+        raise LessonContentPreconditionRequired("If-Match is required")
+    if not _if_match_contains_etag(if_match, current_etag):
+        raise LessonContentPreconditionFailed("Lesson content is stale")
+
     media_rows = await list_lesson_media(lesson_id)
     lesson_media_kinds, media_url_aliases = (
         lesson_content_utils.build_lesson_media_write_contract(media_rows)
@@ -1136,34 +1197,32 @@ async def update_lesson_content(
         lesson_media_kinds=lesson_media_kinds,
         media_url_aliases=media_url_aliases,
     )
-    row = await courses_repo.update_lesson_content(lesson_id, normalized_markdown)
-    return dict(row) if row else None
+    row = await courses_repo.update_lesson_content_if_current(
+        lesson_id,
+        normalized_markdown,
+        expected_content_markdown=str(current_body["content_markdown"]),
+    )
+    if row is None:
+        raise LessonContentPreconditionFailed("Lesson content is stale")
+
+    updated_body = {
+        "lesson_id": row["lesson_id"],
+        "content_markdown": row["content_markdown"],
+    }
+    return {
+        "body": updated_body,
+        "etag": build_lesson_content_etag(
+            str(row["lesson_id"]),
+            str(row["content_markdown"]),
+        ),
+    }
 
 
 async def upsert_lesson(course_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
-    existing_id = str(payload.get("id") or "").strip()
-    lesson_id = existing_id or None
-    if lesson_id is None:
-        required_fields = {"lesson_title", "content_markdown", "position"}
-        missing = sorted(field for field in required_fields if field not in payload)
-        if missing:
-            raise ValueError(f"missing lesson fields: {', '.join(missing)}")
-        return await create_lesson(
-            course_id,
-            lesson_title=str(payload["lesson_title"]),
-            content_markdown=str(payload["content_markdown"]),
-            position=int(payload["position"]),
-        )
-
-    patch: dict[str, Any] = {}
-    if "lesson_title" in payload:
-        patch["lesson_title"] = payload["lesson_title"]
-    if "content_markdown" in payload:
-        patch["content_markdown"] = payload["content_markdown"]
-    if "position" in payload:
-        patch["position"] = payload["position"]
-    row = await courses_repo.update_lesson(lesson_id, patch)
-    return dict(row) if row else None
+    del course_id, payload
+    raise RuntimeError(
+        "Legacy mixed lesson upsert is disabled; use separate structure and content surfaces"
+    )
 
 
 async def reorder_lessons(course_id: str, ordered_lesson_ids: Sequence[str]) -> None:

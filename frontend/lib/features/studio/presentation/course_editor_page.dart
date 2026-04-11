@@ -123,7 +123,12 @@ const Map<String, String> _editorFontOptions = <String, String>{
   'Playfair Display (rubrik)': 'PlayfairDisplay',
 };
 
-enum _LessonEditorBootPhase { booting, applyingLessonDocument, fullyStable }
+enum _LessonEditorBootPhase {
+  booting,
+  applyingLessonDocument,
+  error,
+  fullyStable,
+}
 
 class _EditorSessionToken {
   const _EditorSessionToken({
@@ -338,6 +343,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _lessonContentSaving = false;
   String _lastSavedLessonTitle = '';
   String _lastSavedLessonMarkdown = '';
+  String? _lastSavedLessonContentEtag;
+  String? _lessonContentHydratedLessonId;
+  String? _lessonContentLoadError;
   TextSelection? _lastLessonSelection;
   bool _lessonContentControllerInitialized = false;
   int _lessonContentControllerGeneration = 0;
@@ -530,9 +538,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _resetLessonEditorBootValues({
     required _LessonEditorBootPhase phase,
     bool bumpHydrationRevision = false,
+    String? errorMessage,
   }) {
     _documentReadyLessonId = null;
     _documentReadyRequestId = null;
+    _lessonContentHydratedLessonId = null;
+    _lastSavedLessonContentEtag = null;
+    _lessonContentLoadError = errorMessage;
     _resetLessonPreviewHydrationValues(bumpRevision: bumpHydrationRevision);
     _lessonEditorBootPhase = phase;
   }
@@ -686,6 +698,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _markLessonContentDirty() {
+    if (!_isSelectedLessonDocumentReady()) {
+      return;
+    }
     if (!mounted) {
       _lessonContentDirty = true;
       return;
@@ -700,6 +715,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     bool requestFocus = false,
     bool refreshPage = false,
   }) {
+    if (!_isSelectedLessonDocumentReady()) {
+      if (mounted && context.mounted) {
+        showSnack(context, 'Lektionsinnehållet är inte färdigladdat.');
+      }
+      return;
+    }
     mutation(_lessonContentController);
     _snapshotLessonSelection();
     if (requestFocus) {
@@ -880,10 +901,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _isSelectedLessonDocumentReady() {
     final selectedLessonId = _selectedLessonId;
     final documentReadyRequestId = _documentReadyRequestId;
+    final contentEtag = _lastSavedLessonContentEtag;
     if (selectedLessonId == null || documentReadyRequestId == null) {
       return false;
     }
+    if (contentEtag == null || contentEtag.trim().isEmpty) {
+      return false;
+    }
     return _documentReadyLessonId == selectedLessonId &&
+        _lessonContentHydratedLessonId == selectedLessonId &&
+        _lessonContentLoadError == null &&
         documentReadyRequestId == _lessonContentRequestId;
   }
 
@@ -1708,8 +1735,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             courseId: item.courseId,
             lessonTitle: item.lessonTitle,
             position: item.position,
-            contentMarkdown: item.contentMarkdown,
-            clearContentMarkdown: item.contentMarkdown == null,
           ),
         );
         existingById.remove(item.id);
@@ -1816,6 +1841,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _handleLessonTitleChanged() {
+    if (!_isSelectedLessonDocumentReady()) return;
     if (!_lessonContentDirty &&
         _lessonTitleCtrl.text.trim() != _lastSavedLessonTitle) {
       setState(() => _lessonContentDirty = true);
@@ -2211,7 +2237,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     required int requestId,
     required String storedMarkdown,
     required String storedTitle,
+    required String contentEtag,
   }) async {
+    final normalizedEtag = contentEtag.trim();
+    if (normalizedEtag.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _lessonContentLoadError =
+              'Lektionsinnehållet saknar giltig versionsmarkör.';
+          _lessonEditorBootPhase = _LessonEditorBootPhase.error;
+          _lessonContentDirty = false;
+        });
+      }
+      return;
+    }
     final prepared = _prepareLessonMarkdownForEditing(storedMarkdown);
     if (!mounted ||
         _isStaleRequest(
@@ -2247,6 +2286,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     setState(() {
       _documentReadyLessonId = lessonId;
       _documentReadyRequestId = requestId;
+      _lessonContentHydratedLessonId = lessonId;
+      _lastSavedLessonMarkdown = storedMarkdown;
+      _lastSavedLessonTitle = storedTitle;
+      _lastSavedLessonContentEtag = normalizedEtag;
+      _lessonContentLoadError = null;
       _lessonContentDirty = false;
       _lessonEditorBootPhase = _LessonEditorBootPhase.fullyStable;
     });
@@ -2270,11 +2314,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     final lesson = _lessonById(lessonId);
-    final storedMarkdown = lesson?.contentMarkdown ?? '';
-    final storedTitle = lesson?.lessonTitle ?? '';
-
-    _lastSavedLessonMarkdown = storedMarkdown;
-    _lastSavedLessonTitle = storedTitle;
+    if (lesson == null) {
+      if (mounted) {
+        setState(() {
+          _resetLessonEditorBootValues(
+            phase: _LessonEditorBootPhase.error,
+            errorMessage: 'Lektionen kunde inte hittas i strukturdata.',
+          );
+          _lessonContentDirty = false;
+        });
+      }
+      return;
+    }
+    final storedTitle = lesson.lessonTitle;
     _setLessonTitleFieldValue(storedTitle);
 
     final requestId = ++_lessonContentRequestId;
@@ -2305,11 +2357,47 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         )) {
       return;
     }
+    late final StudioLessonContentRead content;
+    try {
+      content = await _studioRepo.readLessonContent(lessonId);
+    } catch (error, stackTrace) {
+      if (!mounted ||
+          _isStaleRequest(
+            requestId: requestId,
+            currentId: _lessonContentRequestId,
+            courseId: _selectedCourseId,
+            lessonId: lessonId,
+          )) {
+        return;
+      }
+      final failure = AppFailure.from(error, stackTrace);
+      setState(() {
+        _resetLessonEditorBootValues(
+          phase: _LessonEditorBootPhase.error,
+          errorMessage: 'Kunde inte läsa lektionsinnehåll: ${failure.message}',
+        );
+        _lessonContentDirty = false;
+      });
+      return;
+    }
+    if (content.lessonId != lessonId) {
+      if (mounted) {
+        setState(() {
+          _resetLessonEditorBootValues(
+            phase: _LessonEditorBootPhase.error,
+            errorMessage: 'Lektionsinnehållet hör till fel lektion.',
+          );
+          _lessonContentDirty = false;
+        });
+      }
+      return;
+    }
     await _finishLessonDocumentBoot(
       lessonId: lessonId,
       requestId: requestId,
-      storedMarkdown: storedMarkdown,
+      storedMarkdown: content.contentMarkdown,
       storedTitle: storedTitle,
+      contentEtag: content.etag,
     );
   }
 
@@ -2317,6 +2405,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final requestId = ++_lessonContentRequestId;
     final lessonId = _selectedLessonId;
     if (lessonId == null) return;
+    final contentEtag = _lastSavedLessonContentEtag;
+    if (contentEtag == null || contentEtag.trim().isEmpty) {
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          'Lektionsinnehållet måste laddas innan det kan återställas.',
+        );
+      }
+      return;
+    }
     if (mounted) {
       setState(() {
         _resetLessonEditorBootValues(
@@ -2349,6 +2447,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       requestId: requestId,
       storedMarkdown: _lastSavedLessonMarkdown,
       storedTitle: _lastSavedLessonTitle,
+      contentEtag: contentEtag,
     );
   }
 
@@ -2366,6 +2465,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return false;
     }
     if (_lessonContentSaving) return false;
+    final contentEtag = _lastSavedLessonContentEtag;
+    if (!_isSelectedLessonDocumentReady() ||
+        contentEtag == null ||
+        contentEtag.trim().isEmpty) {
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          'Lektionsinnehållet måste laddas innan det kan sparas.',
+        );
+      }
+      return false;
+    }
 
     final title = _lessonTitleCtrl.text.trim().isEmpty
         ? 'Lektion'
@@ -2413,11 +2524,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     });
     final token = _captureEditorToken();
     try {
-      final updated = await _studioRepo.upsertLesson(
-        id: lessonId,
-        courseId: courseId,
+      StudioLessonContentWriteResult? updatedContent;
+      if (markdown != _lastSavedLessonMarkdown) {
+        updatedContent = await _studioRepo.updateLessonContent(
+          lessonId,
+          contentMarkdown: markdown,
+          ifMatch: contentEtag,
+        );
+      }
+      final updatedStructure = await _studioRepo.updateLessonStructure(
+        lessonId,
         lessonTitle: title,
-        contentMarkdown: markdown,
         position: _currentLessonPosition(),
       );
 
@@ -2425,10 +2542,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
       setState(() {
         _lessons = _lessons
-            .map((lesson) => lesson.id == lessonId ? updated : lesson)
+            .map((lesson) => lesson.id == lessonId ? updatedStructure : lesson)
             .toList();
-        _lastSavedLessonMarkdown = markdown;
+        if (updatedContent != null) {
+          _lastSavedLessonMarkdown = updatedContent.contentMarkdown;
+        }
         _lastSavedLessonTitle = title;
+        if (updatedContent != null) {
+          _lastSavedLessonContentEtag = updatedContent.etag;
+        }
         _lessonContentDirty = false;
       });
 
@@ -2437,6 +2559,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return true;
     } on DioException catch (error) {
+      if (error.response?.statusCode == 412 ||
+          error.response?.statusCode == 428) {
+        if (mounted) {
+          setState(() {
+            _resetLessonEditorBootValues(
+              phase: _LessonEditorBootPhase.error,
+              errorMessage:
+                  'Lektionsinnehållet har ändrats. Ladda om innehållet innan du sparar igen.',
+            );
+            _lessonContentDirty = true;
+          });
+        }
+      }
       final message = _friendlyDioMessage(error);
       if (mounted && context.mounted) {
         showSnack(context, 'Kunde inte spara lektion: $message');
@@ -2898,10 +3033,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final theme = Theme.of(context);
     final isApplying =
         _lessonEditorBootPhase == _LessonEditorBootPhase.applyingLessonDocument;
-    final title = isApplying
+    final isError = _lessonEditorBootPhase == _LessonEditorBootPhase.error;
+    final title = isError
+        ? 'Lektionsinnehållet kunde inte laddas'
+        : isApplying
         ? 'Laddar lektionsinnehåll…'
         : 'Förbereder editorn…';
-    final detail = isApplying
+    final detail = isError
+        ? (_lessonContentLoadError ??
+              'Ladda om innehållet innan du fortsätter.')
+        : isApplying
         ? 'Editorn blir redigerbar så snart rätt lektion har laddats.'
         : 'Välj en lektion för att börja redigera.';
 
@@ -2959,11 +3100,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(strokeWidth: 3),
-                      ),
+                      if (isError)
+                        Icon(
+                          Icons.error_outline_rounded,
+                          size: 32,
+                          color: theme.colorScheme.error,
+                        )
+                      else
+                        const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(strokeWidth: 3),
+                        ),
                       const SizedBox(height: 16),
                       Text(
                         title,
@@ -2980,6 +3128,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
+                      if (isError) ...[
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: _selectedLessonId == null
+                              ? null
+                              : _bootSelectedLesson,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Ladda om innehåll'),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -3156,6 +3314,26 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildNarrowLessonEditorSurface(
+    BuildContext context, {
+    required double editorHeight,
+  }) {
+    final isDocumentReady = _isSelectedLessonDocumentReady();
+    if (!isDocumentReady) {
+      return SizedBox(
+        height: editorHeight + 180,
+        child: _buildLessonEditorBootShell(context),
+      );
+    }
+    if (_lessonPreviewMode) {
+      return SizedBox(
+        height: editorHeight + 180,
+        child: _buildLessonPreviewMode(context),
+      );
+    }
+    return _buildLessonContentEditor(context, editorHeight: editorHeight);
   }
 
   Widget _buildCourseCoverPicker(BuildContext context) {
@@ -3415,13 +3593,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                     .map((lesson) => lesson.position)
                     .fold<int>(0, (a, b) => a > b ? a : b) +
                 1;
-      final lessonId = _uuid.v4();
-      final lesson = await _studioRepo.upsertLesson(
+      final lesson = await _studioRepo.createLessonStructure(
         courseId: courseId,
         lessonTitle: 'Ny lektion',
-        contentMarkdown: '',
         position: nextPos,
-        createId: lessonId,
       );
       if (!mounted) return;
       setState(() {
@@ -5714,7 +5889,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               ],
                               if (!isWide && _selectedLessonId != null) ...[
                                 gap12,
-                                _buildLessonContentEditor(
+                                _buildNarrowLessonEditorSurface(
                                   context,
                                   editorHeight: editorHeight,
                                 ),

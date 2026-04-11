@@ -42,24 +42,6 @@ String? _nullableResponseString(Object? payload, String key, String label) {
   throw StateError('$label field "$key" must be a string or null');
 }
 
-String? _optionalResponseString(Object? payload, String key, String label) {
-  switch (payload) {
-    case final Map data when !data.containsKey(key):
-      return null;
-    case final Map data:
-      final value = data[key];
-      if (value == null) {
-        return null;
-      }
-      if (value is String) {
-        return value;
-      }
-      throw StateError('$label field "$key" must be a string or null');
-    default:
-      throw StateError('$label returned a non-object payload');
-  }
-}
-
 int _requiredResponseInt(Object? payload, String key, String label) {
   final value = _requireResponseField(payload, key, label);
   if (value is int) {
@@ -85,6 +67,31 @@ bool _requiredResponseBool(Object? payload, String key, String label) {
     return value;
   }
   throw StateError('$label field "$key" must be a bool');
+}
+
+List<Object?> _requiredResponseList(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value is List) {
+    return List<Object?>.from(value);
+  }
+  throw StateError('$label field "$key" must be a list');
+}
+
+void _rejectResponseFields(
+  Object? payload,
+  Iterable<String> keys,
+  String label,
+) {
+  switch (payload) {
+    case final Map data:
+      for (final key in keys) {
+        if (data.containsKey(key)) {
+          throw StateError('$label must not include field "$key"');
+        }
+      }
+    default:
+      throw StateError('$label returned a non-object payload');
+  }
 }
 
 ResolvedMediaData? _nullableResolvedMedia(
@@ -256,29 +263,27 @@ class LessonStudio {
     required this.courseId,
     required this.lessonTitle,
     required this.position,
-    required this.contentMarkdown,
   });
 
   final String id;
   final String courseId;
   final String lessonTitle;
   final int position;
-  final String? contentMarkdown;
 
   factory LessonStudio.fromResponse(
     Object? payload, {
     String label = 'StudioLesson',
   }) {
+    _rejectResponseFields(payload, const [
+      'content_markdown',
+      'media',
+      'etag',
+    ], label);
     return LessonStudio(
       id: _requiredResponseString(payload, 'id', label),
       courseId: _requiredResponseString(payload, 'course_id', label),
       lessonTitle: _requiredResponseString(payload, 'lesson_title', label),
       position: _requiredResponseInt(payload, 'position', label),
-      contentMarkdown: _optionalResponseString(
-        payload,
-        'content_markdown',
-        label,
-      ),
     );
   }
 
@@ -287,19 +292,141 @@ class LessonStudio {
     String? courseId,
     String? lessonTitle,
     int? position,
-    String? contentMarkdown,
-    bool clearContentMarkdown = false,
   }) {
     return LessonStudio(
       id: id ?? this.id,
       courseId: courseId ?? this.courseId,
       lessonTitle: lessonTitle ?? this.lessonTitle,
       position: position ?? this.position,
-      contentMarkdown: clearContentMarkdown
-          ? null
-          : (contentMarkdown ?? this.contentMarkdown),
     );
   }
+}
+
+@immutable
+class StudioLessonContentMediaItem {
+  const StudioLessonContentMediaItem({
+    required this.lessonMediaId,
+    required this.position,
+    required this.mediaType,
+    required this.state,
+    this.mediaAssetId,
+  });
+
+  final String lessonMediaId;
+  final int position;
+  final String mediaType;
+  final String state;
+  final String? mediaAssetId;
+
+  factory StudioLessonContentMediaItem.fromResponse(Object? payload) {
+    return StudioLessonContentMediaItem(
+      lessonMediaId: _requiredResponseString(
+        payload,
+        'lesson_media_id',
+        'StudioLessonContentMediaItem',
+      ),
+      position: _requiredResponseInt(
+        payload,
+        'position',
+        'StudioLessonContentMediaItem',
+      ),
+      mediaType: _requiredResponseString(
+        payload,
+        'media_type',
+        'StudioLessonContentMediaItem',
+      ),
+      state: _requiredResponseString(
+        payload,
+        'state',
+        'StudioLessonContentMediaItem',
+      ),
+      mediaAssetId: _nullableResponseString(
+        payload,
+        'media_asset_id',
+        'StudioLessonContentMediaItem',
+      ),
+    );
+  }
+}
+
+@immutable
+class StudioLessonContentRead {
+  StudioLessonContentRead({
+    required this.lessonId,
+    required this.contentMarkdown,
+    required List<StudioLessonContentMediaItem> media,
+    required String etag,
+  }) : media = List<StudioLessonContentMediaItem>.unmodifiable(media),
+       etag = _requireTransportEtag(etag, 'StudioLessonContentRead');
+
+  final String lessonId;
+  final String contentMarkdown;
+  final List<StudioLessonContentMediaItem> media;
+  final String etag;
+
+  factory StudioLessonContentRead.fromResponse(
+    Object? payload, {
+    required String etag,
+  }) {
+    return StudioLessonContentRead(
+      lessonId: _requiredResponseString(
+        payload,
+        'lesson_id',
+        'StudioLessonContentRead',
+      ),
+      contentMarkdown: _requiredResponseStringValue(
+        payload,
+        'content_markdown',
+        'StudioLessonContentRead',
+      ),
+      media: _requiredResponseList(
+        payload,
+        'media',
+        'StudioLessonContentRead',
+      ).map(StudioLessonContentMediaItem.fromResponse).toList(growable: false),
+      etag: etag,
+    );
+  }
+}
+
+@immutable
+class StudioLessonContentWriteResult {
+  const StudioLessonContentWriteResult({
+    required this.lessonId,
+    required this.contentMarkdown,
+    required this.etag,
+  });
+
+  final String lessonId;
+  final String contentMarkdown;
+  final String etag;
+
+  factory StudioLessonContentWriteResult.fromResponse(
+    Object? payload, {
+    required String etag,
+  }) {
+    return StudioLessonContentWriteResult(
+      lessonId: _requiredResponseString(
+        payload,
+        'lesson_id',
+        'StudioLessonContentWriteResult',
+      ),
+      contentMarkdown: _requiredResponseStringValue(
+        payload,
+        'content_markdown',
+        'StudioLessonContentWriteResult',
+      ),
+      etag: _requireTransportEtag(etag, 'StudioLessonContentWriteResult'),
+    );
+  }
+}
+
+String _requireTransportEtag(String value, String label) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) {
+    throw StateError('$label requires a non-empty ETag transport token');
+  }
+  return normalized;
 }
 
 @immutable
