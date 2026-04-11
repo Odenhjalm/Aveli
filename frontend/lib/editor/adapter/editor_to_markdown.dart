@@ -171,10 +171,3 @@ String editorDeltaToCanonicalMarkdown({
   }
   return _stripTerminalDocumentNewline(markdown);
 }
-
-String editorDeltaToPassivePreviewMarkdown({required quill_delta.Delta delta}) {
-  return editorDeltaToCanonicalMarkdown(
-    delta: delta,
-    enforceStorageContract: false,
-  );
-}

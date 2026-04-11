@@ -22,6 +22,37 @@ def _route_method_pairs() -> set[tuple[str, str]]:
     return pairs
 
 
+def _source_block(source: str, needle: str) -> str:
+    try:
+        start = source.index(needle)
+    except ValueError as exc:
+        raise AssertionError(f"Missing source block: {needle}") from exc
+
+    body_marker = ") async {"
+    body_marker_index = source.find(body_marker, start)
+    if body_marker_index >= 0:
+        opening = body_marker_index + len(body_marker) - 1
+    else:
+        try:
+            opening = source.index("{", start)
+        except ValueError as exc:
+            raise AssertionError(
+                f"Missing opening brace for source block: {needle}"
+            ) from exc
+
+    depth = 0
+    for index in range(opening, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening : index + 1]
+
+    raise AssertionError(f"Unterminated source block: {needle}")
+
+
 def test_noncanonical_write_routes_cannot_regain_dominance() -> None:
     route_pairs = _route_method_pairs()
 
@@ -80,6 +111,22 @@ def test_canonical_write_routes_remain_mounted() -> None:
     assert ("DELETE", "/api/media-placements/{lesson_media_id}") in route_pairs
 
 
+def test_preview_mode_routes_do_not_add_mutation_surface() -> None:
+    preview_routes = {
+        (method, path)
+        for method, path in _route_method_pairs()
+        if "preview" in path
+    }
+
+    allowed_projection_routes = {
+        ("GET", "/api/lesson-media/{lesson_id}/{lesson_media_id}/preview"),
+        ("POST", "/api/lesson-media/previews"),
+        ("POST", "/api/media/previews"),
+    }
+
+    assert preview_routes.issubset(allowed_projection_routes)
+
+
 def test_application_code_does_not_write_runtime_media_directly() -> None:
     write_patterns = (
         re.compile(r"\binsert\s+into\s+app\.runtime_media\b", re.IGNORECASE),
@@ -94,6 +141,84 @@ def test_application_code_does_not_write_runtime_media_directly() -> None:
         for pattern in write_patterns:
             if pattern.search(text):
                 offenders.append((str(path.relative_to(REPO_ROOT)), pattern.pattern))
+
+    assert offenders == []
+
+
+def test_course_editor_preview_mode_uses_persisted_read_projection_only() -> None:
+    editor_source = (
+        REPO_ROOT
+        / "frontend"
+        / "lib"
+        / "features"
+        / "studio"
+        / "presentation"
+        / "course_editor_page.dart"
+    ).read_text(encoding="utf-8")
+    media_repo_source = (
+        REPO_ROOT
+        / "frontend"
+        / "lib"
+        / "features"
+        / "studio"
+        / "data"
+        / "studio_repository_lesson_media.dart"
+    ).read_text(encoding="utf-8")
+
+    preview_toggle = _source_block(
+        editor_source,
+        "Future<void> _setLessonPreviewMode(bool enabled)",
+    )
+    preview_reader = _source_block(
+        editor_source,
+        "Future<_PersistedLessonPreviewSnapshot> _readPersistedLessonPreview({",
+    )
+    placement_reader = _source_block(
+        media_repo_source,
+        "Future<List<StudioLessonMediaItem>> fetchLessonMediaPlacements(",
+    )
+
+    assert "_readPersistedLessonPreview" in preview_toggle
+    for required in (
+        "readLessonContent",
+        "fetchLessonMediaPlacements",
+        "fetchCourseMeta",
+        "content.contentMarkdown",
+        "course.cover?.resolvedUrl",
+    ):
+        assert required in preview_reader
+    assert "/api/media-placements/$lessonMediaId" in placement_reader
+
+    forbidden_authority_tokens = (
+        "_lessonPreviewMarkdown",
+        "_syncLessonPreviewMarkdownFromController",
+        "_serializeLessonPreviewMarkdownFromController",
+        "_currentLessonPreviewMarkdown",
+        "editorDeltaToPassivePreviewMarkdown",
+        "previewMarkdown",
+        "fetchLessonMediaPreviews",
+        "/api/lesson-media/previews",
+        "/api/lesson-media/$lessonId/$lessonMediaId/preview",
+        "updateLessonContent(",
+        "updateLessonStructure(",
+        "uploadLessonMedia(",
+        "deleteLessonMedia(",
+        "reorderLessonMedia(",
+        "updateCourse(",
+        "uploadCourseCover(",
+        "clearCourseCover(",
+    )
+    scoped_sources = {
+        "_setLessonPreviewMode": preview_toggle,
+        "_readPersistedLessonPreview": preview_reader,
+        "fetchLessonMediaPlacements": placement_reader,
+    }
+
+    offenders: list[tuple[str, str]] = []
+    for name, source in scoped_sources.items():
+        for token in forbidden_authority_tokens:
+            if token in source:
+                offenders.append((name, token))
 
     assert offenders == []
 

@@ -142,6 +142,24 @@ class _EditorSessionToken {
   final String selectedLessonId;
 }
 
+class _PersistedLessonPreviewSnapshot {
+  const _PersistedLessonPreviewSnapshot({
+    required this.lessonId,
+    required this.courseId,
+    required this.title,
+    required this.markdown,
+    required this.lessonMedia,
+    required this.coverResolvedUrl,
+  });
+
+  final String lessonId;
+  final String courseId;
+  final String title;
+  final String markdown;
+  final List<LessonMediaItem> lessonMedia;
+  final String? coverResolvedUrl;
+}
+
 class _AudioEmbedBuilder implements quill.EmbedBuilder {
   const _AudioEmbedBuilder({this.hydrationListenable});
 
@@ -338,7 +356,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _documentReadyLessonId;
   int? _documentReadyRequestId;
   bool _lessonPreviewMode = false;
-  String _lessonPreviewMarkdown = '';
+  int _persistedLessonPreviewRequestId = 0;
+  bool _persistedLessonPreviewLoading = false;
+  String? _persistedLessonPreviewError;
+  _PersistedLessonPreviewSnapshot? _persistedLessonPreviewSnapshot;
   bool _lessonContentDirty = false;
   bool _lessonContentSaving = false;
   String _lastSavedLessonTitle = '';
@@ -487,7 +508,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _setSelectedLessonId(String? lessonId) {
+    if (_selectedLessonId == lessonId) return;
     _selectedLessonId = lessonId;
+    _lessonPreviewMode = false;
+    _resetPersistedLessonPreview();
   }
 
   void _ensureLessonEditorWebTestIdSupport() {
@@ -535,6 +559,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _previewHydrationController.reset(bumpRevision: bumpRevision);
   }
 
+  void _resetPersistedLessonPreview() {
+    _persistedLessonPreviewRequestId += 1;
+    _persistedLessonPreviewLoading = false;
+    _persistedLessonPreviewError = null;
+    _persistedLessonPreviewSnapshot = null;
+  }
+
   void _resetLessonEditorBootValues({
     required _LessonEditorBootPhase phase,
     bool bumpHydrationRevision = false,
@@ -546,6 +577,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lastSavedLessonContentEtag = null;
     _lessonContentLoadError = errorMessage;
     _resetLessonPreviewHydrationValues(bumpRevision: bumpHydrationRevision);
+    _lessonPreviewMode = false;
+    _resetPersistedLessonPreview();
     _lessonEditorBootPhase = phase;
   }
 
@@ -563,14 +596,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   int _editorDocumentExtent([quill.QuillController? controller]) {
     return max((controller ?? _lessonContentController).document.length - 1, 0);
-  }
-
-  void _syncLessonPreviewMarkdownFromController([
-    quill.QuillController? controller,
-  ]) {
-    _lessonPreviewMarkdown = _serializeLessonPreviewMarkdownFromController(
-      controller ?? _lessonContentController,
-    );
   }
 
   _EditorSessionToken? _captureEditorToken() {
@@ -698,6 +723,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _markLessonContentDirty() {
+    if (_lessonPreviewMode) {
+      return;
+    }
     if (!_isSelectedLessonDocumentReady()) {
       return;
     }
@@ -710,11 +738,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     });
   }
 
+  bool _requireEditModeForMutation() {
+    if (!_lessonPreviewMode) {
+      return true;
+    }
+    if (mounted && context.mounted) {
+      showSnack(context, 'Växla till Redigera för att ändra innehåll.');
+    }
+    return false;
+  }
+
   void _runEditorMutation(
     void Function(quill.QuillController controller) mutation, {
     bool requestFocus = false,
     bool refreshPage = false,
   }) {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     if (!_isSelectedLessonDocumentReady()) {
       if (mounted && context.mounted) {
         showSnack(context, 'Lektionsinnehållet är inte färdigladdat.');
@@ -895,7 +936,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _setPreviewModeViaTestBridge(bool enabled) {
-    _setLessonPreviewMode(enabled);
+    unawaited(_setLessonPreviewMode(enabled));
   }
 
   bool _isSelectedLessonDocumentReady() {
@@ -914,22 +955,127 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         documentReadyRequestId == _lessonContentRequestId;
   }
 
-  void _setLessonPreviewMode(bool enabled) {
-    final shouldEnable = enabled && _isSelectedLessonDocumentReady();
-    if (_lessonPreviewMode == shouldEnable) return;
-    if (shouldEnable) {
-      _syncLessonPreviewMarkdownFromController();
-      if (_lessonContentFocusNode.hasFocus) {
-        _lessonContentFocusNode.unfocus();
+  Future<void> _setLessonPreviewMode(bool enabled) async {
+    if (!enabled) {
+      if (!mounted) {
+        _lessonPreviewMode = false;
+        _resetPersistedLessonPreview();
+        return;
       }
-    }
-    if (!mounted) {
-      _lessonPreviewMode = shouldEnable;
+      setState(() {
+        _lessonPreviewMode = false;
+        _resetPersistedLessonPreview();
+      });
+      _ensureLessonEditorFocus(reason: 'preview_mode_disabled');
       return;
     }
-    setState(() => _lessonPreviewMode = shouldEnable);
-    if (!shouldEnable) {
-      _ensureLessonEditorFocus(reason: 'preview_mode_disabled');
+
+    if (!_isSelectedLessonDocumentReady()) {
+      return;
+    }
+    final lessonId = _selectedLessonId;
+    final courseId = _selectedCourseId;
+    if (lessonId == null || courseId == null) {
+      return;
+    }
+    if (_lessonContentSaving) {
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          'Vänta tills lektionen har sparats innan du förhandsgranskar.',
+        );
+      }
+      return;
+    }
+    if (_savingCourseMeta) {
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          'Vänta tills kursinformationen har sparats innan du förhandsgranskar.',
+        );
+      }
+      return;
+    }
+    if (_lessonActionBusy) {
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          'Vänta tills lektionen har uppdaterats innan du förhandsgranskar.',
+        );
+      }
+      return;
+    }
+    if (_updatingCourseCover) {
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          'Vänta tills kursbilden har uppdaterats innan du förhandsgranskar.',
+        );
+      }
+      return;
+    }
+    final currentSnapshot = _currentPersistedLessonPreviewSnapshot();
+    if (_lessonPreviewMode &&
+        !_persistedLessonPreviewLoading &&
+        currentSnapshot != null) {
+      return;
+    }
+
+    if (_lessonContentFocusNode.hasFocus) {
+      _lessonContentFocusNode.unfocus();
+    }
+    final requestId = ++_persistedLessonPreviewRequestId;
+    if (!mounted) {
+      _lessonPreviewMode = true;
+      _persistedLessonPreviewLoading = true;
+      _persistedLessonPreviewError = null;
+      _persistedLessonPreviewSnapshot = null;
+      return;
+    }
+    setState(() {
+      _lessonPreviewMode = true;
+      _persistedLessonPreviewLoading = true;
+      _persistedLessonPreviewError = null;
+      _persistedLessonPreviewSnapshot = null;
+    });
+
+    try {
+      final snapshot = await _readPersistedLessonPreview(
+        courseId: courseId,
+        lessonId: lessonId,
+      );
+      if (!mounted ||
+          _isStaleRequest(
+            requestId: requestId,
+            currentId: _persistedLessonPreviewRequestId,
+            courseId: courseId,
+            lessonId: lessonId,
+          )) {
+        return;
+      }
+      setState(() {
+        _persistedLessonPreviewSnapshot = snapshot;
+        _persistedLessonPreviewLoading = false;
+        _persistedLessonPreviewError = null;
+      });
+    } catch (error, stackTrace) {
+      if (!mounted ||
+          _isStaleRequest(
+            requestId: requestId,
+            currentId: _persistedLessonPreviewRequestId,
+            courseId: courseId,
+            lessonId: lessonId,
+          )) {
+        return;
+      }
+      final message = AppFailure.from(error, stackTrace).message.trim();
+      setState(() {
+        _persistedLessonPreviewSnapshot = null;
+        _persistedLessonPreviewLoading = false;
+        _persistedLessonPreviewError = message.isEmpty
+            ? 'Kunde inte läsa sparad förhandsgranskning.'
+            : 'Kunde inte läsa sparad förhandsgranskning: $message';
+      });
     }
   }
 
@@ -1091,7 +1237,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     _studioRepo = widget.studioRepository ?? ref.read(studioRepositoryProvider);
     _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
-    _replaceLessonDocument(quill.Document(), previewMarkdown: '');
+    _replaceLessonDocument(quill.Document());
     _bootstrap();
     _uploadSubscription = ref.listenManual<List<UploadJob>>(
       studioUploadQueueProvider,
@@ -1566,6 +1712,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final title = lesson.lessonTitle;
     final position = lesson.position;
     final isSelected = lessonId == _selectedLessonId;
+    final canMutateLessons = !_lessonPreviewMode && !_lessonActionBusy;
 
     return Material(
       color: isSelected
@@ -1591,15 +1738,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           children: [
             IconButton(
               tooltip: 'Ta bort lektion',
-              onPressed: _lessonActionBusy
+              onPressed: !canMutateLessons
                   ? null
                   : () => _deleteLesson(lessonId),
               icon: const Icon(Icons.delete_outline),
             ),
-            ReorderableDragStartListener(
-              index: index,
-              child: const Icon(Icons.drag_handle_rounded),
-            ),
+            if (canMutateLessons)
+              ReorderableDragStartListener(
+                index: index,
+                child: const Icon(Icons.drag_handle_rounded),
+              ),
           ],
         ),
         onTap: () => _selectLesson(lessonId),
@@ -1622,6 +1770,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _persistLessonOrder() async {
+    if (_lessonPreviewMode) {
+      return;
+    }
     final courseId = _selectedCourseId;
     if (courseId == null || _lessons.isEmpty) return;
 
@@ -1644,6 +1795,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _handleLessonReorder(int oldIndex, int newIndex) {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     if (_lessonActionBusy || oldIndex == newIndex) return;
     setState(() {
       if (newIndex > oldIndex) newIndex -= 1;
@@ -1751,7 +1905,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _replaceLessonDocument(
     quill.Document document, {
     bool resetDirty = true,
-    String? previewMarkdown,
   }) {
     final hadController = _lessonContentControllerInitialized;
     final previousControllerIdentity = hadController
@@ -1782,9 +1935,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     _lessonContentControllerInitialized = true;
     _lessonContentControllerGeneration += 1;
-    _lessonPreviewMarkdown =
-        previewMarkdown ??
-        _serializeLessonPreviewMarkdownFromController(controller);
     _attachControllerListener();
     _syncLessonEditorTestBridge();
     _lastLessonSelection = _clampEditorSelection(
@@ -1841,6 +1991,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _handleLessonTitleChanged() {
+    if (_lessonPreviewMode) return;
     if (!_isSelectedLessonDocumentReady()) return;
     if (!_lessonContentDirty &&
         _lessonTitleCtrl.text.trim() != _lastSavedLessonTitle) {
@@ -1879,29 +2030,69 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return labels;
   }
 
-  List<LessonMediaItem> _selectedLessonMediaItems() {
-    final selectedLessonId = _selectedLessonId;
-    if (selectedLessonId == null) return const <LessonMediaItem>[];
-    if (_lessonMediaLessonId != selectedLessonId) {
-      return const <LessonMediaItem>[];
-    }
-    if (_lessonMedia.isEmpty) return const <LessonMediaItem>[];
+  LessonMediaItem _lessonMediaItemFromStudioMedia(StudioLessonMediaItem media) {
+    return LessonMediaItem(
+      id: media.lessonMediaId,
+      lessonId: media.lessonId,
+      mediaAssetId: media.mediaAssetId,
+      position: media.position,
+      mediaType: media.mediaType,
+      state: media.state,
+      media: media.media,
+    );
+  }
 
-    final items = <LessonMediaItem>[];
-    for (final media in _lessonMedia) {
-      items.add(
-        LessonMediaItem(
-          id: media.lessonMediaId,
-          lessonId: media.lessonId,
-          mediaAssetId: media.mediaAssetId,
-          position: media.position,
-          mediaType: media.mediaType,
-          state: media.state,
-          media: media.media,
-        ),
-      );
+  List<LessonMediaItem> _lessonMediaItemsFromStudioMedia(
+    Iterable<StudioLessonMediaItem> mediaItems,
+  ) {
+    return mediaItems
+        .map(_lessonMediaItemFromStudioMedia)
+        .toList(growable: false);
+  }
+
+  Future<_PersistedLessonPreviewSnapshot> _readPersistedLessonPreview({
+    required String courseId,
+    required String lessonId,
+  }) async {
+    final content = await _studioRepo.readLessonContent(lessonId);
+    if (content.lessonId != lessonId) {
+      throw StateError('Lektionsinnehållet hör till fel lektion.');
     }
-    return items;
+
+    final lessonMediaIds = content.media
+        .map((media) => media.lessonMediaId)
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+    final placements = await _studioRepo.fetchLessonMediaPlacements(
+      lessonMediaIds,
+    );
+    final course = await _studioRepo.fetchCourseMeta(courseId);
+    final lesson = _lessonById(lessonId);
+    final title = lesson?.lessonTitle.trim() ?? '';
+    return _PersistedLessonPreviewSnapshot(
+      lessonId: lessonId,
+      courseId: courseId,
+      title: title.isEmpty ? 'Lektion' : title,
+      markdown: content.contentMarkdown,
+      lessonMedia: _lessonMediaItemsFromStudioMedia(placements),
+      coverResolvedUrl: course.cover?.resolvedUrl,
+    );
+  }
+
+  _PersistedLessonPreviewSnapshot? _currentPersistedLessonPreviewSnapshot() {
+    final snapshot = _persistedLessonPreviewSnapshot;
+    final selectedLessonId = _selectedLessonId;
+    final selectedCourseId = _selectedCourseId;
+    if (snapshot == null ||
+        selectedLessonId == null ||
+        selectedCourseId == null) {
+      return null;
+    }
+    if (snapshot.lessonId != selectedLessonId ||
+        snapshot.courseId != selectedCourseId) {
+      return null;
+    }
+    return snapshot;
   }
 
   bool _requiresAuthoritativeEditorReadiness(StudioLessonMediaItem media) {
@@ -2068,18 +2259,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  String _serializeLessonPreviewMarkdownFromController(
-    quill.QuillController controller,
-  ) {
-    return editor_to_markdown.editorDeltaToPassivePreviewMarkdown(
-      delta: controller.document.toDelta(),
-    );
-  }
-
-  String _currentLessonPreviewMarkdown() {
-    return _lessonPreviewMarkdown;
-  }
-
   Set<String> _embeddedLessonMediaIdsFromController(
     quill.QuillController controller,
   ) {
@@ -2119,7 +2298,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return _embeddedLessonMediaIdsFromController(_lessonContentController);
     }
     return lesson_pipeline.extractLessonEmbeddedMediaIds(
-      _currentLessonPreviewMarkdown(),
+      _lastSavedLessonMarkdown,
     );
   }
 
@@ -2273,7 +2452,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     _setLessonTitleFieldValue(storedTitle);
-    _replaceLessonDocument(document, previewMarkdown: prepared);
+    _replaceLessonDocument(document);
     if (!mounted ||
         _isStaleRequest(
           requestId: requestId,
@@ -2457,6 +2636,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<bool> _saveLessonContent({bool showSuccessSnack = true}) async {
+    if (!_requireEditModeForMutation()) {
+      return false;
+    }
     final lessonId = _selectedLessonId;
     final courseId = _selectedCourseId;
 
@@ -2518,10 +2700,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
     }
 
-    setState(() {
-      _lessonPreviewMarkdown = markdown;
-      _lessonContentSaving = true;
-    });
+    setState(() => _lessonContentSaving = true);
     final token = _captureEditorToken();
     try {
       StudioLessonContentWriteResult? updatedContent;
@@ -2592,11 +2771,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         'selectedLessonId=${_selectedLessonId ?? 'none'}',
       );
     }
+    if (_lessonPreviewMode) {
+      if (_lessonContentDirty && mounted && context.mounted) {
+        showSnack(
+          context,
+          'Växla till Redigera för att spara eller återställa ändringar.',
+        );
+      }
+      return !_lessonContentDirty;
+    }
     if (!_lessonContentDirty) return true;
     return _saveLessonContent(showSuccessSnack: false);
   }
 
   Future<void> _insertMagicLink() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final controller = _lessonContentController;
 
     final labelController = TextEditingController(text: 'Boka nu');
@@ -3167,10 +3358,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Widget _buildLessonPreviewMode(BuildContext context) {
     final theme = Theme.of(context);
-    final title = _lessonTitleCtrl.text.trim();
-    final previewTitle = title.isEmpty ? 'Lektion' : title;
-    final lessonMediaItems = _selectedLessonMediaItems();
-    final markdown = _currentLessonPreviewMarkdown();
+    final snapshot = _currentPersistedLessonPreviewSnapshot();
+    final previewTitle = snapshot?.title ?? 'Lektion';
+    final previewError = _persistedLessonPreviewError;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3183,29 +3373,62 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ),
         gap6,
         Text(
-          'Read-only preview med samma renderingspipeline som elevvyn.',
+          'Skrivskyddad förhandsgranskning med samma renderingspipeline som elevvyn.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
         gap12,
-        Expanded(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.zero,
-            child: GlassCard(
-              padding: const EdgeInsets.all(16),
-              borderRadius: BorderRadius.circular(22),
-              opacity: 0.12,
-              sigmaX: 10,
-              sigmaY: 10,
-              borderColor: Colors.white.withValues(alpha: 0.16),
-              child: LessonPageRenderer(
-                markdown: markdown,
-                lessonMedia: lessonMediaItems,
-                onLaunchUrl: (url) => unawaited(_launchLessonPreviewUrl(url)),
+        if (snapshot?.coverResolvedUrl case final coverUrl?)
+          if (coverUrl.trim().isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: double.infinity,
+                height: 120,
+                child: Image.network(
+                  coverUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox.shrink(),
+                ),
               ),
             ),
-          ),
+            gap12,
+          ],
+        Expanded(
+          child: _persistedLessonPreviewLoading
+              ? const Center(child: CircularProgressIndicator())
+              : snapshot == null
+              ? Center(
+                  child: Text(
+                    previewError ??
+                        'Förhandsgranskningen behöver läsa sparat innehåll.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: previewError == null
+                          ? theme.colorScheme.onSurfaceVariant
+                          : theme.colorScheme.error,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: EdgeInsets.zero,
+                  child: GlassCard(
+                    padding: const EdgeInsets.all(16),
+                    borderRadius: BorderRadius.circular(22),
+                    opacity: 0.12,
+                    sigmaX: 10,
+                    sigmaY: 10,
+                    borderColor: Colors.white.withValues(alpha: 0.16),
+                    child: LessonPageRenderer(
+                      markdown: snapshot.markdown,
+                      lessonMedia: snapshot.lessonMedia,
+                      onLaunchUrl: (url) =>
+                          unawaited(_launchLessonPreviewUrl(url)),
+                    ),
+                  ),
+                ),
         ),
       ],
     );
@@ -3242,7 +3465,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         ? null
                         : (_) {
                             if (_lessonPreviewMode) {
-                              _setLessonPreviewMode(false);
+                              unawaited(_setLessonPreviewMode(false));
                             }
                           },
                   ),
@@ -3254,7 +3477,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         ? null
                         : (_) {
                             if (!_lessonPreviewMode) {
-                              _setLessonPreviewMode(true);
+                              unawaited(_setLessonPreviewMode(true));
                             }
                           },
                   ),
@@ -3428,17 +3651,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Row(
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             TextButton.icon(
-              onPressed: hasCover && !_updatingCourseCover
+              onPressed:
+                  hasCover && !_updatingCourseCover && !_lessonPreviewMode
                   ? () => unawaited(_clearCourseCover())
                   : null,
               icon: const Icon(Icons.delete_outline),
               label: const Text('Ta bort kursbild'),
             ),
             if (_updatingCourseCover) ...[
-              const SizedBox(width: 12),
               const Chip(
                 label: Text('Uppdaterar...'),
                 visualDensity: VisualDensity.compact,
@@ -3449,7 +3675,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 ),
               ),
             ] else if (hasCover) ...[
-              const SizedBox(width: 12),
               Chip(
                 label: const Text('Aktiv kursbild'),
                 visualDensity: VisualDensity.compact,
@@ -3475,7 +3700,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             ),
           ),
         ],
-        if (_selectedCourseId != null) ...[
+        if (!_lessonPreviewMode && _selectedCourseId != null) ...[
           const SizedBox(height: 12),
           CoverUploadCard(
             courseId: _selectedCourseId,
@@ -3581,6 +3806,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _promptCreateLesson() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final courseId = _selectedCourseId;
     if (courseId == null || _lessonActionBusy) return;
     if (!await _maybeSaveLessonEdits()) return;
@@ -3624,6 +3852,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _deleteLesson(String id) async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     if (_lessonActionBusy) return;
     if (!mounted) return;
     final confirm = await showDialog<bool>(
@@ -3725,6 +3956,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     String? acceptHint,
     required String mediaType,
   }) async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final courseId = _selectedCourseId;
     final lessonId = _selectedLessonId;
     if (courseId == null || lessonId == null) {
@@ -3737,6 +3971,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       Uint8List bytes, {
       String? mimeType,
     }) async {
+      if (!_requireEditModeForMutation()) {
+        return;
+      }
       final contentType = (mimeType?.isNotEmpty ?? false)
           ? mimeType!
           : _guessContentType(name);
@@ -3753,6 +3990,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         displayName = await _promptRequiredMediaDisplayName(
           _suggestMediaDisplayName(name),
         );
+        if (!_requireEditModeForMutation()) {
+          return;
+        }
         if (displayName == null) return;
         if (displayName.trim().isEmpty) {
           if (!mounted) return;
@@ -3787,6 +4027,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
 
       if (!mounted) return;
+      if (!_requireEditModeForMutation()) {
+        return;
+      }
 
       debugPrint('Studio pick result (web): ${picked?.length ?? 0} files');
       if (picked == null || picked.isEmpty) {
@@ -3813,6 +4056,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
     final typeGroup = fs.XTypeGroup(label: 'media', extensions: extensions);
     final file = await fs.openFile(acceptedTypeGroups: [typeGroup]);
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     if (file == null) {
       if (mounted) {
         setState(() => _mediaStatus = 'Ingen fil vald.');
@@ -3833,6 +4079,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _handleMediaToolbarUpload(_UploadKind kind) async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     // Remember cursor position before we open pickers and start uploads,
     // so auto-insert can happen where the user intended.
     _snapshotLessonSelection();
@@ -3964,6 +4213,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  String _mediaStatusLabel(String state) {
+    switch (state) {
+      case 'ready':
+        return 'Klar';
+      case 'failed':
+        return 'Misslyckades';
+      case 'checking':
+        return 'Kontrolleras';
+      case 'processing':
+        return 'Bearbetas';
+      default:
+        return 'Status okänd';
+    }
+  }
+
   bool _isWavMedia(StudioLessonMediaItem media) {
     final originalName = media.originalName;
     final isWavSource = originalName != null && originalName.endsWith('.wav');
@@ -3977,6 +4241,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _uploadImageFromToolbar() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final lessonId = _selectedLessonId;
     if (lessonId == null) {
       showSnack(context, 'Välj kurs och lektion innan du laddar upp media.');
@@ -4002,12 +4269,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     Future<void> uploadBytes(Uint8List bytes, String filename) async {
+      if (!_requireEditModeForMutation()) {
+        return;
+      }
       final contentType = _guessContentType(filename);
       if (mounted) {
         setState(() => _mediaStatus = 'Laddar upp $filename…');
       }
       try {
         final media = await uploadImage(bytes, filename, contentType);
+        if (!_requireEditModeForMutation()) {
+          return;
+        }
         if (!mounted || !_isEditorTokenValid(token)) return;
         final previousMedia = List<StudioLessonMediaItem>.from(_lessonMedia);
         List<StudioLessonMediaItem> nextMedia = const <StudioLessonMediaItem>[];
@@ -4082,6 +4355,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           );
 
       if (!mounted || !_isEditorTokenValid(token)) return;
+      if (!_requireEditModeForMutation()) {
+        return;
+      }
 
       if (picked == null || picked.isEmpty) {
         setState(() => _mediaStatus = 'Ingen bild vald.');
@@ -4095,6 +4371,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     const typeGroup = fs.XTypeGroup(label: 'images', extensions: extensions);
     final file = await fs.openFile(acceptedTypeGroups: [typeGroup]);
     if (!mounted || !_isEditorTokenValid(token)) return;
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     if (file == null) {
       if (mounted) {
         setState(() => _mediaStatus = 'Ingen bild vald.');
@@ -4119,6 +4398,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     String? lessonMediaId,
     TextSelection? targetSelection,
   }) {
+    if (!_requireEditModeForMutation()) {
+      return false;
+    }
     if (lessonMediaId == null || lessonMediaId.isEmpty) {
       if (mounted && context.mounted) {
         showSnack(context, 'Bild saknar media-ID och kan inte bäddas in.');
@@ -4149,6 +4431,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     String embedValue, {
     TextSelection? targetSelection,
   }) {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     _runEditorMutation((controller) {
       replaceSelectionWithBlockEmbed(
         controller: controller,
@@ -4162,6 +4447,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     lesson_pipeline.AudioBlockEmbed embed, {
     TextSelection? targetSelection,
   }) {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     _runEditorMutation((controller) {
       replaceSelectionWithBlockEmbed(
         controller: controller,
@@ -4226,6 +4514,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     required String fileName,
     TextSelection? targetSelection,
   }) {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final controller = _lessonContentController;
 
     final label = '📄 $fileName';
@@ -4279,6 +4570,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     StudioLessonMediaItem media, {
     bool showSaveHint = true,
   }) {
+    if (!_requireEditModeForMutation()) {
+      return false;
+    }
     if (_isWavMedia(media)) {
       if (mounted && context.mounted) {
         showSnack(
@@ -4399,6 +4693,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _queueCoverUpload(String courseId, String mediaId) {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     if (!mounted) {
       return;
     }
@@ -4451,6 +4748,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     String mediaId, {
     required int requestId,
   }) async {
+    if (_lessonPreviewMode) {
+      return;
+    }
     if (_coverPollRequestId != requestId) return;
     if (_coverPollAttempts >= _coverStatusMaxAttempts) {
       _endCoverPollingWithError(
@@ -4480,6 +4780,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       final repo = ref.read(mediaPipelineRepositoryProvider);
       final status = await repo.fetchStatus(mediaId);
+      if (_lessonPreviewMode) {
+        return;
+      }
       if (!mounted || _coverPollRequestId != requestId) return;
       if (_coverActionCourseId != null &&
           _coverActionCourseId != _selectedCourseId) {
@@ -4490,6 +4793,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _coverPipelineError = status.errorMessage;
       });
       if (status.state == 'ready') {
+        if (_lessonPreviewMode) {
+          return;
+        }
         _coverPollTimer?.cancel();
         _coverPollTimer = null;
         final patch = <String, Object?>{'cover_media_id': mediaId};
@@ -4539,6 +4845,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _clearCourseCover() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     if (_updatingCourseCover) return;
     final courseId = _selectedCourseId;
     if (courseId == null) return;
@@ -4635,6 +4944,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _lessonsNeedingRefresh.add(job.lessonId);
       return;
     }
+    if (_lessonPreviewMode) {
+      await _loadLessonMedia();
+      if (!mounted || job.lessonId != _selectedLessonId) return;
+      if (context.mounted) {
+        showSnack(
+          context,
+          'Media uppladdad. Växla till Redigera för att infoga och spara.',
+        );
+      }
+      setState(() => _mediaStatus = 'Media uppladdad: ${job.filename}');
+      return;
+    }
     final authoritativeUpload = job.uploadedMedia;
     final authoritativeUploadId = authoritativeUpload?.lessonMediaId;
     if (authoritativeUpload == null ||
@@ -4643,13 +4964,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (context.mounted) {
         showSnack(
           context,
-          'Uppladdningen saknade canonical media-identitet. Uppdatera listan.',
+          'Uppladdningen saknade kanonisk mediaidentitet. Uppdatera listan.',
         );
       }
       if (mounted) {
         setState(
           () => _mediaStatus =
-              'Uppladdning klar men canonical media saknas: ${job.filename}',
+              'Uppladdning klar men kanonisk media saknas: ${job.filename}',
         );
       }
       return;
@@ -4658,6 +4979,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final token = _captureEditorToken();
     await _loadLessonMedia();
     if (!mounted || !_isEditorTokenValid(token)) return;
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     StudioLessonMediaItem? uploaded;
     for (final media in _lessonMedia) {
       if (media.lessonMediaId == authoritativeUploadId) {
@@ -4670,13 +4994,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (context.mounted) {
         showSnack(
           context,
-          'Uppladdningen är klar men media saknas i lektionens backend-lista.',
+          'Uppladdningen är klar men media saknas i lektionens sparade medialista.',
         );
       }
       if (mounted) {
         setState(
           () => _mediaStatus =
-              'Uppladdning klar men backend-listan saknar media: ${job.filename}',
+              'Uppladdning klar men sparad medialista saknar media: ${job.filename}',
         );
       }
       return;
@@ -4690,6 +5014,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         authoritativeUploadId,
       ]);
       if (!mounted || !_isEditorTokenValid(token)) return;
+      if (!_requireEditModeForMutation()) {
+        return;
+      }
       setState(() {});
     }
 
@@ -4765,7 +5092,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
         actions.add(
           TextButton.icon(
-            onPressed: () => queue.cancelUpload(job.id),
+            onPressed: _lessonPreviewMode
+                ? null
+                : () => queue.cancelUpload(job.id),
             icon: const Icon(Icons.cancel_outlined),
             label: const Text('Avbryt'),
           ),
@@ -4792,7 +5121,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
         actions.add(
           TextButton.icon(
-            onPressed: () => queue.cancelUpload(job.id),
+            onPressed: _lessonPreviewMode
+                ? null
+                : () => queue.cancelUpload(job.id),
             icon: const Icon(Icons.cancel_outlined),
             label: const Text('Avbryt'),
           ),
@@ -4803,7 +5134,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         statusColor = theme.colorScheme.error;
         actions.add(
           TextButton.icon(
-            onPressed: () => queue.retryUpload(job.id),
+            onPressed: _lessonPreviewMode
+                ? null
+                : () => queue.retryUpload(job.id),
             icon: const Icon(Icons.refresh),
             label: const Text('Försök igen'),
           ),
@@ -4812,7 +5145,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           IconButton(
             tooltip: 'Rensa',
             icon: const Icon(Icons.clear),
-            onPressed: () => queue.removeJob(job.id),
+            onPressed: _lessonPreviewMode
+                ? null
+                : () => queue.removeJob(job.id),
           ),
         );
         break;
@@ -4823,7 +5158,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           IconButton(
             tooltip: 'Rensa',
             icon: const Icon(Icons.clear),
-            onPressed: () => queue.removeJob(job.id),
+            onPressed: _lessonPreviewMode
+                ? null
+                : () => queue.removeJob(job.id),
           ),
         );
         break;
@@ -4834,7 +5171,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           IconButton(
             tooltip: 'Rensa',
             icon: const Icon(Icons.check_circle_outline),
-            onPressed: () => queue.removeJob(job.id),
+            onPressed: _lessonPreviewMode
+                ? null
+                : () => queue.removeJob(job.id),
           ),
         );
         break;
@@ -4898,12 +5237,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final name = _fileNameFromMedia(media);
 
     final resolved = await _resolveLessonMediaDeliveryUrlForMedia(media);
+    if (!mounted) return;
     if (resolved == null || resolved.isEmpty) {
-      if (mounted) {
-        setState(
-          () => _downloadStatus = 'Ladda ner stöds inte för detta media.',
-        );
-      }
+      setState(() => _downloadStatus = 'Ladda ner stöds inte för detta media.');
       if (context.mounted) {
         showSnack(context, 'Kunde inte hämta leveranslänk för mediet.');
       }
@@ -4911,16 +5247,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     if (kIsWeb) {
-      if (mounted) {
-        setState(() => _downloadStatus = 'Öppnar fil i ny flik…');
-      }
+      setState(() => _downloadStatus = 'Öppnar fil i ny flik…');
       if (context.mounted) {
         showSnack(context, 'Media öppnas i en ny flik.');
       }
       unawaited(launchUrlString(resolved));
-      if (mounted) {
-        setState(() => _downloadStatus = null);
-      }
+      if (!mounted) return;
+      setState(() => _downloadStatus = null);
       return;
     }
 
@@ -5199,6 +5532,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _handleMediaReorder(int oldIndex, int newIndex) async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final lessonId = _selectedLessonId;
     if (lessonId == null) return;
     setState(() {
@@ -5222,6 +5558,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _deleteMedia(String id) async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final lessonId = _selectedLessonId;
     if (lessonId == null) return;
     try {
@@ -5239,6 +5578,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     required String fromLessonMediaId,
     required StudioLessonMediaItem replacementMedia,
   }) {
+    if (!_requireEditModeForMutation()) {
+      return false;
+    }
     final fromId = fromLessonMediaId;
     final toId = replacementMedia.lessonMediaId;
     if (fromId.isEmpty || toId.isEmpty) return false;
@@ -5283,6 +5625,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     StudioLessonMediaItem media,
     int index,
   ) async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final lessonId = _selectedLessonId;
     final courseId = _lessonCourseId(lessonId);
     if (lessonId == null || courseId == null || courseId.isEmpty) {
@@ -5314,6 +5659,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       ),
     );
     if (!mounted || !_isEditorTokenValid(token)) return;
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     if (newLessonMediaId == null || newLessonMediaId.isEmpty) return;
 
     setState(() => _mediaStatus = 'Ersätter ljud…');
@@ -5321,6 +5669,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     try {
       await _loadLessonMedia();
       if (!mounted || !_isEditorTokenValid(token)) return;
+      if (!_requireEditModeForMutation()) {
+        return;
+      }
 
       StudioLessonMediaItem? newMedia;
       for (final item in _lessonMedia) {
@@ -5422,6 +5773,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _saveCourseMeta() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final courseId = _selectedCourseId;
     if (courseId == null || _savingCourseMeta) return;
     final title = _courseTitleCtrl.text.trim();
@@ -5490,6 +5844,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _ensureQuiz() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final cid = _selectedCourseId;
     if (cid == null) return;
     try {
@@ -5512,7 +5869,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  String _quizKindLabel(String kind) {
+    switch (kind) {
+      case 'single':
+        return 'Ett svar';
+      case 'multi':
+        return 'Flera svar';
+      case 'boolean':
+        return 'Sant/falskt';
+      default:
+        return kind;
+    }
+  }
+
   Future<void> _addQuestion() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     if (_quiz == null) {
       await _ensureQuiz();
       if (_quiz == null) return;
@@ -5602,6 +5975,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Future<void> _deleteQuestion(String id) async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
     final quizId = safeString(_quiz, 'id');
     if (quizId == null) {
       if (mounted && context.mounted) {
@@ -5761,6 +6137,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                             children: [
                               TextField(
                                 controller: _courseTitleCtrl,
+                                readOnly: _lessonPreviewMode,
                                 decoration: const InputDecoration(
                                   labelText: 'Titel',
                                 ),
@@ -5768,8 +6145,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               gap12,
                               TextField(
                                 controller: _courseSlugCtrl,
+                                readOnly: _lessonPreviewMode,
                                 decoration: const InputDecoration(
-                                  labelText: 'Slug',
+                                  labelText: 'Kursadress',
                                 ),
                               ),
                               gap12,
@@ -5777,6 +6155,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               gap12,
                               TextField(
                                 controller: _coursePriceCtrl,
+                                readOnly: _lessonPreviewMode,
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
                                       decimal: true,
@@ -5788,7 +6167,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               Row(
                                 children: [
                                   GradientButton.icon(
-                                    onPressed: _savingCourseMeta
+                                    onPressed:
+                                        _savingCourseMeta || _lessonPreviewMode
                                         ? null
                                         : _saveCourseMeta,
                                     icon: _savingCourseMeta
@@ -5819,7 +6199,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   actions: [
                     if (_selectedCourseId != null)
                       OutlinedButton.icon(
-                        onPressed: _lessonActionBusy
+                        onPressed: _lessonActionBusy || _lessonPreviewMode
                             ? null
                             : _promptCreateLesson,
                         icon: const Icon(Icons.add),
@@ -5901,7 +6281,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     const Text('Inga lektioner ännu.'),
                                     gap8,
                                     OutlinedButton.icon(
-                                      onPressed: _lessonActionBusy
+                                      onPressed:
+                                          _lessonActionBusy ||
+                                              _lessonPreviewMode
                                           ? null
                                           : _promptCreateLesson,
                                       icon: const Icon(Icons.add),
@@ -5966,7 +6348,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                     child: const Text('Försök igen'),
                                   ),
                                 ],
-                                if (_selectedLessonId != null) ...[
+                                if (!_lessonPreviewMode &&
+                                    _selectedLessonId != null) ...[
                                   gap12,
                                   WavUploadCard(
                                     key: ValueKey(
@@ -6038,6 +6421,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                             : statusKey == 'failed'
                                             ? theme.colorScheme.error
                                             : theme.colorScheme.secondary;
+                                        final statusLabel = _mediaStatusLabel(
+                                          statusKey,
+                                        );
                                         final mediaId = media.lessonMediaId;
                                         final canPreview =
                                             _canPreviewLessonMedia(
@@ -6048,6 +6434,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                           media,
                                         );
                                         final canInsertIntoLesson =
+                                            !_lessonPreviewMode &&
                                             !isWavMedia &&
                                             _canInsertLessonMedia(media);
                                         final isDocument = _isDocumentMedia(
@@ -6118,7 +6505,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                             .center,
                                                     children: [
                                                       Chip(
-                                                        label: Text(statusKey),
+                                                        label: Text(
+                                                          statusLabel,
+                                                        ),
                                                         visualDensity:
                                                             VisualDensity
                                                                 .compact,
@@ -6203,11 +6592,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                         icon: const Icon(
                                                           Icons.sync,
                                                         ),
-                                                        onPressed: () =>
-                                                            _replaceAudioMedia(
-                                                              media,
-                                                              index,
-                                                            ),
+                                                        onPressed:
+                                                            _lessonPreviewMode
+                                                            ? null
+                                                            : () =>
+                                                                  _replaceAudioMedia(
+                                                                    media,
+                                                                    index,
+                                                                  ),
                                                       ),
                                                     IconButton(
                                                       tooltip: 'Ladda ner',
@@ -6226,16 +6618,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                       icon: const Icon(
                                                         Icons.delete_outline,
                                                       ),
-                                                      onPressed: () =>
-                                                          _deleteMedia(mediaId),
+                                                      onPressed:
+                                                          _lessonPreviewMode
+                                                          ? null
+                                                          : () => _deleteMedia(
+                                                              mediaId,
+                                                            ),
                                                     ),
-                                                    ReorderableDragStartListener(
-                                                      index: index,
-                                                      child: const Icon(
-                                                        Icons
-                                                            .drag_handle_rounded,
+                                                    if (!_lessonPreviewMode)
+                                                      ReorderableDragStartListener(
+                                                        index: index,
+                                                        child: const Icon(
+                                                          Icons
+                                                              .drag_handle_rounded,
+                                                        ),
                                                       ),
-                                                    ),
                                                   ],
                                                 ),
                                               ),
@@ -6255,7 +6652,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   title: 'Quiz',
                   actions: [
                     OutlinedButton.icon(
-                      onPressed: _selectedCourseId == null ? null : _ensureQuiz,
+                      onPressed: _selectedCourseId == null || _lessonPreviewMode
+                          ? null
+                          : _ensureQuiz,
                       icon: const Icon(Icons.auto_awesome),
                       label: const Text('Skapa/Hämta quiz'),
                     ),
@@ -6276,17 +6675,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               'boolean',
                             ])
                               ChoiceChip(
-                                label: Text(kind),
+                                label: Text(_quizKindLabel(kind)),
                                 selected: _qKind == kind,
-                                onSelected: (selected) => setState(
-                                  () => _qKind = selected ? kind : _qKind,
-                                ),
+                                onSelected: _lessonPreviewMode
+                                    ? null
+                                    : (selected) => setState(
+                                        () => _qKind = selected ? kind : _qKind,
+                                      ),
                               ),
                           ],
                         ),
                         gap8,
                         TextField(
                           controller: _qPrompt,
+                          readOnly: _lessonPreviewMode,
                           decoration: const InputDecoration(
                             labelText: 'Frågetext',
                           ),
@@ -6295,6 +6697,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           gap8,
                           TextField(
                             controller: _qOptions,
+                            readOnly: _lessonPreviewMode,
                             decoration: const InputDecoration(
                               labelText: 'Alternativ (komma-separerade)',
                             ),
@@ -6302,6 +6705,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           gap8,
                           TextField(
                             controller: _qCorrect,
+                            readOnly: _lessonPreviewMode,
                             decoration: const InputDecoration(
                               labelText: 'Rätt svar (index eller index, index)',
                             ),
@@ -6310,6 +6714,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           gap8,
                           TextField(
                             controller: _qCorrect,
+                            readOnly: _lessonPreviewMode,
                             decoration: const InputDecoration(
                               labelText: 'Rätt svar (true/false)',
                             ),
@@ -6319,7 +6724,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: GradientButton(
-                            onPressed: _addQuestion,
+                            onPressed: _lessonPreviewMode ? null : _addQuestion,
                             child: const Text('Lägg till fråga'),
                           ),
                         ),
@@ -6345,7 +6750,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 ),
                                 trailing: IconButton(
                                   icon: const Icon(Icons.delete_outline),
-                                  onPressed: questionId == null
+                                  onPressed:
+                                      questionId == null || _lessonPreviewMode
                                       ? null
                                       : () => _deleteQuestion(questionId),
                                 ),

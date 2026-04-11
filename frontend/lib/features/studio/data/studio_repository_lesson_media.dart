@@ -62,6 +62,29 @@ class _StudioLessonMediaScope {
     return StudioLessonMediaPreviewBatch(items: items);
   }
 
+  Future<List<StudioLessonMediaItem>> fetchLessonMediaPlacements(
+    List<String> lessonMediaIds,
+  ) async {
+    if (lessonMediaIds case []) {
+      return const <StudioLessonMediaItem>[];
+    }
+
+    final items = <StudioLessonMediaItem>[];
+    for (final lessonMediaId in lessonMediaIds) {
+      if (lessonMediaId.isEmpty) {
+        throw StateError(
+          'Lesson media placement read requires a non-empty id.',
+        );
+      }
+      final response = await _client.raw.get<Object?>(
+        '/api/media-placements/$lessonMediaId',
+      );
+      items.add(StudioLessonMediaItem.fromPlacementResponse(response.data));
+    }
+    items.sort((a, b) => a.position.compareTo(b.position));
+    return items;
+  }
+
   Future<StudioLessonMediaItem> uploadLessonMedia({
     required String lessonId,
     required Uint8List data,

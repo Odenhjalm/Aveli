@@ -197,43 +197,6 @@ void main() {
     });
 
     test(
-      'passive preview serialization preserves legacy media while save serialization stays strict',
-      () {
-        const markdown =
-            'Introtext\n\n![](https://cdn.test/raw-image.webp)\n\n'
-            '<audio src="/studio/media/raw-audio"></audio>\n\n'
-            '<video src="/studio/media/raw-video"></video>\n\n'
-            'Eftertext';
-
-        final document = markdown_to_editor.markdownToEditorDocument(
-          markdown: markdown,
-        );
-
-        final previewMarkdown = editor_to_markdown
-            .editorDeltaToPassivePreviewMarkdown(delta: document.toDelta());
-
-        expect(
-          previewMarkdown,
-          contains('![](https://cdn.test/raw-image.webp)'),
-        );
-        expect(
-          previewMarkdown,
-          contains('<audio src="/studio/media/raw-audio"></audio>'),
-        );
-        expect(
-          previewMarkdown,
-          contains('<video src="/studio/media/raw-video"></video>'),
-        );
-        expect(
-          () => editor_to_markdown.editorDeltaToCanonicalMarkdown(
-            delta: document.toDelta(),
-          ),
-          throwsA(isA<StateError>()),
-        );
-      },
-    );
-
-    test(
       'supported bold markdown never appears as literal markers in editor',
       () {
         const markdown = '**text**';
@@ -284,7 +247,6 @@ void main() {
           quill.BlockEmbed.image(
             lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
               lessonMediaId: 'media-image-1',
-              src: 'https://cdn.test/media-image-1.webp',
             ),
           ),
         )

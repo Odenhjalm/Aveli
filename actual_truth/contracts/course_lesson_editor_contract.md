@@ -552,6 +552,30 @@ Public course and lesson read semantics are defined only by `course_public_surfa
 
 This contract defines no public response semantics, public field meaning, visibility rules, or learner-visible projection rules.
 
+### Edit Mode / Preview Mode Decision
+
+Edit Mode is the only authoring and mutation surface for the Course + Lesson Editor.
+
+Preview Mode is read-only.
+
+Preview Mode must render from the same canonical lesson text, lesson media, and course cover truth as learner mode.
+
+Preview Mode must not become an alternate content authority.
+
+Preview Mode must not become an alternate media authority.
+
+Preview Mode must not become an alternate course-cover authority.
+
+Differences between Preview Mode UI and Learner UI must be presentation-only and must not change canonical truth.
+
+Draft preview is not allowed as Preview Mode authority.
+
+Preview Mode must be persisted-only unless a later contract explicitly defines a separate non-authoritative draft view with a distinct name and boundary.
+
+A new backend mutation surface for Preview Mode is forbidden.
+
+A new backend read surface is not required for authority if existing canonical read surfaces can compose persisted lesson text, lesson media, and course cover. Any future Preview helper surface must remain read-only projection only.
+
 ## 9. MARKDOWN / TEXT EDITOR LAW
 
 Markdown law:

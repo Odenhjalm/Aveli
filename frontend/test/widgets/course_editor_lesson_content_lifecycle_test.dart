@@ -20,6 +20,9 @@ import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
     as editor_test_bridge;
+import 'package:aveli/features/courses/presentation/lesson_page.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
+import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
 class _MockStudioRepository extends Mock implements StudioRepository {}
 
@@ -80,6 +83,28 @@ const _course = CourseStudio(
   priceAmountCents: 1200,
 );
 
+const _courseCoverUrl = 'https://cdn.test/course-cover.webp';
+const _courseWithCover = CourseStudio(
+  id: 'course-1',
+  title: 'Tarot Basics',
+  slug: 'tarot-basics',
+  courseGroupId: 'course-group-1',
+  step: 'foundation',
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: 'course-cover-1',
+  cover: CourseCoverData(
+    mediaId: 'course-cover-1',
+    state: 'ready',
+    resolvedUrl: _courseCoverUrl,
+  ),
+  priceAmountCents: 1200,
+);
+
+const _canonicalLessonMediaUrl = 'https://cdn.test/canonical-lesson-image.webp';
+const _editorTransientMediaPreviewUrl =
+    'https://cdn.test/editor-transient-preview.webp';
+
 const _lesson = LessonStudio(
   id: 'lesson-1',
   courseId: 'course-1',
@@ -98,17 +123,48 @@ StudioLessonContentRead _contentRead({
   required String lessonId,
   required String contentMarkdown,
   required String etag,
+  List<StudioLessonContentMediaItem> media =
+      const <StudioLessonContentMediaItem>[],
 }) {
   return StudioLessonContentRead(
     lessonId: lessonId,
     contentMarkdown: contentMarkdown,
-    media: const [],
+    media: media,
     etag: etag,
+  );
+}
+
+StudioLessonMediaItem _placementImage(String lessonMediaId) {
+  return StudioLessonMediaItem(
+    lessonMediaId: lessonMediaId,
+    lessonId: 'lesson-1',
+    position: 1,
+    mediaType: 'image',
+    state: 'ready',
+    previewReady: true,
+    mediaAssetId: 'asset-$lessonMediaId',
+    media: ResolvedMediaData(
+      mediaId: 'asset-$lessonMediaId',
+      state: 'ready',
+      resolvedUrl: _canonicalLessonMediaUrl,
+    ),
+    originalName: 'canonical-lesson-image.webp',
+  );
+}
+
+Finder _networkImageFinder(String url) {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is Image &&
+        widget.image is NetworkImage &&
+        (widget.image as NetworkImage).url == url,
+    description: 'Image.network($url)',
   );
 }
 
 void _stubBaseStudioData(
   _MockStudioRepository repo, {
+  CourseStudio course = _course,
   List<LessonStudio> lessons = const [_lesson],
   Future<StudioLessonContentRead> Function(String lessonId)? readContent,
 }) {
@@ -119,14 +175,20 @@ void _stubBaseStudioData(
       hasApplication: false,
     ),
   );
-  when(() => repo.myCourses()).thenAnswer((_) async => const [_course]);
-  when(() => repo.fetchCourseMeta('course-1')).thenAnswer((_) async => _course);
+  when(() => repo.myCourses()).thenAnswer((_) async => [course]);
+  when(() => repo.fetchCourseMeta('course-1')).thenAnswer((_) async => course);
   when(
     () => repo.listCourseLessons('course-1'),
   ).thenAnswer((_) async => lessons);
   when(
     () => repo.listLessonMedia(any()),
   ).thenAnswer((_) async => const <StudioLessonMediaItem>[]);
+  when(
+    () => repo.fetchLessonMediaPlacements(any()),
+  ).thenAnswer((_) async => const <StudioLessonMediaItem>[]);
+  when(
+    () => repo.fetchLessonMediaPreviews(any()),
+  ).thenAnswer((_) async => StudioLessonMediaPreviewBatch(items: const []));
   when(() => repo.readLessonContent(any())).thenAnswer((invocation) {
     final lessonId = invocation.positionalArguments.first as String;
     return readContent?.call(lessonId) ??
@@ -214,6 +276,10 @@ Future<void> _pumpUntilDocumentContains(
 
 Future<void> _pumpUntilTextFound(WidgetTester tester, String expected) async {
   final finder = find.text(expected);
+  await _pumpUntilFinderFound(tester, finder);
+}
+
+Future<void> _pumpUntilFinderFound(WidgetTester tester, Finder finder) async {
   for (var i = 0; i < 80; i += 1) {
     await tester.pump(const Duration(milliseconds: 50));
     if (finder.evaluate().isNotEmpty) {
@@ -239,6 +305,10 @@ void _selectWholeDocumentForDeletion() {
 }
 
 void main() {
+  setUpAll(() {
+    registerFallbackValue(<String>[]);
+  });
+
   testWidgets(
     'editor hydrates from content endpoint and saves with read ETag',
     (tester) async {
@@ -288,6 +358,120 @@ void main() {
       ).called(1);
     },
   );
+
+  testWidgets('preview reads persisted canonical truth and stays read-only', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const lessonMediaId = 'lesson-media-image-1';
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(
+      repo,
+      course: _courseWithCover,
+      readContent: (lessonId) async => _contentRead(
+        lessonId: lessonId,
+        contentMarkdown: 'Persisted canonical text\n\n!image($lessonMediaId)\n',
+        media: const [
+          StudioLessonContentMediaItem(
+            lessonMediaId: lessonMediaId,
+            position: 1,
+            mediaType: 'image',
+            state: 'ready',
+            mediaAssetId: 'asset-$lessonMediaId',
+          ),
+        ],
+        etag: '"content-v1"',
+      ),
+    );
+    when(() => repo.fetchLessonMediaPlacements(any())).thenAnswer((
+      invocation,
+    ) async {
+      final ids = List<String>.from(
+        invocation.positionalArguments.single as List,
+      );
+      return [for (final id in ids) _placementImage(id)];
+    });
+    when(() => repo.fetchLessonMediaPreviews(any())).thenAnswer((
+      invocation,
+    ) async {
+      final ids = List<String>.from(
+        invocation.positionalArguments.single as List,
+      );
+      return StudioLessonMediaPreviewBatch(
+        items: [
+          for (final id in ids)
+            StudioLessonMediaPreviewItem(
+              lessonMediaId: id,
+              mediaType: 'image',
+              authoritativeEditorReady: true,
+              previewUrl: _editorTransientMediaPreviewUrl,
+              fileName: 'canonical-lesson-image.webp',
+            ),
+        ],
+      );
+    });
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilDocumentContains(tester, 'Persisted canonical text');
+    await tester.pump();
+
+    expect(_networkImageFinder(_courseCoverUrl), findsOneWidget);
+    expect(_networkImageFinder(_canonicalLessonMediaUrl), findsNothing);
+
+    clearInteractions(repo);
+    _insertAtDocumentEnd(' unsaved draft');
+    await tester.pump();
+    expect(editor_test_bridge.getDocument(), contains('unsaved draft'));
+
+    final previewChip = find.byKey(
+      const ValueKey<String>('lesson_preview_mode_chip'),
+    );
+    await _pumpUntilFinderFound(tester, previewChip);
+    await tester.tap(previewChip);
+
+    await _pumpUntilFinderFound(tester, find.byType(LessonPageRenderer));
+    await _pumpUntilFinderFound(
+      tester,
+      find.text(
+        'Skrivskyddad förhandsgranskning med samma renderingspipeline som elevvyn.',
+      ),
+    );
+    await _pumpUntilFinderFound(
+      tester,
+      find.textContaining('Persisted canonical text', findRichText: true),
+    );
+
+    expect(
+      find.textContaining('unsaved draft', findRichText: true),
+      findsNothing,
+    );
+    expect(_networkImageFinder(_canonicalLessonMediaUrl), findsOneWidget);
+    expect(_networkImageFinder(_courseCoverUrl), findsAtLeastNWidgets(2));
+
+    final placementRead = verify(
+      () => repo.fetchLessonMediaPlacements(captureAny()),
+    )..called(1);
+    expect(placementRead.captured.single, [lessonMediaId]);
+    verify(() => repo.readLessonContent('lesson-1')).called(1);
+    verify(() => repo.fetchCourseMeta('course-1')).called(1);
+    verifyNever(() => repo.fetchLessonMediaPreviews(any()));
+    verifyNever(
+      () => repo.updateLessonContent(
+        any(),
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: any(named: 'ifMatch'),
+      ),
+    );
+    verifyNever(
+      () => repo.updateLessonStructure(
+        any(),
+        lessonTitle: any(named: 'lessonTitle'),
+        position: any(named: 'position'),
+      ),
+    );
+  });
 
   testWidgets('failed content read keeps editor in fail-closed boot shell', (
     tester,

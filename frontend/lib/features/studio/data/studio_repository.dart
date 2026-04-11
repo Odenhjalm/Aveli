@@ -226,6 +226,10 @@ class StudioRepository {
     List<String> lessonMediaIds,
   ) => _lessonMedia.fetchLessonMediaPreviews(lessonMediaIds);
 
+  Future<List<StudioLessonMediaItem>> fetchLessonMediaPlacements(
+    List<String> lessonMediaIds,
+  ) => _lessonMedia.fetchLessonMediaPlacements(lessonMediaIds);
+
   Future<StudioLessonMediaItem> uploadLessonMedia({
     required String lessonId,
     required Uint8List data,
