@@ -80,10 +80,6 @@ def _decorate_media_asset_row(row: dict[str, Any] | None) -> dict[str, Any] | No
 
 
 def _canonical_storage_bucket_for_access(row: dict[str, Any]) -> str | None:
-    streaming_bucket = str(row.get("streaming_storage_bucket") or "").strip()
-    if streaming_bucket:
-        return streaming_bucket
-
     playback_object_path = str(row.get("playback_object_path") or "").strip().lstrip("/")
     original_object_path = str(row.get("original_object_path") or "").strip().lstrip("/")
     purpose = str(row.get("purpose") or "").strip().lower()
@@ -135,9 +131,6 @@ async def get_media_asset(media_asset_id: str) -> dict[str, Any] | None:
             media_type::text as media_type,
             purpose::text as purpose,
             original_object_path,
-            streaming_storage_bucket,
-            streaming_object_path,
-            streaming_format,
             ingest_format,
             playback_object_path,
             playback_format,
@@ -168,6 +161,21 @@ async def get_lesson_media_pipeline_asset(media_asset_id: str) -> dict[str, Any]
     return _decorate_media_asset_row(dict(row) if row else None)
 
 
+async def get_course_cover_pipeline_asset(media_asset_id: str) -> dict[str, Any] | None:
+    query = f"""
+        select
+            {_MEDIA_ASSET_RETURNING_SQL}
+        from app.media_assets
+        where id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (media_asset_id,))
+            row = await cur.fetchone()
+    return _decorate_media_asset_row(dict(row) if row else None)
+
+
 async def get_media_assets(media_asset_ids: Sequence[str]) -> dict[str, dict[str, Any]]:
     ids = [str(media_asset_id).strip() for media_asset_id in media_asset_ids if str(media_asset_id).strip()]
     if not ids:
@@ -179,9 +187,6 @@ async def get_media_assets(media_asset_ids: Sequence[str]) -> dict[str, dict[str
             media_type::text as media_type,
             purpose::text as purpose,
             original_object_path,
-            streaming_storage_bucket,
-            streaming_object_path,
-            streaming_format,
             ingest_format,
             playback_object_path,
             playback_format,
@@ -448,13 +453,7 @@ async def mark_course_cover_ready_from_worker(
         media_id=media_id,
         streaming_object_path=streaming_object_path,
     )
-    return {
-        "updated": updated is not None,
-        "cover_applied": False,
-        "course_id": None,
-        "previous_cover_media_id": None,
-        "latest_cover_media_id": None,
-    }
+    return {"updated": updated is not None}
 
 
 async def get_media_asset_access(media_asset_id: str) -> dict[str, Any] | None:

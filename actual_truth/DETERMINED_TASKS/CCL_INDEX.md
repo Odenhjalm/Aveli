@@ -11,13 +11,13 @@ MATERIALIZED_READY_FOR_CONTROLLER
 IN_PROGRESS
 
 ## CURRENT ELIGIBLE TASK SET
-CCL-009, CCL-011
+CCL-011
 
 ## CURRENT TASK
 None
 
 ## LAST COMPLETED TASK
-CCL-008
+CCL-010
 
 ## CURRENT BLOCKED OR FAILED TASK
 None
@@ -36,6 +36,9 @@ CCL-008 stale frontend cover-rendering tests were classified as non-canonical le
 
 ## CONTROLLER REPAIR NOTE
 CCL-007 was blocked because frontend replacement could not consume backend readiness/status truth without a mounted canonical media asset status surface. Inspection classified the blocker as an incomplete prior backend handoff owned by CCL-004, not a true frontend implementation failure. The repair added `GET /api/media-assets/{media_asset_id}/status` under the existing mounted `studio.media_pipeline_router`, with response `{ media_asset_id, asset_state }`, and kept cover assignment/clear exclusively under `PATCH /studio/courses/{course_id}` with `cover_media_id`. The repair did not mount or use `/api/media/cover-*`, did not use unmounted `api_media`, did not make upload completion act as readiness authority, and did not introduce frontend fallback readiness inference. CCL-007 is now DONE; next deterministic task by task ID is CCL-008.
+
+## REPAIRED BLOCK NOTE
+CCL-010 is DONE after deterministic unblock repair. The block was classified as backend repository drift in the CCL-004-owned canonical media pipeline completion/status read surface, not as a CCL-010 test-only failure and not as a baseline-slot defect. `backend/app/repositories/media_assets.py` now reads canonical `app.media_assets` fields only for `get_media_asset` and `get_media_assets`, and `_canonical_storage_bucket_for_access` no longer treats `streaming_storage_bucket` as storage-access authority. Active baseline/local DB evidence remains `id`, `media_type`, `purpose`, `original_object_path`, `ingest_format`, `playback_object_path`, `playback_format`, and `state`; no deprecated `streaming_*` column set was reintroduced. Verification passed for backend py_compile, DB-backed studio cover shape, backend cover gate tests, frontend cover tests, direct DB column inventory, source scans, `git diff --check`, and `git diff --cached --check`. The next deterministic eligible task is CCL-011.
 
 ## ROOT TASKS
 - CCL-001
@@ -59,9 +62,9 @@ CCL-018
 | CCL-008 | actual_truth/DETERMINED_TASKS/CCL-008.md | FRONTEND_ALIGNMENT | OWNER | course-cover | [CCL-007] | DONE |
 | CCL-013 | actual_truth/DETERMINED_TASKS/CCL-013.md | FRONTEND_ALIGNMENT | OWNER | lesson-content | [CCL-012] | NOT_STARTED |
 | CCL-014 | actual_truth/DETERMINED_TASKS/CCL-014.md | LEGACY_REMOVAL | OWNER | lesson-content | [CCL-013] | NOT_STARTED |
-| CCL-009 | actual_truth/DETERMINED_TASKS/CCL-009.md | LEGACY_REMOVAL | OWNER | course-cover | [CCL-008] | NOT_STARTED |
+| CCL-009 | actual_truth/DETERMINED_TASKS/CCL-009.md | LEGACY_REMOVAL | OWNER | course-cover | [CCL-008] | DONE |
 | CCL-015 | actual_truth/DETERMINED_TASKS/CCL-015.md | TEST_ALIGNMENT | GATE | lesson-content | [CCL-014] | NOT_STARTED |
-| CCL-010 | actual_truth/DETERMINED_TASKS/CCL-010.md | TEST_ALIGNMENT | GATE | course-cover | [CCL-006, CCL-009] | NOT_STARTED |
+| CCL-010 | actual_truth/DETERMINED_TASKS/CCL-010.md | TEST_ALIGNMENT | GATE | course-cover | [CCL-006, CCL-009] | DONE |
 | CCL-016 | actual_truth/DETERMINED_TASKS/CCL-016.md | TEST_ALIGNMENT | GATE | lesson-content | [CCL-015] | NOT_STARTED |
 | CCL-017 | actual_truth/DETERMINED_TASKS/CCL-017.md | TEST_ALIGNMENT | GATE | cross-domain | [CCL-010, CCL-016] | NOT_STARTED |
 | CCL-018 | actual_truth/DETERMINED_TASKS/CCL-018.md | TEST_ALIGNMENT | AGGREGATE | cross-domain | [CCL-017] | NOT_STARTED |

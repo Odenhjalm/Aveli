@@ -9,6 +9,7 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_source.dart';
+import 'package:aveli/shared/models/request_headers.dart';
 
 class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   _FakeMediaPipelineRepository({required this.uploadTarget});
@@ -61,14 +62,6 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   }
 
   @override
-  Future<CoverMediaResponse> requestCoverFromLessonMedia({
-    required String courseId,
-    required String lessonMediaId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
   Future<void> clearCourseCover(String courseId) {
     throw UnimplementedError();
   }
@@ -86,7 +79,7 @@ void main() {
         mediaId: 'cover-1',
         uploadUrl: Uri.parse('https://storage.test/upload'),
         objectPath: 'media/source/cover/courses/course-1/cover.jpg',
-        headers: const {},
+        headers: RequestHeaders.empty,
         expiresAt: DateTime.now().toUtc(),
       ),
     );
@@ -105,7 +98,7 @@ void main() {
 
     Future<void> fakeUpload({
       required Uri uploadUrl,
-      required Map<String, String> headers,
+      required RequestHeaders headers,
       required CoverUploadFile file,
       required void Function(int sent, int total) onProgress,
     }) async {
@@ -121,12 +114,11 @@ void main() {
               courseId: 'course-1',
               pickFileOverride: fakePick,
               uploadFileOverride: fakeUpload,
-              onCoverQueued: (courseId, mediaId, preview) {
+              onCoverQueued: (courseId, mediaId) {
                 queued = true;
                 queuedMediaId = mediaId;
                 expect(courseId, 'course-1');
                 expect(repo.completeCalls, 1);
-                preview.dispose();
               },
             ),
           ),

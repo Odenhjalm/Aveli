@@ -18,7 +18,7 @@ void main() {
     expect(image.url, 'https://cdn.test/cover.jpg');
   });
 
-  test('falls back to slug asset when cover url missing', () {
+  test('returns null when backend cover url is missing', () {
     final assets = BackendAssetResolver('http://localhost');
     final provider = CourseCoverAssets.resolve(
       assets: assets,
@@ -26,12 +26,6 @@ void main() {
       coverUrl: '',
     );
 
-    expect(provider, isNotNull);
-    expect(provider, isA<NetworkImage>());
-    final image = provider as NetworkImage;
-    expect(
-      image.url,
-      'http://localhost/assets/images/courses/foundations_of_soulwisdom.png',
-    );
+    expect(provider, isNull);
   });
 }

@@ -80,14 +80,6 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   }
 
   @override
-  Future<CoverMediaResponse> requestCoverFromLessonMedia({
-    required String courseId,
-    required String lessonMediaId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
   Future<void> clearCourseCover(String courseId) {
     throw UnimplementedError();
   }

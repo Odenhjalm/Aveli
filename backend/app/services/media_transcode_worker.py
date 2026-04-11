@@ -16,7 +16,6 @@ from ..config import settings
 from ..observability import log_buffer
 from ..repositories import media_assets as media_assets_repo
 from ..services import storage_service
-from . import media_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -546,48 +545,10 @@ async def _transcode_cover_asset(
         )
         return
 
-    course_id = str(asset.get("course_id") or result.get("course_id") or "").strip() or None
-    previous_cover_media_id = (
-        str(result.get("previous_cover_media_id") or "").strip() or None
-    )
-    latest_cover_media_id = (
-        str(result.get("latest_cover_media_id") or "").strip() or None
-    )
-
-    if result.get("cover_applied"):
-        logger.info(
-            "COURSE_COVER_PROMOTED course_id=%s media_id=%s previous_media_id=%s output=%s",
-            course_id,
-            asset["id"],
-            previous_cover_media_id,
-            output_path,
-        )
-    else:
-        logger.warning(
-            "COURSE_COVER_READY_NOT_PROMOTED course_id=%s media_id=%s previous_media_id=%s latest_media_id=%s output=%s",
-            course_id,
-            asset["id"],
-            previous_cover_media_id,
-            latest_cover_media_id,
-            output_path,
-        )
-
-    if result.get("cover_applied") and asset.get("course_id"):
-        try:
-            await media_cleanup.prune_course_cover_assets(
-                course_id=str(asset["course_id"])
-            )
-        except Exception as exc:  # pragma: no cover - best-effort cleanup
-            logger.warning(
-                "Course cover prune failed course_id=%s: %s",
-                asset.get("course_id"),
-                exc,
-            )
     logger.info(
-        "Course cover ready media_id=%s output=%s applied=%s",
+        "Course cover ready media_id=%s output=%s",
         asset["id"],
         output_path,
-        result.get("cover_applied"),
     )
 
 

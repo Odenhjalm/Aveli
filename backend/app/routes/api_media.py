@@ -24,7 +24,7 @@ from ..repositories import courses as courses_repo
 from ..repositories import home_audio_sources as home_audio_sources_repo
 from ..repositories import media_assets as media_assets_repo
 from ..repositories import storage_objects
-from ..services import courses_service, lesson_playback_service, media_cleanup
+from ..services import courses_service, lesson_playback_service
 from ..services import storage_service
 from ..utils import media_paths
 from ..utils.media_urls import absolutize_media_urls
@@ -92,50 +92,6 @@ def _normalized_preview_string(value: object | None) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
-
-
-def _assert_valid_cover_media_asset_row(
-    media_asset: dict[str, object] | None,
-    *,
-    course_id: str,
-    original_object_path: str,
-    expected_state: str,
-) -> dict[str, object]:
-    if not media_asset:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to create cover media record",
-        )
-
-    media_id = str(media_asset.get("id") or "").strip()
-    persisted_object_path = str(media_asset.get("original_object_path") or "").strip()
-    media_type = str(media_asset.get("media_type") or "").strip().lower()
-    purpose = str(media_asset.get("purpose") or "").strip().lower()
-    state = str(media_asset.get("state") or "").strip().lower()
-
-    if (
-        not media_id
-        or persisted_object_path != original_object_path
-        or media_type != "image"
-        or purpose != "course_cover"
-        or state != expected_state
-    ):
-        logger.error(
-            "Invalid cover media asset contract course_id=%s media_id=%s "
-            "persisted_object_path=%s media_type=%s purpose=%s state=%s",
-            course_id,
-            media_id or "<missing>",
-            persisted_object_path or "<missing>",
-            media_type or "<missing>",
-            purpose or "<missing>",
-            state or "<missing>",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Invalid cover media record created",
-        )
-
-    return media_asset
 
 
 def _canonical_media_asset_scope(
@@ -630,64 +586,6 @@ def _is_canonical_cover_source_path(
     return normalized.startswith(_cover_source_prefix(course_id))
 
 
-async def _copy_cover_source_object(
-    *,
-    course_id: str,
-    source_bucket: str,
-    source_path: str,
-    content_type: str | None,
-    filename: str | None,
-) -> tuple[str, str]:
-    copied_path = _build_cover_source_object_path(course_id, filename or source_path)
-    try:
-        copied_path = media_paths.validate_new_upload_object_path(copied_path)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-
-    normalized_content_type = _normalize_mime(
-        content_type
-    ) or _default_cover_content_type(filename or source_path)
-    destination_bucket = storage_service.storage_service.bucket
-    try:
-        await storage_service.copy_object(
-            source_bucket=source_bucket,
-            source_path=source_path,
-            destination_bucket=destination_bucket,
-            destination_path=copied_path,
-            content_type=normalized_content_type,
-            cache_seconds=settings.media_public_cache_seconds,
-        )
-    except storage_service.StorageObjectNotFoundError as exc:
-        logger.warning(
-            "Cover source disappeared during copy source_bucket=%s source_path=%s course_id=%s",
-            source_bucket,
-            source_path,
-            course_id,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Cover source object is missing from storage",
-        ) from exc
-    except storage_service.StorageServiceError as exc:
-        logger.warning(
-            "Cover source copy failed source_bucket=%s source_path=%s destination_bucket=%s destination_path=%s course_id=%s: %s",
-            source_bucket,
-            source_path,
-            destination_bucket,
-            copied_path,
-            course_id,
-            exc,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Cover source copy unavailable",
-        ) from exc
-    return destination_bucket, copied_path
-
-
 def _lesson_audio_source_prefix(course_id: str, lesson_id: str) -> str:
     return (
         Path("media")
@@ -802,21 +700,6 @@ def _upload_max_bytes(media_type: str) -> int:
     return max(int(configured), minimum)
 
 
-def _cover_max_bytes() -> int:
-    return max(1, int(settings.media_upload_max_image_bytes))
-
-
-def _cover_ingest_format(mime_type: str, filename: str) -> str:
-    if mime_type == "image/jpeg":
-        return "jpeg"
-    if mime_type == "image/png":
-        return "png"
-    if mime_type == "image/webp":
-        return "webp"
-    suffix = Path(filename).suffix.lower().lstrip(".")
-    return suffix or "image"
-
-
 def _default_cover_content_type(filename: str | None) -> str:
     suffix = Path(filename or "").suffix.lower()
     return _LESSON_IMAGE_CONTENT_TYPE_BY_EXTENSION.get(suffix, "image/jpeg")
@@ -912,55 +795,6 @@ async def _storage_object_exists(
     except storage_service.StorageObjectNotFoundError:
         return False
     return True
-
-
-async def _validate_cover_source_storage_reference(
-    *,
-    storage_bucket: str,
-    storage_path: str,
-) -> str:
-    try:
-        normalized_path = media_paths.normalize_storage_path(
-            storage_bucket, storage_path
-        )
-    except RuntimeError as exc:
-        logger.warning(
-            "Cover source rejected because storage_path contains bucket prefix bucket=%s path=%s",
-            storage_bucket,
-            storage_path,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cover source storage_path must not include bucket prefix",
-        ) from exc
-
-    (
-        existence,
-        storage_table_available,
-    ) = await storage_objects.fetch_storage_object_existence(
-        [(storage_bucket, normalized_path)]
-    )
-    if not storage_table_available:
-        logger.warning(
-            "Cover source rejected because storage catalog is unavailable bucket=%s path=%s",
-            storage_bucket,
-            normalized_path,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cover source object could not be verified in storage catalog",
-        )
-    if not existence.get((storage_bucket, normalized_path), False):
-        logger.warning(
-            "Cover source rejected because storage object is missing bucket=%s path=%s",
-            storage_bucket,
-            normalized_path,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cover source object is missing from storage",
-        )
-    return normalized_path
 
 
 async def _wait_for_storage_object(
@@ -1922,222 +1756,6 @@ async def attach_media(
     return await _attach_home_upload_media_asset(
         user_id=user_id,
         media_asset=media_asset,
-    )
-
-
-@router.post("/cover-upload-url", response_model=schemas.CoverUploadUrlResponse)
-async def request_cover_upload_url(
-    payload: schemas.CoverUploadUrlRequest,
-    current: TeacherUser,
-):
-    user_id = str(current["id"])
-    course_id = str(payload.course_id)
-    await _authorize_course_upload(user_id, course_id)
-
-    mime_type = _normalize_mime(payload.mime_type)
-    if not mime_type:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="mime_type is required",
-        )
-    if mime_type not in _COVER_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported cover image type",
-        )
-
-    max_bytes = _cover_max_bytes()
-    if payload.size_bytes > max_bytes:
-        max_mb = max_bytes // (1024 * 1024)
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Cover image too large (max {max_mb} MB)",
-        )
-
-    object_path = _build_cover_source_object_path(course_id, payload.filename)
-    try:
-        object_path = media_paths.validate_new_upload_object_path(object_path)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-    try:
-        upload = await storage_service.storage_service.create_upload_url(
-            object_path,
-            content_type=mime_type,
-            upsert=False,
-            cache_seconds=settings.media_public_cache_seconds,
-        )
-    except storage_service.StorageServiceError as exc:
-        logger.warning("Cover upload URL issuance failed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Storage signing unavailable",
-        ) from exc
-
-    media_asset_id = str(uuid4())
-    media_asset = _assert_valid_cover_media_asset_row(
-        await media_assets_repo.create_media_asset(
-            media_asset_id=media_asset_id,
-            media_type="image",
-            purpose="course_cover",
-            ingest_format=_cover_ingest_format(mime_type, payload.filename),
-            original_object_path=upload.path,
-            state="pending_upload",
-        ),
-        course_id=course_id,
-        original_object_path=upload.path,
-        expected_state="pending_upload",
-    )
-
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
-    logger.info(
-        "Issued cover upload URL user_id=%s course_id=%s path=%s media_id=%s",
-        user_id,
-        course_id,
-        upload.path,
-        media_asset["id"],
-    )
-    return schemas.CoverUploadUrlResponse(
-        media_id=media_asset["id"],
-        upload_url=upload.url,
-        object_path=upload.path,
-        headers=dict(upload.headers),
-        expires_at=expires_at,
-    )
-
-
-@router.post("/cover-from-media", response_model=schemas.CoverMediaResponse)
-async def request_cover_from_media(
-    payload: schemas.CoverFromLessonMediaRequest,
-    current: TeacherUser,
-):
-    user_id = str(current["id"])
-    course_id = str(payload.course_id)
-    await _authorize_course_upload(user_id, course_id)
-
-    media = await models.get_media(str(payload.lesson_media_id))
-    if not media:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Media not found"
-        )
-
-    lesson_id = str(media.get("lesson_id")) if media.get("lesson_id") else None
-    if not lesson_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Lesson media missing lesson association",
-        )
-
-    _, resolved_course_id = await models.lesson_course_ids(lesson_id)
-    if not resolved_course_id or str(resolved_course_id) != course_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Media does not belong to course",
-        )
-
-    kind = (media.get("kind") or "").lower()
-    content_type = _normalize_mime(media.get("content_type") or "")
-    if kind != "image" and not content_type.startswith("image/"):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only image media can be used as a cover",
-        )
-
-    storage_path = media.get("storage_path")
-    if not storage_path:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Media missing storage path"
-        )
-    storage_bucket = media.get("storage_bucket") or settings.media_source_bucket
-    normalized_storage_path = await _validate_cover_source_storage_reference(
-        storage_bucket=str(storage_bucket),
-        storage_path=str(storage_path),
-    )
-
-    original_name = media.get("original_name")
-    copied_storage_bucket, copied_storage_path = await _copy_cover_source_object(
-        course_id=course_id,
-        source_bucket=str(storage_bucket),
-        source_path=normalized_storage_path,
-        content_type=content_type or None,
-        filename=original_name or normalized_storage_path,
-    )
-    normalized_content_type = content_type or _default_cover_content_type(
-        original_name or normalized_storage_path
-    )
-    ingest_format = _cover_ingest_format(
-        normalized_content_type,
-        original_name or copied_storage_path,
-    )
-    media_asset_id = str(uuid4())
-    media_asset = _assert_valid_cover_media_asset_row(
-        await media_assets_repo.create_media_asset(
-            media_asset_id=media_asset_id,
-            media_type="image",
-            purpose="course_cover",
-            ingest_format=ingest_format,
-            original_object_path=copied_storage_path,
-            state="pending_upload",
-        ),
-        course_id=course_id,
-        original_object_path=copied_storage_path,
-        expected_state="pending_upload",
-    )
-    media_asset = await _finalize_media_asset_upload(media_asset)
-
-    logger.info(
-        "Queued cover from media user_id=%s course_id=%s media_id=%s source_bucket=%s source=%s copied_bucket=%s copied=%s",
-        user_id,
-        course_id,
-        media_asset["id"],
-        storage_bucket,
-        normalized_storage_path,
-        copied_storage_bucket,
-        copied_storage_path,
-    )
-    return schemas.CoverMediaResponse(
-        media_id=media_asset["id"],
-        state=media_asset["state"],
-    )
-
-
-@router.post("/cover-clear", response_model=schemas.CoverClearResponse)
-async def clear_course_cover(
-    payload: schemas.CoverClearRequest,
-    current: TeacherUser,
-):
-    user_id = str(current["id"])
-    course_id = str(payload.course_id)
-    await _authorize_course_upload(user_id, course_id)
-    await courses_repo.clear_course_cover(course_id)
-    status = "success"
-    ok = True
-    storage_cleanup: dict[str, Any] = {"deleted": [], "remaining": []}
-    try:
-        cleanup_report = await media_cleanup.delete_course_cover_assets_for_course(
-            course_id=course_id
-        )
-        storage_cleanup = dict(cleanup_report.get("storage_cleanup") or storage_cleanup)
-        if storage_cleanup.get("remaining"):
-            status = "partial_failure"
-            ok = False
-    except Exception as exc:  # pragma: no cover - defensive contract protection
-        status = "partial_failure"
-        ok = False
-        logger.exception(
-            "Cover clear cleanup failed user_id=%s course_id=%s: %s",
-            user_id,
-            course_id,
-            exc,
-        )
-    return schemas.CoverClearResponse(
-        ok=ok,
-        status=status,
-        course_id=payload.course_id,
-        cover_media_id=None,
-        storage_cleanup=storage_cleanup,
     )
 
 

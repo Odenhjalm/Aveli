@@ -142,9 +142,18 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
             media_asset_id=cover_media_id,
             media_type="image",
             purpose="course_cover",
-            original_object_path=f"courses/{course_id}/covers/{cover_media_id}.png",
+            original_object_path=(
+                f"media/source/cover/courses/{course_id}/{cover_media_id}.png"
+            ),
             ingest_format="png",
             state="pending_upload",
+        )
+        await media_assets_repo.mark_media_asset_uploaded(media_id=cover_media_id)
+        await media_assets_repo.mark_course_cover_ready_from_worker(
+            media_id=cover_media_id,
+            streaming_object_path=(
+                f"media/derived/cover/courses/{course_id}/{cover_media_id}.jpg"
+            ),
         )
 
         update_cover = await async_client.patch(
@@ -153,7 +162,14 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
             json={"cover_media_id": cover_media_id},
         )
         assert update_cover.status_code == 200, update_cover.text
-        assert update_cover.json()["cover_media_id"] == cover_media_id
+        update_cover_body = update_cover.json()
+        assert update_cover_body["cover_media_id"] == cover_media_id
+        assert "cover_url" not in update_cover_body
+        assert update_cover_body["cover"]["media_id"] == cover_media_id
+        assert update_cover_body["cover"]["state"] == "ready"
+        assert update_cover_body["cover"]["resolved_url"].endswith(
+            f"/public-media/media/derived/cover/courses/{course_id}/{cover_media_id}.jpg"
+        )
 
         async with db.pool.connection() as conn:  # type: ignore[attr-defined]
             async with conn.cursor() as cur:  # type: ignore[attr-defined]

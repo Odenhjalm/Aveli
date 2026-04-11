@@ -1013,56 +1013,6 @@ class MediaUploadUrlResponse(BaseModel):
     expires_at: datetime
 
 
-class CoverUploadUrlRequest(BaseModel):
-    filename: str
-    mime_type: str
-    size_bytes: int = Field(ge=1)
-    course_id: UUID
-
-
-class CoverUploadUrlResponse(BaseModel):
-    media_id: UUID
-    upload_url: str
-    object_path: str
-    headers: dict[str, str]
-    expires_at: datetime
-
-
-class CoverFromLessonMediaRequest(BaseModel):
-    course_id: UUID
-    lesson_media_id: UUID
-
-
-class CoverMediaResponse(BaseModel):
-    media_id: UUID
-    state: Literal["uploaded", "processing", "ready", "failed"]
-
-
-class CoverClearRequest(BaseModel):
-    course_id: UUID
-
-
-class StorageCleanupTarget(BaseModel):
-    bucket: str
-    path: str
-    reason: str | None = None
-
-
-class CoverClearStorageCleanup(BaseModel):
-    deleted: list[StorageCleanupTarget] = Field(default_factory=list)
-    remaining: list[StorageCleanupTarget] = Field(default_factory=list)
-
-
-class CoverClearResponse(BaseModel):
-    ok: bool
-    status: Literal["success", "partial_failure", "failure"]
-    course_id: UUID
-    cover_media_id: UUID | None = None
-    storage_cleanup: CoverClearStorageCleanup = Field(
-        default_factory=CoverClearStorageCleanup
-    )
-
-
 class MediaStatusResponse(BaseModel):
     media_id: UUID
     state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
@@ -1175,6 +1125,7 @@ class StudioCourseCreate(BaseModel):
     slug: str
     course_group_id: UUID
     step: str
+    cover_media_id: UUID | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool
     drip_interval_days: Optional[int]
@@ -1347,6 +1298,24 @@ class CanonicalLessonMediaUploadUrlResponse(BaseModel):
     expires_at: datetime
 
 
+class CanonicalCourseCoverUploadUrlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=1)
+
+
+class CanonicalCourseCoverUploadUrlResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_asset_id: UUID
+    asset_state: Literal["pending_upload"]
+    upload_url: str
+    headers: dict[str, str]
+    expires_at: datetime
+
+
 class CanonicalMediaAssetUploadCompletionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1356,6 +1325,13 @@ class CanonicalMediaAssetUploadCompletionResponse(BaseModel):
 
     media_asset_id: UUID
     asset_state: Literal["uploaded"]
+
+
+class CanonicalMediaAssetStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_asset_id: UUID
+    asset_state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
 
 
 class CanonicalLessonMediaPlacementCreate(BaseModel):

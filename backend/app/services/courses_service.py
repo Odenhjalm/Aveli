@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Mapping, Sequence
+from uuid import UUID, uuid4
 
 import stripe
 from fastapi import HTTPException, status
@@ -15,6 +17,7 @@ from ..media_control_plane.services.media_resolver_service import (
 )
 from ..repositories import courses as courses_repo
 from ..repositories import home_audio_runtime as home_audio_runtime_repo
+from ..repositories import media_assets as media_assets_repo
 from ..repositories import runtime_media as runtime_media_repo
 from ..utils import lesson_content as lesson_content_utils
 from . import lesson_playback_service
@@ -651,6 +654,113 @@ def _course_cover_placeholder(*, media_id: str | None, state: str) -> dict[str, 
     }
 
 
+def _canonical_course_cover_source_prefix(course_id: str) -> str:
+    return (
+        Path("media") / "source" / "cover" / "courses" / course_id
+    ).as_posix() + "/"
+
+
+def _canonical_course_cover_derived_prefix(course_id: str) -> str:
+    return (
+        Path("media") / "derived" / "cover" / "courses" / course_id
+    ).as_posix() + "/"
+
+
+def _exact_cover_media_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        raise ValueError("cover_media_id must be a UUID or null")
+    try:
+        return str(UUID(normalized))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("cover_media_id must be a UUID or null") from exc
+
+
+def _require_course_cover_asset_contract(
+    *,
+    course_id: str,
+    media_id: str,
+    asset: Mapping[str, Any] | None,
+) -> Mapping[str, Any]:
+    if asset is None:
+        raise ValueError("cover_media_id does not reference an existing media asset")
+
+    media_type = str(asset.get("media_type") or "").strip().lower()
+    purpose = str(asset.get("purpose") or "").strip().lower()
+    state = str(asset.get("state") or "").strip().lower()
+    original_object_path = (
+        str(asset.get("original_object_path") or "").strip().lstrip("/")
+    )
+    playback_object_path = (
+        str(asset.get("playback_object_path") or "").strip().lstrip("/")
+    )
+
+    if media_type != "image":
+        raise ValueError("cover_media_id must reference image media")
+    if purpose != "course_cover":
+        raise ValueError("cover_media_id must reference course cover media")
+    if not original_object_path.startswith(
+        _canonical_course_cover_source_prefix(course_id)
+    ):
+        raise ValueError("cover_media_id is not scoped to this course")
+    if state != "ready":
+        raise ValueError("cover_media_id must reference ready media")
+    if not playback_object_path:
+        raise ValueError("cover_media_id is missing ready media output")
+    if not playback_object_path.startswith(
+        _canonical_course_cover_derived_prefix(course_id)
+    ):
+        raise ValueError("cover_media_id ready output is not scoped to this course")
+
+    return asset
+
+
+def _course_cover_payload_from_ready_asset(
+    *,
+    media_id: str,
+    asset: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    state = str(asset.get("state") or "").strip().lower()
+    playback_object_path = str(asset.get("playback_object_path") or "").strip()
+    if state != "ready" or not playback_object_path:
+        return None
+    resolved_url = storage_service.get_storage_service(
+        settings.media_public_bucket
+    ).public_url(playback_object_path)
+    if not str(resolved_url or "").strip():
+        return None
+    return {
+        "media_id": media_id,
+        "state": "ready",
+        "resolved_url": resolved_url,
+    }
+
+
+async def _validate_course_cover_assignment(
+    *,
+    course_id: str,
+    cover_media_id: Any,
+) -> str | None:
+    media_id = _exact_cover_media_id(cover_media_id)
+    if media_id is None:
+        return None
+    asset = await media_assets_repo.get_course_cover_pipeline_asset(media_id)
+    _require_course_cover_asset_contract(
+        course_id=course_id,
+        media_id=media_id,
+        asset=asset,
+    )
+    cover = _course_cover_payload_from_ready_asset(
+        media_id=media_id,
+        asset=asset,
+    )
+    if cover is None or cover.get("state") != "ready" or not cover.get("resolved_url"):
+        raise ValueError("cover_media_id does not resolve to a renderable cover")
+    return media_id
+
+
 async def _resolve_course_cover_runtime_media(
     *,
     course_id: str,
@@ -776,6 +886,15 @@ async def create_course(
     create_payload = dict(payload)
     create_payload.pop("teacher_id", None)
     create_payload["teacher_id"] = normalized_teacher_id
+    if "cover_media_id" in create_payload:
+        if create_payload["cover_media_id"] is not None:
+            create_payload.setdefault("id", str(uuid4()))
+            create_payload["cover_media_id"] = await _validate_course_cover_assignment(
+                course_id=str(create_payload["id"]),
+                cover_media_id=create_payload["cover_media_id"],
+            )
+        else:
+            create_payload["cover_media_id"] = None
     row = await courses_repo.create_course(create_payload)
     course = dict(row)
     try:
@@ -807,6 +926,11 @@ async def update_course(
 
     patch = dict(patch)
     patch.pop("teacher_id", None)
+    if "cover_media_id" in patch:
+        patch["cover_media_id"] = await _validate_course_cover_assignment(
+            course_id=course_id,
+            cover_media_id=patch["cover_media_id"],
+        )
     drip_enabled = (
         patch["drip_enabled"]
         if "drip_enabled" in patch

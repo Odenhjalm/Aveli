@@ -125,7 +125,6 @@ Map<String, Object?> _coursePayload({String slug = 'aveli-course'}) {
       'media_id': 'media-1',
       'state': 'ready',
       'resolved_url': '/api/files/public-media/course-cover.png',
-      'source': 'control_plane',
     },
     'price_amount_cents': 0,
     'drip_enabled': false,

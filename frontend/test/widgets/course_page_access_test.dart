@@ -6,6 +6,7 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_page.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,6 +30,8 @@ CourseDetailData _detail({
   required String slug,
   required String title,
   required CourseJourneyStep step,
+  String? coverMediaId,
+  CourseCoverData? cover,
 }) {
   return CourseDetailData(
     course: CourseSummary(
@@ -37,8 +40,8 @@ CourseDetailData _detail({
       title: title,
       step: step,
       courseGroupId: 'group-1',
-      coverMediaId: null,
-      cover: null,
+      coverMediaId: coverMediaId,
+      cover: cover,
       priceCents: 0,
       dripEnabled: false,
       dripIntervalDays: null,
@@ -145,5 +148,57 @@ void main() {
 
     expect(find.textContaining('Forts'), findsOneWidget);
     expect(find.text('Lesson 1'), findsOneWidget);
+  });
+
+  testWidgets('learner course page renders backend cover resolved url', (
+    tester,
+  ) async {
+    final detail = _detail(
+      courseId: 'course-cover',
+      slug: 'cover-course',
+      title: 'Cover Course',
+      step: CourseJourneyStep.intro,
+      coverMediaId: 'media-1',
+      cover: const CourseCoverData(
+        mediaId: 'media-1',
+        state: 'ready',
+        resolvedUrl: 'https://cdn.test/course-cover.jpg',
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              stripePublishableKey: 'pk_test',
+              stripeMerchantDisplayName: 'Aveli Test',
+              subscriptionsEnabled: true,
+            ),
+          ),
+          authOverride(),
+          courseDetailProvider.overrideWith((ref, slug) async => detail),
+          courseStateProvider.overrideWith((ref, courseId) async => null),
+        ],
+        child: const MaterialApp(home: CoursePage(slug: 'cover-course')),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is NetworkImage &&
+            (widget.image as NetworkImage).url ==
+                'https://cdn.test/course-cover.jpg',
+        description: 'Image.network(https://cdn.test/course-cover.jpg)',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isA<NetworkImageLoadException>());
   });
 }

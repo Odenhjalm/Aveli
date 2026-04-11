@@ -1041,13 +1041,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  void _suppressMediaPreviewOnce() {
-    _suppressNextMediaPreview = true;
-    scheduleMicrotask(() {
-      _suppressNextMediaPreview = false;
-    });
-  }
-
   void _handleMediaPreviewTap(StudioLessonMediaItem media) {
     if (_suppressNextMediaPreview) {
       _suppressNextMediaPreview = false;
@@ -4302,6 +4295,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     _coverPollAttempts += 1;
     try {
+      final courseId = _coverActionCourseId ?? _selectedCourseId;
+      if (courseId == null || courseId.isEmpty) {
+        _endCoverPollingWithError(
+          'Spara kursen först för att kunna ladda upp kursbild.',
+          requestId: requestId,
+        );
+        return;
+      }
       final repo = ref.read(mediaPipelineRepositoryProvider);
       final status = await repo.fetchStatus(mediaId);
       if (!mounted || _coverPollRequestId != requestId) return;
@@ -4313,113 +4314,52 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _coverPipelineState = status.state;
         _coverPipelineError = status.errorMessage;
       });
-      if (status.state == 'ready' || status.state == 'failed') {
+      if (status.state == 'ready') {
+        _coverPollTimer?.cancel();
+        _coverPollTimer = null;
+        final patch = <String, Object?>{'cover_media_id': mediaId};
+        _logCourseMetaPatchPayload(courseId: courseId, patch: patch);
+        final updated = await _studioRepo.updateCourse(courseId, patch);
+        if (!mounted || _coverPollRequestId != requestId) return;
+        if (_selectedCourseId != courseId) return;
+        _logCourseMetaPatchResponse(courseId: courseId, response: updated);
+        setState(() {
+          _courses = _courses
+              .map((course) => course.id == courseId ? updated : course)
+              .toList();
+          _coverPipelineState = updated.cover?.state ?? status.state;
+          _coverPipelineError = null;
+        });
+        ref.invalidate(myCoursesProvider);
+        ref.invalidate(studioCoursesProvider);
+        ref.invalidate(landing.popularCoursesProvider);
+        ref.invalidate(coursesProvider);
+        await _loadCourseMeta();
+        if (!mounted) return;
+        if (!context.mounted) return;
+        setState(() => _updatingCourseCover = false);
+        showSnack(context, 'Kursbilden är klar.');
+      } else if (status.state == 'failed') {
         _coverPollTimer?.cancel();
         _coverPollTimer = null;
         if (mounted) {
           setState(() => _updatingCourseCover = false);
         }
-        await _loadCourseMeta();
+        final detail = status.errorMessage;
         if (!mounted) return;
         if (!context.mounted) return;
-        if (status.state == 'failed') {
-          final detail = status.errorMessage;
-          showSnack(
-            context,
-            detail == null || detail.isEmpty
-                ? 'Bearbetningen misslyckades.'
-                : 'Bearbetningen misslyckades: $detail',
-          );
-        }
+        showSnack(
+          context,
+          detail == null || detail.isEmpty
+              ? 'Bearbetningen misslyckades.'
+              : 'Bearbetningen misslyckades: $detail',
+        );
       }
     } catch (e) {
       _endCoverPollingWithError(
-        'Kunde inte hämta status för kursbilden. Försök igen.',
+        'Kunde inte uppdatera kursbilden. Försök igen.',
         requestId: requestId,
       );
-    }
-  }
-
-  Future<void> _selectCourseCoverFromMedia(StudioLessonMediaItem media) async {
-    if (!_isImageMedia(media)) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Endast bilder kan användas som kursminiatyr.');
-      }
-      return;
-    }
-    final lessonId = _selectedLessonId;
-    if (lessonId == null) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Välj en lektion innan du anger kursbild.');
-      }
-      return;
-    }
-    final courseId = _lessonCourseId(lessonId);
-    if (courseId == null) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Lektionen saknar kurskoppling.');
-      }
-      return;
-    }
-    final mediaLessonId = media.lessonId;
-    if (mediaLessonId != lessonId) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Bilden tillhör en annan lektion.');
-      }
-      return;
-    }
-    final lessonMediaId = media.lessonMediaId;
-    if (lessonMediaId.isEmpty) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Bilden saknar media-id och kan inte användas.');
-      }
-      return;
-    }
-
-    final requestId = _beginCoverAction(courseId: courseId);
-    final previousPipelineId = _coverPipelineMediaId;
-    final previousPipelineState = _coverPipelineState;
-
-    if (mounted) {
-      setState(() {
-        _updatingCourseCover = true;
-        _coverPipelineState = 'uploaded';
-        _coverPipelineError = null;
-      });
-    }
-
-    try {
-      final repo = ref.read(mediaPipelineRepositoryProvider);
-      final response = await repo.requestCoverFromLessonMedia(
-        courseId: courseId,
-        lessonMediaId: lessonMediaId,
-      );
-      if (!mounted ||
-          _coverActionRequestId != requestId ||
-          _selectedCourseId != courseId) {
-        return;
-      }
-      setState(() {
-        _coverPipelineMediaId = response.mediaId;
-        _coverPipelineState = response.state;
-      });
-      _startCoverPolling(response.mediaId, requestId: requestId);
-      if (context.mounted) {
-        showSnack(context, 'Kursbilden bearbetas…');
-      }
-    } catch (e, stackTrace) {
-      final failure = AppFailure.from(e, stackTrace);
-      if (!mounted) return;
-      if (_coverActionRequestId != requestId || _selectedCourseId != courseId) {
-        return;
-      }
-      setState(() {
-        _updatingCourseCover = false;
-        _coverPipelineMediaId = previousPipelineId;
-        _coverPipelineState = previousPipelineState;
-        _coverPipelineError = failure.message;
-      });
-      _showFriendlyErrorSnack('Kunde inte välja kursbild', e, stackTrace);
     }
   }
 
@@ -5941,28 +5881,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         final canDownload = !isWavMedia;
 
                                         Widget leading;
-                                        leading = GestureDetector(
-                                          onTap: _updatingCourseCover
-                                              ? null
-                                              : () {
-                                                  _suppressMediaPreviewOnce();
-                                                  unawaited(
-                                                    _selectCourseCoverFromMedia(
-                                                      media,
-                                                    ),
-                                                  );
-                                                },
-                                          child: ClipRRect(
-                                            borderRadius:
-                                                const BorderRadius.all(
-                                                  Radius.circular(8),
-                                                ),
-                                            child: SizedBox.square(
-                                              dimension: 48,
-                                              child: LessonMediaPreview(
-                                                lessonMediaId: mediaId,
-                                                mediaType: kind,
-                                              ),
+                                        leading = ClipRRect(
+                                          borderRadius: const BorderRadius.all(
+                                            Radius.circular(8),
+                                          ),
+                                          child: SizedBox.square(
+                                            dimension: 48,
+                                            child: LessonMediaPreview(
+                                              lessonMediaId: mediaId,
+                                              mediaType: kind,
                                             ),
                                           ),
                                         );
@@ -6071,65 +5998,30 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                   crossAxisAlignment:
                                                       WrapCrossAlignment.center,
                                                   children: [
-                                                    if (_isImageMedia(
-                                                      media,
-                                                    )) ...[
-                                                      IconButton(
-                                                        tooltip:
-                                                            'Använd som kursbild',
-                                                        icon: const Icon(
-                                                          Icons.star,
-                                                        ),
-                                                        onPressed:
-                                                            _updatingCourseCover
-                                                            ? null
-                                                            : () {
-                                                                _suppressMediaPreviewOnce();
-                                                                unawaited(
-                                                                  _selectCourseCoverFromMedia(
-                                                                    media,
-                                                                  ),
-                                                                );
-                                                              },
+                                                    IconButton(
+                                                      tooltip:
+                                                          'Infoga i lektionen',
+                                                      icon: Icon(
+                                                        _isImageMedia(media)
+                                                            ? Icons
+                                                                  .add_photo_alternate_outlined
+                                                            : isDocument
+                                                            ? Icons
+                                                                  .picture_as_pdf_outlined
+                                                            : kind == 'video'
+                                                            ? Icons
+                                                                  .movie_creation_outlined
+                                                            : Icons
+                                                                  .audiotrack_outlined,
                                                       ),
-                                                      IconButton(
-                                                        tooltip:
-                                                            'Infoga i lektionen',
-                                                        icon: const Icon(
-                                                          Icons
-                                                              .add_photo_alternate_outlined,
-                                                        ),
-                                                        onPressed:
-                                                            canInsertIntoLesson
-                                                            ? () =>
-                                                                  _insertMediaIntoLesson(
-                                                                    media,
-                                                                  )
-                                                            : null,
-                                                      ),
-                                                    ] else ...[
-                                                      IconButton(
-                                                        tooltip:
-                                                            'Infoga i lektionen',
-                                                        icon: Icon(
-                                                          isDocument
-                                                              ? Icons
-                                                                    .picture_as_pdf_outlined
-                                                              : kind == 'video'
-                                                              ? Icons
-                                                                    .movie_creation_outlined
-                                                              : Icons
-                                                                    .audiotrack_outlined,
-                                                        ),
-                                                        onPressed:
-                                                            canInsertIntoLesson
-                                                            ? () =>
-                                                                  _insertMediaIntoLesson(
-                                                                    media,
-                                                                  )
-                                                            : null,
-                                                      ),
-                                                    ],
+                                                      onPressed:
+                                                          canInsertIntoLesson
+                                                          ? () =>
+                                                                _insertMediaIntoLesson(
+                                                                  media,
+                                                                )
+                                                          : null,
+                                                    ),
                                                     if (kind == 'audio')
                                                       IconButton(
                                                         tooltip: 'Byt ljud',

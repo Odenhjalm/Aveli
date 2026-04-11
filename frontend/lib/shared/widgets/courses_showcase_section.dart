@@ -289,9 +289,9 @@ class CoursesShowcaseSection extends ConsumerWidget {
             slug: course.slug,
             step: course.step.name,
             coverMediaId: course.coverMediaId,
+            cover: course.cover,
             priceAmountCents: course.priceCents,
             shortDescription: null,
-            resolvedCoverUrl: course.cover?.resolvedUrl,
           );
         })
         .toList(growable: false);

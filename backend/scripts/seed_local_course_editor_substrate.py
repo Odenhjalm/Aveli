@@ -49,20 +49,6 @@ def _load_manifest(path: Path) -> dict[str, Any]:
     return dict(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
 
 
-def _course_cover_object_path(course_id: str, filename: str) -> str:
-    safe_name = Path(filename).name.strip() or "cover.jpg"
-    return media_paths.validate_new_upload_object_path(
-        (
-            Path("media")
-            / "derived"
-            / "cover"
-            / "courses"
-            / course_id
-            / f"local-seed-{safe_name}"
-        ).as_posix()
-    )
-
-
 def _lesson_image_object_path(lesson_id: str, filename: str) -> str:
     safe_name = Path(filename).name.strip() or "image"
     return media_paths.validate_new_upload_object_path(
@@ -332,42 +318,6 @@ async def _ensure_lesson(course_id: str, lesson_data: dict[str, Any], position: 
     return str(created["id"]), "created"
 
 
-async def _ensure_course_cover(
-    *,
-    teacher_id: str,
-    course_id: str,
-    cover_rel_path: str | None,
-) -> str:
-    course_row = await courses_repo.get_course(course_id=course_id)
-    if course_row and course_row.get("cover_media_id"):
-        return "reused"
-    if not cover_rel_path:
-        return "skipped"
-
-    cover_path = (COURSES_ROOT / cover_rel_path).resolve()
-    if not cover_path.exists():
-        return "skipped"
-
-    mime_type = mimetypes.guess_type(cover_path.name)[0] or "image/jpeg"
-    asset = await media_assets_repo.create_ready_public_course_cover_asset(
-        owner_id=teacher_id,
-        course_id=course_id,
-        storage_bucket=settings.media_public_bucket,
-        storage_path=_course_cover_object_path(course_id, cover_path.name),
-        content_type=mime_type,
-        filename=cover_path.name,
-        size_bytes=cover_path.stat().st_size,
-        ingest_format=_ingest_format(cover_path),
-    )
-    if not asset:
-        raise RuntimeError(f"Failed to create course cover asset for course {course_id}")
-    await courses_repo.set_course_cover_media_id_if_unset(
-        course_id=course_id,
-        cover_media_id=str(asset["id"]),
-    )
-    return "created"
-
-
 async def _ensure_lesson_media(
     *,
     teacher_id: str,
@@ -567,16 +517,6 @@ async def seed_substrate() -> dict[str, Any]:
 
         course_id, course_action = await _ensure_course(teacher_id, manifest)
         summary[f"courses_{course_action}"] += 1
-
-        cover_action = await _ensure_course_cover(
-            teacher_id=teacher_id,
-            course_id=course_id,
-            cover_rel_path=manifest.get("cover_path") or manifest.get("coverFile"),
-        )
-        if cover_action == "created":
-            summary["course_covers_created"] += 1
-        elif cover_action == "skipped":
-            summary["skipped_assets"] += 1
 
         lessons = list(manifest.get("lessons") or [])
         for position, lesson_data in enumerate(lessons, start=1):

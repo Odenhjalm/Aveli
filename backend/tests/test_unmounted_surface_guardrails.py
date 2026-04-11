@@ -34,6 +34,13 @@ def test_legacy_non_mounted_surfaces_remain_unmounted() -> None:
         assert _prefix_is_mounted(paths, prefix) is False, prefix
 
 
+def test_legacy_cover_authoring_routes_are_not_test_visible() -> None:
+    paths = _route_paths()
+
+    for path in paths:
+        assert "/api/media/cover-" not in path
+
+
 @pytest.mark.parametrize(
     ("method", "path", "kwargs"),
     [
@@ -41,10 +48,7 @@ def test_legacy_non_mounted_surfaces_remain_unmounted() -> None:
         ("get", "/community/messages", {}),
         ("post", "/sfu/token", {"json": {}}),
         ("post", "/api/media/upload-url", {"json": {}}),
-        ("post", "/api/media/cover-upload-url", {"json": {}}),
         ("post", "/api/media/complete", {"json": {}}),
-        ("post", "/api/media/cover-from-media", {"json": {}}),
-        ("post", "/api/media/cover-clear", {"json": {}}),
         ("get", "/services", {}),
         ("post", "/studio/sessions", {"json": {}}),
     ],

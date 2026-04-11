@@ -69,6 +69,29 @@ def _runtime_row(
     }
 
 
+def _course_cover_pipeline_asset(
+    *,
+    media_type: str = "image",
+    purpose: str = "course_cover",
+    state: str = "ready",
+    original_object_path: str | None = None,
+    playback_object_path: str | None = "__DEFAULT__",
+) -> dict:
+    exact_playback_object_path = (
+        f"media/derived/cover/courses/{COURSE_ID}/cover.jpg"
+        if playback_object_path == "__DEFAULT__"
+        else playback_object_path
+    )
+    return {
+        "media_type": media_type,
+        "purpose": purpose,
+        "state": state,
+        "original_object_path": original_object_path
+        or f"media/source/cover/courses/{COURSE_ID}/source.png",
+        "playback_object_path": exact_playback_object_path,
+    }
+
+
 def _resolved_cover_payload(path: str = DERIVED_PATH) -> dict[str, str | None]:
     return {
         "media_id": MEDIA_ID,
@@ -107,6 +130,225 @@ async def test_resolve_course_cover_ready_asset_returns_public_url(monkeypatch):
     )
 
     assert cover == _resolved_cover_payload()
+
+
+async def test_validate_course_cover_assignment_accepts_ready_canonical_media(
+    monkeypatch,
+):
+    _install_storage(monkeypatch)
+
+    async def fake_get_pipeline_asset(media_asset_id: str):
+        assert media_asset_id == MEDIA_ID
+        return _course_cover_pipeline_asset()
+
+    monkeypatch.setattr(
+        courses_service.media_assets_repo,
+        "get_course_cover_pipeline_asset",
+        fake_get_pipeline_asset,
+        raising=True,
+    )
+
+    assert (
+        await courses_service._validate_course_cover_assignment(
+            course_id=COURSE_ID,
+            cover_media_id=MEDIA_ID,
+        )
+        == MEDIA_ID
+    )
+
+
+@pytest.mark.parametrize(
+    ("cover_media_id", "message"),
+    [
+        ("https://cdn.test/cover.jpg", "cover_media_id must be a UUID or null"),
+        ({"media_id": MEDIA_ID}, "cover_media_id must be a UUID or null"),
+        ("media/source/cover/courses/course-1/cover.jpg", "cover_media_id must be a UUID or null"),
+    ],
+)
+async def test_validate_course_cover_assignment_rejects_non_id_inputs(
+    cover_media_id,
+    message: str,
+):
+    with pytest.raises(ValueError, match=message):
+        await courses_service._validate_course_cover_assignment(
+            course_id=COURSE_ID,
+            cover_media_id=cover_media_id,
+        )
+
+
+@pytest.mark.parametrize(
+    ("asset", "message"),
+    [
+        (None, "cover_media_id does not reference an existing media asset"),
+        (
+            _course_cover_pipeline_asset(media_type="audio"),
+            "cover_media_id must reference image media",
+        ),
+        (
+            _course_cover_pipeline_asset(purpose="lesson_media"),
+            "cover_media_id must reference course cover media",
+        ),
+        (
+            _course_cover_pipeline_asset(state="uploaded"),
+            "cover_media_id must reference ready media",
+        ),
+        (
+            _course_cover_pipeline_asset(
+                original_object_path="media/source/cover/courses/wrong-course/source.png"
+            ),
+            "cover_media_id is not scoped to this course",
+        ),
+        (
+            _course_cover_pipeline_asset(
+                original_object_path="courses/course-1/covers/source.png"
+            ),
+            "cover_media_id is not scoped to this course",
+        ),
+        (
+            _course_cover_pipeline_asset(playback_object_path=""),
+            "cover_media_id is missing ready media output",
+        ),
+        (
+            _course_cover_pipeline_asset(
+                playback_object_path="media/derived/cover/courses/wrong-course/cover.jpg"
+            ),
+            "cover_media_id ready output is not scoped to this course",
+        ),
+    ],
+)
+async def test_validate_course_cover_assignment_rejects_invalid_media_assets(
+    monkeypatch,
+    asset,
+    message: str,
+):
+    async def fake_get_pipeline_asset(media_asset_id: str):
+        assert media_asset_id == MEDIA_ID
+        return asset
+
+    monkeypatch.setattr(
+        courses_service.media_assets_repo,
+        "get_course_cover_pipeline_asset",
+        fake_get_pipeline_asset,
+        raising=True,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        await courses_service._validate_course_cover_assignment(
+            course_id=COURSE_ID,
+            cover_media_id=MEDIA_ID,
+        )
+
+
+async def test_validate_course_cover_assignment_allows_explicit_clear():
+    assert (
+        await courses_service._validate_course_cover_assignment(
+            course_id=COURSE_ID,
+            cover_media_id=None,
+        )
+        is None
+    )
+
+
+async def test_update_course_cover_omission_does_not_validate_or_clear(
+    monkeypatch,
+):
+    existing = _course()
+    changed = {**existing, "title": "Renamed"}
+
+    async def fake_get_course(*, course_id: str | None = None, slug: str | None = None):
+        assert course_id == COURSE_ID
+        assert slug is None
+        return existing
+
+    async def fake_is_course_owner(course_id: str, teacher_id: str):
+        assert course_id == COURSE_ID
+        assert teacher_id == TEACHER_ID
+        return True
+
+    async def fake_update_course(course_id: str, patch: dict):
+        assert course_id == COURSE_ID
+        assert patch == {"title": "Renamed"}
+        return changed
+
+    async def fail_get_pipeline_asset(media_asset_id: str):
+        raise AssertionError("omitted cover_media_id must not validate media")
+
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "get_course",
+        fake_get_course,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "is_course_owner",
+        fake_is_course_owner,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "update_course",
+        fake_update_course,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.media_assets_repo,
+        "get_course_cover_pipeline_asset",
+        fail_get_pipeline_asset,
+        raising=True,
+    )
+
+    assert (
+        await courses_service.update_course(
+            COURSE_ID,
+            {"title": "Renamed"},
+            teacher_id=TEACHER_ID,
+        )
+        == changed
+    )
+
+
+async def test_update_course_rejects_wrong_teacher_before_cover_assignment(
+    monkeypatch,
+):
+    async def fake_get_course(*, course_id: str | None = None, slug: str | None = None):
+        assert course_id == COURSE_ID
+        assert slug is None
+        return _course()
+
+    async def fake_is_course_owner(course_id: str, teacher_id: str):
+        assert course_id == COURSE_ID
+        assert teacher_id == TEACHER_ID
+        return False
+
+    async def fail_get_pipeline_asset(media_asset_id: str):
+        raise AssertionError("wrong teacher must not reach media validation")
+
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "get_course",
+        fake_get_course,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "is_course_owner",
+        fake_is_course_owner,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.media_assets_repo,
+        "get_course_cover_pipeline_asset",
+        fail_get_pipeline_asset,
+        raising=True,
+    )
+
+    with pytest.raises(PermissionError, match="Not course owner"):
+        await courses_service.update_course(
+            COURSE_ID,
+            {"cover_media_id": MEDIA_ID},
+            teacher_id=TEACHER_ID,
+        )
 
 
 async def test_resolve_course_cover_uploaded_asset_returns_placeholder(monkeypatch):

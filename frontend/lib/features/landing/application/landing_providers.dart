@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aveli/shared/utils/course_cover_contract.dart';
+
 String _requireString(Object? value, String fieldName) {
   switch (value) {
     case final String text when text.trim().isNotEmpty:
@@ -44,6 +46,28 @@ Object? _field(Object? payload, String fieldName) {
   }
 }
 
+Map<String, dynamic> _requireStringKeyedMap(Object? value, String fieldName) {
+  switch (value) {
+    case final Map<Object?, Object?> data:
+      final mapped = <String, dynamic>{};
+      for (final entry in data.entries) {
+        final key = entry.key;
+        if (key is! String) {
+          throw StateError('Invalid field type for $fieldName');
+        }
+        mapped[key] = entry.value;
+      }
+      return mapped;
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+CourseCoverData? _optionalCourseCover(Object? value, String fieldName) {
+  if (value == null) return null;
+  return CourseCoverData.fromJson(_requireStringKeyedMap(value, fieldName));
+}
+
 @immutable
 class LandingCourseCard {
   const LandingCourseCard({
@@ -52,9 +76,9 @@ class LandingCourseCard {
     required this.title,
     required this.step,
     required this.coverMediaId,
+    required this.cover,
     required this.priceAmountCents,
     required this.shortDescription,
-    required this.resolvedCoverUrl,
   });
 
   final String id;
@@ -62,9 +86,10 @@ class LandingCourseCard {
   final String title;
   final String step;
   final String? coverMediaId;
+  final CourseCoverData? cover;
   final int? priceAmountCents;
   final String? shortDescription;
-  final String? resolvedCoverUrl;
+  String? get resolvedCoverUrl => cover?.resolvedUrl;
 
   factory LandingCourseCard.fromResponse(Object? payload) {
     return LandingCourseCard(
@@ -76,6 +101,7 @@ class LandingCourseCard {
         final Map<Object?, Object?> data => data['cover_media_id'],
         _ => null,
       }, 'cover_media_id'),
+      cover: _optionalCourseCover(_field(payload, 'cover'), 'cover'),
       priceAmountCents: _optionalInt(
         _field(payload, 'price_amount_cents'),
         'price_amount_cents',
@@ -83,10 +109,6 @@ class LandingCourseCard {
       shortDescription: _optionalString(
         _field(payload, 'short_description'),
         'short_description',
-      ),
-      resolvedCoverUrl: _optionalString(
-        _field(payload, 'resolved_cover_url'),
-        'resolved_cover_url',
       ),
     );
   }
