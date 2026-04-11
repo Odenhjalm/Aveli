@@ -34,6 +34,7 @@ Canonical authorities are:
 
 - course identity authority: `app.courses`
 - course structure authority: `app.courses`
+- course cover identity authority: `app.courses.cover_media_id`
 - lesson identity authority: `app.lessons`
 - lesson ordering authority: `app.lessons.position`
 - lesson structure authority: `app.lessons`
@@ -46,6 +47,8 @@ Forbidden as authority:
 - editor Quill Delta
 - frontend-normalized markdown
 - frontend preview markdown
+- frontend cover preview state
+- frontend-reconstructed cover URLs
 - raw joined studio lesson lists that include `content_markdown`
 - legacy lesson alias `title`
 - `is_intro`
@@ -84,6 +87,35 @@ Canonical separation rules:
 - `content_markdown` must never appear on a structure-only write endpoint
 - `lesson_title` and `position` must never appear on a content-only write endpoint
 
+## 3A. COURSE COVER AUTHORING LAW
+
+Course cover authoring is course structure behavior.
+
+Canonical cover identity:
+
+- `app.courses.cover_media_id`
+
+Canonical cover read output:
+
+- `cover = { media_id, state, resolved_url } | null`
+
+Rules:
+
+- `cover_media_id` is the only course-cover identity field
+- `cover` is backend-authored read data only
+- `cover` must never be accepted as write input
+- `media_id`, `state`, and `resolved_url` inside `cover` are read-only backend output
+- frontend must render persisted course cover media only from backend-provided `cover.resolved_url`
+- frontend must never reconstruct cover URLs from storage paths, media IDs, filenames, buckets, upload URLs, signed URLs, preview URLs, or local preview state
+- media ingest may create media identity and upload state only
+- worker processing may create media/runtime readiness only
+- media ingest and worker processing must never assign, replace, or clear `app.courses.cover_media_id`
+- teacher cover assignment and clear must use course structure authority only
+- `/api/media/cover-*` is not canonical course-cover authoring authority
+- local preview state is transient UI state only and must never become persisted truth
+
+This law operates under the cross-domain governed media representation defined by `SYSTEM_LAWS.md`.
+
 ## 4. CANONICAL ENTRYPOINTS
 
 ### Editor Structure Reads
@@ -106,6 +138,10 @@ Canonical separation rules:
 
 - `PATCH /studio/lessons/{lesson_id}/content`
 
+### Editor Content Read
+
+- `GET /studio/lessons/{lesson_id}/content`
+
 No mixed `POST /studio/lessons` or mixed `PATCH /studio/lessons/{lesson_id}` endpoint survives as canonical truth.
 
 ## 5. STRUCTURE WRITE CONTRACTS
@@ -127,7 +163,7 @@ Request:
   "price_amount_cents": 123,
   "drip_enabled": true,
   "drip_interval_days": 7,
-  "cover_media_id": "uuid"
+  "cover_media_id": "uuid | null"
 }
 ~~~
 
@@ -156,6 +192,8 @@ Rules:
 
 - mutates course structure only
 - `cover` is a backend-authored read field, not a write authority
+- `cover_media_id` assigns cover identity when non-null
+- `cover_media_id: null` means no cover identity is assigned at creation
 - `short_description` is forbidden in this request
 - lesson fields are forbidden in this request
 
@@ -176,7 +214,7 @@ Request:
   "price_amount_cents": 123,
   "drip_enabled": true,
   "drip_interval_days": 7,
-  "cover_media_id": "uuid"
+  "cover_media_id": "uuid | null"
 }
 ~~~
 
@@ -188,6 +226,10 @@ Rules:
 
 - request is partial
 - mutates course structure only
+- `cover_media_id` assigns cover identity when non-null
+- `cover_media_id: null` clears the cover identity
+- omitted `cover_media_id` means no cover change
+- `cover` is a backend-authored read field, not a write authority
 - `short_description` is forbidden
 - lesson fields are forbidden
 - `content_markdown` is forbidden
@@ -354,6 +396,43 @@ Lesson delete success means the lesson, its content row, and its lesson-owned pl
 
 Baseline FK or cascade behavior may support this decision only if it preserves the same authority split and does not expand lesson delete into media asset or runtime-media authority.
 
+## 5A. CONTENT READ CONTRACT
+
+Endpoint:
+
+`GET /studio/lessons/{lesson_id}/content`
+
+Responsibility:
+
+- read lesson content only for editor hydration
+
+Response body:
+
+~~~json
+{
+  "lesson_id": "uuid",
+  "content_markdown": "string",
+  "media": []
+}
+~~~
+
+Response transport metadata:
+
+- `ETag`
+
+Rules:
+
+- reads existing persisted content from `app.lesson_contents.content_markdown`
+- `lesson_id` identifies the lesson whose content was read
+- `content_markdown` is backend-authored persisted markdown
+- `media` is a read-only backend-authored list of governed media objects when applicable, otherwise an empty list
+- response must not include lesson structure fields such as `lesson_title` or `position`
+- response must not include course structure payload
+- response must not expose storage paths, signed URLs, upload URLs, frontend-resolved URLs, or raw media resolver fields
+- the `ETag` transport metadata is the canonical editor content concurrency token
+- this endpoint must not mutate lesson structure or lesson content
+- structure endpoints must not expose `content_markdown`, content media, or content concurrency tokens
+
 ## 6. CONTENT WRITE CONTRACT
 
 Endpoint:
@@ -372,6 +451,10 @@ Request:
 }
 ~~~
 
+Required request transport metadata:
+
+- `If-Match`
+
 Response:
 
 ~~~json
@@ -381,10 +464,17 @@ Response:
 }
 ~~~
 
+Response transport metadata:
+
+- `ETag`
+
 Rules:
 
 - `content_markdown` is the only request field
 - request meaning is singular and non-branching
+- `If-Match` must contain the current backend-issued content concurrency token
+- writes without a matching `If-Match` token must fail without persistence
+- successful writes must emit a replacement `ETag`
 - backend must normalize markdown before persistence
 - persisted content is the backend-normalized result
 - response must return the backend-normalized markdown
@@ -451,6 +541,8 @@ Validation law:
 Rules:
 
 - editor structure reads must not expose `content_markdown`
+- editor structure reads must not expose content media
+- editor structure reads must not expose content concurrency tokens
 - `GET /studio/courses` must exist exactly once
 - `GET /studio/courses/{course_id}/lessons` is structure-only and must not leak content
 
@@ -502,11 +594,17 @@ The following are forbidden:
 - `POST /studio/lessons` as canonical truth
 - mixed `PATCH /studio/lessons/{lesson_id}` as canonical truth
 - `content_markdown` in any structure endpoint
+- content media in any structure endpoint
+- content concurrency tokens in any structure endpoint
 - `lesson_title` in the content endpoint
 - `position` in the content endpoint
 - `title` as lesson runtime alias
 - `is_intro` as lesson authority
 - duplicate `GET /studio/courses`
+- `/api/media/cover-*` as course-cover authoring authority
+- `cover` as course-cover write authority
+- frontend-reconstructed cover URLs
+- worker assignment, replacement, or clear of `app.courses.cover_media_id`
 - raw `app.lessons` + `app.lesson_contents` collapse as one semantic surface
 - frontend markdown normalization treated as authority
 - frontend editor state treated as authority
@@ -528,14 +626,23 @@ Editor frontend may use only these canonical structure surfaces:
 - `PATCH /studio/courses/{course_id}/lessons/reorder`
 - `DELETE /studio/lessons/{lesson_id}`
 
+Editor frontend may use only this canonical content read surface:
+
+- `GET /studio/lessons/{lesson_id}/content`
+
 Editor frontend may use only this canonical content write surface:
 
 - `PATCH /studio/lessons/{lesson_id}/content`
 
+Editor frontend must render course covers only from backend-provided `cover.resolved_url`.
+
 Frontend model separation law:
 
 - editor structure models must not contain `content_markdown`
+- editor structure models must not contain content media or content concurrency tokens
+- editor content read models may contain only `lesson_id`, `content_markdown`, read-only `media`, and transport metadata `ETag`
 - editor content write models must contain only `lesson_id` and `content_markdown`
+- editor content writes must carry the required `If-Match` transport metadata
 
 ## 12. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
 
