@@ -11,13 +11,13 @@ MATERIALIZED_READY_FOR_CONTROLLER
 IN_PROGRESS
 
 ## CURRENT ELIGIBLE TASK SET
-CCL-015
+CCL-017
 
 ## CURRENT TASK
 None
 
 ## LAST COMPLETED TASK
-CCL-014
+CCL-016
 
 ## CURRENT BLOCKED OR FAILED TASK
 None
@@ -50,7 +50,13 @@ CCL-012 is DONE. The studio frontend data layer now separates structure and cont
 CCL-013 is DONE. The studio editor now hydrates selected lesson markdown only through `StudioRepository.readLessonContent` / `GET /studio/lessons/{lesson_id}/content`, stores the backend-issued content `ETag`, and treats editor readiness as selected lesson id + request id + hydrated lesson id + non-empty token + no hydration error. The prior structure-derived empty markdown fallback was removed from editor boot; `upsertLesson` is no longer a positive editor save call; content writes use `StudioRepository.updateLessonContent` with the stored `If-Match` token; `412` and `428` responses force an explicit stale/error state requiring rehydration; failed hydration blocks edit/save/reset; and narrow-layout rendering now uses the same hydration/error gate instead of directly rendering the editor. Verification passed through the focused widget test `frontend/test/widgets/course_editor_lesson_content_lifecycle_test.dart`, the repository test `frontend/test/unit/studio_repository_lesson_content_read_test.dart`, focused source scans, focused widget-test analyzer, and `git diff --check`. `flutter analyze lib/features/studio/presentation/course_editor_page.dart` still reports two pre-existing `use_build_context_synchronously` infos at lines 4908 and 4918 outside the CCL-013 edits. The broad legacy `frontend/test/widgets/course_editor_screen_test.dart` still fails to compile due stale map-based model fixtures, old `upsertLesson` named arguments, old course summary constructors, and old preview cache/upload job fields; that broad frontend test realignment remains owned by downstream CCL-016. The next deterministic eligible task is CCL-014; CCL-014 was not executed.
 
 ## CCL-014 COMPLETION NOTE
-CCL-014 is DONE. The legacy broad frontend fixture file `frontend/test/widgets/course_editor_screen_test.dart` was quarantined because it encoded non-canonical mixed structure/content assumptions: `listCourseLessons` payloads with `content_markdown`, stale `LessonStudio.contentMarkdown` and `LessonSummary.contentMarkdown` fixture construction, legacy `is_intro` raw-map structure fixtures, and positive `upsertLesson` mocks. Helper-only backend mixed paths were fail-closed in `backend/app/models.py`, `backend/app/services/courses_service.py`, and `backend/app/repositories/courses.py` without modifying backend routes or schemas. Verification passed through source scans showing no mixed structure/content references in the quarantined widget fixture, no active backend app caller of the fail-closed mixed helpers, backend py_compile for modified backend files, focused Flutter analyzer, focused Flutter tests for the quarantine and canonical content read/editor lifecycle tests, and `git diff --check`. CCL-015 was not executed. The next deterministic eligible task is CCL-015.
+CCL-014 is DONE. The legacy broad frontend fixture file `frontend/test/widgets/course_editor_screen_test.dart` was quarantined because it encoded non-canonical mixed structure/content assumptions: `listCourseLessons` payloads with `content_markdown`, stale `LessonStudio.contentMarkdown` and `LessonSummary.contentMarkdown` fixture construction, legacy `is_intro` raw-map structure fixtures, and positive `upsertLesson` mocks. Helper-only backend mixed paths were fail-closed in `backend/app/models.py`, `backend/app/services/courses_service.py`, and `backend/app/repositories/courses.py` without modifying backend routes or schemas. Verification passed through source scans showing no mixed structure/content references in the quarantined widget fixture, no active backend app caller of the fail-closed mixed helpers, backend py_compile for modified backend files, focused Flutter analyzer, focused Flutter tests for the quarantine and canonical content read/editor lifecycle tests, and `git diff --check`. At the time CCL-014 was completed, CCL-015 had not been executed yet and was the next deterministic eligible task.
+
+## CCL-015 COMPLETION NOTE
+CCL-015 is DONE. Backend lesson-content tests now align to canonical content authority: writes fetch the backend-issued `ETag` from `GET /studio/lessons/{lesson_id}/content`, send `If-Match`, and assert that missing-token writes fail with `428`, stale writes fail with `412`, persisted content roundtrips through `app.lesson_contents.content_markdown`, and structure create/list/update responses remain free of `content_markdown`, `media`, and `etag`. A focused backend test `backend/tests/test_studio_lesson_content_authority.py` proves the dedicated content read shape `{ lesson_id, content_markdown, media }`, unauthorized read rejection, and mixed structure/content update rejection. The logs MCP backend test helper was adjusted inside the backend-test mutation plane to remove a positive legacy `/studio/lessons` mixed content creation path and use canonical course/lesson/media test substrate. Verification passed through backend py_compile, the scoped backend lesson-content suite (`22 passed, 1 warning`), the updated logs MCP backend file (`5 passed, 1 warning`), source scans for content/structure authority and If-Match coverage, and `git diff --check`. CCL-016 was not executed. The next deterministic eligible task is CCL-016.
+
+## CCL-016 COMPLETION NOTE
+CCL-016 is DONE. Frontend lesson-content tests now assert the canonical editor lifecycle: hydration uses the dedicated content read path, structure fixtures do not act as content authority, writes require the backend-issued `ETag`, stale `412` saves fail closed without structure overwrite, failed hydration and blank ETag state block writes, intentional empty clear is explicit, and lesson switching loads selected content without leaking or overwriting prior lesson state. The broad `course_editor_screen_test.dart` remains a quarantine sentinel and contains no `content_markdown`, `contentMarkdown`, `etag`, or `media` fixture authority. Verification passed through `flutter test test/widgets/course_editor_lesson_content_lifecycle_test.dart`, `flutter test test/unit/studio_repository_lesson_content_read_test.dart`, `flutter test test/widgets/course_editor_screen_test.dart`, focused Flutter analyzer, targeted source scans, and `git diff --check`. CCL-017 was not executed. The next deterministic eligible task is CCL-017.
 
 ## ROOT TASKS
 - CCL-001
@@ -75,8 +81,8 @@ CCL-018
 | CCL-013 | actual_truth/DETERMINED_TASKS/CCL-013.md | FRONTEND_ALIGNMENT | OWNER | lesson-content | [CCL-012] | DONE |
 | CCL-014 | actual_truth/DETERMINED_TASKS/CCL-014.md | LEGACY_REMOVAL | OWNER | lesson-content | [CCL-013] | DONE |
 | CCL-009 | actual_truth/DETERMINED_TASKS/CCL-009.md | LEGACY_REMOVAL | OWNER | course-cover | [CCL-008] | DONE |
-| CCL-015 | actual_truth/DETERMINED_TASKS/CCL-015.md | TEST_ALIGNMENT | GATE | lesson-content | [CCL-014] | NOT_STARTED |
+| CCL-015 | actual_truth/DETERMINED_TASKS/CCL-015.md | TEST_ALIGNMENT | GATE | lesson-content | [CCL-014] | DONE |
 | CCL-010 | actual_truth/DETERMINED_TASKS/CCL-010.md | TEST_ALIGNMENT | GATE | course-cover | [CCL-006, CCL-009] | DONE |
-| CCL-016 | actual_truth/DETERMINED_TASKS/CCL-016.md | TEST_ALIGNMENT | GATE | lesson-content | [CCL-015] | NOT_STARTED |
+| CCL-016 | actual_truth/DETERMINED_TASKS/CCL-016.md | TEST_ALIGNMENT | GATE | lesson-content | [CCL-015] | DONE |
 | CCL-017 | actual_truth/DETERMINED_TASKS/CCL-017.md | TEST_ALIGNMENT | GATE | cross-domain | [CCL-010, CCL-016] | NOT_STARTED |
 | CCL-018 | actual_truth/DETERMINED_TASKS/CCL-018.md | TEST_ALIGNMENT | AGGREGATE | cross-domain | [CCL-017] | NOT_STARTED |

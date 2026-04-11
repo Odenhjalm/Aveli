@@ -59,6 +59,23 @@ async def promote_to_teacher(user_id: str) -> None:
             await conn.commit()
 
 
+async def read_lesson_content_etag(
+    async_client,
+    *,
+    lesson_id: str,
+    token: str,
+) -> str:
+    response = await async_client.get(
+        f"/studio/lessons/{lesson_id}/content",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200, response.text
+    assert set(response.json()) == {"lesson_id", "content_markdown", "media"}
+    etag = response.headers.get("etag")
+    assert etag
+    return etag
+
+
 async def test_studio_lessons_belong_directly_to_course(async_client):
     password = "Passw0rd!"
     teacher_token, teacher_id = await register_user(
@@ -101,7 +118,14 @@ async def test_studio_lessons_belong_directly_to_course(async_client):
 
     content = await async_client.patch(
         f"/studio/lessons/{lesson_id}/content",
-        headers=auth_header(teacher_token),
+        headers={
+            **auth_header(teacher_token),
+            "If-Match": await read_lesson_content_etag(
+                async_client,
+                lesson_id=lesson_id,
+                token=teacher_token,
+            ),
+        },
         json={"content_markdown": "Hello"},
     )
     assert content.status_code == 200, content.text

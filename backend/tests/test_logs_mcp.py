@@ -2,8 +2,9 @@ import uuid
 
 import pytest
 
-from app import db, models
-from app.auth import create_access_token
+from app import db
+from app.auth import create_access_token, hash_password
+from app.repositories import courses as courses_repo
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -29,17 +30,48 @@ def _auth_header(token: str) -> dict[str, str]:
 async def _register_teacher(async_client) -> tuple[dict[str, str], str]:
     email = f"logs_mcp_teacher_{uuid.uuid4().hex[:8]}@example.com"
     password = "Secret123!"
-    user_id = str(await models.create_user(email, password, "Teacher"))
+    user_id = str(uuid.uuid4())
     headers = _auth_header(create_access_token(user_id))
 
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                UPDATE app.auth_subjects
-                   SET role_v2 = 'teacher',
-                       role = 'teacher'
-                 WHERE user_id = %s::uuid
+                INSERT INTO auth.users (
+                  id,
+                  email,
+                  encrypted_password,
+                  created_at,
+                  updated_at
+                )
+                VALUES (%s::uuid, %s, %s, now(), now())
+                """,
+                (user_id, email, hash_password(password)),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.auth_subjects (
+                  user_id,
+                  onboarding_state,
+                  role_v2,
+                  role,
+                  is_admin
+                )
+                VALUES (%s::uuid, 'incomplete', 'teacher', 'teacher', false)
+                """,
+                (user_id,),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.profiles (
+                  user_id,
+                  display_name,
+                  bio,
+                  avatar_media_id,
+                  created_at,
+                  updated_at
+                )
+                VALUES (%s::uuid, 'Teacher', null, null, now(), now())
                 """,
                 (user_id,),
             )
@@ -55,22 +87,22 @@ async def _create_course_and_lesson(async_client, headers: dict[str, str]) -> tu
         json={
             "title": "Logs MCP Course",
             "slug": slug,
-            "description": "Course for logs MCP tests",
-            "is_published": True,
+            "course_group_id": str(uuid.uuid4()),
+            "step": "intro",
+            "price_amount_cents": None,
+            "drip_enabled": False,
+            "drip_interval_days": None,
         },
     )
     assert course_resp.status_code == 200, course_resp.text
     course_id = str(course_resp.json()["id"])
 
     lesson_resp = await async_client.post(
-        "/studio/lessons",
+        f"/studio/courses/{course_id}/lessons",
         headers=headers,
         json={
-            "course_id": course_id,
-            "title": "Logs Lesson",
-            "content_markdown": "# Logs",
+            "lesson_title": "Logs Lesson",
             "position": 1,
-            "is_intro": False,
         },
     )
     assert lesson_resp.status_code == 200, lesson_resp.text
@@ -93,6 +125,50 @@ async def _ensure_media_resolution_failures_table() -> None:
                   reason text not null,
                   details jsonb not null default '{}'::jsonb
                 )
+                """
+            )
+            await cur.execute(
+                """
+                ALTER TABLE app.lesson_media
+                  ADD COLUMN IF NOT EXISTS is_test boolean not null default false
+                """
+            )
+            await cur.execute(
+                """
+                ALTER TABLE app.lesson_media
+                  ADD COLUMN IF NOT EXISTS test_session_id uuid
+                """
+            )
+            await cur.execute(
+                """
+                ALTER TABLE app.lessons
+                  ADD COLUMN IF NOT EXISTS is_test boolean not null default false
+                """
+            )
+            await cur.execute(
+                """
+                ALTER TABLE app.lessons
+                  ADD COLUMN IF NOT EXISTS test_session_id uuid
+                """
+            )
+            await cur.execute(
+                """
+                CREATE OR REPLACE FUNCTION app.is_test_row_visible(
+                  row_is_test boolean,
+                  row_test_session_id uuid
+                )
+                RETURNS boolean
+                LANGUAGE sql
+                STABLE
+                AS $$
+                  SELECT CASE
+                    WHEN COALESCE(row_is_test, false) = false THEN true
+                    WHEN NULLIF(current_setting('app.test_session_id', true), '') IS NULL
+                      THEN false
+                    ELSE row_test_session_id =
+                      NULLIF(current_setting('app.test_session_id', true), '')::uuid
+                  END
+                $$
                 """
             )
             await conn.commit()
@@ -241,37 +317,30 @@ async def test_logs_mcp_tools_execute_with_typed_media_failure_queries(async_cli
     headers, user_id = await _register_teacher(async_client)
     course_id, lesson_id = await _create_course_and_lesson(async_client, headers)
 
+    asset_id = str(uuid.uuid4())
     asset = await media_assets_repo.create_media_asset(
-        owner_id=user_id,
-        course_id=course_id,
-        lesson_id=lesson_id,
+        media_asset_id=asset_id,
         media_type="audio",
-        purpose="lesson_audio",
-        ingest_format="mp3",
+        purpose="lesson_media",
         original_object_path=f"logs/{uuid.uuid4().hex}/source.mp3",
-        original_content_type="audio/mpeg",
-        original_filename="source.mp3",
-        original_size_bytes=123,
-        storage_bucket="course-media",
-        state="failed",
+        ingest_format="mp3",
+        state="pending_upload",
     )
     assert asset is not None
-    asset_id = str(asset["id"])
+    await media_assets_repo.mark_media_asset_uploaded(media_id=asset_id)
+    await media_assets_repo.mark_media_asset_failed(
+        media_id=asset_id,
+        error_message="logs mcp test failure",
+    )
 
-    lesson_media = await models.add_lesson_media_entry_with_position_retry(
+    lesson_media = await courses_repo.create_lesson_media(
         lesson_id=lesson_id,
-        kind="audio",
-        storage_path=f"logs/{uuid.uuid4().hex}/source.mp3",
-        storage_bucket="course-media",
-        media_id=None,
         media_asset_id=asset_id,
-        duration_seconds=None,
-        max_retries=5,
     )
     assert lesson_media is not None
 
     await media_resolution_failures_repo.record_media_resolution_failure(
-        lesson_media_id=str(lesson_media["id"]),
+        lesson_media_id=str(lesson_media["lesson_media_id"]),
         mode="student_render",
         reason="missing_object",
         details={"source": "logs_mcp_test"},

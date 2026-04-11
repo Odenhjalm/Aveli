@@ -63,6 +63,23 @@ async def cleanup_user(user_id: str):
             await conn.commit()
 
 
+async def read_lesson_content_etag(
+    async_client,
+    *,
+    lesson_id: str,
+    token: str,
+) -> str:
+    response = await async_client.get(
+        f"/studio/lessons/{lesson_id}/content",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200, response.text
+    assert set(response.json()) == {"lesson_id", "content_markdown", "media"}
+    etag = response.headers.get("etag")
+    assert etag
+    return etag
+
+
 async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_client):
     teacher_email = f"teacher_{uuid.uuid4().hex[:8]}@example.com"
     student_email = f"student_{uuid.uuid4().hex[:8]}@example.com"
@@ -205,7 +222,14 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
 
         update_content = await async_client.patch(
             f"/studio/lessons/{lesson_id}/content",
-            headers=auth_header(teacher_token),
+            headers={
+                **auth_header(teacher_token),
+                "If-Match": await read_lesson_content_etag(
+                    async_client,
+                    lesson_id=lesson_id,
+                    token=teacher_token,
+                ),
+            },
             json={"content_markdown": "# Hello"},
         )
         assert update_content.status_code == 200, update_content.text
@@ -346,7 +370,14 @@ async def test_studio_lesson_delete_removes_content_and_placements_only(
 
         update_content = await async_client.patch(
             f"/studio/lessons/{lesson_id}/content",
-            headers=auth_header(teacher_token),
+            headers={
+                **auth_header(teacher_token),
+                "If-Match": await read_lesson_content_etag(
+                    async_client,
+                    lesson_id=lesson_id,
+                    token=teacher_token,
+                ),
+            },
             json={"content_markdown": "Lesson body"},
         )
         assert update_content.status_code == 200, update_content.text

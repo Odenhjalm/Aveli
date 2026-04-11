@@ -11,18 +11,23 @@ import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 
 void main() {
-  test('LessonStudio rejects content fields in structure responses', () {
-    expect(
-      () => LessonStudio.fromResponse({
-        'id': 'lesson-1',
-        'course_id': 'course-1',
-        'lesson_title': 'Lektion',
-        'position': 1,
-        'content_markdown': '# Persisted',
-      }),
-      throwsA(isA<StateError>()),
-    );
-  });
+  test(
+    'LessonStudio rejects content authority fields in structure responses',
+    () {
+      expect(
+        () => LessonStudio.fromResponse({
+          'id': 'lesson-1',
+          'course_id': 'course-1',
+          'lesson_title': 'Lektion',
+          'position': 1,
+          'content_markdown': '# Persisted',
+          'media': const [],
+          'etag': '"content-v1"',
+        }),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
 
   test(
     'readLessonContent uses dedicated content endpoint and preserves ETag',

@@ -87,9 +87,30 @@ const _lesson = LessonStudio(
   position: 1,
 );
 
+const _secondLesson = LessonStudio(
+  id: 'lesson-2',
+  courseId: 'course-1',
+  lessonTitle: 'Fortsattning',
+  position: 2,
+);
+
+StudioLessonContentRead _contentRead({
+  required String lessonId,
+  required String contentMarkdown,
+  required String etag,
+}) {
+  return StudioLessonContentRead(
+    lessonId: lessonId,
+    contentMarkdown: contentMarkdown,
+    media: const [],
+    etag: etag,
+  );
+}
+
 void _stubBaseStudioData(
   _MockStudioRepository repo, {
-  Future<StudioLessonContentRead> Function()? readContent,
+  List<LessonStudio> lessons = const [_lesson],
+  Future<StudioLessonContentRead> Function(String lessonId)? readContent,
 }) {
   when(() => repo.fetchStatus()).thenAnswer(
     (_) async => const StudioStatus(
@@ -102,31 +123,33 @@ void _stubBaseStudioData(
   when(() => repo.fetchCourseMeta('course-1')).thenAnswer((_) async => _course);
   when(
     () => repo.listCourseLessons('course-1'),
-  ).thenAnswer((_) async => const [_lesson]);
+  ).thenAnswer((_) async => lessons);
   when(
-    () => repo.listLessonMedia('lesson-1'),
+    () => repo.listLessonMedia(any()),
   ).thenAnswer((_) async => const <StudioLessonMediaItem>[]);
-  when(() => repo.readLessonContent('lesson-1')).thenAnswer(
-    (_) =>
-        readContent?.call() ??
+  when(() => repo.readLessonContent(any())).thenAnswer((invocation) {
+    final lessonId = invocation.positionalArguments.first as String;
+    return readContent?.call(lessonId) ??
         Future.value(
-          StudioLessonContentRead(
-            lessonId: 'lesson-1',
-            contentMarkdown: 'Persisted content',
-            media: const [],
-            etag: '"content-v1"',
+          _contentRead(
+            lessonId: lessonId,
+            contentMarkdown: lessonId == 'lesson-2'
+                ? 'Second persisted content'
+                : 'Persisted content',
+            etag: lessonId == 'lesson-2' ? '"content-2-v1"' : '"content-v1"',
           ),
-        ),
-  );
+        );
+  });
   when(
     () => repo.updateLessonStructure(
-      'lesson-1',
+      any(),
       lessonTitle: any(named: 'lessonTitle'),
       position: any(named: 'position'),
     ),
   ).thenAnswer((invocation) async {
+    final lessonId = invocation.positionalArguments.first as String;
     return LessonStudio(
-      id: 'lesson-1',
+      id: lessonId,
       courseId: 'course-1',
       lessonTitle: invocation.namedArguments[#lessonTitle] as String,
       position: invocation.namedArguments[#position] as int,
@@ -208,6 +231,13 @@ void _insertAtDocumentEnd(String text) {
   editor_test_bridge.insertText(text);
 }
 
+void _selectWholeDocumentForDeletion() {
+  final document = editor_test_bridge.getDocument();
+  expect(document, isNotNull);
+  final end = document!.isEmpty ? 0 : document.length - 1;
+  editor_test_bridge.setSelection(0, end);
+}
+
 void main() {
   testWidgets(
     'editor hydrates from content endpoint and saves with read ETag',
@@ -265,7 +295,7 @@ void main() {
     final repo = _MockStudioRepository();
     _stubBaseStudioData(
       repo,
-      readContent: () => Future<StudioLessonContentRead>.error(
+      readContent: (_) => Future<StudioLessonContentRead>.error(
         DioException(
           requestOptions: RequestOptions(
             path: '/studio/lessons/lesson-1/content',
@@ -298,6 +328,12 @@ void main() {
 
     expect(find.text('Lektionsinnehållet kunde inte laddas'), findsOneWidget);
     expect(find.text('Ladda om innehåll'), findsOneWidget);
+    final resetButton = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Återställ'),
+    );
+    expect(resetButton.onPressed, isNull);
+    _insertAtDocumentEnd(' should not edit');
+    await tester.pump();
     verifyNever(
       () => repo.updateLessonContent(
         'lesson-1',
@@ -305,5 +341,187 @@ void main() {
         ifMatch: any(named: 'ifMatch'),
       ),
     );
+  });
+
+  testWidgets('missing content ETag blocks editing and saving', (tester) async {
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(
+      repo,
+      readContent: (lessonId) async => _contentRead(
+        lessonId: lessonId,
+        contentMarkdown: 'Persisted without token',
+        etag: ' ',
+      ),
+    );
+    when(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: any(named: 'ifMatch'),
+      ),
+    ).thenAnswer(
+      (_) async => const StudioLessonContentWriteResult(
+        lessonId: 'lesson-1',
+        contentMarkdown: 'should not write',
+        etag: '"content-v2"',
+      ),
+    );
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilTextFound(tester, 'Lektionsinnehållet kunde inte laddas');
+
+    _insertAtDocumentEnd(' forbidden edit');
+    await tester.pump();
+
+    verify(() => repo.readLessonContent('lesson-1')).called(1);
+    verifyNever(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: any(named: 'ifMatch'),
+      ),
+    );
+    verifyNever(
+      () => repo.updateLessonStructure(
+        'lesson-1',
+        lessonTitle: any(named: 'lessonTitle'),
+        position: any(named: 'position'),
+      ),
+    );
+  });
+
+  testWidgets('stale content save fails closed without structure overwrite', (
+    tester,
+  ) async {
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(repo);
+    when(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: any(named: 'ifMatch'),
+      ),
+    ).thenThrow(
+      DioException(
+        requestOptions: RequestOptions(
+          path: '/studio/lessons/lesson-1/content',
+        ),
+        response: Response<void>(
+          requestOptions: RequestOptions(
+            path: '/studio/lessons/lesson-1/content',
+          ),
+          statusCode: 412,
+        ),
+      ),
+    );
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilDocumentContains(tester, 'Persisted content');
+    _insertAtDocumentEnd(' stale edit');
+    await tester.pump();
+
+    final saveButton = find.text('Spara lektionsinnehåll');
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    verify(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: '"content-v1"',
+      ),
+    ).called(1);
+    verifyNever(
+      () => repo.updateLessonStructure(
+        'lesson-1',
+        lessonTitle: any(named: 'lessonTitle'),
+        position: any(named: 'position'),
+      ),
+    );
+    expect(find.text('Lektionsinnehållet kunde inte laddas'), findsOneWidget);
+    expect(
+      find.text(
+        'Lektionsinnehållet har ändrats. Ladda om innehållet innan du sparar igen.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('intentional empty clear writes only after hydrated ETag', (
+    tester,
+  ) async {
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(repo);
+    when(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: any(named: 'ifMatch'),
+      ),
+    ).thenAnswer((invocation) async {
+      return StudioLessonContentWriteResult(
+        lessonId: 'lesson-1',
+        contentMarkdown: invocation.namedArguments[#contentMarkdown] as String,
+        etag: '"content-v2"',
+      );
+    });
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilDocumentContains(tester, 'Persisted content');
+    _selectWholeDocumentForDeletion();
+    await tester.pump();
+    editor_test_bridge.deleteSelection();
+    await tester.pump();
+
+    final saveButton = find.text('Spara lektionsinnehåll');
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    final contentCapture = verify(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: captureAny(named: 'contentMarkdown'),
+        ifMatch: '"content-v1"',
+      ),
+    )..called(1);
+    expect(contentCapture.captured.single, '');
+    verify(
+      () => repo.updateLessonStructure(
+        'lesson-1',
+        lessonTitle: any(named: 'lessonTitle'),
+        position: any(named: 'position'),
+      ),
+    ).called(1);
+  });
+
+  testWidgets('lesson switch loads selected lesson content without overwrite', (
+    tester,
+  ) async {
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(repo, lessons: const [_lesson, _secondLesson]);
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilDocumentContains(tester, 'Persisted content');
+
+    await tester.ensureVisible(find.text('Fortsattning'));
+    await tester.tap(find.text('Fortsattning'));
+    await _pumpUntilDocumentContains(tester, 'Second persisted content');
+
+    final document = editor_test_bridge.getDocument();
+    expect(document, contains('Second persisted content'));
+    expect(document, isNot(contains('Persisted content\n')));
+    verify(() => repo.readLessonContent('lesson-1')).called(1);
+    verify(() => repo.readLessonContent('lesson-2')).called(1);
+    verifyNever(
+      () => repo.updateLessonContent(
+        any(),
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: any(named: 'ifMatch'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
   });
 }

@@ -51,6 +51,23 @@ async def _cleanup_user(user_id: str) -> None:
             await conn.commit()
 
 
+async def _read_lesson_content_etag(
+    async_client,
+    *,
+    headers: dict[str, str],
+    lesson_id: str,
+) -> str:
+    content_resp = await async_client.get(
+        f"/studio/lessons/{lesson_id}/content",
+        headers=headers,
+    )
+    assert content_resp.status_code == 200, content_resp.text
+    assert set(content_resp.json()) == {"lesson_id", "content_markdown", "media"}
+    etag = content_resp.headers.get("etag")
+    assert etag
+    return etag
+
+
 async def _create_course_and_lesson(async_client, headers: dict[str, str]) -> tuple[str, str]:
     slug = f"lesson-contract-{uuid.uuid4().hex[:6]}"
     course_resp = await async_client.post(
@@ -81,7 +98,14 @@ async def _create_course_and_lesson(async_client, headers: dict[str, str]) -> tu
     lesson_id = str(lesson_resp.json()["id"])
     content_resp = await async_client.patch(
         f"/studio/lessons/{lesson_id}/content",
-        headers=headers,
+        headers={
+            **headers,
+            "If-Match": await _read_lesson_content_etag(
+                async_client,
+                headers=headers,
+                lesson_id=lesson_id,
+            ),
+        },
         json={"content_markdown": "# Lesson"},
     )
     assert content_resp.status_code == 200, content_resp.text
@@ -172,7 +196,14 @@ async def test_update_lesson_accepts_canonical_typed_media_refs(async_client):
 
         update_resp = await async_client.patch(
             f"/studio/lessons/{lesson_id}/content",
-            headers=headers,
+            headers={
+                **headers,
+                "If-Match": await _read_lesson_content_etag(
+                    async_client,
+                    headers=headers,
+                    lesson_id=lesson_id,
+                ),
+            },
             json={
                 "content_markdown": (
                     f"!image({image_id})\n\n"
@@ -204,7 +235,14 @@ async def test_update_lesson_rejects_unresolved_raw_media_refs(async_client):
 
         update_resp = await async_client.patch(
             f"/studio/lessons/{lesson_id}/content",
-            headers=headers,
+            headers={
+                **headers,
+                "If-Match": await _read_lesson_content_etag(
+                    async_client,
+                    headers=headers,
+                    lesson_id=lesson_id,
+                ),
+            },
             json={
                 "content_markdown": "Intro\n\n![](https://cdn.test/lesson-image.png)\n"
             },
@@ -233,7 +271,14 @@ async def test_update_lesson_rewrites_resolvable_legacy_document_links(async_cli
 
         update_resp = await async_client.patch(
             f"/studio/lessons/{lesson_id}/content",
-            headers=headers,
+            headers={
+                **headers,
+                "If-Match": await _read_lesson_content_etag(
+                    async_client,
+                    headers=headers,
+                    lesson_id=lesson_id,
+                ),
+            },
             json={
                 "content_markdown": f"[📄 material.pdf](/studio/media/{document_id})"
             },
@@ -254,7 +299,14 @@ async def test_update_lesson_rejects_storage_path_media_refs(async_client):
 
         update_resp = await async_client.patch(
             f"/studio/lessons/{lesson_id}/content",
-            headers=headers,
+            headers={
+                **headers,
+                "If-Match": await _read_lesson_content_etag(
+                    async_client,
+                    headers=headers,
+                    lesson_id=lesson_id,
+                ),
+            },
             json={
                 "content_markdown": (
                     f"Intro\n\n[course pdf](courses/{course_id}/lessons/{lesson_id}/docs/material.pdf)"

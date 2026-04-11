@@ -73,6 +73,23 @@ async def cleanup_user(user_id: str):
             await conn.commit()
 
 
+async def read_lesson_content_etag(
+    async_client,
+    *,
+    lesson_id: str,
+    token: str,
+) -> str:
+    response = await async_client.get(
+        f"/studio/lessons/{lesson_id}/content",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200, response.text
+    assert set(response.json()) == {"lesson_id", "content_markdown", "media"}
+    etag = response.headers.get("etag")
+    assert etag
+    return etag
+
+
 async def test_studio_lesson_newline_persists_in_storage(async_client):
     token, user_id = await register_teacher(async_client)
 
@@ -100,7 +117,14 @@ async def test_studio_lesson_newline_persists_in_storage(async_client):
         resp = await async_client.patch(
             f"/studio/lessons/{lesson_id}/content",
             json={"content_markdown": "Hello world\n\nThis is a lesson\n\n"},
-            headers=auth_header(token),
+            headers={
+                **auth_header(token),
+                "If-Match": await read_lesson_content_etag(
+                    async_client,
+                    lesson_id=lesson_id,
+                    token=token,
+                ),
+            },
         )
         assert resp.status_code == 200, resp.text
 
@@ -108,7 +132,10 @@ async def test_studio_lesson_newline_persists_in_storage(async_client):
         resp = await async_client.patch(
             f"/studio/lessons/{lesson_id}/content",
             json={"content_markdown": edited_markdown},
-            headers=auth_header(token),
+            headers={
+                **auth_header(token),
+                "If-Match": resp.headers["etag"],
+            },
         )
         assert resp.status_code == 200, resp.text
 
