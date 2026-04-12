@@ -60,10 +60,7 @@ _MEDIA_TRANSCODE_WORKER_SQL = """
     original_object_path,
     ingest_format,
     state::text as state,
-    storage_bucket,
-    original_filename,
-    processing_attempts,
-    course_id
+    processing_attempts
 """
 
 

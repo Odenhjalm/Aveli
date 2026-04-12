@@ -14,7 +14,7 @@ kill_timeout = "5s"
 
 [processes]
   app = "uvicorn app.main:app --host 0.0.0.0 --port 8080"
-  worker = "env RUN_MEDIA_WORKER=true python -m app.services.media_transcode_worker"
+  worker = "env RUN_MEDIA_WORKER=true RUN_COURSE_DRIP_WORKER=true python -m app.services.mvp_worker"
 
 [http_service]
   internal_port = 8080

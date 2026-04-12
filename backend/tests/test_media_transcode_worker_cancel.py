@@ -13,6 +13,9 @@ async def test_worker_reschedules_locked_batch_on_cancel(monkeypatch):
     async def fake_fetch_and_lock_pending_media_assets(*, limit, max_attempts):
         return batch
 
+    async def fake_list_pending_media_assets_missing_source(*, limit, max_attempts):
+        return []
+
     rescheduled: list[str] = []
 
     async def fake_defer_media_asset_processing(*, media_id):
@@ -25,6 +28,12 @@ async def test_worker_reschedules_locked_batch_on_cancel(monkeypatch):
         worker.media_assets_repo,
         "fetch_and_lock_pending_media_assets",
         fake_fetch_and_lock_pending_media_assets,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "list_pending_media_assets_missing_source",
+        fake_list_pending_media_assets_missing_source,
         raising=True,
     )
     monkeypatch.setattr(

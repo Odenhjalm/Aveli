@@ -265,6 +265,7 @@ class Settings(BaseSettings):
     media_transcode_stale_lock_seconds: int = 1800
     media_transcode_max_attempts: int = 5
     media_transcode_max_retry_seconds: int = 300
+    course_drip_worker_interval_seconds: int = 60 * 60
     sentry_dsn: str | None = Field(
         default=None, validation_alias=AliasChoices("SENTRY_DSN", "BACKEND_SENTRY_DSN")
     )

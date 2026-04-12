@@ -195,6 +195,12 @@
       "filename": "0032_memberships_fail_closed_constraints.sql",
       "path": "backend/supabase/baseline_slots/0032_memberships_fail_closed_constraints.sql",
       "sha256": "dfac00d00d2e10af4c79583f07406069cfb8cfabaee582ce8dae6fc0c5f061a8"
+    },
+    {
+      "slot": 33,
+      "filename": "0033_media_worker_operational_metadata.sql",
+      "path": "backend/supabase/baseline_slots/0033_media_worker_operational_metadata.sql",
+      "sha256": "0ffbc462a9ce4e2ead1011712664ef6c7ac150584d4810c6b2f531c20b506b7a"
     }
   ]
 }

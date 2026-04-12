@@ -21,7 +21,7 @@ course-access law, or media law.
 - Production runtime database selection is owned by backend runtime environment,
   not by local developer defaults, legacy migration state, or ad hoc scripts.
 - Production launch is blocked unless the canonical baseline slot chain
-  `0001` through `0032` has been applied to the intended production Supabase
+  `0001` through `0033` has been applied to the intended production Supabase
   database target and verified against the contract set.
 - Production launch is blocked unless backend runtime, worker runtime, public
   courses, auth/onboarding, membership, course access, media, and payment
@@ -128,10 +128,10 @@ Backend runtime database authority:
 
 - The canonical baseline source is `backend/supabase/baseline_slots/`.
 - The canonical baseline lock is `backend/supabase/baseline_slots.lock.json`.
-- Public launch requires the baseline slot chain `0001` through `0032` to be
+- Public launch requires the baseline slot chain `0001` through `0033` to be
   applied and verified against the intended production Supabase database target.
 - Public launch requires verification that the production schema matches the
-  accepted `0001` through `0032` baseline authority for every launch-critical
+  accepted `0001` through `0033` baseline authority for every launch-critical
   runtime surface.
 - Legacy migration paths are not launch authority when baseline slots are the
   canonical truth.
@@ -225,7 +225,7 @@ The production deployment contract is satisfied only when all are true:
 - `SUPABASE_PROJECT_REF`, `SUPABASE_URL`, production `DATABASE_URL`, and any
   production verification `SUPABASE_DB_URL` resolve to the same Supabase project.
 - Production runtime cannot fall back to local database configuration.
-- Baseline slots `0001` through `0032` are applied and verified against the
+- Baseline slots `0001` through `0033` are applied and verified against the
   intended production Supabase project.
 - Legacy migration paths do not define launch authority.
 - Minimum public, protected, media, and payment surfaces pass under their
