@@ -711,6 +711,52 @@ If an MCP path fails:
 
 ---
 
+## MCP Bootstrap Law
+
+`ops/mcp_bootstrap_gate.ps1` is the mandatory local bootstrap gate for
+MCP/backend-dependent work.
+
+Codex MUST run `ops/mcp_bootstrap_gate.ps1` and confirm PASS in the current
+session before:
+
+- MCP usage
+- backend verification
+- backend testing that depends on MCP or local backend runtime
+- local audit flows that rely on MCP tools
+- Codex tasks that assume backend or MCP availability
+- tasks that rely on local MCP endpoints
+- tasks that rely on stdio MCP tools being callable from the active environment
+
+Trust boundary:
+
+- MCP availability is NOT assumed from `.vscode/mcp.json` presence alone
+- backend availability is NOT assumed from prior session state
+- local testing that depends on MCP/backend MUST first pass the bootstrap gate
+- MCP and backend runtime are UNTRUSTED until the bootstrap gate passes in the
+  current session
+
+Fail-closed rule:
+
+- if `ops/mcp_bootstrap_gate.ps1` fails, STOP
+- do not proceed into MCP-backed audits, backend verification, local integration
+  testing, implementation, or verification steps that depend on MCP/backend
+  runtime
+- report the failing checks clearly
+
+Evidence requirement:
+
+- Codex MUST report that `ops/mcp_bootstrap_gate.ps1` was run
+- Codex MUST report PASS or FAIL before proceeding into MCP/backend-dependent
+  work
+- Codex MUST NOT imply MCP/backend readiness without current-session evidence
+  from the bootstrap gate
+
+This rule is fail-closed operating policy. It does not change truth order,
+workflow order, MCP authority order, or the requirement that contract precedes
+verification.
+
+---
+
 ## Runtime Defaults
 
 Default local runtime:
@@ -911,13 +957,16 @@ Codex MUST fully bootstrap before execution work.
 
 4. Start backend
 
-5. Verify backend
+5. Run `ops/mcp_bootstrap_gate.ps1` and require PASS before trusting backend or
+   MCP readiness
 
-6. Start frontend if task requires frontend
+6. Verify backend
 
-7. Verify frontend if task requires frontend
+7. Start frontend if task requires frontend
 
-8. Verify MCP continuity
+8. Verify frontend if task requires frontend
+
+9. Verify MCP continuity
 
 If any required step fails:
 
