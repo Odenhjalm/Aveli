@@ -21,12 +21,10 @@ kill_timeout = "5s"
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 2
   processes = ["app"]
 
 [checks]
-  # Fly automates /healthz. Treat /readyz as a required manual post-deploy smoke
-  # in docs/DEPLOYMENT.md until a separate release gate is added.
   [checks.healthz]
     type = "http"
     port = 8080

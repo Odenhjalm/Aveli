@@ -17,7 +17,13 @@ def _set_local_db_env(monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_PASSWORD", "pw")
 
 
+def _clear_cloud_runtime_env(monkeypatch) -> None:
+    for key in ("FLY_APP_NAME", "K_SERVICE", "AWS_EXECUTION_ENV", "DYNO"):
+        monkeypatch.delenv(key, raising=False)
+
+
 def test_settings_use_explicit_production_database_for_mcp_mode(monkeypatch):
+    _clear_cloud_runtime_env(monkeypatch)
     _set_local_db_env(monkeypatch)
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@db:5432/ignored_by_settings")
     monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
@@ -44,6 +50,7 @@ def test_settings_use_explicit_production_database_for_mcp_mode(monkeypatch):
 
 
 def test_settings_require_explicit_production_database_for_mcp_mode(monkeypatch):
+    _clear_cloud_runtime_env(monkeypatch)
     _set_local_db_env(monkeypatch)
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@db:5432/ignored_by_settings")
     monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
@@ -56,6 +63,7 @@ def test_settings_require_explicit_production_database_for_mcp_mode(monkeypatch)
 
 
 def test_settings_derive_local_database_url_from_components(monkeypatch):
+    _clear_cloud_runtime_env(monkeypatch)
     _set_local_db_env(monkeypatch)
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@aveli-db:5432/ignored_by_settings")
     monkeypatch.setenv("MCP_MODE", "local")
@@ -69,6 +77,56 @@ def test_settings_derive_local_database_url_from_components(monkeypatch):
         settings.database_url.unicode_string()
         == "postgresql://postgres:pw@localhost:5432/aveli_local"
     )
+
+
+def test_settings_use_database_url_in_cloud_runtime_without_mcp_production(monkeypatch):
+    _set_local_db_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://postgres.prodref:pw@db.prodref.supabase.co:5432/postgres?sslmode=require",
+    )
+    monkeypatch.delenv("MCP_PRODUCTION_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PRODUCTION_SUPABASE_DB_URL", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.mcp_production_mode is False
+    assert settings.database_url is not None
+    assert (
+        settings.database_url.unicode_string()
+        == "postgresql://postgres.prodref:pw@db.prodref.supabase.co:5432/postgres?sslmode=require"
+    )
+
+
+def test_settings_reject_cloud_runtime_without_database_url(monkeypatch):
+    _set_local_db_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PRODUCTION_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PRODUCTION_SUPABASE_DB_URL", raising=False)
+
+    with pytest.raises(ValueError, match="Cloud runtime requires DATABASE_URL"):
+        Settings(_env_file=None)
+
+
+def test_settings_reject_cloud_runtime_with_local_database_url(monkeypatch):
+    _set_local_db_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@127.0.0.1:5432/aveli_local")
+    monkeypatch.delenv("MCP_PRODUCTION_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PRODUCTION_SUPABASE_DB_URL", raising=False)
+
+    with pytest.raises(
+        ValueError, match="Refusing to start cloud runtime with local database target"
+    ):
+        Settings(_env_file=None)
 
 
 @pytest.mark.anyio("asyncio")
@@ -430,6 +488,7 @@ async def test_lifespan_starts_and_stops_background_workers_in_local_mode(
     async def membership_stop():
         call_order.append("membership_stop")
 
+    _clear_cloud_runtime_env(monkeypatch)
     monkeypatch.setattr(main.pool, "open", pool_open)
     monkeypatch.setattr(main.pool, "close", pool_close)
     monkeypatch.setattr(main.livekit_events, "start_worker", livekit_start)
@@ -471,6 +530,56 @@ async def test_lifespan_starts_and_stops_background_workers_in_local_mode(
 
 
 @pytest.mark.anyio("asyncio")
+async def test_lifespan_skips_background_workers_in_cloud_runtime(
+    monkeypatch,
+    tmp_path,
+):
+    from app import main
+
+    pool_open = AsyncMock()
+    pool_close = AsyncMock()
+    livekit_start = AsyncMock()
+    livekit_stop = AsyncMock()
+    transcode_start = AsyncMock()
+    transcode_stop = AsyncMock()
+    membership_start = AsyncMock()
+    membership_stop = AsyncMock()
+
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+    monkeypatch.setattr(main.pool, "open", pool_open)
+    monkeypatch.setattr(main.pool, "close", pool_close)
+    monkeypatch.setattr(main.livekit_events, "start_worker", livekit_start)
+    monkeypatch.setattr(main.livekit_events, "stop_worker", livekit_stop)
+    monkeypatch.setattr(main.media_transcode_worker, "start_worker", transcode_start)
+    monkeypatch.setattr(main.media_transcode_worker, "stop_worker", transcode_stop)
+    monkeypatch.setattr(
+        main.membership_expiry_warnings,
+        "start_worker",
+        membership_start,
+    )
+    monkeypatch.setattr(
+        main.membership_expiry_warnings,
+        "stop_worker",
+        membership_stop,
+    )
+    monkeypatch.setattr(main.settings, "mcp_mode", "local", raising=False)
+    monkeypatch.setattr(main.settings, "runtime_verify_no_write", False, raising=False)
+    monkeypatch.setattr(main.settings, "media_root", str(tmp_path / "media"), raising=False)
+
+    async with main.lifespan(main.app):
+        pass
+
+    pool_open.assert_awaited_once()
+    pool_close.assert_awaited_once()
+    livekit_start.assert_not_awaited()
+    transcode_start.assert_not_awaited()
+    membership_start.assert_not_awaited()
+    livekit_stop.assert_not_awaited()
+    transcode_stop.assert_not_awaited()
+    membership_stop.assert_not_awaited()
+
+
+@pytest.mark.anyio("asyncio")
 async def test_lifespan_starts_background_workers_in_no_write_verification_mode(
     monkeypatch,
     tmp_path,
@@ -486,6 +595,7 @@ async def test_lifespan_starts_background_workers_in_no_write_verification_mode(
     membership_start = AsyncMock()
     membership_stop = AsyncMock()
 
+    _clear_cloud_runtime_env(monkeypatch)
     monkeypatch.setattr(main.pool, "open", pool_open)
     monkeypatch.setattr(main.pool, "close", pool_close)
     monkeypatch.setattr(main.livekit_events, "start_worker", livekit_start)

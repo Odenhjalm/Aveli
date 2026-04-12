@@ -96,6 +96,10 @@ def _local_background_workers() -> tuple[tuple[str, _WorkerStart, _WorkerStop], 
 
 
 async def _start_local_background_workers() -> list[tuple[str, _WorkerStop]]:
+    if settings.cloud_runtime:
+        logger.info("Skipping local background workers in cloud runtime")
+        return []
+
     if not settings.mcp_workers_enabled:
         logger.info("Skipping local background workers because MCP mode disables them")
         return []

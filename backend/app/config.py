@@ -310,6 +310,10 @@ class Settings(BaseSettings):
         return self.mcp_mode == "production"
 
     @property
+    def cloud_runtime(self) -> bool:
+        return _is_cloud_runtime()
+
+    @property
     def mcp_workers_enabled(self) -> bool:
         return not self.mcp_production_mode
 
@@ -335,7 +339,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _populate_database_url(self):
-        if self.mcp_production_mode:
+        is_cloud_runtime = _is_cloud_runtime()
+
+        if is_cloud_runtime:
+            if self.database_url is None:
+                raise ValueError("Cloud runtime requires DATABASE_URL")
+        elif self.mcp_production_mode:
             if self.mcp_production_database_url is None:
                 raise ValueError(
                     "MCP_MODE=production requires "
@@ -369,8 +378,19 @@ class Settings(BaseSettings):
         parsed = urlparse(db_url)
         hostname = (parsed.hostname or "").strip().lower()
 
+        if is_cloud_runtime and hostname in _LOCAL_DB_HOSTS:
+            target = _db_target(db_url)
+            raise ValueError(
+                "Refusing to start cloud runtime with local database target "
+                f"(target={target}). Set DATABASE_URL to the production database."
+            )
+
         if hostname and hostname not in _LOCAL_DB_HOSTS and _looks_like_supabase_host(hostname):
-            allow_remote = _truthy_env("AVELI_ALLOW_REMOTE_DB") or self.mcp_production_mode
+            allow_remote = (
+                _truthy_env("AVELI_ALLOW_REMOTE_DB")
+                or self.mcp_production_mode
+                or is_cloud_runtime
+            )
             app_env = _app_env_lower()
             is_prod_env = app_env in _PRODUCTION_ENVS
             if not allow_remote and not (is_prod_env and _is_cloud_runtime()):
