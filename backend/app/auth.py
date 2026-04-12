@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Mapping
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -258,15 +258,25 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 OptionalCurrentUser = Annotated[dict | None, Depends(get_optional_user)]
 
 
-async def require_app_entry(current: CurrentUser) -> dict[str, Any]:
+def is_app_entry_allowed(
+    current: Mapping[str, Any],
+    membership: Mapping[str, Any] | None,
+) -> bool:
     if current.get("onboarding_state") != "completed":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=_CANONICAL_APP_ENTRY_REQUIRED,
-        )
+        return False
+    return is_membership_row_active(membership)
+
+
+async def evaluate_app_entry(current: dict[str, Any]) -> bool:
+    if current.get("onboarding_state") != "completed":
+        return False
 
     membership = await memberships_repo.get_membership(str(current["id"]))
-    if not is_membership_row_active(membership):
+    return is_app_entry_allowed(current, membership)
+
+
+async def require_app_entry(current: CurrentUser) -> dict[str, Any]:
+    if not await evaluate_app_entry(current):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=_CANONICAL_APP_ENTRY_REQUIRED,

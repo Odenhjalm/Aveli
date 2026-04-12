@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from jose import JWTError
+from psycopg.rows import dict_row
 
 from ..auth import (
     CurrentUser,
@@ -15,6 +16,7 @@ from ..auth import (
     is_token_expired,
     verify_password,
 )
+from ..db import pool
 from ..repositories import auth_subjects as auth_subjects_repo
 from .. import models, schemas
 from ..services.email_verification import (
@@ -146,6 +148,24 @@ async def _compatibility_token_claims(user_id: str) -> dict[str, Any]:
         "role": role,
         "is_admin": is_admin,
     }
+
+
+async def _complete_onboarding_at_canonical_route(user_id: str) -> dict[str, Any] | None:
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.auth_subjects
+                   SET onboarding_state = 'completed'
+                 WHERE user_id = %s
+                   AND onboarding_state IN ('incomplete', 'completed')
+                 RETURNING user_id, onboarding_state, role_v2, role, is_admin
+                """,
+                (user_id,),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+            return dict(row) if row else None
 
 
 @router.post(
@@ -359,7 +379,7 @@ async def complete_onboarding(request: Request, current_user: CurrentUser):
             detail="internal_error",
         )
 
-    updated_subject = await auth_subjects_repo.complete_onboarding(user_id)
+    updated_subject = await _complete_onboarding_at_canonical_route(user_id)
     if not updated_subject:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

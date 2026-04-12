@@ -753,7 +753,7 @@ async def _authority_section() -> ReportSection:
             f"expected exactly one canonical onboarding completion mutation, found {len(onboarding_mutations)}"
         )
     else:
-        section.ok("onboarding_state mutation exists only at the canonical repository boundary")
+        section.ok("onboarding_state mutation exists only at the canonical route boundary")
 
     auth_source = _read_text(ROOT / "backend/app/auth.py")
     required_authority_markers = (

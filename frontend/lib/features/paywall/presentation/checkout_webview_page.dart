@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -26,15 +25,14 @@ class CheckoutWebViewPage extends ConsumerStatefulWidget {
 class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
   late final WebViewController _controller;
   bool _refreshed = false;
-  bool _fallbackExternal = false;
+  bool _embeddedUnavailable = false;
   bool _navigatedAway = false;
 
   @override
   void initState() {
     super.initState();
-    if (kIsWeb || (!kIsWeb && Platform.isLinux)) {
-      _fallbackExternal = true;
-      Future.microtask(_openExternally);
+    if (kIsWeb || (!kIsWeb && (Platform.isLinux || Platform.isWindows))) {
+      _embeddedUnavailable = true;
       return;
     }
     _ensureWebViewPlatform();
@@ -103,14 +101,25 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
     _navigatedAway = true;
     Future.microtask(() async {
       final uri = Uri.tryParse(url);
+      final success = _isSuccessUrl(url);
       if (uri != null) {
-        await ref.read(deepLinkServiceProvider).handleUri(uri);
-        return;
+        final handled = await ref.read(deepLinkServiceProvider).handleUri(uri);
+        if (handled) return;
       }
       await _refreshSession();
       if (!mounted || !context.mounted) return;
-      context.go(RoutePath.checkoutCancel);
+      context.go(_checkoutResultPath(success, uri));
     });
+  }
+
+  String _checkoutResultPath(bool success, Uri? uri) {
+    if (!success) return RoutePath.checkoutCancel;
+    final query = uri?.queryParameters ?? const <String, String>{};
+    if (query.isEmpty) return RoutePath.checkoutSuccess;
+    return Uri(
+      path: RoutePath.checkoutSuccess,
+      queryParameters: query,
+    ).toString();
   }
 
   void _ensureWebViewPlatform() {
@@ -122,35 +131,24 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
     }
   }
 
-  Future<void> _openExternally() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
-    final url = widget.url;
-    final launched = await launchUrlString(
-      url,
-      mode: LaunchMode.externalApplication,
-    );
-    if (!mounted) return;
-    if (!launched) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Kunde inte öppna betalningslänk i webbläsare.'),
-        ),
-      );
-    }
-    navigator.pop();
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_fallbackExternal) {
+    if (_embeddedUnavailable) {
       return const AppScaffold(
         title: 'Betalning',
         disableBack: true,
         showHomeAction: false,
         useBasePage: false,
         contentPadding: EdgeInsets.zero,
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Inbyggd betalning är inte tillgänglig på den här plattformen. Betalningen öppnas inte utanför appen.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
       );
     }
 

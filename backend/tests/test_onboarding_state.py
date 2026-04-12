@@ -52,6 +52,23 @@ async def test_register_initializes_canonical_auth_subject_and_profile_projectio
     assert me_resp.json()["display_name"] == "Initial User"
 
 
+async def test_auth_subject_repository_cannot_complete_onboarding_directly():
+    from app import repositories
+    from app.repositories import auth_subjects as auth_subjects_repo
+
+    assert not hasattr(repositories, "complete_onboarding")
+    assert not hasattr(auth_subjects_repo, "complete_onboarding")
+
+    with pytest.raises(ValueError, match="cannot complete onboarding"):
+        await auth_subjects_repo.ensure_auth_subject(
+            uuid.uuid4(),
+            onboarding_state="completed",
+            role_v2="learner",
+            role="learner",
+            is_admin=False,
+        )
+
+
 async def test_onboarding_complete_requires_explicit_refresh_boundary(async_client):
     user = await register_auth_user(
         async_client,
@@ -88,6 +105,35 @@ async def test_onboarding_complete_requires_explicit_refresh_boundary(async_clie
     assert refreshed["token_type"] == "bearer"
 
     assert await _event_types_for(user["user_id"]) == ["onboarding_completed"]
+
+
+async def test_login_and_refresh_do_not_complete_onboarding(async_client):
+    user = await register_auth_user(
+        async_client,
+        email=f"login_refresh_{uuid.uuid4().hex[:8]}@example.com",
+        password="Passw0rd!",
+        display_name="Login Refresh User",
+    )
+
+    login_resp = await async_client.post(
+        "/auth/login",
+        json={"email": user["email"], "password": user["password"]},
+    )
+    assert login_resp.status_code == 200, login_resp.text
+    login_tokens = login_resp.json()
+
+    refresh_resp = await async_client.post(
+        "/auth/refresh",
+        json={"refresh_token": login_tokens["refresh_token"]},
+    )
+    assert refresh_resp.status_code == 200, refresh_resp.text
+
+    assert await fetch_auth_subject(user["user_id"]) == {
+        "onboarding_state": "incomplete",
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
+    }
 
 
 async def test_onboarding_complete_is_idempotent(async_client):

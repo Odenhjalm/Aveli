@@ -54,6 +54,7 @@ from .routes import (
     courses,
     domain_observability_mcp,
     email_verification,
+    entry_state,
     home,
     logs_mcp,
     media_control_plane_mcp,
@@ -208,6 +209,7 @@ def _configure_middleware(app: FastAPI) -> None:
 
 def _include_routers(app: FastAPI) -> None:
     app.include_router(auth.router)
+    app.include_router(entry_state.router)
     app.include_router(email_verification.router)
     app.include_router(profiles.router)
     app.include_router(referrals.router)

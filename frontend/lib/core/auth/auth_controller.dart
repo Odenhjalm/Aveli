@@ -7,45 +7,59 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/domain/models/entry_state.dart';
+import 'package:aveli/features/auth/data/entry_state_repository.dart';
 import 'package:aveli/gate.dart';
 
 @immutable
 class AuthState {
   const AuthState({
     this.profile,
+    this.entryState,
     this.hasStoredToken = false,
     this.isLoading = false,
     this.error,
   });
 
   final Profile? profile;
+  final EntryState? entryState;
   final bool hasStoredToken;
   final bool isLoading;
   final String? error;
 
   AuthState copyWith({
     Profile? profile,
+    EntryState? entryState,
     bool? hasStoredToken,
     bool? isLoading,
     String? error,
     bool clearProfile = false,
+    bool clearEntryState = false,
   }) => AuthState(
     profile: clearProfile ? null : (profile ?? this.profile),
+    entryState: clearEntryState ? null : (entryState ?? this.entryState),
     hasStoredToken: hasStoredToken ?? this.hasStoredToken,
     isLoading: isLoading ?? this.isLoading,
     error: error,
   );
 
-  bool get isAuthenticated => false;
+  bool get canEnterApp => entryState?.canEnterApp ?? false;
+  bool get isAuthenticated => canEnterApp;
 }
 
 class AuthController extends StateNotifier<AuthState> {
-  AuthController(this._repo, this._authObserver) : super(const AuthState()) {
+  AuthController(
+    this._repo,
+    this._authObserver, {
+    Future<EntryState> Function()? loadEntryState,
+  }) : _loadEntryState = loadEntryState,
+       super(const AuthState()) {
     _authSub = _authObserver.events.listen(_handleAuthEvent);
   }
 
   final AuthRepository _repo;
   final AuthHttpObserver _authObserver;
+  final Future<EntryState> Function()? _loadEntryState;
   late final StreamSubscription<AuthHttpEvent> _authSub;
 
   Future<void> loadSession({bool hydrateProfile = true}) async {
@@ -61,6 +75,7 @@ class AuthController extends StateNotifier<AuthState> {
       hasStoredToken: true,
       isLoading: hydrateProfile,
       error: null,
+      clearEntryState: true,
     );
 
     if (!hydrateProfile) {
@@ -72,7 +87,8 @@ class AuthController extends StateNotifier<AuthState> {
   }
 
   Future<void> hydrateProfile() async {
-    if (state.profile != null || state.isLoading) return;
+    if (state.isLoading) return;
+    if (state.profile != null && state.entryState != null) return;
     await _hydrateProfile();
   }
 
@@ -80,8 +96,10 @@ class AuthController extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final profile = await _repo.getCurrentProfile();
+      final entryState = await _fetchEntryState();
       state = state.copyWith(
         profile: profile,
+        entryState: entryState,
         hasStoredToken: true,
         isLoading: false,
       );
@@ -105,11 +123,14 @@ class AuthController extends StateNotifier<AuthState> {
       error: null,
       hasStoredToken: false,
       clearProfile: true,
+      clearEntryState: true,
     );
     try {
       final profile = await _repo.login(email: email, password: password);
+      final entryState = await _fetchEntryState();
       state = AuthState(
         profile: profile,
+        entryState: entryState,
         hasStoredToken: true,
         isLoading: false,
       );
@@ -138,6 +159,7 @@ class AuthController extends StateNotifier<AuthState> {
       error: null,
       hasStoredToken: false,
       clearProfile: true,
+      clearEntryState: true,
     );
     try {
       final profile = await _repo.register(
@@ -148,8 +170,10 @@ class AuthController extends StateNotifier<AuthState> {
             : email.split('@').first,
         inviteToken: inviteToken,
       );
+      final entryState = await _fetchEntryState();
       state = AuthState(
         profile: profile,
+        entryState: entryState,
         hasStoredToken: true,
         isLoading: false,
       );
@@ -177,8 +201,10 @@ class AuthController extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final profile = await _repo.completeWelcome();
+      final entryState = await _fetchEntryState();
       state = AuthState(
         profile: profile,
+        entryState: entryState,
         hasStoredToken: true,
         isLoading: false,
       );
@@ -199,6 +225,14 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  Future<EntryState?> _fetchEntryState() async {
+    final loader = _loadEntryState;
+    if (loader == null) {
+      return null;
+    }
+    return loader();
+  }
+
   Future<void> _handleSessionExpired() async {
     await _repo.logout();
     gate.reset();
@@ -216,7 +250,12 @@ final authControllerProvider = StateNotifierProvider<AuthController, AuthState>(
   (ref) {
     final repo = ref.watch(authRepositoryProvider);
     final observer = ref.watch(authHttpObserverProvider);
-    final controller = AuthController(repo, observer);
+    final entryStateRepo = ref.watch(entryStateRepositoryProvider);
+    final controller = AuthController(
+      repo,
+      observer,
+      loadEntryState: entryStateRepo.fetchEntryState,
+    );
     controller.loadSession();
     return controller;
   },

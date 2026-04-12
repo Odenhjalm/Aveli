@@ -12,12 +12,15 @@ import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/data/models/activity.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/models/service.dart';
+import 'package:aveli/domain/models/entry_state.dart';
+import 'package:aveli/features/auth/presentation/login_page.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:aveli/features/landing/presentation/landing_page.dart';
+import 'package:aveli/features/onboarding/welcome_page.dart';
+import 'package:aveli/features/payments/presentation/subscribe_screen.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/main.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
@@ -236,9 +239,7 @@ void main() {
     });
   });
 
-  testWidgets('unauthenticated users land on the landing page first', (
-    tester,
-  ) async {
+  testWidgets('unauthenticated users land on login first', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: _commonOverrides(const AuthState()),
@@ -249,36 +250,114 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.byType(LandingPage), findsOneWidget);
+    expect(find.byType(LoginPage), findsOneWidget);
+    expect(find.byType(HomeDashboardPage), findsNothing);
+  });
+
+  testWidgets('profile-only users land on login without backend entry truth', (
+    tester,
+  ) async {
+    final profile = Profile(
+      id: 'user-1',
+      email: 'user@example.com',
+      createdAt: DateTime.utc(2024, 1, 1),
+      updatedAt: DateTime.utc(2024, 1, 1),
+      displayName: 'Test User',
+    );
+
+    final authedState = AuthState(profile: profile, isLoading: false);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _commonOverrides(authedState),
+        child: const AveliApp(),
+      ),
+    );
+
+    await tester.pump();
+    expect(find.byType(LoginPage), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.byType(HomeDashboardPage), findsNothing);
+    expect(find.byType(LoginPage), findsOneWidget);
+  });
+
+  testWidgets('backend entry truth routes completed users to home', (
+    tester,
+  ) async {
+    const entryState = EntryState(
+      canEnterApp: true,
+      onboardingCompleted: true,
+      membershipActive: true,
+      needsOnboarding: false,
+      needsPayment: false,
+      isInvite: false,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _commonOverrides(const AuthState(entryState: entryState)),
+        child: const AveliApp(),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.byType(HomeDashboardPage), findsOneWidget);
+    expect(find.byType(LoginPage), findsNothing);
+  });
+
+  testWidgets('backend entry truth routes payment-needed users to payment', (
+    tester,
+  ) async {
+    const entryState = EntryState(
+      canEnterApp: false,
+      onboardingCompleted: true,
+      membershipActive: false,
+      needsOnboarding: false,
+      needsPayment: true,
+      isInvite: false,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _commonOverrides(const AuthState(entryState: entryState)),
+        child: const AveliApp(),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.byType(SubscribeScreen), findsOneWidget);
     expect(find.byType(HomeDashboardPage), findsNothing);
   });
 
   testWidgets(
-    'profile-only users do not start on home without backend entry truth',
+    'backend entry truth routes onboarding-needed users to onboarding',
     (tester) async {
-      final profile = Profile(
-        id: 'user-1',
-        email: 'user@example.com',
-        createdAt: DateTime.utc(2024, 1, 1),
-        updatedAt: DateTime.utc(2024, 1, 1),
-        displayName: 'Test User',
+      const entryState = EntryState(
+        canEnterApp: false,
+        onboardingCompleted: false,
+        membershipActive: true,
+        needsOnboarding: true,
+        needsPayment: false,
+        isInvite: true,
       );
-
-      final authedState = AuthState(profile: profile, isLoading: false);
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: _commonOverrides(authedState),
+          overrides: _commonOverrides(const AuthState(entryState: entryState)),
           child: const AveliApp(),
         ),
       );
 
       await tester.pump();
-      expect(find.byType(LandingPage), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 50));
 
+      expect(find.byType(WelcomePage), findsOneWidget);
       expect(find.byType(HomeDashboardPage), findsNothing);
-      expect(find.byType(LandingPage), findsOneWidget);
     },
   );
 

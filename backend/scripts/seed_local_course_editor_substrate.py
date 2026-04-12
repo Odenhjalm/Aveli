@@ -226,10 +226,9 @@ async def _ensure_seed_teacher() -> str:
                     role,
                     is_admin
                 )
-                VALUES (%s, 'completed', 'teacher', 'teacher', false)
+                VALUES (%s, 'incomplete', 'teacher', 'teacher', false)
                 ON CONFLICT (user_id) DO UPDATE
-                  SET onboarding_state = excluded.onboarding_state,
-                      role_v2 = excluded.role_v2,
+                  SET role_v2 = excluded.role_v2,
                       role = excluded.role,
                       is_admin = excluded.is_admin
                 """,
@@ -247,8 +246,7 @@ async def _ensure_seed_teacher() -> str:
         await cur.execute(
             """
             UPDATE app.auth_subjects
-               SET onboarding_state = 'completed',
-                   role = 'teacher',
+               SET role = 'teacher',
                    role_v2 = 'teacher',
                    is_admin = false
              WHERE user_id = %s

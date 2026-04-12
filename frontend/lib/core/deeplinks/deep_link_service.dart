@@ -34,20 +34,23 @@ class DeepLinkService {
 
   /// Exposed so WebViews or manual triggers can forward a redirect URI directly
   /// instead of waiting for the OS to broadcast it.
-  Future<void> handleUri(Uri uri) async {
+  Future<bool> handleUri(Uri uri) async {
     if (_isAuthCallbackUri(uri)) {
       await _handleAuthCallback(uri);
-      return;
+      return true;
     }
-    if (!_isCheckoutUri(uri)) return;
+    if (!_isCheckoutUri(uri)) return false;
     final isSuccess = _isSuccessPath(uri);
     final isCancel = _isCancelPath(uri);
 
     if (isSuccess) {
       await _handleCheckoutSuccess(uri);
+      return true;
     } else if (isCancel) {
       _handleCheckoutCancel();
+      return true;
     }
+    return false;
   }
 
   bool _isCheckoutUri(Uri uri) {

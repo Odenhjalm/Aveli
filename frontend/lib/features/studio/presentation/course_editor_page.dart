@@ -46,7 +46,6 @@ import 'package:aveli/features/courses/application/course_providers.dart'
     show coursesProvider;
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
@@ -1275,27 +1274,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     super.dispose();
   }
 
-  void _goToLoginWithRedirect() {
-    final router = GoRouter.of(context);
-    final redirectTarget = GoRouterState.of(context).uri.toString();
-    router.goNamed(
-      AppRoute.login,
-      queryParameters: {'redirect': redirectTarget},
-    );
-  }
-
   Future<void> _bootstrap() async {
     final authState = ref.read(authControllerProvider);
-    final access = ref.read(userAccessProvider);
-    final profile = authState.profile;
-    if (profile == null) {
-      if (!mounted || !context.mounted) return;
-      _goToLoginWithRedirect();
+    if (!authState.canEnterApp) {
+      if (!mounted) return;
+      setState(() {
+        _allowed = false;
+        _checking = false;
+      });
       return;
     }
     try {
       final status = await ref.read(studioRepositoryProvider).fetchStatus();
-      final allowed = status.isTeacher || access.isTeacher || access.isAdmin;
+      final allowed = status.isTeacher;
       List<CourseStudio> myCourses = <CourseStudio>[];
       if (allowed) {
         myCourses = await _studioRepo.myCourses();

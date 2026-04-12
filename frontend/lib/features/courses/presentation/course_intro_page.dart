@@ -6,9 +6,9 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_extras.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/course_video.dart';
-import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
-import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
+import 'package:aveli/shared/widgets/gradient_button.dart';
+import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 
 class CourseIntroPage extends ConsumerWidget {
   const CourseIntroPage({super.key});
@@ -54,6 +54,13 @@ class CourseIntroPage extends ConsumerWidget {
                         : 'Detta är introduktionen för kursen med ID: $courseId.',
                     style: Theme.of(context).textTheme.bodyLarge,
                   ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Första månaden är en provperiod. Du erbjuds en introduktionskurs och lektionerna droppas veckovis. Det här valet styr inte appåtkomst.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 24),
                   _IntroVideoPreview(courseId: courseId),
                   const SizedBox(height: 24),
@@ -64,7 +71,7 @@ class CourseIntroPage extends ConsumerWidget {
                         context.goNamed(AppRoute.home);
                       },
                       icon: const Icon(Icons.arrow_forward),
-                      label: const Text('Gå vidare till Home'),
+                      label: const Text('Gå vidare'),
                     ),
                   ),
                 ],

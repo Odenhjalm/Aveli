@@ -1,15 +1,11 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/bootstrap/auth_boot_page.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/not_found_page.dart';
 import 'package:aveli/core/routing/route_access.dart';
-import 'package:aveli/core/routing/route_access_resolver.dart';
 import 'package:aveli/core/routing/route_manifest.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_session.dart';
@@ -79,76 +75,44 @@ class AppRouterNotifier extends ChangeNotifier {
   String? handleRedirect(GoRouterState state) {
     final meta = _resolveRouteMeta(state);
     final session = ref.read(routeSessionSnapshotProvider);
-    final isAuthed = session.isAuthenticated;
-    final hasTentativeSession = session.hasTentativeSession;
-    final isAuthLoading = session.isAuthLoading;
-
     final isBootRoute = state.matchedLocation == RoutePath.boot;
-    if (isBootRoute) {
-      if (isAuthLoading) return null;
 
-      final redirectTarget = _sanitizeRedirect(
-        state.uri.queryParameters['redirect'],
-      );
-      if (!isAuthed && hasTentativeSession) {
-        try {
-          unawaited(ref.read(authControllerProvider.notifier).hydrateProfile());
-        } catch (_) {
-          // Auth stack might be intentionally stubbed out (tests).
-        }
+    if (session.isEntryStateLoading) {
+      if (isBootRoute) return null;
+      return _bootRedirect(state);
+    }
+
+    if (!session.hasEntryState) {
+      if (meta.level == RouteAccessLevel.public && !isBootRoute) {
         return null;
       }
-      if (isAuthed) {
-        return redirectTarget ?? _resolveDefaultAuthedTarget();
-      }
-
-      if (redirectTarget != null &&
-          resolveRouteAccessLevel(Uri.parse(redirectTarget).path) !=
-              RouteAccessLevel.public) {
+      if (isBootRoute) {
+        final redirectTarget = _sanitizeRedirect(
+          state.uri.queryParameters['redirect'],
+        );
         return state.namedLocation(
           AppRoute.login,
-          queryParameters: {'redirect': redirectTarget},
+          queryParameters: {
+            if (redirectTarget != null) 'redirect': redirectTarget,
+          },
         );
       }
-
-      return state.namedLocation(AppRoute.landingRoot);
+      return _loginRedirect(state);
     }
 
-    if (!isAuthed) {
-      if (meta.level == RouteAccessLevel.public) {
-        return null;
+    if (session.canEnterApp) {
+      if (isBootRoute || meta.redirectAuthed || _isPreEntryRoute(state)) {
+        return _resolveDefaultAuthedTarget();
       }
-
-      // We may have a stored token, but until the profile is hydrated we treat
-      // auth as unverified. Route to a stable boot surface and verify there.
-      if (isAuthLoading || hasTentativeSession) {
-        try {
-          unawaited(ref.read(authControllerProvider.notifier).hydrateProfile());
-        } catch (_) {
-          // Auth stack might be intentionally stubbed out (tests).
-        }
-        final redirectTarget = state.uri.toString();
-        return state.namedLocation(
-          AppRoute.boot,
-          queryParameters: {'redirect': redirectTarget},
-        );
-      }
-
-      if (state.matchedLocation == RoutePath.login) {
-        return null;
-      }
-      final redirectTarget = state.uri.toString();
-      return state.namedLocation(
-        AppRoute.login,
-        queryParameters: {'redirect': redirectTarget},
-      );
+      return null;
     }
 
-    if (meta.redirectAuthed) {
-      return _resolveDefaultAuthedTarget();
+    final preEntryTarget = _resolvePreEntryTarget(session);
+    if (_isAllowedPreEntryRoute(state, session)) {
+      return null;
     }
 
-    return null;
+    return preEntryTarget;
   }
 
   @override
@@ -177,9 +141,72 @@ String? _sanitizeRedirect(String? raw) {
   return raw.startsWith('/') ? raw : null;
 }
 
+String _bootRedirect(GoRouterState state) {
+  return state.namedLocation(
+    AppRoute.boot,
+    queryParameters: {'redirect': state.uri.toString()},
+  );
+}
+
+String _loginRedirect(GoRouterState state) {
+  if (state.matchedLocation == RoutePath.login) {
+    return RoutePath.login;
+  }
+  return state.namedLocation(
+    AppRoute.login,
+    queryParameters: {'redirect': state.uri.toString()},
+  );
+}
+
 String _resolveDefaultAuthedTarget() {
   return RoutePath.home;
 }
+
+String _resolvePreEntryTarget(RouteSessionSnapshot session) {
+  if (session.needsPayment) {
+    return RoutePath.subscribe;
+  }
+  if (session.needsOnboarding) {
+    return RoutePath.welcome;
+  }
+  return RoutePath.login;
+}
+
+bool _isPreEntryRoute(GoRouterState state) {
+  return _preEntryPaths.contains(state.matchedLocation);
+}
+
+bool _isAllowedPreEntryRoute(
+  GoRouterState state,
+  RouteSessionSnapshot session,
+) {
+  final location = state.matchedLocation;
+  if (session.needsPayment) {
+    return _paymentPreEntryPaths.contains(location);
+  }
+  if (session.needsOnboarding) {
+    return _onboardingPreEntryPaths.contains(location);
+  }
+  return location == RoutePath.login || location == RoutePath.signup;
+}
+
+const Set<String> _onboardingPreEntryPaths = {
+  RoutePath.welcome,
+  RoutePath.courseIntro,
+};
+
+const Set<String> _paymentPreEntryPaths = {
+  RoutePath.subscribe,
+  RoutePath.profileSubscription,
+  RoutePath.checkout,
+  RoutePath.checkoutSuccess,
+  RoutePath.checkoutCancel,
+};
+
+const Set<String> _preEntryPaths = {
+  ..._onboardingPreEntryPaths,
+  ..._paymentPreEntryPaths,
+};
 
 final Map<String, RouteAccessMeta> _routeAccessMeta = {
   for (final entry in routeManifest)
@@ -206,7 +233,7 @@ final appRouterNotifierProvider = Provider<AppRouterNotifier>((ref) {
 final appRouterProvider = Provider<GoRouter>((ref) {
   final notifier = ref.watch(appRouterNotifierProvider);
   final initialSession = ref.read(routeSessionSnapshotProvider);
-  final initialLocation = initialSession.isAuthenticated
+  final initialLocation = initialSession.canEnterApp
       ? RoutePath.home
       : RoutePath.boot;
   return GoRouter(

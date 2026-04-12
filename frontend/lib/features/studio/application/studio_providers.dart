@@ -55,7 +55,7 @@ final myCoursesProvider = FutureProvider<List<CourseStudio>>((ref) async {
 
 final studioStatusProvider = FutureProvider<StudioStatus>((ref) async {
   final auth = ref.watch(authControllerProvider);
-  if (auth.profile == null) {
+  if (!auth.canEnterApp) {
     return const StudioStatus(
       isTeacher: false,
       verifiedCertificates: 0,

@@ -315,25 +315,25 @@ async def _apply_membership_refund_resolution(
         ) from exc
 
     now = datetime.now(timezone.utc)
-    existing_membership = await memberships_repo.get_membership(user_id)
-    source = str((existing_membership or {}).get("source") or "purchase")
-    membership = await memberships_repo.upsert_membership_record(
+    membership, membership_updated = await _write_payment_membership_state(
         user_id,
         status="expired",
-        effective_at=(existing_membership or {}).get("effective_at"),
+        effective_at=None,
         expires_at=now,
         canceled_at=now,
         ended_at=now,
-        source=source,
     )
+    log_info = {
+        "order_id": str(order["id"]),
+        "subscription_id": resolved_subscription_id,
+        "payment_intent_id": resolved_payment_intent,
+    }
+    if not membership_updated:
+        log_info["membership_update_skipped"] = "existing_invite_membership"
     await membership_support_repo.insert_billing_log(
         user_id=user_id,
         step=f"membership_{resolution_kind}_applied",
-        info={
-            "order_id": str(order["id"]),
-            "subscription_id": resolved_subscription_id,
-            "payment_intent_id": resolved_payment_intent,
-        },
+        info=log_info,
     )
     await sync_onboarding_state(user_id)
     return {
@@ -800,21 +800,54 @@ async def _apply_membership_state(
     info: dict[str, Any],
 ) -> None:
     user_id = str(order["user_id"])
-    await memberships_repo.upsert_membership_record(
+    _, membership_updated = await _write_payment_membership_state(
         user_id,
         status=status,
         effective_at=effective_at,
         expires_at=expires_at,
         canceled_at=canceled_at,
         ended_at=ended_at,
-        source="purchase",
     )
+    log_info = dict(info)
+    if not membership_updated:
+        log_info["membership_update_skipped"] = "existing_invite_membership"
     await membership_support_repo.insert_billing_log(
         user_id=user_id,
         step=step,
-        info=info,
+        info=log_info,
     )
     await sync_onboarding_state(user_id)
+
+
+async def _write_payment_membership_state(
+    user_id: str,
+    *,
+    status: str,
+    effective_at: datetime | None,
+    expires_at: datetime | None,
+    canceled_at: datetime | None,
+    ended_at: datetime | None,
+) -> tuple[Mapping[str, Any] | None, bool]:
+    existing_membership = await memberships_repo.get_membership(user_id)
+    if _is_invite_membership(existing_membership):
+        return existing_membership, False
+
+    membership = await memberships_repo.upsert_membership_record(
+        user_id,
+        status=status,
+        effective_at=effective_at
+        if effective_at is not None
+        else (existing_membership or {}).get("effective_at"),
+        expires_at=expires_at,
+        canceled_at=canceled_at,
+        ended_at=ended_at,
+        source="purchase",
+    )
+    return membership, True
+
+
+def _is_invite_membership(membership: Mapping[str, Any] | None) -> bool:
+    return str((membership or {}).get("source") or "").strip().lower() == "invite"
 
 
 def _canonical_status_from_subscription_payload(payload: Mapping[str, Any]) -> str:

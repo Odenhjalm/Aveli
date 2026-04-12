@@ -3,6 +3,7 @@ import uuid
 import pytest
 
 from app import db
+from app.repositories import memberships as memberships_repo
 
 pytestmark = pytest.mark.anyio('asyncio')
 
@@ -35,6 +36,19 @@ async def _promote_teacher(user_id: str):
             await conn.commit()
 
 
+async def _grant_app_entry(async_client, token: str, user_id: str) -> None:
+    onboarding_resp = await async_client.post(
+        '/auth/onboarding/complete',
+        headers=_auth_header(token),
+    )
+    assert onboarding_resp.status_code == 200, onboarding_resp.text
+    await memberships_repo.upsert_membership_record(
+        user_id,
+        status="active",
+        source="test",
+    )
+
+
 async def _cleanup_user(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -42,7 +56,7 @@ async def _cleanup_user(user_id: str):
             await conn.commit()
 
 
-async def test_studio_courses_requires_teacher(async_client):
+async def test_studio_courses_requires_canonical_entry_and_teacher(async_client):
     email = f"studio_{uuid.uuid4().hex[:6]}@example.com"
     password = 'Passw0rd!'
     tokens = await _register(async_client, email, password, 'Studio User')
@@ -59,6 +73,13 @@ async def test_studio_courses_requires_teacher(async_client):
         )
         user_id = str(profile_resp.json()['user_id'])
         await _promote_teacher(user_id)
+
+        promoted_without_entry = await async_client.get(
+            '/studio/courses', headers=_auth_header(tokens['access_token'])
+        )
+        assert promoted_without_entry.status_code == 403
+
+        await _grant_app_entry(async_client, tokens['access_token'], user_id)
 
         resp_after = await async_client.get(
             '/studio/courses', headers=_auth_header(tokens['access_token'])

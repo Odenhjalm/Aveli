@@ -169,7 +169,7 @@ def _seed_supabase(db_url: str, users: dict[str, dict[str, str]]):
             cur.execute(
                 """
                 insert into app.auth_subjects (user_id, onboarding_state, role_v2, role, is_admin)
-                values (%s, 'completed', 'teacher', 'teacher', false)
+                values (%s, 'incomplete', 'teacher', 'teacher', false)
                 on conflict (user_id) do nothing
                 """,
                 (host_id,),
@@ -177,7 +177,7 @@ def _seed_supabase(db_url: str, users: dict[str, dict[str, str]]):
             cur.execute(
                 """
                 insert into app.auth_subjects (user_id, onboarding_state, role_v2, role, is_admin)
-                values (%s, 'completed', 'learner', 'learner', false)
+                values (%s, 'incomplete', 'learner', 'learner', false)
                 on conflict (user_id) do nothing
                 """,
                 (attendee_id,),
@@ -185,7 +185,7 @@ def _seed_supabase(db_url: str, users: dict[str, dict[str, str]]):
             cur.execute(
                 """
                 insert into app.auth_subjects (user_id, onboarding_state, role_v2, role, is_admin)
-                values (%s, 'completed', 'learner', 'learner', false)
+                values (%s, 'incomplete', 'learner', 'learner', false)
                 on conflict (user_id) do nothing
                 """,
                 (outsider_id,),

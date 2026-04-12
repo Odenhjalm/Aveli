@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/hero_background.dart';
@@ -18,12 +17,10 @@ class StudioPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
-    final access = ref.watch(userAccessProvider);
-    final profile = authState.profile;
-    if (profile == null) {
+    if (!authState.canEnterApp) {
       return const AppScaffold(
         title: 'Studio',
-        body: Center(child: Text('Logga in för att fortsätta.')),
+        body: Center(child: Text('Backend entry krävs för Studio.')),
       );
     }
 
@@ -38,8 +35,7 @@ class StudioPage extends ConsumerWidget {
         body: Center(child: Text('Fel: $error')),
       ),
       data: (status) {
-        final isTeacher = status.isTeacher || access.isTeacher || access.isAdmin;
-        if (isTeacher) {
+        if (status.isTeacher) {
           return const TeacherHomeScreen();
         }
         return _StudioApplyView(status: status);

@@ -22,6 +22,13 @@ def _validated_onboarding_state(value: object) -> str:
     return normalized
 
 
+def _validated_initial_onboarding_state(value: object) -> str:
+    normalized = _validated_onboarding_state(value)
+    if normalized == "completed":
+        raise ValueError("Auth subject creation cannot complete onboarding")
+    return normalized
+
+
 def _validated_role(value: object) -> str:
     normalized = _normalize_text(value)
     if normalized not in _VALID_ROLES:
@@ -56,7 +63,7 @@ async def ensure_auth_subject(
     role: str,
     is_admin: bool,
 ) -> dict[str, Any] | None:
-    validated_onboarding_state = _validated_onboarding_state(onboarding_state)
+    validated_onboarding_state = _validated_initial_onboarding_state(onboarding_state)
     validated_role_v2 = _validated_role(role_v2)
     validated_role = _validated_role(role)
     validated_is_admin = bool(is_admin)
@@ -98,25 +105,6 @@ async def ensure_auth_subject(
                 row = await cur.fetchone()
             await conn.commit()
             return dict(row) if row else None
-
-
-async def complete_onboarding(user_id: str | UUID) -> dict[str, Any] | None:
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                UPDATE app.auth_subjects
-                   SET onboarding_state = 'completed'
-                 WHERE user_id = %s
-                   AND onboarding_state IN ('incomplete', 'completed')
-                 RETURNING user_id, onboarding_state, role_v2, role, is_admin
-                """,
-                (user_id,),
-            )
-            row = await cur.fetchone()
-            await conn.commit()
-            return dict(row) if row else None
-
 
 async def set_role_authority(
     user_id: str | UUID,

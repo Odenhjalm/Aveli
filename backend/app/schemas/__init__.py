@@ -1515,6 +1515,15 @@ class OnboardingCompletionResponse(BaseModel):
     token_refresh_required: Literal[True]
 
 
+class EntryStateResponse(BaseModel):
+    can_enter_app: bool
+    onboarding_completed: bool
+    membership_active: bool
+    needs_onboarding: bool
+    needs_payment: bool
+    is_invite: bool
+
+
 class EntitlementsMembership(BaseModel):
     is_active: bool
     status: Optional[str] = None

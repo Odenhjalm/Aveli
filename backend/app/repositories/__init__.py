@@ -14,7 +14,6 @@ from .auth import (
     upsert_refresh_token,
 )
 from .auth_subjects import (
-    complete_onboarding,
     ensure_auth_subject,
     get_auth_subject,
     set_role_authority,
@@ -150,7 +149,6 @@ __all__ = [
     "revoke_refresh_token",
     "revoke_refresh_tokens_for_user",
     "schedule_webhook_retry",
-    "complete_onboarding",
     "set_role_authority",
     "set_order_checkout_reference",
     "set_seminar_status",

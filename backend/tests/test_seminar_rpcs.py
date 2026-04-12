@@ -35,7 +35,7 @@ async def _seed_user(
         insert into app.auth_subjects (
             user_id, onboarding_state, role_v2, role, is_admin
         )
-        values (%s, 'completed', %s, %s, false)
+        values (%s, 'incomplete', %s, %s, false)
         on conflict (user_id) do nothing
         """,
         (user_id, normalized_role, normalized_role),

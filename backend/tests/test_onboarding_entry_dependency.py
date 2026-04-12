@@ -299,6 +299,22 @@ async def test_app_entry_denies_inactive_membership(monkeypatch) -> None:
     assert exc_info.value.detail == "canonical_app_entry_required"
 
 
+@pytest.mark.parametrize("status", ["past_due", "expired", "unknown"])
+async def test_app_entry_denies_unsupported_membership_statuses(
+    monkeypatch,
+    status: str,
+) -> None:
+    from app import auth
+
+    await _set_membership(monkeypatch, {"status": status, "expires_at": None})
+
+    with pytest.raises(HTTPException) as exc_info:
+        await auth.require_app_entry(_current_user())
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "canonical_app_entry_required"
+
+
 async def test_app_entry_allows_active_membership(monkeypatch) -> None:
     from app import auth
 
@@ -339,3 +355,19 @@ async def test_app_entry_denies_canceled_membership_after_expiry(monkeypatch) ->
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "canonical_app_entry_required"
+
+
+async def test_invite_membership_without_onboarding_completion_cannot_enter() -> None:
+    from app import auth
+
+    assert (
+        auth.is_app_entry_allowed(
+            _current_user(onboarding_state="incomplete"),
+            {
+                "status": "active",
+                "source": "invite",
+                "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+            },
+        )
+        is False
+    )

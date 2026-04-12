@@ -11,6 +11,7 @@ class ApiPaths {
   static const authValidateInvite = '/auth/validate-invite';
   static const authVerifyEmail = '/auth/verify-email';
   static const authOnboardingComplete = '/auth/onboarding/complete';
+  static const entryState = '/entry-state';
 
   static const billingCreateSubscription = '/api/billing/create-subscription';
   static const checkoutCreate = '/api/checkout/create';

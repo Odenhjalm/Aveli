@@ -48,6 +48,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
 
     final envInfo = ref.watch(envInfoProvider);
     final authState = ref.watch(authControllerProvider);
+    final entryState = authState.entryState;
     final envBlocked = envInfo.hasIssues;
 
     return AppScaffold(
@@ -75,7 +76,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
                               ),
                         ),
                       ),
-                    if (authState.profile == null)
+                    if (entryState == null)
                       _LoginPrompt(onRequestLogin: _redirectToLogin)
                     else
                       Card(
@@ -123,7 +124,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
                       'Frontend startar bara checkout och visar Stripe-sidan. Medlemsstatus och åtkomst bekräftas alltid av backend efter webhooken.',
                     ),
                     gap16,
-                    if (authState.profile != null)
+                    if (entryState?.needsPayment == true)
                       Wrap(
                         spacing: 12,
                         runSpacing: 12,
