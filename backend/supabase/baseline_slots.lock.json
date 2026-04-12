@@ -183,6 +183,18 @@
       "filename": "0030_home_player_course_link_inclusion_substrate.sql",
       "path": "backend/supabase/baseline_slots/0030_home_player_course_link_inclusion_substrate.sql",
       "sha256": "ce9ffcd3fb300dad37bfa581316417c42cb1391ea93fbf3b90e1278388f3a653"
+    },
+    {
+      "slot": 31,
+      "filename": "0031_referral_codes_core.sql",
+      "path": "backend/supabase/baseline_slots/0031_referral_codes_core.sql",
+      "sha256": "ead1a91fb01ba97bd38e22951806d32e2145f847719977f69c8fc29f824ad581"
+    },
+    {
+      "slot": 32,
+      "filename": "0032_memberships_fail_closed_constraints.sql",
+      "path": "backend/supabase/baseline_slots/0032_memberships_fail_closed_constraints.sql",
+      "sha256": "dfac00d00d2e10af4c79583f07406069cfb8cfabaee582ce8dae6fc0c5f061a8"
     }
   ]
 }
