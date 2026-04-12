@@ -27,6 +27,31 @@ async def _event_types_for(user_id: str) -> list[str]:
     return [str(row[0]) for row in rows]
 
 
+async def _set_profile_display_name(user_id: str, display_name: str | None) -> None:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.profiles
+                   SET display_name = %s,
+                       updated_at = now()
+                 WHERE user_id = %s
+                """,
+                (display_name, user_id),
+            )
+            await conn.commit()
+
+
+async def _delete_profile_projection(user_id: str) -> None:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "DELETE FROM app.profiles WHERE user_id = %s",
+                (user_id,),
+            )
+            await conn.commit()
+
+
 async def test_register_initializes_canonical_auth_subject_and_profile_projection(
     async_client,
 ):
@@ -50,6 +75,7 @@ async def test_register_initializes_canonical_auth_subject_and_profile_projectio
     )
     assert me_resp.status_code == 200, me_resp.text
     assert me_resp.json()["display_name"] == "Initial User"
+    assert me_resp.json()["bio"] is None
 
 
 async def test_auth_subject_repository_cannot_complete_onboarding_directly():
@@ -105,6 +131,62 @@ async def test_onboarding_complete_requires_explicit_refresh_boundary(async_clie
     assert refreshed["token_type"] == "bearer"
 
     assert await _event_types_for(user["user_id"]) == ["onboarding_completed"]
+
+
+@pytest.mark.parametrize("display_name", [None, "", "   "])
+async def test_onboarding_complete_requires_profile_name_before_mutation(
+    async_client,
+    display_name,
+):
+    user = await register_auth_user(
+        async_client,
+        email=f"missing_name_{uuid.uuid4().hex[:8]}@example.com",
+        password="Passw0rd!",
+        display_name="Temporary Name",
+    )
+    await _set_profile_display_name(user["user_id"], display_name)
+
+    complete_resp = await async_client.post(
+        "/auth/onboarding/complete",
+        headers=auth_header(user["access_token"]),
+    )
+
+    assert complete_resp.status_code == 409, complete_resp.text
+    assert complete_resp.json()["detail"] == "profile_name_required"
+    assert await fetch_auth_subject(user["user_id"]) == {
+        "onboarding_state": "incomplete",
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
+    }
+    assert await _event_types_for(user["user_id"]) == []
+
+
+async def test_onboarding_complete_requires_profile_projection_before_mutation(
+    async_client,
+):
+    user = await register_auth_user(
+        async_client,
+        email=f"missing_profile_{uuid.uuid4().hex[:8]}@example.com",
+        password="Passw0rd!",
+        display_name="Temporary Name",
+    )
+    await _delete_profile_projection(user["user_id"])
+
+    complete_resp = await async_client.post(
+        "/auth/onboarding/complete",
+        headers=auth_header(user["access_token"]),
+    )
+
+    assert complete_resp.status_code == 409, complete_resp.text
+    assert complete_resp.json()["detail"] == "profile_name_required"
+    assert await fetch_auth_subject(user["user_id"]) == {
+        "onboarding_state": "incomplete",
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
+    }
+    assert await _event_types_for(user["user_id"]) == []
 
 
 async def test_login_and_refresh_do_not_complete_onboarding(async_client):

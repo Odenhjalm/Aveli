@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from jose import JWTError
 from psycopg.rows import dict_row
 
@@ -179,6 +180,18 @@ async def _complete_onboarding_at_canonical_route(user_id: str) -> dict[str, Any
             row = await cur.fetchone()
             await conn.commit()
             return dict(row) if row else None
+
+
+def _profile_name_is_present(current_user: dict[str, Any]) -> bool:
+    display_name = current_user.get("display_name")
+    return isinstance(display_name, str) and bool(display_name.strip())
+
+
+def _profile_name_required_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": "profile_name_required"},
+    )
 
 
 @router.post(
@@ -406,6 +419,9 @@ async def complete_onboarding(request: Request, current_user: CurrentUser):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="internal_error",
         )
+
+    if not _profile_name_is_present(current_user):
+        return _profile_name_required_response()
 
     updated_subject = await _complete_onboarding_at_canonical_route(user_id)
     if not updated_subject:
