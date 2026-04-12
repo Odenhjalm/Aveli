@@ -1,5 +1,6 @@
 import time
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -23,8 +24,9 @@ from ..services.email_verification import (
     InvalidInviteTokenError,
     InvalidPasswordResetTokenError,
     reset_password_with_token,
-    validate_invite_token,
+    validate_invite_token_claims,
 )
+from ..services import membership_grant_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -79,23 +81,34 @@ def _normalized_email(email: str) -> str:
     return email.strip().lower()
 
 
-def _require_valid_invite_token(email: str, invite_token: str | None) -> None:
+def _require_valid_invite_token(
+    email: str,
+    invite_token: str | None,
+) -> dict[str, object] | None:
     if not invite_token:
-        return
+        return None
 
     try:
-        invited_email = validate_invite_token(invite_token)
+        claims = validate_invite_token_claims(invite_token)
     except InvalidInviteTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid_or_expired_token",
         ) from exc
 
+    invited_email = str(claims.get("email") or "")
     if invited_email != _normalized_email(email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid_or_expired_token",
         )
+    expires_at = claims.get("expires_at")
+    if not isinstance(expires_at, datetime):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_or_expired_token",
+        )
+    return claims
 
 
 async def _record_auth_event(
@@ -172,7 +185,7 @@ async def _complete_onboarding_at_canonical_route(user_id: str) -> dict[str, Any
     "/register", response_model=schemas.Token, status_code=status.HTTP_201_CREATED
 )
 async def register(payload: schemas.AuthRegisterRequest, request: Request):
-    _require_valid_invite_token(payload.email, payload.invite_token)
+    invite_claims = _require_valid_invite_token(payload.email, payload.invite_token)
 
     if not _enforce_login_rate_limit(request, payload.email):
         await _record_auth_event(
@@ -203,6 +216,21 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
         payload.email, payload.password, payload.display_name
     )
     user_id_str = str(user_id)
+    if invite_claims is not None:
+        invite_expires_at = invite_claims["expires_at"]
+        if not isinstance(invite_expires_at, datetime):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_or_expired_token",
+            )
+        await membership_grant_service.grant_non_purchase_membership(
+            user_id=user_id_str,
+            source="invite",
+            effective_at=datetime.now(timezone.utc),
+            expires_at=invite_expires_at,
+            audit_step="invite_membership_grant_applied",
+            audit_info={"invite_email": _normalized_email(payload.email)},
+        )
     claims = await _compatibility_token_claims(user_id_str)
     access_token = create_access_token(user_id_str, claims=claims)
     refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id_str)

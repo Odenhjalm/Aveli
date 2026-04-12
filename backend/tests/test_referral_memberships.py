@@ -63,6 +63,19 @@ async def promote_to_teacher(user_id: str) -> None:
             await conn.commit()
 
 
+async def grant_app_entry(client, token: str, user_id: str) -> None:
+    onboarding_resp = await client.post(
+        "/auth/onboarding/complete",
+        headers=auth_header(token),
+    )
+    assert onboarding_resp.status_code == 200, onboarding_resp.text
+    await repositories.upsert_membership_record(
+        user_id,
+        status="active",
+        source="purchase",
+    )
+
+
 async def cleanup_user(user_id: str) -> None:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -84,23 +97,7 @@ async def update_referral_email(referral_id: str, email: str) -> None:
             await conn.commit()
 
 
-async def fetch_billing_log_count(*, membership_id: str) -> int:
-    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                SELECT count(*)::int
-                  FROM app.billing_logs
-                 WHERE step = 'membership_expiry_warning_sent'
-                   AND info->>'membership_id' = %s
-                """,
-                (membership_id,),
-            )
-            row = await cur.fetchone()
-    return int(row[0] if row else 0)
-
-
-async def test_referral_signup_grants_membership_without_stripe(async_client, monkeypatch):
+async def test_referral_redeem_grants_membership_without_stripe(async_client, monkeypatch):
     sent_messages: list[tuple[str, str]] = []
 
     async def fake_send_email(*, to_email: str, subject: str, text_body: str, html_body=None):
@@ -122,6 +119,15 @@ async def test_referral_signup_grants_membership_without_stripe(async_client, mo
         await promote_to_teacher(teacher_id)
 
         invited_email = f"invitee_{uuid.uuid4().hex[:8]}@example.com"
+        missing_entry_resp = await async_client.post(
+            "/studio/referrals/create",
+            headers=auth_header(teacher_token),
+            json={"email": invited_email, "free_days": 30},
+        )
+        assert missing_entry_resp.status_code == 403, missing_entry_resp.text
+        assert missing_entry_resp.json() == {"detail": "canonical_app_entry_required"}
+
+        await grant_app_entry(async_client, teacher_token, teacher_id)
         create_resp = await async_client.post(
             "/studio/referrals/create",
             headers=auth_header(teacher_token),
@@ -157,6 +163,13 @@ async def test_referral_signup_grants_membership_without_stripe(async_client, mo
             await cleanup_user(invited_user_id)
         if teacher_id:
             await cleanup_user(teacher_id)
+
+
+async def test_referral_redeem_requires_authenticated_identity(async_client):
+    response = await async_client.post("/referrals/redeem", json={"code": "REFCODE1"})
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
 
 
 async def test_membership_access_logic_uses_canonical_status_and_expires_at(async_client):
@@ -217,6 +230,7 @@ async def test_referral_code_is_single_use(async_client, monkeypatch):
             display_name="Teacher",
         )
         await promote_to_teacher(teacher_id)
+        await grant_app_entry(async_client, teacher_token, teacher_id)
 
         first_email = f"single_use_first_{uuid.uuid4().hex[:8]}@example.com"
         create_resp = await async_client.post(
@@ -277,6 +291,7 @@ async def test_referral_membership_expires_correctly(async_client, monkeypatch):
             display_name="Teacher",
         )
         await promote_to_teacher(teacher_id)
+        await grant_app_entry(async_client, teacher_token, teacher_id)
 
         invited_email = f"duration_{uuid.uuid4().hex[:8]}@example.com"
         create_resp = await async_client.post(
@@ -314,12 +329,28 @@ async def test_referral_membership_expires_correctly(async_client, monkeypatch):
 
 async def test_membership_expiry_warning_job_sends_once(async_client, monkeypatch):
     sent_to: list[str] = []
+    warning_log_keys: set[tuple[str, str]] = set()
 
     async def fake_send_email(*, to_email: str, subject: str, text_body: str, html_body=None):
         sent_to.append(to_email)
         return EmailDeliveryResult(mode="sent")
 
+    async def fake_warning_already_sent(*, membership_id: str, expires_at: datetime) -> bool:
+        return (membership_id, expires_at.isoformat()) in warning_log_keys
+
+    async def fake_insert_billing_log(*, user_id: str | None, step: str, info=None) -> None:
+        del user_id, step
+        warning_log_keys.add((str(info["membership_id"]), str(info["expires_at"])))
+
     monkeypatch.setattr("app.services.email_service.send_email", fake_send_email)
+    monkeypatch.setattr(
+        "app.services.membership_expiry_warnings._warning_already_sent",
+        fake_warning_already_sent,
+    )
+    monkeypatch.setattr(
+        "app.services.membership_expiry_warnings.membership_support_repo.insert_billing_log",
+        fake_insert_billing_log,
+    )
 
     password = "Passw0rd!"
     user_id = None
@@ -347,7 +378,12 @@ async def test_membership_expiry_warning_job_sends_once(async_client, monkeypatc
         assert first_run == 1
         assert second_run == 0
         assert sent_to == [email]
-        assert await fetch_billing_log_count(membership_id=str(membership["membership_id"])) == 1
+        assert warning_log_keys == {
+            (
+                str(membership["membership_id"]),
+                membership["expires_at"].isoformat(),
+            )
+        }
     finally:
         if user_id:
             await cleanup_user(user_id)

@@ -7,7 +7,12 @@ from ..config import settings
 from .onboarding_state import sync_onboarding_state
 from .email_service import send_email
 from .email_templates import render_template
-from .email_tokens import EmailTokenError, create_email_token, verify_email_token
+from .email_tokens import (
+    EmailTokenError,
+    create_email_token,
+    verify_email_token,
+    verify_email_token_claims,
+)
 
 _VERIFY_TOKEN_EXPIRY_MINUTES = 15
 _RESET_TOKEN_EXPIRY_MINUTES = 10
@@ -133,11 +138,27 @@ async def send_invite_email(email: str, *, inviter_email: str | None = None) -> 
 
 
 def validate_invite_token(token: str) -> str:
-    return _verify_token(
+    return str(validate_invite_token_claims(token)["email"])
+
+
+def validate_invite_token_claims(token: str) -> dict[str, object]:
+    return _verify_token_claims(
         token,
         expected_type="invite",
         error_type=InvalidInviteTokenError,
     )
+
+
+def _verify_token_claims(
+    token: str,
+    *,
+    expected_type: str,
+    error_type: type[ValueError],
+) -> dict[str, object]:
+    try:
+        return verify_email_token_claims(token, expected_type=expected_type)
+    except EmailTokenError as exc:
+        raise error_type("invalid_or_expired_token") from exc
 
 
 def _verify_token(

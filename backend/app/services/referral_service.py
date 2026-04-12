@@ -19,8 +19,9 @@ def generate_referral_code(length: int = _CODE_LENGTH) -> str:
 
 
 def build_signup_url(code: str) -> str:
+    del code
     base = (settings.frontend_base_url or "http://localhost:3000").rstrip("/")
-    return f"{base}/signup?referral_code={code}"
+    return f"{base}/login"
 
 
 async def create_referral_invitation(
@@ -99,8 +100,8 @@ def _build_referral_email_text(
     return (
         "Du har blivit inbjuden till Aveli.\n\n"
         f"Din kod ger {duration} medlemskap utan att starta någon Stripe-provperiod.\n"
-        f"Registrera dig här: {signup_url}\n\n"
-        f"Om länken inte fyller i koden automatiskt använder du: {code}\n"
+        f"Logga in eller skapa konto: {signup_url}\n\n"
+        f"Använd koden efter inloggning: {code}\n"
     )
 
 

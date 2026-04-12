@@ -121,3 +121,11 @@ async def test_invite_membership_grant_requires_expires_at() -> None:
             expires_at=None,
             audit_step="invite_membership_grant_applied",
         )
+
+
+def test_referral_link_does_not_target_register_parameter() -> None:
+    link = referral_service.build_signup_url("REFCODE1")
+
+    assert link.endswith("/login")
+    assert "/signup?referral_code=" not in link
+    assert "referral_code=" not in link
