@@ -19,7 +19,7 @@ from fastapi import (
 from .. import models, repositories, schemas
 from ..config import settings
 from ..db import get_conn
-from ..permissions import TeacherUser
+from ..permissions import TeacherEntryUser
 from ..repositories import courses as courses_repo
 from ..repositories import home_audio_sources as home_audio_sources_repo
 from ..repositories import media_assets as media_assets_repo
@@ -312,7 +312,7 @@ def _canonical_course_cover_asset_scope(media_asset: dict[str, Any]) -> str:
 async def _require_canonical_lesson_media_authoring_context(
     *,
     lesson_id: str,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ) -> str:
     await _require_studio_lesson(lesson_id)
     _, course_id = await courses_service.lesson_course_ids(lesson_id)
@@ -329,7 +329,7 @@ async def _require_canonical_lesson_media_authoring_context(
 async def _require_canonical_course_cover_authoring_context(
     *,
     course_id: str,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ) -> str:
     normalized_course_id = str(course_id or "").strip()
     if not normalized_course_id:
@@ -349,7 +349,7 @@ async def _require_canonical_course_cover_authoring_context(
 async def _authorize_canonical_lesson_media_asset(
     *,
     media_asset_id: str,
-    current: TeacherUser,
+    current: TeacherEntryUser,
     expected_lesson_id: str | None = None,
 ) -> dict[str, Any]:
     media_asset = await media_assets_repo.get_lesson_media_pipeline_asset(
@@ -382,7 +382,7 @@ async def _authorize_canonical_lesson_media_asset(
 async def _authorize_canonical_media_upload_asset(
     *,
     media_asset_id: str,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ) -> dict[str, Any]:
     try:
         return await _authorize_canonical_lesson_media_asset(
@@ -693,7 +693,7 @@ async def _preview_item_from_row(
 
 
 @router.get("/status")
-async def studio_status(current: TeacherUser):
+async def studio_status(current: TeacherEntryUser):
     info = await models.teacher_status(current["id"])
     return info
 
@@ -705,7 +705,7 @@ async def studio_status(current: TeacherUser):
 )
 async def create_referral_invitation(
     payload: schemas.ReferralCodeCreateRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     try:
         referral, delivery = await referral_service.create_referral_invitation(
@@ -727,7 +727,7 @@ async def create_referral_invitation(
 
 
 @router.get("/certificates")
-async def studio_certificates(current: TeacherUser, verified_only: bool = False):
+async def studio_certificates(current: TeacherEntryUser, verified_only: bool = False):
     rows = await models.user_certificates(current["id"], verified_only)
     return {"items": rows}
 
@@ -735,7 +735,7 @@ async def studio_certificates(current: TeacherUser, verified_only: bool = False)
 @router.post("/certificates")
 async def studio_add_certificate(
     payload: schemas.StudioCertificateCreate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     try:
         row = await models.add_certificate(
@@ -751,7 +751,7 @@ async def studio_add_certificate(
 
 
 @course_lesson_router.post("/courses", response_model=schemas.Course)
-async def create_course(payload: schemas.StudioCourseCreate, current: TeacherUser):
+async def create_course(payload: schemas.StudioCourseCreate, current: TeacherEntryUser):
     try:
         row = await courses_service.create_course(
             payload.model_dump(),
@@ -774,7 +774,7 @@ async def create_course(payload: schemas.StudioCourseCreate, current: TeacherUse
 async def canonical_issue_lesson_media_upload_url(
     lesson_id: UUID,
     payload: schemas.CanonicalLessonMediaUploadUrlRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     lesson_id_str = str(lesson_id)
     course_id = await _require_canonical_lesson_media_authoring_context(
@@ -839,7 +839,7 @@ async def canonical_issue_lesson_media_upload_url(
 async def canonical_issue_course_cover_upload_url(
     course_id: UUID,
     payload: schemas.CanonicalCourseCoverUploadUrlRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     course_id_str = await _require_canonical_course_cover_authoring_context(
         course_id=str(course_id),
@@ -884,7 +884,7 @@ async def canonical_issue_course_cover_upload_url(
 async def canonical_complete_lesson_media_upload(
     media_asset_id: UUID,
     payload: schemas.CanonicalMediaAssetUploadCompletionRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     del payload
     media_asset_id_str = str(media_asset_id)
@@ -918,7 +918,7 @@ async def canonical_complete_lesson_media_upload(
 )
 async def canonical_read_media_asset_status(
     media_asset_id: UUID,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     media_asset = await _authorize_canonical_media_upload_asset(
         media_asset_id=str(media_asset_id),
@@ -937,7 +937,7 @@ async def canonical_read_media_asset_status(
 async def canonical_create_lesson_media_placement(
     lesson_id: UUID,
     payload: schemas.CanonicalLessonMediaPlacementCreate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     lesson_id_str = str(lesson_id)
     await _require_canonical_lesson_media_authoring_context(
@@ -987,7 +987,7 @@ async def canonical_create_lesson_media_placement(
 )
 async def canonical_get_lesson_media_placement(
     lesson_media_id: UUID,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     row = await courses_repo.get_lesson_media_by_id_for_studio(str(lesson_media_id))
     if not row:
@@ -1018,7 +1018,7 @@ async def canonical_get_lesson_media_placement(
 async def canonical_reorder_lesson_media_placements(
     lesson_id: UUID,
     payload: schemas.StudioLessonMediaReorder,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     await _require_canonical_lesson_media_authoring_context(
         lesson_id=str(lesson_id),
@@ -1042,7 +1042,7 @@ async def canonical_reorder_lesson_media_placements(
 @media_pipeline_router.delete("/media-placements/{lesson_media_id}")
 async def canonical_delete_lesson_media_placement(
     lesson_media_id: UUID,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     row = await courses_repo.get_lesson_media_by_id_for_studio(str(lesson_media_id))
     if not row:
@@ -1074,7 +1074,7 @@ async def canonical_delete_lesson_media_placement(
 )
 async def studio_list_lesson_media(
     lesson_id: UUID,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     await _require_studio_lesson(str(lesson_id))
     rows = await courses_service.list_studio_lesson_media(str(lesson_id))
@@ -1095,7 +1095,7 @@ async def studio_list_lesson_media(
 async def studio_preview_lesson_media(
     lesson_id: UUID,
     lesson_media_id: UUID,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     del current
     await _require_studio_lesson(str(lesson_id))
@@ -1132,7 +1132,7 @@ async def studio_preview_lesson_media(
 @lesson_media_router.post("/previews", response_model=schemas.MediaPreviewBatchResponse)
 async def studio_request_lesson_media_previews(
     payload: schemas.MediaPreviewBatchRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     requested_ids: list[str] = []
     seen_ids: set[str] = set()
@@ -1183,7 +1183,7 @@ async def studio_request_lesson_media_previews(
     return schemas.MediaPreviewBatchResponse(items=ordered_items)
 
 @router.get("/lessons/{lesson_id}/media")
-async def list_lesson_media(request: Request, lesson_id: UUID, current: TeacherUser):
+async def list_lesson_media(request: Request, lesson_id: UUID, current: TeacherEntryUser):
     lesson_id_str = str(lesson_id)
     _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
@@ -1205,7 +1205,7 @@ async def list_lesson_media(request: Request, lesson_id: UUID, current: TeacherU
     "/profile/media",
     response_model=schemas.TeacherProfileMediaListResponse,
 )
-async def studio_profile_media(current: TeacherUser):
+async def studio_profile_media(current: TeacherEntryUser):
     teacher_id = str(current["id"])
     rows = await repositories.list_teacher_profile_media(teacher_id)
     return schemas.TeacherProfileMediaListResponse(
@@ -1220,7 +1220,7 @@ async def studio_profile_media(current: TeacherUser):
 )
 async def studio_create_profile_media(
     payload: schemas.TeacherProfileMediaCreate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     row = await repositories.create_teacher_profile_media(
         teacher_id=str(current["id"]),
@@ -1241,7 +1241,7 @@ async def studio_create_profile_media(
 async def studio_update_profile_media(
     item_id: UUID,
     payload: schemas.TeacherProfileMediaUpdate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     fields: Dict[str, Any] = {}
     if payload.media_asset_id is not None:
@@ -1260,7 +1260,7 @@ async def studio_update_profile_media(
 
 
 @router.delete("/profile/media/{item_id}", status_code=204)
-async def studio_delete_profile_media(item_id: UUID, current: TeacherUser):
+async def studio_delete_profile_media(item_id: UUID, current: TeacherEntryUser):
     existing = await repositories.get_teacher_profile_media(
         item_id=str(item_id),
         teacher_id=str(current["id"]),
@@ -1283,7 +1283,7 @@ async def studio_delete_profile_media(item_id: UUID, current: TeacherUser):
 )
 async def studio_create_home_player_upload(
     payload: schemas.HomePlayerUploadCreate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     teacher_id = str(current["id"])
     normalized_title = (payload.title or "").strip()
@@ -1319,7 +1319,7 @@ async def studio_create_home_player_upload(
 async def studio_update_home_player_upload(
     upload_id: UUID,
     payload: schemas.HomePlayerUploadUpdate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     if payload.title is not None and not payload.title.strip():
         raise HTTPException(status_code=422, detail="title cannot be empty")
@@ -1341,7 +1341,7 @@ async def studio_update_home_player_upload(
 @router.delete(
     "/home-player/uploads/{upload_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-async def studio_delete_home_player_upload(upload_id: UUID, current: TeacherUser):
+async def studio_delete_home_player_upload(upload_id: UUID, current: TeacherEntryUser):
     deleted = await home_audio_sources_repo.delete_home_player_upload(
         upload_id=str(upload_id),
         teacher_id=str(current["id"]),
@@ -1366,7 +1366,7 @@ async def studio_delete_home_player_upload(upload_id: UUID, current: TeacherUser
 )
 async def studio_create_home_player_course_link(
     payload: schemas.HomePlayerCourseLinkCreate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     teacher_id = str(current["id"])
     title = (payload.title or "").strip()
@@ -1403,7 +1403,7 @@ async def studio_create_home_player_course_link(
 async def studio_update_home_player_course_link(
     link_id: UUID,
     payload: schemas.HomePlayerCourseLinkUpdate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     if payload.title is not None and not payload.title.strip():
         raise HTTPException(status_code=422, detail="title cannot be empty")
@@ -1427,7 +1427,7 @@ async def studio_update_home_player_course_link(
 @router.delete(
     "/home-player/course-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-async def studio_delete_home_player_course_link(link_id: UUID, current: TeacherUser):
+async def studio_delete_home_player_course_link(link_id: UUID, current: TeacherEntryUser):
     deleted = await home_audio_sources_repo.delete_home_player_course_link(
         link_id=str(link_id),
         teacher_id=str(current["id"]),
@@ -1448,7 +1448,7 @@ def _ensure_host_access(seminar: Dict[str, Any], user_id: str) -> None:
 
 
 @router.get("/seminars", response_model=schemas.SeminarListResponse)
-async def studio_list_seminars(current: TeacherUser):
+async def studio_list_seminars(current: TeacherEntryUser):
     rows = await repositories.list_host_seminars(str(current["id"]))
     items = [_seminar_from_row(row) for row in rows]
     return schemas.SeminarListResponse(items=items)
@@ -1457,7 +1457,7 @@ async def studio_list_seminars(current: TeacherUser):
 @router.post("/seminars", response_model=schemas.SeminarResponse)
 async def studio_create_seminar(
     payload: schemas.SeminarCreateRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     row = await repositories.create_seminar(
         host_id=str(current["id"]),
@@ -1470,7 +1470,7 @@ async def studio_create_seminar(
 
 
 @router.get("/seminars/{seminar_id}", response_model=schemas.SeminarDetailResponse)
-async def studio_get_seminar(seminar_id: UUID, current: TeacherUser):
+async def studio_get_seminar(seminar_id: UUID, current: TeacherEntryUser):
     seminar = await repositories.get_seminar(str(seminar_id))
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
@@ -1494,7 +1494,7 @@ async def studio_get_seminar(seminar_id: UUID, current: TeacherUser):
 async def studio_grant_seminar_access(
     seminar_id: UUID,
     payload: schemas.SeminarAttendeeGrantRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     seminar = await repositories.get_seminar(str(seminar_id))
     if not seminar:
@@ -1516,7 +1516,7 @@ async def studio_grant_seminar_access(
 async def studio_revoke_seminar_access(
     seminar_id: UUID,
     user_id: UUID,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     seminar = await repositories.get_seminar(str(seminar_id))
     if not seminar:
@@ -1535,7 +1535,7 @@ async def studio_revoke_seminar_access(
 async def studio_update_seminar(
     seminar_id: UUID,
     payload: schemas.SeminarUpdateRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     seminar = await repositories.get_seminar(str(seminar_id))
     if not seminar:
@@ -1563,7 +1563,7 @@ async def studio_update_seminar(
 
 
 @router.post("/seminars/{seminar_id}/publish", response_model=schemas.SeminarResponse)
-async def studio_publish_seminar(seminar_id: UUID, current: TeacherUser):
+async def studio_publish_seminar(seminar_id: UUID, current: TeacherEntryUser):
     seminar = await repositories.get_seminar(str(seminar_id))
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
@@ -1581,7 +1581,7 @@ async def studio_publish_seminar(seminar_id: UUID, current: TeacherUser):
 
 
 @router.post("/seminars/{seminar_id}/cancel", response_model=schemas.SeminarResponse)
-async def studio_cancel_seminar(seminar_id: UUID, current: TeacherUser):
+async def studio_cancel_seminar(seminar_id: UUID, current: TeacherEntryUser):
     seminar = await repositories.get_seminar(str(seminar_id))
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
@@ -1605,7 +1605,7 @@ async def studio_cancel_seminar(seminar_id: UUID, current: TeacherUser):
 async def studio_start_seminar_session(
     seminar_id: UUID,
     payload: schemas.SeminarSessionStartRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     seminar = await repositories.get_seminar(str(seminar_id))
     if not seminar:
@@ -1708,7 +1708,7 @@ async def studio_start_seminar_session(
 async def studio_end_seminar_session(
     seminar_id: UUID,
     session_id: UUID,
-    current: TeacherUser,
+    current: TeacherEntryUser,
     payload: schemas.SeminarSessionEndRequest | None = None,
 ):
     seminar = await repositories.get_seminar(str(seminar_id))
@@ -1756,7 +1756,7 @@ async def studio_end_seminar_session(
 async def studio_reserve_recording(
     seminar_id: UUID,
     payload: schemas.SeminarRecordingReserveRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     seminar = await repositories.get_seminar(str(seminar_id))
     if not seminar:
@@ -1827,14 +1827,14 @@ async def studio_reserve_recording(
 
 
 @course_lesson_router.get("/courses", response_model=schemas.CourseListResponse)
-async def studio_courses(current: TeacherUser):
+async def studio_courses(current: TeacherEntryUser):
     rows = list(await courses_service.list_courses(teacher_id=str(current["id"])))
     await _apply_course_read_contract(rows)
     return _course_list_response(rows)
 
 
 @course_lesson_router.get("/courses/{course_id}", response_model=schemas.Course)
-async def course_meta(course_id: str, current: TeacherUser):
+async def course_meta(course_id: str, current: TeacherEntryUser):
     del current
     row = await courses_service.fetch_course(course_id=course_id)
     if not row:
@@ -1850,7 +1850,7 @@ async def course_meta(course_id: str, current: TeacherUser):
 async def upsert_course_public_content(
     course_id: str,
     payload: schemas.StudioCoursePublicContentUpsert,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     del current
     row = await courses_service.fetch_course(course_id=course_id)
@@ -1867,7 +1867,7 @@ async def upsert_course_public_content(
 async def update_course(
     course_id: str,
     payload: schemas.StudioCourseUpdate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     try:
         row = await courses_service.update_course(
@@ -1888,7 +1888,7 @@ async def update_course(
 
 
 @course_lesson_router.delete("/courses/{course_id}")
-async def delete_course(course_id: str, current: TeacherUser):
+async def delete_course(course_id: str, current: TeacherEntryUser):
     del current
     deleted = await courses_service.delete_course(course_id)
     if not deleted:
@@ -1900,7 +1900,7 @@ async def delete_course(course_id: str, current: TeacherUser):
     "/courses/{course_id}/lessons",
     response_model=schemas.StudioLessonListResponse,
 )
-async def course_lessons(course_id: str, current: TeacherUser):
+async def course_lessons(course_id: str, current: TeacherEntryUser):
     del current
     course = await courses_service.fetch_course(course_id=course_id)
     if not course:
@@ -1918,7 +1918,7 @@ async def course_lessons(course_id: str, current: TeacherUser):
 async def create_lesson_structure(
     course_id: str,
     payload: schemas.StudioLessonStructureCreate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     del current
     course = await courses_service.fetch_course(course_id=course_id)
@@ -1941,7 +1941,7 @@ async def create_lesson_structure(
 async def reorder_course_lessons(
     course_id: str,
     payload: schemas.LessonReorder,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     del current
     course = await courses_service.fetch_course(course_id=course_id)
@@ -2002,7 +2002,7 @@ async def reorder_course_lessons(
 async def update_lesson_structure(
     lesson_id: str,
     payload: schemas.StudioLessonStructureUpdate,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     del current
     patch = payload.model_dump(exclude_unset=True)
@@ -2022,7 +2022,7 @@ async def update_lesson_structure(
 async def read_lesson_content(
     lesson_id: str,
     response: Response,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     try:
         result = await courses_service.read_studio_lesson_content(
@@ -2046,7 +2046,7 @@ async def update_lesson_content(
     payload: schemas.StudioLessonContentUpdate,
     request: Request,
     response: Response,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     try:
         row = await courses_service.update_lesson_content(
@@ -2076,7 +2076,7 @@ async def update_lesson_content(
 
 
 @course_lesson_router.delete("/lessons/{lesson_id}")
-async def delete_lesson(lesson_id: str, current: TeacherUser):
+async def delete_lesson(lesson_id: str, current: TeacherEntryUser):
     del current
     deleted = await courses_service.delete_lesson(lesson_id)
     if not deleted:
@@ -2088,7 +2088,7 @@ async def delete_lesson(lesson_id: str, current: TeacherUser):
 async def media_file(
     media_id: str,
     request: Request,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     del media_id, request, current
     raise HTTPException(
@@ -2098,7 +2098,7 @@ async def media_file(
 
 
 @router.post("/courses/{course_id}/quiz")
-async def ensure_quiz(course_id: str, current: TeacherUser):
+async def ensure_quiz(course_id: str, current: TeacherEntryUser):
     if not await models.is_course_owner(current["id"], course_id):
         _log_course_owner_denied(
             str(current["id"]),
@@ -2112,7 +2112,7 @@ async def ensure_quiz(course_id: str, current: TeacherUser):
 
 
 @router.get("/quizzes/{quiz_id}/questions")
-async def quiz_questions(quiz_id: str, current: TeacherUser):
+async def quiz_questions(quiz_id: str, current: TeacherEntryUser):
     if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
         _log_quiz_owner_denied(
             str(current["id"]),
@@ -2127,7 +2127,7 @@ async def quiz_questions(quiz_id: str, current: TeacherUser):
 async def create_question(
     quiz_id: str,
     payload: schemas.QuizQuestionUpsert,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
         _log_quiz_owner_denied(
@@ -2149,7 +2149,7 @@ async def update_question(
     quiz_id: str,
     question_id: str,
     payload: schemas.QuizQuestionUpsert,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ):
     if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
         _log_quiz_owner_denied(
@@ -2166,7 +2166,7 @@ async def update_question(
 
 
 @router.delete("/quizzes/{quiz_id}/questions/{question_id}")
-async def delete_question(quiz_id: str, question_id: str, current: TeacherUser):
+async def delete_question(quiz_id: str, question_id: str, current: TeacherEntryUser):
     if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
         _log_quiz_owner_denied(
             str(current["id"]),

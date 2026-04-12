@@ -8,7 +8,7 @@ from psycopg.rows import dict_row
 
 from ..db import get_conn, pool
 from ..repositories import memberships as memberships_repo
-from ..permissions import TeacherUser
+from ..permissions import TeacherEntryUser
 from ..schemas.notifications import (
     NotificationAudienceCreate,
     NotificationAudienceType,
@@ -164,7 +164,7 @@ async def _resolve_recipients(audiences: list[NotificationAudienceCreate]) -> se
 
 
 @router.post("", response_model=NotificationCreateResponse, status_code=status.HTTP_201_CREATED)
-async def create_notification(payload: NotificationCreateRequest, current: TeacherUser) -> NotificationCreateResponse:
+async def create_notification(payload: NotificationCreateRequest, current: TeacherEntryUser) -> NotificationCreateResponse:
     title = payload.title.strip()
     body = payload.body.strip()
     if not title:

@@ -5,6 +5,19 @@ import pytest
 from app import repositories
 
 
+async def _grant_app_entry(async_client, headers: dict[str, str], user_id: str) -> None:
+    onboarding_resp = await async_client.post(
+        "/auth/onboarding/complete",
+        headers=headers,
+    )
+    assert onboarding_resp.status_code == 200, onboarding_resp.text
+    await repositories.upsert_membership_record(
+        user_id,
+        status="active",
+        source="test",
+    )
+
+
 @pytest.mark.anyio("asyncio")
 async def test_enroll_free_intro_course_updates_my_courses(async_client):
     email = f"free_intro_{uuid.uuid4().hex[:8]}@example.com"
@@ -20,6 +33,11 @@ async def test_enroll_free_intro_course_updates_my_courses(async_client):
     access_token = register_resp.json()["access_token"]
     headers = {"Authorization": f"Bearer {access_token}"}
 
+    profile_resp = await async_client.get("/profiles/me", headers=headers)
+    assert profile_resp.status_code == 200, profile_resp.text
+    user_id = str(profile_resp.json()["user_id"])
+    await _grant_app_entry(async_client, headers, user_id)
+
     me_resp = await async_client.get("/courses/me", headers=headers)
     assert me_resp.status_code == 200, me_resp.text
     assert me_resp.json().get("items") == []
@@ -27,25 +45,17 @@ async def test_enroll_free_intro_course_updates_my_courses(async_client):
     catalog_resp = await async_client.get(
         "/courses",
         headers=headers,
-        params={"free_intro": True, "limit": 1},
+        params={"limit": 100},
     )
     assert catalog_resp.status_code == 200, catalog_resp.text
-    items = catalog_resp.json().get("items") or []
+    items = [
+        item
+        for item in (catalog_resp.json().get("items") or [])
+        if item.get("step") == "intro"
+    ]
     if not items:
         pytest.skip("No free intro courses available in clean Supabase dataset")
     course_id = items[0]["id"]
-
-    me = await async_client.get("/profiles/me", headers=headers)
-    assert me.status_code == 200, me.text
-    user_id = str(me.json()["user_id"])
-    await repositories.upsert_membership_record(
-        user_id,
-        plan_interval="month",
-        price_id="price_monthly_intro",
-        status="active",
-        stripe_customer_id=f"cus_{uuid.uuid4().hex[:8]}",
-        stripe_subscription_id=f"sub_{uuid.uuid4().hex[:8]}",
-    )
 
     enroll_resp = await async_client.post(
         f"/courses/{course_id}/enroll", headers=headers

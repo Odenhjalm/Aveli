@@ -167,7 +167,7 @@ async def test_require_admin_ignores_current_user_is_admin_flag_when_canonical_i
     assert exc_info.value.status_code == 403
 
 
-async def test_require_admin_denies_role_only_entry_even_when_canonical_admin_is_true(
+async def test_require_admin_allows_after_canonical_entry_when_canonical_admin_is_true(
     monkeypatch,
 ) -> None:
     from app import permissions
@@ -178,10 +178,7 @@ async def test_require_admin_denies_role_only_entry_even_when_canonical_admin_is
     monkeypatch.setattr("app.models.is_admin_user", _fake_is_admin_user)
 
     current = {"id": "user-123", "is_admin": False}
-    with pytest.raises(HTTPException, match="canonical_app_entry_required") as exc_info:
-        await permissions.require_admin(current)
-
-    assert exc_info.value.status_code == 403
+    assert await permissions.require_admin(current) is current
 
 
 async def test_require_teacher_ignores_current_user_role_when_canonical_is_false(
@@ -200,7 +197,7 @@ async def test_require_teacher_ignores_current_user_role_when_canonical_is_false
     assert exc_info.value.status_code == 403
 
 
-async def test_require_teacher_denies_role_only_entry_even_when_canonical_teacher_is_true(
+async def test_require_teacher_allows_after_canonical_entry_when_canonical_teacher_is_true(
     monkeypatch,
 ) -> None:
     from app import permissions
@@ -211,7 +208,4 @@ async def test_require_teacher_denies_role_only_entry_even_when_canonical_teache
     monkeypatch.setattr("app.models.is_teacher_user", _fake_is_teacher_user)
 
     current = {"id": "user-123", "role": "learner"}
-    with pytest.raises(HTTPException, match="canonical_app_entry_required") as exc_info:
-        await permissions.require_teacher(current)
-
-    assert exc_info.value.status_code == 403
+    assert await permissions.require_teacher(current) is current

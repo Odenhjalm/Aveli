@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 
 from .. import schemas
-from ..auth import CurrentUser
+from ..auth import AppEntryUser
 from ..services import courses_service
 
 router = APIRouter(prefix="/home", tags=["home"])
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/home", tags=["home"])
     response_model=schemas.HomeAudioFeedResponse,
 )
 async def home_audio_feed(
-    current: CurrentUser,
+    current: AppEntryUser,
     limit: int = Query(default=12, ge=1, le=50),
 ):
     items = await courses_service.list_home_audio_media(

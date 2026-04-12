@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
 from .. import models, schemas
-from ..permissions import AdminUser
+from ..permissions import AdminEntryUser
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/settings", response_model=schemas.AdminSettingsResponse)
-async def admin_settings(current: AdminUser):
+async def admin_settings(current: AdminEntryUser):
     priorities_raw = await models.list_teacher_course_priorities()
     metrics_raw = await models.fetch_admin_metrics()
     priorities = [
@@ -21,7 +21,7 @@ async def admin_settings(current: AdminUser):
     "/users/{user_id}/grant-teacher-role",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def admin_grant_teacher_role(user_id: str, current: AdminUser):
+async def admin_grant_teacher_role(user_id: str, current: AdminEntryUser):
     try:
         await models.grant_teacher_role(user_id, str(current["id"]))
     except LookupError as exc:
@@ -38,7 +38,7 @@ async def admin_grant_teacher_role(user_id: str, current: AdminUser):
     "/users/{user_id}/revoke-teacher-role",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def admin_revoke_teacher_role(user_id: str, current: AdminUser):
+async def admin_revoke_teacher_role(user_id: str, current: AdminEntryUser):
     try:
         await models.revoke_teacher_role(user_id, str(current["id"]))
     except LookupError as exc:

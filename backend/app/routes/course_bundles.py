@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from ..auth import CurrentUser
-from ..permissions import TeacherUser
+from ..permissions import TeacherEntryUser
 from ..schemas.checkout import CheckoutCreateResponse
 from ..schemas.course_bundles import (
     CourseBundleCourseRequest,
@@ -34,7 +34,7 @@ async def get_bundle(bundle_id: str) -> CourseBundleResponse:
 )
 async def create_bundle(
     payload: CourseBundleCreateRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ) -> CourseBundleResponse:
     try:
         return await course_bundles_service.create_bundle(current, payload)
@@ -48,7 +48,7 @@ async def create_bundle(
     "/api/teachers/course-bundles",
     response_model=CourseBundleListResponse,
 )
-async def list_teacher_bundles(current: TeacherUser) -> CourseBundleListResponse:
+async def list_teacher_bundles(current: TeacherEntryUser) -> CourseBundleListResponse:
     try:
         bundles = await course_bundles_service.list_teacher_bundles(current)
         return CourseBundleListResponse(items=bundles)
@@ -65,7 +65,7 @@ async def list_teacher_bundles(current: TeacherUser) -> CourseBundleListResponse
 async def add_course_to_bundle(
     bundle_id: str,
     payload: CourseBundleCourseRequest,
-    current: TeacherUser,
+    current: TeacherEntryUser,
 ) -> CourseBundleResponse:
     try:
         return await course_bundles_service.attach_course(

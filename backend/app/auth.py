@@ -9,6 +9,8 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 
 from .config import settings
+from .repositories import memberships as memberships_repo
+from .utils.membership_status import is_membership_row_active
 from .utils.supabase_jwt import SupabaseJwtError, verify_supabase_access_token
 pwd_context = CryptContext(
     schemes=["bcrypt_sha256", "bcrypt"],
@@ -16,6 +18,7 @@ pwd_context = CryptContext(
 )
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_optional_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+_CANONICAL_APP_ENTRY_REQUIRED = "canonical_app_entry_required"
 
 
 def _configure_password_backends() -> None:
@@ -253,3 +256,22 @@ async def get_optional_user(
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 OptionalCurrentUser = Annotated[dict | None, Depends(get_optional_user)]
+
+
+async def require_app_entry(current: CurrentUser) -> dict[str, Any]:
+    if current.get("onboarding_state") != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_CANONICAL_APP_ENTRY_REQUIRED,
+        )
+
+    membership = await memberships_repo.get_membership(str(current["id"]))
+    if not is_membership_row_active(membership):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_CANONICAL_APP_ENTRY_REQUIRED,
+        )
+    return current
+
+
+AppEntryUser = Annotated[dict, Depends(require_app_entry)]

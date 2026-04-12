@@ -3,6 +3,7 @@ import uuid
 import pytest
 
 from app import db
+from app.repositories import memberships as memberships_repo
 
 from .utils import (
     auth_header,
@@ -31,6 +32,19 @@ async def _event_types_for(user_id: str) -> list[str]:
     return [str(row[0]) for row in rows]
 
 
+async def _grant_app_entry(async_client, user: dict[str, str]) -> None:
+    onboarding_resp = await async_client.post(
+        "/auth/onboarding/complete",
+        headers=auth_header(user["access_token"]),
+    )
+    assert onboarding_resp.status_code == 200, onboarding_resp.text
+    await memberships_repo.upsert_membership_record(
+        user["user_id"],
+        status="active",
+        source="test",
+    )
+
+
 async def test_teacher_role_routes_require_admin_and_mutate_canonical_authority(
     async_client,
 ):
@@ -52,6 +66,8 @@ async def test_teacher_role_routes_require_admin_and_mutate_canonical_authority(
         password=password,
         display_name="Teacher Target",
     )
+    await _grant_app_entry(async_client, non_admin_user)
+    await _grant_app_entry(async_client, admin_user)
 
     forbidden_resp = await async_client.post(
         f"/admin/users/{target_user['user_id']}/grant-teacher-role",

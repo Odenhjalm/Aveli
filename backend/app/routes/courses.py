@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 
 from .. import schemas
-from ..auth import CurrentUser, OptionalCurrentUser
+from ..auth import AppEntryUser, OptionalCurrentUser
 from ..services import courses_read_service, courses_service
 
 router = APIRouter(prefix="/courses", tags=["courses"])
@@ -38,7 +38,7 @@ def _course_list_response(
     return schemas.CourseListResponse(items=[_course_response(row) for row in rows])
 
 
-async def _assert_can_access_lesson(user: OptionalCurrentUser, lesson_id: str) -> dict:
+async def _assert_can_access_lesson(user: dict | None, lesson_id: str) -> dict:
     access = await courses_service.read_canonical_lesson_access(
         str((user or {}).get("id") or ""),
         lesson_id,
@@ -51,8 +51,6 @@ async def _assert_can_access_lesson(user: OptionalCurrentUser, lesson_id: str) -
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden",
         )
-    if bool(user.get("is_admin")):
-        return lesson
     if access["can_access"]:
         return lesson
     raise HTTPException(
@@ -133,7 +131,7 @@ async def course_pricing_api(slug: str):
 
 
 @router.get("/lessons/{lesson_id}", response_model=schemas.LessonContentResponse)
-async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
+async def lesson_detail(lesson_id: str, current: AppEntryUser):
     lesson = await _assert_can_access_lesson(current, lesson_id)
     course_id = lesson.get("course_id")
     if not isinstance(course_id, str) or course_id == "":
@@ -160,7 +158,7 @@ async def lesson_detail(lesson_id: str, current: OptionalCurrentUser = None):
 
 
 @router.get("/me", response_model=schemas.CourseListResponse)
-async def my_courses(current: CurrentUser):
+async def my_courses(current: AppEntryUser):
     rows = await courses_service.list_my_courses(str(current["id"]))
     normalized_rows = list(rows)
     await courses_service.attach_course_cover_read_contract(normalized_rows)
@@ -178,7 +176,7 @@ async def _read_course_state_or_404(*, user_id: str, course_id: str) -> dict:
     "/{course_id}/enrollment",
     response_model=schemas.CourseAccessStateResponse,
 )
-async def enrollment_status(course_id: UUID, current: CurrentUser):
+async def enrollment_status(course_id: UUID, current: AppEntryUser):
     state = await _read_course_state_or_404(
         user_id=str(current["id"]),
         course_id=str(course_id),
@@ -187,7 +185,7 @@ async def enrollment_status(course_id: UUID, current: CurrentUser):
 
 
 @router.get("/{course_id}/access", response_model=schemas.CourseAccessStateResponse)
-async def course_access(course_id: UUID, current: CurrentUser):
+async def course_access(course_id: UUID, current: AppEntryUser):
     state = await _read_course_state_or_404(
         user_id=str(current["id"]),
         course_id=str(course_id),
@@ -196,7 +194,7 @@ async def course_access(course_id: UUID, current: CurrentUser):
 
 
 @router.post("/{course_id}/enroll", response_model=schemas.CourseAccessStateResponse)
-async def enroll_course(course_id: UUID, current: CurrentUser):
+async def enroll_course(course_id: UUID, current: AppEntryUser):
     normalized_course_id = str(course_id)
     try:
         state = await courses_service.create_intro_course_enrollment(
