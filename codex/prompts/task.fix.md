@@ -2,6 +2,14 @@
 Problem: {symptom/logg}
 Filer: {berorda filer}
 
+## MCP Bootstrap Pattern
+- If this task involves MCP usage, backend verification, local backend testing
+  involving backend runtime, or MCP-based audit, insert the exact block from
+  `codex/prompts/MCP_BOOTSTRAP_BLOCK.md` here before any diagnosis, audit,
+  verification, implementation, or testing instruction.
+- For MCP/backend-dependent work, the block is mandatory and fail-closed under
+  `codex/AVELI_OPERATING_SYSTEM.md`; do not mark it optional or skippable.
+
 ## Forvantat resultat
 - ...
 

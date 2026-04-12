@@ -26,6 +26,23 @@ BASE_PATH:
 
 EXECUTION MODEL:
 
+STATE 0 - MCP BOOTSTRAP PATTERN
+
+Before STATE 1, classify whether the DAG or any task in TASK_ORDER involves
+MCP usage, backend verification, local backend testing involving backend
+runtime, or MCP-based audit.
+
+If yes:
+
+- insert and execute the exact block from `codex/prompts/MCP_BOOTSTRAP_BLOCK.md`
+- require PASS before continuing
+- STOP and HALT ENTIRE DAG if the gate fails
+
+This pattern is subordinate to `codex/AVELI_OPERATING_SYSTEM.md` ->
+`MCP Bootstrap Law`.
+
+---
+
 FOR EACH TASK IN TASK_ORDER:
 
 ---

@@ -751,6 +751,18 @@ Evidence requirement:
 - Codex MUST NOT imply MCP/backend readiness without current-session evidence
   from the bootstrap gate
 
+Prompt-generation enforcement:
+
+- any generated Codex prompt or task scaffold that involves MCP usage, backend
+  verification, local backend testing involving backend runtime, or MCP-based
+  audits MUST insert the standard `MCP BOOTSTRAP BLOCK` before audit,
+  verification, implementation, or testing instructions
+- the reusable prompt block is `codex/prompts/MCP_BOOTSTRAP_BLOCK.md`
+- the block is subordinate to this OS law and MUST NOT redefine bootstrap
+  authority
+- generated prompts MUST NOT mark the block optional for MCP/backend-dependent
+  work
+
 This rule is fail-closed operating policy. It does not change truth order,
 workflow order, MCP authority order, or the requirement that contract precedes
 verification.
