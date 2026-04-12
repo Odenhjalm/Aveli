@@ -7,6 +7,7 @@ import 'package:aveli/core/routing/app_router.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_session.dart';
+import 'package:aveli/domain/models/entry_state.dart';
 
 class _RouterHarness extends ConsumerWidget {
   const _RouterHarness();
@@ -56,6 +57,16 @@ final _testAppRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, _) => const SizedBox.shrink(),
       ),
       GoRoute(
+        path: RoutePath.welcome,
+        name: AppRoute.welcome,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: RoutePath.subscribe,
+        name: AppRoute.subscribe,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
         path: RoutePath.checkoutSuccess,
         name: AppRoute.checkoutSuccess,
         builder: (context, _) => const SizedBox.shrink(),
@@ -88,21 +99,49 @@ Future<GoRouter> _pumpHarness(
 
 void main() {
   const unauthenticated = RouteSessionSnapshot(
-    isAuthenticated: false,
-    isAuthLoading: false,
-    hasTentativeSession: false,
+    entryState: null,
+    isEntryStateLoading: false,
   );
 
-  const authenticated = RouteSessionSnapshot(
-    isAuthenticated: true,
-    isAuthLoading: false,
-    hasTentativeSession: false,
+  const completedEntry = RouteSessionSnapshot(
+    entryState: EntryState(
+      canEnterApp: true,
+      onboardingCompleted: true,
+      membershipActive: true,
+      needsOnboarding: false,
+      needsPayment: false,
+      isInvite: false,
+    ),
+    isEntryStateLoading: false,
+  );
+
+  const paymentNeeded = RouteSessionSnapshot(
+    entryState: EntryState(
+      canEnterApp: false,
+      onboardingCompleted: true,
+      membershipActive: false,
+      needsOnboarding: false,
+      needsPayment: true,
+      isInvite: false,
+    ),
+    isEntryStateLoading: false,
+  );
+
+  const onboardingNeeded = RouteSessionSnapshot(
+    entryState: EntryState(
+      canEnterApp: false,
+      onboardingCompleted: false,
+      membershipActive: true,
+      needsOnboarding: true,
+      needsPayment: false,
+      isInvite: true,
+    ),
+    isEntryStateLoading: false,
   );
 
   const tentativeSession = RouteSessionSnapshot(
-    isAuthenticated: false,
-    isAuthLoading: false,
-    hasTentativeSession: true,
+    entryState: null,
+    isEntryStateLoading: true,
   );
 
   testWidgets('unauthenticated users redirect private routes to login', (
@@ -118,15 +157,40 @@ void main() {
     expect(uri.queryParameters['redirect'], RoutePath.home);
   });
 
-  testWidgets('authenticated users are redirected away from login', (
+  testWidgets('completed backend entry redirects away from login to home', (
     tester,
   ) async {
-    final router = await _pumpHarness(tester, authenticated);
+    final router = await _pumpHarness(tester, completedEntry);
 
     router.go(RoutePath.login);
     await tester.pump();
 
     expect(router.routeInformationProvider.value.uri.path, RoutePath.home);
+  });
+
+  testWidgets('payment-needed entry state redirects private routes to subscribe', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, paymentNeeded);
+
+    router.go(RoutePath.home);
+    await tester.pump();
+
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      RoutePath.subscribe,
+    );
+  });
+
+  testWidgets('onboarding-needed entry state redirects private routes to welcome', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, onboardingNeeded);
+
+    router.go(RoutePath.home);
+    await tester.pump();
+
+    expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);
   });
 
   testWidgets('tentative sessions stabilize on boot while hydrating', (
@@ -160,7 +224,7 @@ void main() {
     expect(uri.queryParameters['redirect'], RoutePath.home);
   });
 
-  testWidgets('boot sends unauthenticated public redirects to landing', (
+  testWidgets('boot sends missing entry state to login with public redirect', (
     tester,
   ) async {
     final router = await _pumpHarness(tester, unauthenticated);
@@ -170,14 +234,13 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      router.routeInformationProvider.value.uri.path,
-      RoutePath.landingRoot,
-    );
+    final uri = router.routeInformationProvider.value.uri;
+    expect(uri.path, RoutePath.login);
+    expect(uri.queryParameters['redirect'], RoutePath.checkoutSuccess);
   });
 
-  testWidgets('boot sends authenticated users to home', (tester) async {
-    final router = await _pumpHarness(tester, authenticated);
+  testWidgets('boot sends completed backend entry to home', (tester) async {
+    final router = await _pumpHarness(tester, completedEntry);
 
     router.go(RoutePath.boot);
     await tester.pump();

@@ -1,202 +1,264 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 
-from app.routes import playback
-from app.services import courses_service
+from app.services import courses_service, lesson_playback_service
 
 
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-async def test_course_access_snapshot_denies_non_intro_membership_without_enrollment(
-    monkeypatch,
-):
-    async def false_async(*args, **kwargs):
-        return False
+def _course(course_id: str = "course-paid", *, step: str = "step1") -> dict[str, object]:
+    return {"id": course_id, "step": step, "is_published": True}
 
-    async def none_async(*args, **kwargs):
+
+def _enrollment(*, source: str, position: int = 1) -> dict[str, object]:
+    return {
+        "id": "enrollment-1",
+        "user_id": "user-1",
+        "course_id": "course-paid",
+        "source": source,
+        "current_unlock_position": position,
+    }
+
+
+async def test_canonical_course_access_denies_paid_course_without_enrollment(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(course_id or "course-paid", step="step1")
+
+    async def _fake_get_enrollment(user_id: str, course_id: str):
+        del user_id, course_id
         return None
 
-    async def empty_profile(*args, **kwargs):
-        return {}
-
-    async def active_membership(*args, **kwargs):
-        return {"status": "active", "expires_at": None}
-
-    async def paid_course(*args, **kwargs):
-        return {"id": "course-paid", "is_free_intro": False, "is_published": True}
-
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
     monkeypatch.setattr(
         courses_service,
-        "is_course_teacher_or_instructor",
-        false_async,
-        raising=True,
-    )
-    monkeypatch.setattr(courses_service, "is_user_enrolled", false_async, raising=True)
-    monkeypatch.setattr(courses_service, "latest_order_for_course", none_async, raising=True)
-    monkeypatch.setattr(courses_service, "get_profile", empty_profile, raising=True)
-    monkeypatch.setattr(courses_service, "get_membership", active_membership, raising=True)
-    monkeypatch.setattr(
-        courses_service,
-        "fetch_course_access_subject",
-        paid_course,
+        "get_course_enrollment",
+        _fake_get_enrollment,
         raising=True,
     )
 
-    snapshot = await courses_service.course_access_snapshot("user-1", "course-paid")
+    access = await courses_service.read_canonical_course_access("user-1", "course-paid")
 
-    assert snapshot["has_active_subscription"] is True
-    assert snapshot["has_access"] is False
-    assert snapshot["can_access"] is False
-    assert snapshot["access_reason"] == "none"
-    assert snapshot["enrolled"] is False
-    assert snapshot["latest_order"] is None
+    assert access["expected_source"] == "purchase"
+    assert access["enrollment"] is None
+    assert access["can_access"] is False
 
 
-async def test_course_access_snapshot_grants_intro_membership_access_explicitly(
+async def test_canonical_course_access_denies_intro_course_without_intro_enrollment(
     monkeypatch,
-):
-    async def false_async(*args, **kwargs):
-        return False
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(course_id or "course-intro", step="intro")
 
-    async def none_async(*args, **kwargs):
+    async def _fake_get_enrollment(user_id: str, course_id: str):
+        del user_id, course_id
         return None
 
-    async def empty_profile(*args, **kwargs):
-        return {}
-
-    async def active_membership(*args, **kwargs):
-        return {"status": "active", "expires_at": None}
-
-    async def intro_course(*args, **kwargs):
-        return {"id": "course-intro", "is_free_intro": True, "is_published": True}
-
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
     monkeypatch.setattr(
         courses_service,
-        "is_course_teacher_or_instructor",
-        false_async,
-        raising=True,
-    )
-    monkeypatch.setattr(courses_service, "is_user_enrolled", false_async, raising=True)
-    monkeypatch.setattr(courses_service, "latest_order_for_course", none_async, raising=True)
-    monkeypatch.setattr(courses_service, "get_profile", empty_profile, raising=True)
-    monkeypatch.setattr(courses_service, "get_membership", active_membership, raising=True)
-    monkeypatch.setattr(
-        courses_service,
-        "fetch_course_access_subject",
-        intro_course,
+        "get_course_enrollment",
+        _fake_get_enrollment,
         raising=True,
     )
 
-    snapshot = await courses_service.course_access_snapshot("user-1", "course-intro")
+    access = await courses_service.read_canonical_course_access("user-1", "course-intro")
 
-    assert snapshot["has_active_subscription"] is True
-    assert snapshot["has_access"] is True
-    assert snapshot["can_access"] is True
-    assert snapshot["access_reason"] == "membership_intro"
-    assert snapshot["enrolled"] is False
+    assert access["expected_source"] == "intro_enrollment"
+    assert access["enrollment"] is None
+    assert access["can_access"] is False
 
 
-async def test_enroll_free_intro_requires_membership_without_step1_bypass(
+async def test_canonical_course_access_allows_intro_only_with_intro_enrollment(
     monkeypatch,
-):
-    async def intro_course(*args, **kwargs):
-        return {"id": "course-intro", "is_free_intro": True, "is_published": True}
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(course_id or "course-intro", step="intro")
 
-    async def no_membership(*args, **kwargs):
-        return None
+    async def _fake_get_enrollment(user_id: str, course_id: str):
+        del user_id, course_id
+        return _enrollment(source="intro_enrollment")
 
-    ensure_course_enrollment = AsyncMock()
-    claim_intro_monthly_access = AsyncMock()
-    user_owns_any_course_step = AsyncMock(return_value=True)
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service,
+        "get_course_enrollment",
+        _fake_get_enrollment,
+        raising=True,
+    )
 
-    monkeypatch.setattr(courses_service, "fetch_course", intro_course, raising=True)
-    monkeypatch.setattr(courses_service, "get_membership", no_membership, raising=True)
+    access = await courses_service.read_canonical_course_access("user-1", "course-intro")
+
+    assert access["expected_source"] == "intro_enrollment"
+    assert access["enrollment"]["source"] == "intro_enrollment"
+    assert access["can_access"] is True
+
+
+async def test_canonical_course_access_denies_wrong_enrollment_source(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(course_id or "course-paid", step="step1")
+
+    async def _fake_get_enrollment(user_id: str, course_id: str):
+        del user_id, course_id
+        return _enrollment(source="intro_enrollment")
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service,
+        "get_course_enrollment",
+        _fake_get_enrollment,
+        raising=True,
+    )
+
+    access = await courses_service.read_canonical_course_access("user-1", "course-paid")
+
+    assert access["expected_source"] == "purchase"
+    assert access["enrollment"]["source"] == "intro_enrollment"
+    assert access["can_access"] is False
+
+
+async def test_create_intro_course_enrollment_uses_intro_enrollment_source(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(course_id or "course-intro", step="intro")
+
+    create_course_enrollment = AsyncMock(
+        return_value=_enrollment(source="intro_enrollment")
+    )
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
     monkeypatch.setattr(
         courses_service.courses_repo,
-        "ensure_course_enrollment",
-        ensure_course_enrollment,
+        "create_course_enrollment",
+        create_course_enrollment,
         raising=True,
     )
+
+    state = await courses_service.create_intro_course_enrollment(
+        user_id="user-1",
+        course_id="course-intro",
+    )
+
+    create_course_enrollment.assert_awaited_once_with(
+        user_id="user-1",
+        course_id="course-intro",
+        source="intro_enrollment",
+    )
+    assert state["required_enrollment_source"] == "intro_enrollment"
+    assert state["enrollment"]["source"] == "intro_enrollment"
+
+
+async def test_create_intro_course_enrollment_rejects_non_intro_course(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(course_id or "course-paid", step="step1")
+
+    create_course_enrollment = AsyncMock()
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
     monkeypatch.setattr(
         courses_service.courses_repo,
-        "claim_intro_monthly_access",
-        claim_intro_monthly_access,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.courses_repo,
-        "user_owns_any_course_step",
-        user_owns_any_course_step,
+        "create_course_enrollment",
+        create_course_enrollment,
         raising=True,
     )
 
-    result = await courses_service.enroll_free_intro("user-1", "course-intro")
-
-    assert result == {"ok": False, "status": "subscription_required"}
-    ensure_course_enrollment.assert_not_awaited()
-    claim_intro_monthly_access.assert_not_awaited()
-    user_owns_any_course_step.assert_not_awaited()
-
-
-async def test_playback_access_does_not_fall_back_to_entitlements(monkeypatch):
-    async def paid_course(*args, **kwargs):
-        return {"id": "course-paid", "is_free_intro": False, "is_published": True}
-
-    async def read_denied(*args, **kwargs):
-        return False
-
-    monkeypatch.setattr(
-        playback.courses_service,
-        "fetch_course_access_subject",
-        paid_course,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        playback.courses_service,
-        "can_user_read_course",
-        read_denied,
-        raising=True,
-    )
-    assert not hasattr(playback, "entitlement_service")
-
-    with pytest.raises(HTTPException) as excinfo:
-        await playback._enforce_course_access(
-            object(),
+    with pytest.raises(PermissionError, match="purchase enrollment required"):
+        await courses_service.create_intro_course_enrollment(
             user_id="user-1",
             course_id="course-paid",
+        )
+
+    create_course_enrollment.assert_not_awaited()
+
+
+async def test_lesson_playback_access_does_not_fall_back_to_entitlements(
+    monkeypatch,
+) -> None:
+    async def _fake_read_lesson_access(user_id: str, lesson_id: str):
+        del user_id
+        return {
+            "lesson": {"id": lesson_id, "course_id": "course-paid"},
+            "course": _course("course-paid", step="step1"),
+            "enrollment": None,
+            "expected_source": "purchase",
+            "current_unlock_position": 0,
+            "can_access": False,
+        }
+
+    monkeypatch.setattr(
+        lesson_playback_service.courses_service,
+        "read_canonical_lesson_access",
+        _fake_read_lesson_access,
+        raising=True,
+    )
+    assert not hasattr(lesson_playback_service, "entitlement_service")
+
+    with pytest.raises(HTTPException) as excinfo:
+        await lesson_playback_service._authorize_lesson_resolution_playback(
+            user_id="user-1",
+            lesson_id="lesson-1",
+            course_id=None,
         )
 
     assert excinfo.value.status_code == 403
 
 
-async def test_playback_access_allows_explicit_intro_membership(monkeypatch):
-    async def intro_course(*args, **kwargs):
-        return {"id": "course-intro", "is_free_intro": True, "is_published": True}
-
-    async def read_allowed(*args, **kwargs):
-        return True
+async def test_lesson_playback_access_allows_canonical_lesson_access(
+    monkeypatch,
+) -> None:
+    async def _fake_read_lesson_access(user_id: str, lesson_id: str):
+        del user_id
+        return {
+            "lesson": {"id": lesson_id, "course_id": "course-intro"},
+            "course": _course("course-intro", step="intro"),
+            "enrollment": _enrollment(source="intro_enrollment"),
+            "expected_source": "intro_enrollment",
+            "current_unlock_position": 1,
+            "can_access": True,
+        }
 
     monkeypatch.setattr(
-        playback.courses_service,
-        "fetch_course_access_subject",
-        intro_course,
+        lesson_playback_service.courses_service,
+        "read_canonical_lesson_access",
+        _fake_read_lesson_access,
         raising=True,
     )
-    monkeypatch.setattr(
-        playback.courses_service,
-        "can_user_read_course",
-        read_allowed,
-        raising=True,
-    )
-    assert not hasattr(playback, "entitlement_service")
+    assert not hasattr(lesson_playback_service, "entitlement_service")
 
-    await playback._enforce_course_access(
-        object(),
+    await lesson_playback_service._authorize_lesson_resolution_playback(
         user_id="user-1",
-        course_id="course-intro",
+        lesson_id="lesson-1",
+        course_id=None,
     )
+
+
+def test_course_access_sources_do_not_import_legacy_entitlements() -> None:
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "app/services/courses_service.py",
+        root / "app/services/lesson_playback_service.py",
+        root / "app/routes/courses.py",
+        root / "app/routes/playback.py",
+    ]
+    source = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "entitlement_service" not in source
+    assert "app.entitlements" not in source

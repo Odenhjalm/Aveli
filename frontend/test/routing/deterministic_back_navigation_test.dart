@@ -11,24 +11,24 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/certificate.dart';
-import 'package:aveli/data/models/order.dart';
 import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/community/presentation/profile_page.dart';
 import 'package:aveli/features/courses/application/course_providers.dart'
     as courses;
 import 'package:aveli/features/courses/data/courses_repository.dart'
     show CourseSummary;
-import 'package:aveli/features/payments/application/payments_providers.dart';
-import 'package:aveli/features/payments/presentation/order_history_page.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart'
     as studio;
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
+import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 import 'package:aveli/features/studio/presentation/teacher_home_page.dart';
 import 'package:aveli/features/teacher/application/bundle_providers.dart';
 import 'package:aveli/features/teacher/presentation/course_bundle_page.dart';
+import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/brand_header.dart';
 import 'package:aveli/shared/widgets/go_router_back_button.dart';
 
@@ -42,6 +42,14 @@ class _FakeAuthController extends AuthController {
         email: 'user@example.com',
         createdAt: DateTime.utc(2024, 1, 1),
         updatedAt: DateTime.utc(2024, 1, 1),
+      ),
+      entryState: const EntryState(
+        canEnterApp: true,
+        onboardingCompleted: true,
+        membershipActive: true,
+        needsOnboarding: false,
+        needsPayment: false,
+        isInvite: false,
       ),
     );
   }
@@ -97,7 +105,7 @@ Future<void> _pumpRouter(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('back navigation is deterministic for profile and purchases', (
+  testWidgets('back navigation is deterministic for profile and subscription', (
     tester,
   ) async {
     final router = GoRouter(
@@ -114,9 +122,13 @@ void main() {
           builder: (_, _) => const ProfilePage(),
         ),
         GoRoute(
-          path: '/orders',
-          name: AppRoute.orders,
-          builder: (_, _) => const OrderHistoryPage(),
+          path: '/profile/subscription',
+          name: AppRoute.profileSubscription,
+          builder: (context, _) => AppScaffold(
+            title: 'Prenumeration',
+            onBack: () => context.goNamed(AppRoute.profile),
+            body: const SizedBox(key: ValueKey('subscription')),
+          ),
         ),
       ],
     );
@@ -130,7 +142,6 @@ void main() {
           courses.myCoursesProvider.overrideWith(
             (ref) async => <CourseSummary>[],
           ),
-          orderHistoryProvider.overrideWith((ref) async => <Order>[]),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),
@@ -144,7 +155,7 @@ void main() {
     await _pumpRouter(tester);
     expect(router.routeInformationProvider.value.uri.path, '/home');
 
-    router.goNamed(AppRoute.orders);
+    router.pushNamed(AppRoute.profileSubscription);
     await _pumpRouter(tester);
     expect(find.byType(GoRouterBackButton), findsNothing);
     await tester.tap(_headerBackButton());
@@ -200,7 +211,7 @@ void main() {
             (ref) => _NoopUploadQueueNotifier(studioRepo),
           ),
           studio.myCoursesProvider.overrideWith(
-            (ref) async => <Map<String, dynamic>>[],
+            (ref) async => <CourseStudio>[],
           ),
           teacherBundlesProvider.overrideWith((ref) async => []),
         ],

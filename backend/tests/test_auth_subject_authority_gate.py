@@ -4,15 +4,27 @@ from fastapi import HTTPException
 
 pytestmark = pytest.mark.anyio("asyncio")
 
+USER_ID = "00000000-0000-0000-0000-000000000123"
+
+
+def _patch_canonical_auth_user(monkeypatch) -> None:
+    async def _fake_get_user_by_id(user_id: str):
+        assert user_id == USER_ID
+        return {"id": USER_ID, "email": "user@example.com"}
+
+    monkeypatch.setattr("app.repositories.auth.get_user_by_id", _fake_get_user_by_id)
+
 
 async def test_build_current_user_prefers_auth_subject_over_payload_claims(
     monkeypatch,
 ) -> None:
     from app import auth as auth_module
 
+    _patch_canonical_auth_user(monkeypatch)
+
     async def _fake_get_auth_subject(_: str):
         return {
-            "user_id": "user-123",
+            "user_id": USER_ID,
             "onboarding_state": "completed",
             "role_v2": "learner",
             "role": "learner",
@@ -21,7 +33,7 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
 
     async def _fake_get_profile(_: str):
         return {
-            "user_id": "user-123",
+            "user_id": USER_ID,
             "email": "user@example.com",
             "display_name": "Canonical Profile Name",
             "bio": "Canonical bio",
@@ -41,7 +53,7 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
     )
 
     current_user = await auth_module._build_current_user(
-        "user-123",
+        USER_ID,
         {
             "email": "user@example.com",
             "role": "teacher",
@@ -59,7 +71,7 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
     )
 
     assert current_user == {
-        "id": "user-123",
+        "id": USER_ID,
         "email": "user@example.com",
         "onboarding_state": "completed",
         "role": "learner",
@@ -76,9 +88,11 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
 ) -> None:
     from app import auth as auth_module
 
+    _patch_canonical_auth_user(monkeypatch)
+
     async def _fake_get_auth_subject(_: str):
         return {
-            "user_id": "user-123",
+            "user_id": USER_ID,
             "onboarding_state": "completed",
             "role_v2": "learner",
             "role": "learner",
@@ -95,7 +109,7 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
     monkeypatch.setattr("app.repositories.profiles.get_profile", _fake_get_profile)
 
     current_user = await auth_module._build_current_user(
-        "user-123",
+        USER_ID,
         {
             "email": "user@example.com",
             "display_name": "Payload Name",
@@ -110,7 +124,7 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
     )
 
     assert current_user == {
-        "id": "user-123",
+        "id": USER_ID,
         "email": "user@example.com",
         "onboarding_state": "completed",
         "role": "learner",
@@ -125,9 +139,11 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
 async def test_build_current_user_rejects_invalid_canonical_subject(monkeypatch) -> None:
     from app import auth as auth_module
 
+    _patch_canonical_auth_user(monkeypatch)
+
     async def _fake_get_auth_subject(_: str):
         return {
-            "user_id": "user-123",
+            "user_id": USER_ID,
             "onboarding_state": "broken_state",
             "role_v2": "teacher",
             "role": "learner",
@@ -146,7 +162,7 @@ async def test_build_current_user_rejects_invalid_canonical_subject(monkeypatch)
 
     with pytest.raises(ValueError, match="Canonical onboarding_state invalid"):
         await auth_module._build_current_user(
-            "user-123",
+            USER_ID,
             {"email": "user@example.com"},
         )
 
