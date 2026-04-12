@@ -23,6 +23,7 @@ from ..repositories import runtime_media as runtime_media_repo
 from ..utils import lesson_content as lesson_content_utils
 from . import lesson_playback_service
 from . import media_cleanup
+from . import studio_authority
 from . import storage_service
 
 logger = logging.getLogger(__name__)
@@ -1029,7 +1030,13 @@ async def update_course(
     return dict(ensured)
 
 
-async def delete_course(course_id: str) -> bool:
+async def delete_course(course_id: str, teacher_id: str | None = None) -> bool:
+    if teacher_id is None:
+        raise RuntimeError("Teacher context required")
+    await studio_authority.enforce_teacher_owns_course(
+        teacher_id,
+        course_id,
+    )
     return await courses_repo.delete_course(course_id)
 
 
@@ -1145,7 +1152,14 @@ async def create_lesson_structure(
     *,
     lesson_title: str,
     position: int,
+    teacher_id: str | None = None,
 ) -> dict[str, Any]:
+    if teacher_id is None:
+        raise RuntimeError("Teacher context required")
+    await studio_authority.enforce_teacher_owns_course(
+        teacher_id,
+        course_id,
+    )
     row = await courses_repo.create_lesson_structure(
         course_id=course_id,
         lesson_title=lesson_title,
@@ -1157,7 +1171,16 @@ async def create_lesson_structure(
 async def update_lesson_structure(
     lesson_id: str,
     patch: dict[str, Any],
+    *,
+    teacher_id: str | None = None,
 ) -> dict[str, Any] | None:
+    if teacher_id is None:
+        raise RuntimeError("Teacher context required")
+    lesson = await studio_authority._get_lesson_or_404(lesson_id)
+    await studio_authority.enforce_teacher_owns_course(
+        teacher_id,
+        str(lesson["course_id"]),
+    )
     structure_patch: dict[str, Any] = {}
     if "lesson_title" in patch:
         structure_patch["lesson_title"] = patch["lesson_title"]
@@ -1225,11 +1248,29 @@ async def upsert_lesson(course_id: str, payload: dict[str, Any]) -> dict[str, An
     )
 
 
-async def reorder_lessons(course_id: str, ordered_lesson_ids: Sequence[str]) -> None:
+async def reorder_lessons(
+    course_id: str,
+    ordered_lesson_ids: Sequence[str],
+    *,
+    teacher_id: str | None = None,
+) -> None:
+    if teacher_id is None:
+        raise RuntimeError("Teacher context required")
+    await studio_authority.enforce_teacher_owns_course(
+        teacher_id,
+        course_id,
+    )
     return await courses_repo.reorder_lessons(course_id, ordered_lesson_ids)
 
 
-async def delete_lesson(lesson_id: str) -> bool:
+async def delete_lesson(lesson_id: str, teacher_id: str | None = None) -> bool:
+    if teacher_id is None:
+        raise RuntimeError("Teacher context required")
+    lesson = await studio_authority._get_lesson_or_404(lesson_id)
+    await studio_authority.enforce_teacher_owns_course(
+        teacher_id,
+        str(lesson["course_id"]),
+    )
     media_asset_ids = await courses_repo.list_lesson_media_asset_ids(lesson_id)
     deleted = await courses_repo.delete_lesson(lesson_id)
     if deleted:

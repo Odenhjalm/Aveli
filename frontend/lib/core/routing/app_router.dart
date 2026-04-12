@@ -40,6 +40,7 @@ import 'package:aveli/features/landing/presentation/legal/privacy_page.dart';
 import 'package:aveli/features/landing/presentation/legal/terms_page.dart';
 import 'package:aveli/features/messages/presentation/chat_page.dart';
 import 'package:aveli/features/messages/presentation/messages_page.dart';
+import 'package:aveli/features/onboarding/onboarding_profile_page.dart';
 import 'package:aveli/features/payments/presentation/booking_page.dart';
 import 'package:aveli/features/payments/presentation/subscribe_screen.dart';
 import 'package:aveli/features/onboarding/welcome_page.dart';
@@ -167,7 +168,7 @@ String _resolvePreEntryTarget(RouteSessionSnapshot session) {
     return RoutePath.subscribe;
   }
   if (session.needsOnboarding) {
-    return RoutePath.welcome;
+    return session.hasProfileName ? RoutePath.welcome : RoutePath.createProfile;
   }
   return RoutePath.login;
 }
@@ -185,12 +186,21 @@ bool _isAllowedPreEntryRoute(
     return _paymentPreEntryPaths.contains(location);
   }
   if (session.needsOnboarding) {
-    return _onboardingPreEntryPaths.contains(location);
+    if (!session.hasProfileName) {
+      return location == RoutePath.createProfile;
+    }
+    return _onboardingReadyPreEntryPaths.contains(location);
   }
   return location == RoutePath.login || location == RoutePath.signup;
 }
 
 const Set<String> _onboardingPreEntryPaths = {
+  RoutePath.createProfile,
+  RoutePath.welcome,
+  RoutePath.courseIntro,
+};
+
+const Set<String> _onboardingReadyPreEntryPaths = {
   RoutePath.welcome,
   RoutePath.courseIntro,
 };
@@ -361,7 +371,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.createProfile,
         name: AppRoute.createProfile,
-        builder: (context, state) => const community_profile.ProfilePage(),
+        builder: (context, state) => const OnboardingProfilePage(),
       ),
       GoRoute(
         path: RoutePath.welcome,

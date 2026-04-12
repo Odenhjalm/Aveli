@@ -30,6 +30,7 @@ from ..services import (
     livekit as livekit_service,
     referral_service,
     storage_service,
+    studio_authority,
 )
 from ..services import media_cleanup
 from ..services.livekit_tokens import LiveKitTokenConfigError, build_token
@@ -1835,10 +1836,10 @@ async def studio_courses(current: TeacherEntryUser):
 
 @course_lesson_router.get("/courses/{course_id}", response_model=schemas.Course)
 async def course_meta(course_id: str, current: TeacherEntryUser):
-    del current
-    row = await courses_service.fetch_course(course_id=course_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Course not found")
+    row = await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
     await _apply_course_read_contract(row)
     return _course_response(row)
 
@@ -1852,10 +1853,10 @@ async def upsert_course_public_content(
     payload: schemas.StudioCoursePublicContentUpsert,
     current: TeacherEntryUser,
 ):
-    del current
-    row = await courses_service.fetch_course(course_id=course_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Course not found")
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
     public_content = await courses_service.upsert_course_public_content(
         course_id,
         short_description=payload.short_description,
@@ -1869,6 +1870,10 @@ async def update_course(
     payload: schemas.StudioCourseUpdate,
     current: TeacherEntryUser,
 ):
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
     try:
         row = await courses_service.update_course(
             course_id,
@@ -1889,8 +1894,14 @@ async def update_course(
 
 @course_lesson_router.delete("/courses/{course_id}")
 async def delete_course(course_id: str, current: TeacherEntryUser):
-    del current
-    deleted = await courses_service.delete_course(course_id)
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
+    deleted = await courses_service.delete_course(
+        course_id=course_id,
+        teacher_id=str(current["id"]),
+    )
     if not deleted:
         raise HTTPException(status_code=404, detail="Course not found")
     return {"deleted": True}
@@ -1901,10 +1912,10 @@ async def delete_course(course_id: str, current: TeacherEntryUser):
     response_model=schemas.StudioLessonListResponse,
 )
 async def course_lessons(course_id: str, current: TeacherEntryUser):
-    del current
-    course = await courses_service.fetch_course(course_id=course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
     lessons = await courses_service.list_studio_course_lessons(course_id)
     return schemas.StudioLessonListResponse(
         items=[schemas.StudioLesson(**lesson) for lesson in lessons]
@@ -1920,15 +1931,16 @@ async def create_lesson_structure(
     payload: schemas.StudioLessonStructureCreate,
     current: TeacherEntryUser,
 ):
-    del current
-    course = await courses_service.fetch_course(course_id=course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
     try:
         row = await courses_service.create_lesson_structure(
-            course_id,
+            course_id=course_id,
             lesson_title=payload.lesson_title,
             position=payload.position,
+            teacher_id=str(current["id"]),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1943,10 +1955,10 @@ async def reorder_course_lessons(
     payload: schemas.LessonReorder,
     current: TeacherEntryUser,
 ):
-    del current
-    course = await courses_service.fetch_course(course_id=course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
 
     requested = payload.lessons
     if not requested:
@@ -1988,7 +2000,11 @@ async def reorder_course_lessons(
     ordered_entries.sort(key=lambda entry: entry.position)
     ordered_lesson_ids = [entry.id for entry in ordered_entries]
     try:
-        await courses_service.reorder_lessons(course_id, ordered_lesson_ids)
+        await courses_service.reorder_lessons(
+            course_id=course_id,
+            ordered_lesson_ids=ordered_lesson_ids,
+            teacher_id=str(current["id"]),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -2004,10 +2020,17 @@ async def update_lesson_structure(
     payload: schemas.StudioLessonStructureUpdate,
     current: TeacherEntryUser,
 ):
-    del current
+    await studio_authority.get_lesson_for_teacher_or_404(
+        lesson_id,
+        str(current["id"]),
+    )
     patch = payload.model_dump(exclude_unset=True)
     try:
-        row = await courses_service.update_lesson_structure(lesson_id, patch)
+        row = await courses_service.update_lesson_structure(
+            lesson_id,
+            patch,
+            teacher_id=str(current["id"]),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
@@ -2077,8 +2100,14 @@ async def update_lesson_content(
 
 @course_lesson_router.delete("/lessons/{lesson_id}")
 async def delete_lesson(lesson_id: str, current: TeacherEntryUser):
-    del current
-    deleted = await courses_service.delete_lesson(lesson_id)
+    await studio_authority.get_lesson_for_teacher_or_404(
+        lesson_id,
+        str(current["id"]),
+    )
+    deleted = await courses_service.delete_lesson(
+        lesson_id=lesson_id,
+        teacher_id=str(current["id"]),
+    )
     if not deleted:
         raise HTTPException(status_code=404, detail="Lesson not found")
     return {"deleted": True}
@@ -2099,12 +2128,10 @@ async def media_file(
 
 @router.post("/courses/{course_id}/quiz")
 async def ensure_quiz(course_id: str, current: TeacherEntryUser):
-    if not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]),
-            course_id=course_id,
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
     quiz = await models.ensure_quiz_for_user(course_id, current["id"])
     if not quiz:
         raise HTTPException(status_code=400, detail="Failed to ensure quiz")

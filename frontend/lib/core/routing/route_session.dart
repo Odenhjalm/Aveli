@@ -9,16 +9,19 @@ class RouteSessionSnapshot {
   const RouteSessionSnapshot({
     required this.entryState,
     required this.isEntryStateLoading,
+    this.profileDisplayName,
   });
 
   final EntryState? entryState;
   final bool isEntryStateLoading;
+  final String? profileDisplayName;
 
   bool get hasEntryState => entryState != null;
   bool get canEnterApp => entryState?.canEnterApp ?? false;
   bool get isAuthenticated => canEnterApp;
   bool get needsPayment => entryState?.needsPayment ?? false;
   bool get needsOnboarding => entryState?.needsOnboarding ?? false;
+  bool get hasProfileName => profileDisplayName?.trim().isNotEmpty ?? false;
 }
 
 final routeSessionSnapshotProvider = Provider<RouteSessionSnapshot>((ref) {
@@ -26,5 +29,6 @@ final routeSessionSnapshotProvider = Provider<RouteSessionSnapshot>((ref) {
   return RouteSessionSnapshot(
     entryState: authState.entryState,
     isEntryStateLoading: authState.isLoading,
+    profileDisplayName: authState.profile?.displayName,
   );
 });

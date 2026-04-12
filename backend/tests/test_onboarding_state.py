@@ -102,6 +102,13 @@ async def test_onboarding_complete_requires_explicit_refresh_boundary(async_clie
         password="Passw0rd!",
         display_name="Complete User",
     )
+    me_resp = await async_client.get(
+        "/profiles/me",
+        headers=auth_header(user["access_token"]),
+    )
+    assert me_resp.status_code == 200, me_resp.text
+    assert me_resp.json()["display_name"] == "Complete User"
+    assert me_resp.json()["bio"] is None
 
     complete_resp = await async_client.post(
         "/auth/onboarding/complete",
