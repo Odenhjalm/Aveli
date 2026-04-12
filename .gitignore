@@ -176,4 +176,5 @@ production_inventory/*
 test_seed_assets/*
 tmp_*
 *.pid
-frontend/.env.web
+frontend/.env*
+backend/.env*

@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 import stripe
 from fastapi import HTTPException, status
+from psycopg import errors as psycopg_errors
 from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
@@ -29,6 +30,7 @@ from . import storage_service
 logger = logging.getLogger(__name__)
 _CANONICAL_COURSE_STRIPE_CURRENCY = "sek"
 _SELLABLE_COURSE_STEPS = frozenset({"step1", "step2", "step3"})
+_COURSE_DELETE_BLOCKED_DETAIL = "Course delete blocked by dependent rows"
 
 _HOME_AUDIO_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
@@ -1033,11 +1035,21 @@ async def update_course(
 async def delete_course(course_id: str, teacher_id: str | None = None) -> bool:
     if teacher_id is None:
         raise RuntimeError("Teacher context required")
+    target_course_id = str(course_id or "").strip()
     await studio_authority.enforce_teacher_owns_course(
         teacher_id,
-        course_id,
+        target_course_id,
     )
-    return await courses_repo.delete_course(course_id)
+    try:
+        return await courses_repo.delete_course(target_course_id)
+    except (
+        psycopg_errors.ForeignKeyViolation,
+        psycopg_errors.RestrictViolation,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_COURSE_DELETE_BLOCKED_DETAIL,
+        ) from exc
 
 
 async def refresh_course_sellability(course_id: str) -> dict[str, Any] | None:
@@ -1267,18 +1279,19 @@ async def delete_lesson(lesson_id: str, teacher_id: str | None = None) -> bool:
     if teacher_id is None:
         raise RuntimeError("Teacher context required")
     lesson = await studio_authority._get_lesson_or_404(lesson_id)
+    target_lesson_id = str(lesson["id"]).strip()
     await studio_authority.enforce_teacher_owns_course(
         teacher_id,
         str(lesson["course_id"]),
     )
-    media_asset_ids = await courses_repo.list_lesson_media_asset_ids(lesson_id)
-    deleted = await courses_repo.delete_lesson(lesson_id)
+    media_asset_ids = await courses_repo.list_lesson_media_asset_ids(target_lesson_id)
+    deleted = await courses_repo.delete_lesson(target_lesson_id)
     if deleted:
         await media_cleanup.request_lifecycle_evaluation(
             media_asset_ids=media_asset_ids,
             trigger_source="lesson_delete",
             subject_type="lesson",
-            subject_id=lesson_id,
+            subject_id=target_lesson_id,
         )
     return deleted
 
