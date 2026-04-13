@@ -4,8 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 FRONTEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 REPO_ROOT="$(cd "$FRONTEND_ROOT/.." && pwd -P)"
-source "$REPO_ROOT/tools/runtime/python_paths.sh"
-aveli_require_python "$AVELI_REPO_PYTHON" "repo python"
 CANONICAL_BUILD_DIR="$FRONTEND_ROOT/build/web"
 export CANONICAL_BUILD_DIR
 
@@ -118,45 +116,56 @@ flutter build web --release --no-wasm-dry-run \
 
 cp "$FRONTEND_ROOT/web/flutter_service_worker.js" "$CANONICAL_BUILD_DIR/flutter_service_worker.js"
 
-"$AVELI_REPO_PYTHON" <<'PY'
-import os
-from pathlib import Path
+stub_load_service_worker() {
+  local target="$1"
+  local tmp="${target}.tmp.$$"
 
-build_dir = Path(os.environ["CANONICAL_BUILD_DIR"]).resolve()
+  if [[ ! -f "$target" ]]; then
+    return 0
+  fi
 
-if not build_dir.exists():
-    raise SystemExit(f"Build directory missing: {build_dir}")
+  awk '
+    BEGIN {
+      marker = "loadServiceWorker("
+      end_marker = "async _getNewServiceWorker"
+      replacement = "loadServiceWorker(e){return Promise.resolve();}"
+      sep = ""
+    }
+    {
+      text = text sep $0
+      sep = "\n"
+    }
+    END {
+      start = index(text, marker)
+      while (start > 1 && substr(text, start - 1, 1) == ".") {
+        next_start = index(substr(text, start + 1), marker)
+        if (next_start == 0) {
+          start = 0
+          break
+        }
+        start += next_start
+      }
 
-targets = [build_dir / "flutter_bootstrap.js", build_dir / "flutter.js"]
+      if (start == 0) {
+        printf "%s", text
+        exit
+      }
 
+      rel_end = index(substr(text, start), end_marker)
+      if (rel_end == 0) {
+        printf "%s", text
+        exit
+      }
 
-def _stub_load_service_worker(js: str) -> str:
-    marker = "loadServiceWorker("
-    start = js.find(marker)
-    while start != -1 and start > 0 and js[start - 1] == ".":
-        start = js.find(marker, start + 1)
+      end = start + rel_end - 1
+      printf "%s%s%s", substr(text, 1, start - 1), replacement, substr(text, end)
+    }
+  ' "$target" >"$tmp"
+  mv "$tmp" "$target"
+}
 
-    if start == -1:
-        return js
-
-    end_marker = "async _getNewServiceWorker"
-    end = js.find(end_marker, start)
-    if end == -1:
-        return js
-
-    return js[:start] + "loadServiceWorker(e){return Promise.resolve();}" + js[end:]
-
-
-for path in targets:
-    if not path.exists():
-        continue
-
-    original = path.read_text(encoding="utf-8")
-    updated = _stub_load_service_worker(original)
-
-    if updated != original:
-        path.write_text(updated, encoding="utf-8")
-PY
+stub_load_service_worker "$CANONICAL_BUILD_DIR/flutter_bootstrap.js"
+stub_load_service_worker "$CANONICAL_BUILD_DIR/flutter.js"
 
 printf '/*  /index.html  200\n' > "$CANONICAL_BUILD_DIR/_redirects"
 printf '%s\n' "$BUILD_COMMIT_SHA" > "$CANONICAL_BUILD_DIR/.build_commit"
