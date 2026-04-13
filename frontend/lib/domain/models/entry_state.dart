@@ -4,38 +4,50 @@ import 'package:flutter/foundation.dart';
 class EntryState {
   const EntryState({
     required this.canEnterApp,
+    required this.onboardingState,
     required this.onboardingCompleted,
     required this.membershipActive,
     required this.needsOnboarding,
     required this.needsPayment,
-    required this.isInvite,
+    required this.roleV2,
+    required this.role,
+    required this.isAdmin,
   });
 
   factory EntryState.fromJson(Map<String, dynamic> json) {
     return EntryState(
       canEnterApp: _readBool(json, 'can_enter_app'),
+      onboardingState: _readString(json, 'onboarding_state'),
       onboardingCompleted: _readBool(json, 'onboarding_completed'),
       membershipActive: _readBool(json, 'membership_active'),
       needsOnboarding: _readBool(json, 'needs_onboarding'),
       needsPayment: _readBool(json, 'needs_payment'),
-      isInvite: _readBool(json, 'is_invite'),
+      roleV2: _readString(json, 'role_v2'),
+      role: _readString(json, 'role'),
+      isAdmin: _readBool(json, 'is_admin'),
     );
   }
 
   final bool canEnterApp;
+  final String onboardingState;
   final bool onboardingCompleted;
   final bool membershipActive;
   final bool needsOnboarding;
   final bool needsPayment;
-  final bool isInvite;
+  final String roleV2;
+  final String role;
+  final bool isAdmin;
 
   Map<String, dynamic> toJson() => {
     'can_enter_app': canEnterApp,
+    'onboarding_state': onboardingState,
     'onboarding_completed': onboardingCompleted,
     'membership_active': membershipActive,
     'needs_onboarding': needsOnboarding,
     'needs_payment': needsPayment,
-    'is_invite': isInvite,
+    'role_v2': roleV2,
+    'role': role,
+    'is_admin': isAdmin,
   };
 
   static bool _readBool(Map<String, dynamic> json, String key) {
@@ -44,5 +56,13 @@ class EntryState {
       return value;
     }
     throw FormatException('entry_state.$key must be a bool');
+  }
+
+  static String _readString(Map<String, dynamic> json, String key) {
+    final value = json[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return value;
+    }
+    throw FormatException('entry_state.$key must be a string');
   }
 }

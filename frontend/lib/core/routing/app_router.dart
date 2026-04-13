@@ -168,7 +168,7 @@ String _resolvePreEntryTarget(RouteSessionSnapshot session) {
     return RoutePath.subscribe;
   }
   if (session.needsOnboarding) {
-    return session.hasProfileName ? RoutePath.welcome : RoutePath.createProfile;
+    return RoutePath.welcome;
   }
   return RoutePath.login;
 }
@@ -186,21 +186,13 @@ bool _isAllowedPreEntryRoute(
     return _paymentPreEntryPaths.contains(location);
   }
   if (session.needsOnboarding) {
-    if (!session.hasProfileName) {
-      return location == RoutePath.createProfile;
-    }
-    return _onboardingReadyPreEntryPaths.contains(location);
+    return _onboardingPreEntryPaths.contains(location);
   }
   return location == RoutePath.login || location == RoutePath.signup;
 }
 
 const Set<String> _onboardingPreEntryPaths = {
   RoutePath.createProfile,
-  RoutePath.welcome,
-  RoutePath.courseIntro,
-};
-
-const Set<String> _onboardingReadyPreEntryPaths = {
   RoutePath.welcome,
   RoutePath.courseIntro,
 };

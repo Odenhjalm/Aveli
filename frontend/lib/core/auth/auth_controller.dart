@@ -73,47 +73,42 @@ class AuthController extends StateNotifier<AuthState> {
 
     state = state.copyWith(
       hasStoredToken: true,
-      isLoading: hydrateProfile,
+      isLoading: true,
       error: null,
       clearEntryState: true,
     );
 
-    if (!hydrateProfile) {
-      state = state.copyWith(isLoading: false);
-      return;
-    }
+    final entryState = await _fetchEntryState();
+    state = state.copyWith(
+      entryState: entryState,
+      hasStoredToken: true,
+      isLoading: false,
+    );
+    gate.reset();
 
-    await _hydrateProfile();
+    if (hydrateProfile) {
+      await _hydrateProfile();
+    }
   }
 
   Future<void> hydrateProfile() async {
-    if (state.isLoading) return;
     if (state.profile != null && state.entryState != null) return;
     await _hydrateProfile();
   }
 
   Future<void> _hydrateProfile() async {
-    state = state.copyWith(isLoading: true, error: null);
     try {
       final profile = await _repo.getCurrentProfile();
-      final entryState = await _fetchEntryState();
       state = state.copyWith(
         profile: profile,
-        entryState: entryState,
         hasStoredToken: true,
-        isLoading: false,
+        error: null,
       );
       gate.reset();
     } catch (err, stackTrace) {
-      await _repo.logout();
       gate.reset();
       final failure = AppFailure.from(err, stackTrace);
-      state = AuthState(
-        profile: null,
-        hasStoredToken: false,
-        isLoading: false,
-        error: failure.message,
-      );
+      state = state.copyWith(error: failure.message);
     }
   }
 

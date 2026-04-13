@@ -1517,11 +1517,14 @@ class OnboardingCompletionResponse(BaseModel):
 
 class EntryStateResponse(BaseModel):
     can_enter_app: bool
+    onboarding_state: str
     onboarding_completed: bool
     membership_active: bool
     needs_onboarding: bool
     needs_payment: bool
-    is_invite: bool
+    role_v2: str
+    role: str
+    is_admin: bool
 
 
 class EntitlementsMembership(BaseModel):
