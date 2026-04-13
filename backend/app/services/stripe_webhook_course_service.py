@@ -19,13 +19,20 @@ async def handle_paid_checkout_order(
 
     user_id = order.get("user_id") or order_metadata.get("user_id")
     course_id = order.get("course_id")
-    if not user_id or not course_id:
+    if not user_id:
         logger.warning(
-            "Course checkout completion missing user or course; order_id=%s event=%s",
+            "Course checkout completion missing user; order_id=%s event=%s",
             order.get("id"),
             event_type,
         )
-        return
+        raise RuntimeError("Missing required webhook data: user_id")
+    if not course_id:
+        logger.warning(
+            "Course checkout completion missing course; order_id=%s event=%s",
+            order.get("id"),
+            event_type,
+        )
+        raise RuntimeError("Missing required webhook data: course_id")
 
     await courses_repo.create_course_enrollment(
         user_id=str(user_id),
