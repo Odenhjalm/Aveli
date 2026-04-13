@@ -1,0 +1,43 @@
+{
+  "tree_id": "entry_authority_alignment",
+  "source_of_truth": "post_contract_consolidation_audit",
+  "mode": "generate",
+  "mutation_scope": "task_definition_files_only",
+  "tasks": [
+    {
+      "id": "ACE-004",
+      "type": "BACKEND_ALIGNMENT",
+      "dag_role": "OWNER",
+      "depends_on": [],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "ACE-005",
+      "type": "FRONTEND_ALIGNMENT",
+      "dag_role": "OWNER",
+      "depends_on": ["ACE-004"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "ACE-006",
+      "type": "LEGACY_REMOVAL",
+      "dag_role": "OWNER",
+      "depends_on": ["ACE-005"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "ACE-007",
+      "type": "TEST_ALIGNMENT",
+      "dag_role": "OWNER",
+      "depends_on": ["ACE-006"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "ACE-008",
+      "type": "VERIFICATION_GATE",
+      "dag_role": "GATE",
+      "depends_on": ["ACE-007"],
+      "launch_classification": "BLOCKER"
+    }
+  ]
+}
