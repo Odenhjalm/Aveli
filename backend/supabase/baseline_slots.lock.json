@@ -201,6 +201,12 @@
       "filename": "0033_media_worker_operational_metadata.sql",
       "path": "backend/supabase/baseline_slots/0033_media_worker_operational_metadata.sql",
       "sha256": "0ffbc462a9ce4e2ead1011712664ef6c7ac150584d4810c6b2f531c20b506b7a"
+    },
+    {
+      "slot": 34,
+      "filename": "0034_payment_events_webhook_idempotency_support.sql",
+      "path": "backend/supabase/baseline_slots/0034_payment_events_webhook_idempotency_support.sql",
+      "sha256": "25f3b95d03497589813ef6f03d56614d1cef2a9266e0799899fdb02b552561d5"
     }
   ]
 }
