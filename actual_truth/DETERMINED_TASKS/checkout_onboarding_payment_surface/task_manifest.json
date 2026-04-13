@@ -54,10 +54,17 @@
       "launch_classification": "PRE_LAUNCH_REQUIRED"
     },
     {
+      "id": "COP-012",
+      "type": "FRONTEND_PLATFORM_CLEANUP",
+      "dag_role": "OWNER",
+      "depends_on": ["COP-007"],
+      "launch_classification": "PRE_LAUNCH_REQUIRED"
+    },
+    {
       "id": "COP-008",
       "type": "CURRENT_TRUTH_VERIFICATION",
       "dag_role": "GATE",
-      "depends_on": ["COP-005", "COP-006", "COP-007"],
+      "depends_on": ["COP-005", "COP-006", "COP-012"],
       "launch_classification": "BLOCKER"
     },
     {
