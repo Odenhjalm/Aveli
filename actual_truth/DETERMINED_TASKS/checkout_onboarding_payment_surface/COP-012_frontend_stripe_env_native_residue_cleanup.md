@@ -1,0 +1,52 @@
+# COP-012_frontend_stripe_env_native_residue_cleanup
+
+- ID: COP-012
+- TYPE: FRONTEND_PLATFORM_CLEANUP
+- DAG_ROLE: OWNER
+- LAUNCH_CLASSIFICATION: PRE_LAUNCH_REQUIRED
+- DEPENDS_ON: [COP-007]
+- FEEDS_INTO: COP-008
+- GOAL: Remove Stripe-native platform residue and Stripe publishable-key frontend env/config wiring that are not used by the backend-authoritative checkout system, without changing checkout behavior or payment authority.
+- SCOPE: Limit work to the Stripe residue classified as crossing COP-007 boundaries:
+  - Android native/platform residue:
+    - `frontend/android/app/proguard-rules.pro`
+    - `frontend/android/app/src/main/AndroidManifest.xml`
+  - iOS native/platform residue:
+    - `frontend/ios/Runner/Info.plist`
+  - Frontend Stripe publishable-key env/config wiring:
+    - `frontend/lib/core/env/app_config.dart`
+    - `frontend/lib/core/env/env_resolver.dart`
+    - `frontend/lib/main.dart` (Stripe initialization/config propagation only)
+- OUT_OF_SCOPE:
+  - backend code
+  - schema
+  - database baseline or migration files
+  - checkout initiation logic
+  - checkout return/cancel/result behavior
+  - Supabase domains
+  - dependency removal owned by COP-007
+  - stale or obsolete payment-adjacent test alignment owned by COP-010
+  - deploy provider configuration, secrets, or external environment state
+  - product behavior expansion or payment UI redesign
+- CONTRACT BASIS:
+  - Stripe remains infrastructure and transport only under `commerce_membership_contract.md`.
+  - Backend remains the only authority for membership state and access decisions under `commerce_membership_contract.md`.
+  - Frontend must not grant app access, mutate membership state, or treat Stripe success as authority under `commerce_membership_contract.md`.
+  - Course and bundle payment confirmation authority remains backend webhook completion under `course_monetization_contract.md`.
+  - Frontend must use backend APIs rather than Supabase runtime clients under `supabase_integration_boundary_contract.md`.
+  - COP-007 owns unused SDK/dependency residue and explicitly leaves env/build/native Stripe residue blocked pending a separate task.
+- VERIFICATION:
+  - Confirm no Stripe SDK initialization remains in frontend runtime.
+  - Confirm no Stripe publishable key is read, required, propagated, logged, or stored by frontend runtime config.
+  - Confirm no native Stripe configuration remains in the Android/iOS files named in scope.
+  - Confirm membership, course, and bundle checkout flows still launch backend-created checkout URLs only AND no fallback path introduces local authority, implicit success handling, or bypass of backend verification.
+  - Confirm no checkout flow grants access locally, mutates `app.memberships`, treats Stripe success as authority, or shifts authority from backend to frontend.
+  - Confirm no Supabase domain, backend code, schema, test alignment, dependency manifest, deploy config, or product behavior is changed.
+  - Stop if removal requires modifying checkout logic beyond Stripe env/native cleanup or requires changing external environment/deploy configuration.
+- PROMPT:
+```text
+Remove Stripe-native platform residue and Stripe publishable-key frontend env/config wiring classified as outside COP-007 but still inside the checkout/onboarding payment remediation tree. Limit edits to frontend Android/iOS native Stripe traces and frontend runtime config propagation in app_config.dart, env_resolver.dart, and main.dart. Do not change checkout initiation logic, checkout return/cancel/result behavior, backend, schema, Supabase domains, dependency manifests, test files, deploy configuration, or product behavior. Confirm checkout remains backend-authoritative and frontend remains non-authoritative.
+```
+- MUTATION POLICY: FRONTEND_ENV_NATIVE_STRIPE_RESIDUE_ONLY
+- IMPLEMENTATION LOGIC: NONE
+- USER_FACING_PRODUCT_TEXT_REQUIREMENT: No product copy changes.

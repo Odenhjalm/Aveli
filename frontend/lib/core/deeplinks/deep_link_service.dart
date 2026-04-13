@@ -47,18 +47,37 @@ class DeepLinkService {
       await _handleCheckoutSuccess(uri);
       return true;
     } else if (isCancel) {
-      _handleCheckoutCancel();
+      await _handleCheckoutCancel();
       return true;
     }
     return false;
   }
 
   bool _isCheckoutUri(Uri uri) {
-    final schemeOk = uri.scheme == 'aveliapp' || uri.scheme == 'https';
-    final hostOk =
-        uri.host == 'checkout' || uri.host.contains('aveli.app') == true;
+    final scheme = uri.scheme.toLowerCase();
+    final host = uri.host.toLowerCase();
     final pathOk = _isSuccessPath(uri) || _isCancelPath(uri);
-    return schemeOk && hostOk && pathOk;
+    if (!pathOk) return false;
+    if (scheme == 'aveliapp') return _isAveliAppCheckoutHost(host);
+    if (scheme == 'https') return _isAveliWebHost(host);
+    if (scheme == 'http') return _isLocalhost(host);
+    return false;
+  }
+
+  bool _isAveliAppCheckoutHost(String host) {
+    return host == 'checkout' ||
+        host == 'success' ||
+        host == 'cancel' ||
+        host == 'checkout_success' ||
+        host == 'checkout_cancel';
+  }
+
+  bool _isAveliWebHost(String host) {
+    return host == 'aveli.app' || host.endsWith('.aveli.app');
+  }
+
+  bool _isLocalhost(String host) {
+    return host == 'localhost' || host == '127.0.0.1';
   }
 
   bool _isAuthCallbackUri(Uri uri) {
@@ -73,48 +92,61 @@ class DeepLinkService {
   }
 
   bool _isSuccessPath(Uri uri) {
+    final host = uri.host.toLowerCase();
     final path = uri.path.toLowerCase();
-    return path.contains('success') ||
+    return host == 'success' ||
+        host == 'checkout_success' ||
         path.contains('checkout/return') ||
-        (uri.host == 'checkout' && path.contains('return'));
+        path.endsWith('/success') ||
+        (host == 'checkout' && path.contains('return'));
   }
 
   bool _isCancelPath(Uri uri) {
+    final host = uri.host.toLowerCase();
     final path = uri.path.toLowerCase();
-    return path.contains('cancel');
+    return host == 'cancel' ||
+        host == 'checkout_cancel' ||
+        path.contains('checkout/cancel') ||
+        path.endsWith('/cancel') ||
+        (host == 'checkout' && path.contains('cancel'));
   }
 
   Future<void> _handleCheckoutSuccess(Uri uri) async {
-    final sessionId = uri.queryParameters['session_id'];
+    final currentRedirect = _ref.read(checkoutRedirectStateProvider);
+    final sessionId =
+        _nonEmpty(uri.queryParameters['session_id']) ??
+        currentRedirect.sessionId;
     if (sessionId == null || sessionId.isEmpty) {
       _handleMissingSession();
       return;
     }
-    final currentRedirect = _ref.read(checkoutRedirectStateProvider);
+    final orderId =
+        _nonEmpty(uri.queryParameters['order_id']) ?? currentRedirect.orderId;
     _ref
         .read(checkoutRedirectStateProvider.notifier)
         .state = CheckoutRedirectState(
       status: CheckoutRedirectStatus.processing,
       sessionId: sessionId,
-      orderId: currentRedirect.orderId,
+      orderId: orderId,
     );
     await _ref.read(authControllerProvider.notifier).loadSession();
     _ref
         .read(checkoutRedirectStateProvider.notifier)
         .state = CheckoutRedirectState(
-      status: CheckoutRedirectStatus.success,
+      status: CheckoutRedirectStatus.processing,
       sessionId: sessionId,
-      orderId: currentRedirect.orderId,
+      orderId: orderId,
     );
     _goWithQuery(
       RoutePath.checkoutSuccess,
       sessionId: sessionId,
-      orderId: currentRedirect.orderId,
+      orderId: orderId,
     );
   }
 
-  void _handleCheckoutCancel() {
+  Future<void> _handleCheckoutCancel() async {
     final currentRedirect = _ref.read(checkoutRedirectStateProvider);
+    await _ref.read(authControllerProvider.notifier).loadSession();
     _ref
         .read(checkoutRedirectStateProvider.notifier)
         .state = CheckoutRedirectState(
@@ -136,7 +168,11 @@ class DeepLinkService {
       status: CheckoutRedirectStatus.error,
       error: 'Betalningssvaret saknar sessions-id.',
     );
-    _goWithQuery(RoutePath.checkoutSuccess, errored: true);
+    _goWithQuery(RoutePath.checkoutCancel, errored: true);
+  }
+
+  String? _nonEmpty(String? value) {
+    return value == null || value.isEmpty ? null : value;
   }
 
   void _goWithQuery(

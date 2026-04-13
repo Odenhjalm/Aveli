@@ -10,6 +10,7 @@ import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/deeplinks/deep_link_service.dart';
 import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/features/paywall/application/checkout_flow.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class CheckoutWebViewPage extends ConsumerStatefulWidget {
@@ -57,37 +58,57 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
       ..loadRequest(Uri.parse(widget.url));
   }
 
-  // Stripe skickar både custom schemes (aveliapp://checkout_success) och https-länkar tillbaka.
-  // Vi matchar båda så att modalen alltid stängs även när Safari/Chrome hoppar bort från WebView.
   bool _isSuccessUrl(String url) {
-    final normalized = url.toLowerCase();
-    return normalized.contains('checkout/return') ||
-        (normalized.contains('session_id=') &&
-            normalized.contains('checkout/return')) ||
-        normalized.contains('/success') ||
-        (normalized.startsWith('http://localhost') &&
-            normalized.contains('/success')) ||
-        normalized.startsWith('aveliapp://success') ||
-        normalized.startsWith('aveliapp://checkout/return') ||
-        normalized.startsWith('aveliapp://checkout/success') ||
-        normalized.startsWith('aveliapp://checkout_success') ||
-        normalized.contains('checkout_success=true') ||
-        normalized.contains('checkout_success') ||
-        normalized.contains('checkout/success');
+    final uri = Uri.tryParse(url);
+    if (uri == null || !_isCheckoutRedirectUri(uri, success: true)) {
+      return false;
+    }
+    return _hasSessionId(uri) || _hasBackendCheckoutSession();
   }
 
-  // Samma gäller cancel-urlen – backend skickar ibland checkout_cancel och ibland HTTPS-varianter.
   bool _isCancelUrl(String url) {
-    final normalized = url.toLowerCase();
-    return normalized.contains('/cancel') ||
-        normalized.startsWith('http://localhost') &&
-            normalized.contains('/cancel') ||
-        normalized.startsWith('aveliapp://cancel') ||
-        normalized.startsWith('aveliapp://checkout/cancel') ||
-        normalized.startsWith('aveliapp://checkout_cancel') ||
-        normalized.contains('checkout_cancel=true') ||
-        normalized.contains('checkout_cancel') ||
-        normalized.contains('checkout/cancel');
+    final uri = Uri.tryParse(url);
+    return uri != null && _isCheckoutRedirectUri(uri, success: false);
+  }
+
+  bool _isCheckoutRedirectUri(Uri uri, {required bool success}) {
+    final scheme = uri.scheme.toLowerCase();
+    final host = uri.host.toLowerCase();
+    final path = uri.path.toLowerCase();
+
+    if (scheme == 'aveliapp') {
+      if (success) {
+        return (host == 'checkout' &&
+                (path.contains('return') || path.contains('success'))) ||
+            host == 'success' ||
+            host == 'checkout_success';
+      }
+      return (host == 'checkout' && path.contains('cancel')) ||
+          host == 'cancel' ||
+          host == 'checkout_cancel';
+    }
+
+    final isAveliHost = host == 'aveli.app' || host.endsWith('.aveli.app');
+    final isLocalhost = host == 'localhost' || host == '127.0.0.1';
+    if ((scheme == 'https' && isAveliHost) ||
+        (scheme == 'http' && isLocalhost)) {
+      if (success) {
+        return path.contains('checkout/return') || path.endsWith('/success');
+      }
+      return path.contains('checkout/cancel') || path.endsWith('/cancel');
+    }
+
+    return false;
+  }
+
+  bool _hasSessionId(Uri uri) {
+    final sessionId = uri.queryParameters['session_id'];
+    return sessionId != null && sessionId.isNotEmpty;
+  }
+
+  bool _hasBackendCheckoutSession() {
+    final sessionId = ref.read(checkoutRedirectStateProvider).sessionId;
+    return sessionId != null && sessionId.isNotEmpty;
   }
 
   Future<void> _refreshSession() async {
@@ -114,7 +135,18 @@ class _CheckoutWebViewPageState extends ConsumerState<CheckoutWebViewPage> {
 
   String _checkoutResultPath(bool success, Uri? uri) {
     if (!success) return RoutePath.checkoutCancel;
-    final query = uri?.queryParameters ?? const <String, String>{};
+    final query = <String, String>{...?uri?.queryParameters};
+    final redirectState = ref.read(checkoutRedirectStateProvider);
+    if (!query.containsKey('session_id') &&
+        redirectState.sessionId != null &&
+        redirectState.sessionId!.isNotEmpty) {
+      query['session_id'] = redirectState.sessionId!;
+    }
+    if (!query.containsKey('order_id') &&
+        redirectState.orderId != null &&
+        redirectState.orderId!.isNotEmpty) {
+      query['order_id'] = redirectState.orderId!;
+    }
     if (query.isEmpty) return RoutePath.checkoutSuccess;
     return Uri(
       path: RoutePath.checkoutSuccess,
