@@ -1,0 +1,85 @@
+{
+  "tree_id": "checkout_onboarding_payment_surface",
+  "source_of_truth": "established_no_code_checkout_payment_audit",
+  "mode": "generate",
+  "mutation_scope": "task_definition_files_only",
+  "tasks": [
+    {
+      "id": "COP-001",
+      "type": "CURRENT_TRUTH_VERIFICATION",
+      "dag_role": "GATE",
+      "depends_on": [],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "COP-002",
+      "type": "CONTRACT_UPDATE",
+      "dag_role": "OWNER",
+      "depends_on": ["COP-001"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "COP-003",
+      "type": "BASELINE_SLOT",
+      "dag_role": "OWNER",
+      "depends_on": ["COP-002"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "COP-004",
+      "type": "BACKEND_ALIGNMENT",
+      "dag_role": "OWNER",
+      "depends_on": ["COP-003"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "COP-005",
+      "type": "FRONTEND_ALIGNMENT",
+      "dag_role": "OWNER",
+      "depends_on": ["COP-002"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "COP-006",
+      "type": "COPY_ALIGNMENT",
+      "dag_role": "OWNER",
+      "depends_on": ["COP-002"],
+      "launch_classification": "PRE_LAUNCH_REQUIRED"
+    },
+    {
+      "id": "COP-007",
+      "type": "LEGACY_REMOVAL",
+      "dag_role": "OWNER",
+      "depends_on": ["COP-002"],
+      "launch_classification": "PRE_LAUNCH_REQUIRED"
+    },
+    {
+      "id": "COP-008",
+      "type": "CURRENT_TRUTH_VERIFICATION",
+      "dag_role": "GATE",
+      "depends_on": ["COP-005", "COP-006", "COP-007"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "COP-009",
+      "type": "TEST_ALIGNMENT",
+      "dag_role": "OWNER",
+      "depends_on": ["COP-004"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "COP-010",
+      "type": "TEST_ALIGNMENT",
+      "dag_role": "OWNER",
+      "depends_on": ["COP-008"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "COP-011",
+      "type": "CURRENT_TRUTH_VERIFICATION",
+      "dag_role": "AGGREGATE",
+      "depends_on": ["COP-009", "COP-010"],
+      "launch_classification": "BLOCKER"
+    }
+  ]
+}
