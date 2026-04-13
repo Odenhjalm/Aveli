@@ -97,8 +97,6 @@ void main() {
           appConfigProvider.overrideWithValue(
             const AppConfig(
               apiBaseUrl: 'http://localhost',
-              stripePublishableKey: 'pk_test',
-              stripeMerchantDisplayName: 'Aveli',
               subscriptionsEnabled: false,
             ),
           ),
@@ -171,8 +169,6 @@ void main() {
           appConfigProvider.overrideWithValue(
             const AppConfig(
               apiBaseUrl: 'http://localhost',
-              stripePublishableKey: 'pk_test',
-              stripeMerchantDisplayName: 'Aveli',
               subscriptionsEnabled: false,
             ),
           ),

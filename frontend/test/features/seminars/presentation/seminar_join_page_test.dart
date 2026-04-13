@@ -61,12 +61,7 @@ void main() {
           ProviderScope(
             overrides: [
               appConfigProvider.overrideWithValue(
-                const AppConfig(
-                  apiBaseUrl: '',
-                  stripePublishableKey: '',
-                  stripeMerchantDisplayName: '',
-                  subscriptionsEnabled: false,
-                ),
+                const AppConfig(apiBaseUrl: '', subscriptionsEnabled: false),
               ),
               publicSeminarDetailProvider(
                 seminarId,

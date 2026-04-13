@@ -73,8 +73,6 @@ Future<void> _pumpLessonPage(
         appConfigProvider.overrideWithValue(
           const AppConfig(
             apiBaseUrl: 'http://localhost',
-            stripePublishableKey: '',
-            stripeMerchantDisplayName: 'Test',
             subscriptionsEnabled: false,
           ),
         ),

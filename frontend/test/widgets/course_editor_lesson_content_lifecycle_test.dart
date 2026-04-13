@@ -249,8 +249,6 @@ Future<void> _pumpCourseEditor(
         appConfigProvider.overrideWithValue(
           const AppConfig(
             apiBaseUrl: 'http://localhost:8080',
-            stripePublishableKey: 'pk_test_stub',
-            stripeMerchantDisplayName: 'Test Merchant',
             subscriptionsEnabled: false,
           ),
         ),

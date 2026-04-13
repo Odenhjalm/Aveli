@@ -10,6 +10,7 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/teacher_home_page.dart';
 import 'package:aveli/features/teacher/application/bundle_providers.dart';
@@ -49,6 +50,34 @@ class _StubAdapter implements HttpClientAdapter {
     Future? cancelFuture,
   ) {
     return _handler(options);
+  }
+}
+
+class _ReferralStudioRepository extends StudioRepository {
+  _ReferralStudioRepository({
+    required super.client,
+    required this.onCreateReferral,
+  });
+
+  final Future<void> Function({
+    required String email,
+    int? freeDays,
+    int? freeMonths,
+  })
+  onCreateReferral;
+
+  @override
+  Future<Map<String, Object?>> createReferralInvitation({
+    required String email,
+    int? freeDays,
+    int? freeMonths,
+  }) async {
+    await onCreateReferral(
+      email: email,
+      freeDays: freeDays,
+      freeMonths: freeMonths,
+    );
+    return const <String, Object?>{};
   }
 }
 
@@ -92,8 +121,6 @@ void main() {
           appConfigProvider.overrideWithValue(
             const AppConfig(
               apiBaseUrl: 'http://localhost',
-              stripePublishableKey: '',
-              stripeMerchantDisplayName: 'Test',
               subscriptionsEnabled: false,
             ),
           ),
@@ -101,13 +128,18 @@ void main() {
           studioRepositoryProvider.overrideWithValue(studioRepo),
           myCoursesProvider.overrideWith(
             (ref) async => [
-              {
-                'id': 'course-1',
-                'title': 'Min kurs',
-                'branch': 'Allmänt',
-                'is_free_intro': true,
-                'is_published': false,
-              },
+              const CourseStudio(
+                id: 'course-1',
+                title: 'Min kurs',
+                slug: 'min-kurs',
+                courseGroupId: '',
+                step: 'intro',
+                dripEnabled: false,
+                dripIntervalDays: null,
+                coverMediaId: null,
+                cover: null,
+                priceAmountCents: null,
+              ),
             ],
           ),
           teacherBundlesProvider.overrideWith((ref) async => []),
@@ -182,7 +214,17 @@ void main() {
       );
     });
 
-    final studioRepo = StudioRepository(client: client);
+    final studioRepo = _ReferralStudioRepository(
+      client: client,
+      onCreateReferral: ({required email, freeDays, freeMonths}) async {
+        postedPath = '/studio/referrals/create';
+        postedBody = {
+          'email': email,
+          if (freeDays != null) 'free_days': freeDays,
+          if (freeMonths != null) 'free_months': freeMonths,
+        };
+      },
+    );
 
     await tester.pumpWidget(
       ProviderScope(
@@ -190,8 +232,6 @@ void main() {
           appConfigProvider.overrideWithValue(
             const AppConfig(
               apiBaseUrl: 'http://localhost',
-              stripePublishableKey: '',
-              stripeMerchantDisplayName: 'Test',
               subscriptionsEnabled: false,
             ),
           ),
@@ -206,19 +246,16 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Send invitation'));
+    await tester.ensureVisible(find.text('Skicka inbjudan'));
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'Email'),
+      find.widgetWithText(TextFormField, 'E-post'),
       'invitee@example.com',
     );
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Duration'),
-      '14',
-    );
+    await tester.enterText(find.widgetWithText(TextFormField, 'Längd'), '14');
 
-    await tester.tap(find.text('Send invitation'));
+    await tester.tap(find.text('Skicka inbjudan'));
     await tester.pumpAndSettle();
 
     expect(postedPath, '/studio/referrals/create');

@@ -92,14 +92,10 @@ void main() {
       appConfigProvider.overrideWithValue(
         const AppConfig(
           apiBaseUrl: 'http://localhost',
-          stripePublishableKey: 'pk_test',
-          stripeMerchantDisplayName: 'Aveli',
           subscriptionsEnabled: false,
         ),
       ),
-      backendAssetResolverProvider.overrideWithValue(
-        _TestAssetResolver(),
-      ),
+      backendAssetResolverProvider.overrideWithValue(_TestAssetResolver()),
       seminarRepositoryProvider.overrideWithValue(fakeRepository),
       hostSeminarsProvider.overrideWith(
         (ref) async => fakeRepository.hostSeminars,
@@ -317,7 +313,8 @@ class _FakeSeminarRepository implements SeminarRepository {
     );
     final attendees = <SeminarRegistration>[
       ..._detail.attendees.where(
-        (attendee) => attendee.userId != userId || attendee.seminarId != seminarId,
+        (attendee) =>
+            attendee.userId != userId || attendee.seminarId != seminarId,
       ),
       registration,
     ];
@@ -336,7 +333,8 @@ class _FakeSeminarRepository implements SeminarRepository {
     required String userId,
   }) async {
     final attendees = _detail.attendees.where(
-      (attendee) => attendee.userId != userId || attendee.seminarId != seminarId,
+      (attendee) =>
+          attendee.userId != userId || attendee.seminarId != seminarId,
     );
     _detail = SeminarDetail(
       seminar: _detail.seminar,

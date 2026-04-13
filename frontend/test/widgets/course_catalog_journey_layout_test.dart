@@ -12,6 +12,28 @@ import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_catalog_page.dart';
 import 'package:aveli/shared/utils/course_journey_step.dart';
 
+CourseSummary _course({
+  required String id,
+  required String slug,
+  required String title,
+  required CourseJourneyStep step,
+  String courseGroupId = '',
+  int? priceCents,
+}) {
+  return CourseSummary(
+    id: id,
+    slug: slug,
+    title: title,
+    step: step,
+    courseGroupId: courseGroupId,
+    coverMediaId: null,
+    cover: null,
+    priceCents: priceCents,
+    dripEnabled: false,
+    dripIntervalDays: null,
+  );
+}
+
 void main() {
   testWidgets(
     'renders each journey progression as its own fixed three-slot band',
@@ -25,66 +47,50 @@ void main() {
       });
 
       final previewCourses = <CourseSummary>[
-        const CourseSummary(
+        _course(
           id: 'intro-1',
           slug: 'intro-start',
           title: 'Intro',
-          description: 'Kort introduktion',
-          isFreeIntro: true,
-          journeyStep: CourseJourneyStep.intro,
+          step: CourseJourneyStep.intro,
         ),
-        const CourseSummary(
+        _course(
           id: 'healing-1',
           slug: 'healing-path-step-1',
           title: 'Healing Path Steg 1',
-          description: 'Fördjupning och grund för healingresan.',
-          journeyStep: CourseJourneyStep.step1,
-          stepLevel: CourseJourneyStep.step1,
-          courseFamily: 'healing-path-step-1',
+          step: CourseJourneyStep.step1,
+          courseGroupId: 'series:healing-path',
           priceCents: 9900,
         ),
-        const CourseSummary(
+        _course(
           id: 'healing-2',
           slug: 'healing-path-step-2',
           title: 'Healing Path Steg 2',
-          description:
-              'Integration och praktik med lite längre beskrivning för att ge kortet tydlig höjd.',
-          journeyStep: CourseJourneyStep.step2,
-          stepLevel: CourseJourneyStep.step2,
-          courseFamily: 'healing-path-step-2',
+          step: CourseJourneyStep.step2,
+          courseGroupId: 'series:healing-path',
           priceCents: 10900,
         ),
-        const CourseSummary(
+        _course(
           id: 'tarot-1',
           slug: 'tarot-core-step-1',
           title: 'Tarot Core Steg 1',
-          description: 'Grundkurs i tarot.',
-          journeyStep: CourseJourneyStep.step1,
-          stepLevel: CourseJourneyStep.step1,
-          courseFamily: 'tarot-core',
-          branch: 'Tarot',
+          step: CourseJourneyStep.step1,
+          courseGroupId: 'series:tarot-core',
           priceCents: 12900,
         ),
-        const CourseSummary(
+        _course(
           id: 'tarot-2',
           slug: 'tarot-core-step-2',
           title: 'Tarot Core Steg 2',
-          description: 'Fortsättning med praktik.',
-          journeyStep: CourseJourneyStep.step2,
-          stepLevel: CourseJourneyStep.step2,
-          courseFamily: 'tarot-core',
-          branch: 'Tarot',
+          step: CourseJourneyStep.step2,
+          courseGroupId: 'series:tarot-core',
           priceCents: 13900,
         ),
-        const CourseSummary(
+        _course(
           id: 'tarot-3',
           slug: 'tarot-core-step-3',
           title: 'Tarot Core Steg 3',
-          description: 'Fördjupning och mognad.',
-          journeyStep: CourseJourneyStep.step3,
-          stepLevel: CourseJourneyStep.step3,
-          courseFamily: 'tarot-core',
-          branch: 'Tarot',
+          step: CourseJourneyStep.step3,
+          courseGroupId: 'series:tarot-core',
           priceCents: 14900,
         ),
       ];
@@ -95,8 +101,6 @@ void main() {
             appConfigProvider.overrideWithValue(
               const AppConfig(
                 apiBaseUrl: 'https://api.test',
-                stripePublishableKey: '',
-                stripeMerchantDisplayName: 'Test',
                 subscriptionsEnabled: false,
               ),
             ),
@@ -169,53 +173,51 @@ void main() {
       });
 
       final previewCourses = <CourseSummary>[
-        const CourseSummary(
+        _course(
           id: 'intro-1',
           slug: 'intro-start',
           title: 'Intro',
-          description: 'Kort introduktion',
-          isFreeIntro: true,
-          journeyStep: CourseJourneyStep.intro,
+          step: CourseJourneyStep.intro,
         ),
-        const CourseSummary(
+        _course(
           id: 'herbs-1',
           slug: 'utbildning-sjalvlakande-orter-och-nutrition-ax8b-hfrn5g87js',
           title: 'Utbildning Självläkande örter & nutrition del 1',
-          description: 'Grundkurs i örter.',
-          journeyStep: CourseJourneyStep.step1,
+          step: CourseJourneyStep.step1,
+          courseGroupId: 'series:utbildning-självläkande-örter-nutrition',
           priceCents: 85000,
         ),
-        const CourseSummary(
+        _course(
           id: 'herbs-2',
           slug:
               'utbildning-sjalvlakande-orter-och-nutrition-del-2-1v3d-hfrncjb1c8',
           title: 'Utbildning Självläkande örter & nutrition del 2',
-          description: 'Fortsättning i örter.',
-          journeyStep: CourseJourneyStep.step2,
+          step: CourseJourneyStep.step2,
+          courseGroupId: 'series:utbildning-självläkande-örter-nutrition',
           priceCents: 65000,
         ),
-        const CourseSummary(
+        _course(
           id: 'meditation-3',
           slug: 'utbildning-spirituell-meditation-del-3-l460-hfrms0fis0',
           title: 'Utbildning Spirituell meditation del 3 Meditationscoach',
-          description: 'Diplomering.',
-          journeyStep: CourseJourneyStep.step3,
+          step: CourseJourneyStep.step3,
+          courseGroupId: 'series:utbildning-spirituell-meditation',
           priceCents: 198000,
         ),
-        const CourseSummary(
+        _course(
           id: 'meditation-2',
           slug: 'utbildning-spirituell-meditation-del-2-1274-hfrmnf8wug',
           title: 'Utbildning Spirituell meditation del 2',
-          description: 'Fördjupning.',
-          journeyStep: CourseJourneyStep.step2,
+          step: CourseJourneyStep.step2,
+          courseGroupId: 'series:utbildning-spirituell-meditation',
           priceCents: 155000,
         ),
-        const CourseSummary(
+        _course(
           id: 'meditation-1',
           slug: 'utbildning-spirituell-meditation-del-1-8m5g-hfrmdjn6yo',
           title: 'Utbildning Spirituell Meditation del 1',
-          description: 'Grundkurs.',
-          journeyStep: CourseJourneyStep.step1,
+          step: CourseJourneyStep.step1,
+          courseGroupId: 'series:utbildning-spirituell-meditation',
           priceCents: 65000,
         ),
       ];
@@ -226,8 +228,6 @@ void main() {
             appConfigProvider.overrideWithValue(
               const AppConfig(
                 apiBaseUrl: 'https://api.test',
-                stripePublishableKey: '',
-                stripeMerchantDisplayName: 'Test',
                 subscriptionsEnabled: false,
               ),
             ),

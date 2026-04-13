@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,8 +12,8 @@ import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
-import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
@@ -85,40 +83,7 @@ final _testProfile = Profile(
   updatedAt: DateTime(2024, 1, 1),
 );
 
-HomeAudioItem _audioItem({
-  required String id,
-  required String title,
-  required String runtimeMediaId,
-  required bool isPlayable,
-  required String playbackState,
-  required String failureReason,
-  String kind = 'audio',
-  String? contentType = 'audio/mpeg',
-  String sourceType = 'course_link',
-  String? lessonId,
-  String? courseId = 'course-1',
-  String courseTitle = 'Course 1',
-}) {
-  return HomeAudioItem(
-    id: id,
-    lessonId: lessonId ?? 'lesson-$id',
-    lessonTitle: title,
-    courseId: courseId,
-    courseTitle: courseTitle,
-    sourceType: sourceType,
-    kind: kind,
-    contentType: contentType,
-    runtimeMediaId: runtimeMediaId,
-    isPlayable: isPlayable,
-    playbackState: playbackState,
-    failureReason: failureReason,
-  );
-}
-
-Future<void> _pumpDashboard(
-  WidgetTester tester, {
-  required List<HomeAudioItem> audioItems,
-}) async {
+Future<void> _pumpDashboard(WidgetTester tester) async {
   final router = GoRouter(
     initialLocation: '/',
     routes: [
@@ -149,8 +114,6 @@ Future<void> _pumpDashboard(
         appConfigProvider.overrideWithValue(
           const AppConfig(
             apiBaseUrl: 'https://api.test',
-            stripePublishableKey: '',
-            stripeMerchantDisplayName: 'Test',
             subscriptionsEnabled: false,
           ),
         ),
@@ -159,9 +122,12 @@ Future<void> _pumpDashboard(
         ),
         homeFeedProvider.overrideWith((ref) async => const []),
         homeServicesProvider.overrideWith((ref) async => const <Service>[]),
-        homeAudioProvider.overrideWith((ref) async => audioItems),
+        coursesProvider.overrideWith((ref) async => const []),
         landing.popularCoursesProvider.overrideWith(
-          (ref) async => const landing.LandingSectionState(items: []),
+          (ref) async =>
+              const landing.LandingSection<landing.LandingCourseCard>(
+                items: [],
+              ),
         ),
         publicSeminarsProvider.overrideWith((ref) async => const []),
         myCertificatesProvider.overrideWith(
@@ -180,58 +146,15 @@ Future<void> _pumpDashboard(
 
 void main() {
   testWidgets(
-    'home dashboard keeps all runtime rows visible and shows processing state',
+    'home dashboard renders current runtime sections without audio provider',
     (tester) async {
-      final items = <HomeAudioItem>[
-        _audioItem(
-          id: 'runtime-row-1',
-          title: 'Bearbetas nu',
-          runtimeMediaId: 'runtime-media-1',
-          isPlayable: false,
-          playbackState: 'processing',
-          failureReason: 'asset_not_ready',
-        ),
-        _audioItem(
-          id: 'runtime-row-2',
-          title: 'Klar att spela',
-          runtimeMediaId: 'runtime-media-2',
-          isPlayable: true,
-          playbackState: 'ready',
-          failureReason: 'ok_ready_asset',
-        ),
-        _audioItem(
-          id: 'runtime-row-3',
-          title: 'Videospår',
-          runtimeMediaId: 'runtime-media-3',
-          isPlayable: true,
-          playbackState: 'ready',
-          failureReason: 'ok_ready_asset',
-          sourceType: 'direct_upload',
-          lessonId: null,
-          courseId: null,
-          courseTitle: '',
-          kind: 'video',
-          contentType: 'video/mp4',
-        ),
-      ];
-
-      await _pumpDashboard(tester, audioItems: items);
-
-      await tester.tap(find.byTooltip('Bibliotek').first);
+      await _pumpDashboard(tester);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('3 spår'), findsOneWidget);
-      expect(find.text('Bearbetas nu'), findsWidgets);
-      expect(find.text('Klar att spela'), findsWidgets);
-      expect(find.text('Videospår'), findsWidgets);
-
-      await tester.tap(find.text('Bearbetas nu'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
-      expect(find.text('Ljudet bearbetas…'), findsOneWidget);
-      expect(find.byTooltip('Spela'), findsOneWidget);
+      expect(find.text('Utforska kurser'), findsOneWidget);
+      expect(find.text('Gemensam vägg'), findsOneWidget);
+      expect(find.text('Tjänster'), findsOneWidget);
     },
   );
 }

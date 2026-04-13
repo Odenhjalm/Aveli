@@ -12,7 +12,9 @@ import 'package:aveli/core/bootstrap/auth_boot_page.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
@@ -111,8 +113,6 @@ Future<void> _pumpDashboard(
         appConfigProvider.overrideWithValue(
           const AppConfig(
             apiBaseUrl: 'https://api.test',
-            stripePublishableKey: '',
-            stripeMerchantDisplayName: 'Test',
             subscriptionsEnabled: false,
           ),
         ),
@@ -121,9 +121,12 @@ Future<void> _pumpDashboard(
         ),
         homeFeedProvider.overrideWith((ref) async => const []),
         homeServicesProvider.overrideWith((ref) async => services),
-        homeAudioProvider.overrideWith((ref) async => const []),
+        coursesProvider.overrideWith((ref) async => const []),
         landing.popularCoursesProvider.overrideWith(
-          (ref) async => const landing.LandingSectionState(items: []),
+          (ref) async =>
+              const landing.LandingSection<landing.LandingCourseCard>(
+                items: [],
+              ),
         ),
         publicSeminarsProvider.overrideWith((ref) async => const []),
         myCertificatesProvider.overrideWith((ref) async => certificates),
@@ -157,6 +160,15 @@ final _testProfile = Profile(
   updatedAt: DateTime(2024, 1, 1),
 );
 
+const _completedEntryState = EntryState(
+  canEnterApp: true,
+  onboardingCompleted: true,
+  membershipActive: true,
+  needsOnboarding: false,
+  needsPayment: false,
+  isInvite: false,
+);
+
 void main() {
   testWidgets('dashboard väntar på verifierad auth innan den renderar', (
     tester,
@@ -178,7 +190,10 @@ void main() {
         tester,
         services: [_gatedService()],
         certificates: const [],
-        authState: AuthState(profile: _testProfile),
+        authState: AuthState(
+          profile: _testProfile,
+          entryState: _completedEntryState,
+        ),
       );
 
       expect(
@@ -213,7 +228,10 @@ void main() {
           updatedAt: null,
         ),
       ],
-      authState: AuthState(profile: _testProfile),
+      authState: AuthState(
+        profile: _testProfile,
+        entryState: _completedEntryState,
+      ),
     );
 
     final button = tester.widget<FilledButton>(

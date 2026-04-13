@@ -6,6 +6,7 @@ import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/routing/route_session.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/service.dart';
+import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/community/presentation/service_detail_page.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
@@ -24,6 +25,14 @@ void main() {
     requiresCertification: true,
     certifiedArea: 'Tarot',
   );
+  const completedEntryState = EntryState(
+    canEnterApp: true,
+    onboardingCompleted: true,
+    membershipActive: true,
+    needsOnboarding: false,
+    needsPayment: false,
+    isInvite: false,
+  );
 
   Future<void> pumpPage(
     WidgetTester tester, {
@@ -36,8 +45,6 @@ void main() {
           appConfigProvider.overrideWithValue(
             const AppConfig(
               apiBaseUrl: 'https://api.test',
-              stripePublishableKey: 'pk_test_123',
-              stripeMerchantDisplayName: 'Aveli Test',
               subscriptionsEnabled: false,
             ),
           ),
@@ -63,11 +70,8 @@ void main() {
     tester,
   ) async {
     const session = RouteSessionSnapshot(
-      isAuthenticated: false,
-      isAuthLoading: false,
-      hasTentativeSession: false,
-      isTeacher: false,
-      isAdmin: false,
+      entryState: null,
+      isEntryStateLoading: false,
     );
 
     await pumpPage(tester, session: session, certs: const []);
@@ -83,11 +87,8 @@ void main() {
 
   testWidgets('blocks purchase when user saknar certifiering', (tester) async {
     const session = RouteSessionSnapshot(
-      isAuthenticated: true,
-      isAuthLoading: false,
-      hasTentativeSession: false,
-      isTeacher: false,
-      isAdmin: false,
+      entryState: completedEntryState,
+      isEntryStateLoading: false,
     );
 
     await pumpPage(tester, session: session, certs: const []);
@@ -109,11 +110,8 @@ void main() {
     tester,
   ) async {
     const session = RouteSessionSnapshot(
-      isAuthenticated: true,
-      isAuthLoading: false,
-      hasTentativeSession: false,
-      isTeacher: false,
-      isAdmin: false,
+      entryState: completedEntryState,
+      isEntryStateLoading: false,
     );
     const certs = [
       Certificate(

@@ -34,8 +34,6 @@ MediaRepository _buildRepository() {
     client: client,
     config: const AppConfig(
       apiBaseUrl: 'https://api.example.com',
-      stripePublishableKey: 'pk_test_123',
-      stripeMerchantDisplayName: 'Aveli',
       subscriptionsEnabled: true,
     ),
   );

@@ -201,8 +201,6 @@ Future<void> _pumpPreviewHarness(
         appConfigProvider.overrideWithValue(
           const AppConfig(
             apiBaseUrl: 'http://localhost',
-            stripePublishableKey: '',
-            stripeMerchantDisplayName: 'Test',
             subscriptionsEnabled: false,
           ),
         ),

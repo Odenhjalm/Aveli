@@ -6,6 +6,7 @@ import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/routing/route_session.dart';
 import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/service.dart';
+import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/community/presentation/teacher_profile_page.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
@@ -36,13 +37,19 @@ const _teacherState = TeacherProfileState(
   profileMedia: TeacherProfileMediaPayload.empty,
 );
 
+const _completedEntryState = EntryState(
+  canEnterApp: true,
+  onboardingCompleted: true,
+  membershipActive: true,
+  needsOnboarding: false,
+  needsPayment: false,
+  isInvite: false,
+);
+
 RouteSessionSnapshot _session({required bool isAuthenticated}) =>
     RouteSessionSnapshot(
-      isAuthenticated: isAuthenticated,
-      isAuthLoading: false,
-      hasTentativeSession: false,
-      isTeacher: false,
-      isAdmin: false,
+      entryState: isAuthenticated ? _completedEntryState : null,
+      isEntryStateLoading: false,
     );
 
 Future<void> _pumpPage(
@@ -57,8 +64,6 @@ Future<void> _pumpPage(
         appConfigProvider.overrideWithValue(
           const AppConfig(
             apiBaseUrl: 'http://localhost',
-            stripePublishableKey: 'pk_test',
-            stripeMerchantDisplayName: 'Aveli',
             subscriptionsEnabled: false,
           ),
         ),
