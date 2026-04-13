@@ -42,3 +42,4 @@ async def handle_paid_checkout_order(
             bundle_id,
             exc,
         )
+        raise
