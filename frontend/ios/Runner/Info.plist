@@ -49,11 +49,6 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>stripe</string>
-		<string>stripesdk</string>
-	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

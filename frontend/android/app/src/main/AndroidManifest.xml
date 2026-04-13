@@ -42,7 +42,6 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <!-- Fångar aveliapp://checkout_* länkar som Stripe öppnar vid success/cancel. -->
                 <data android:scheme="aveliapp" />
             </intent-filter>
             <intent-filter android:autoVerify="true">
@@ -74,14 +73,6 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="stripe" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="stripesdk" />
         </intent>
     </queries>
 </manifest>

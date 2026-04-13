@@ -68,9 +68,6 @@ void main() {
       await _loadEnvFile(requiredFile: false);
       if (dotenv.isInitialized) {
         debugPrint('ENV KEYS: ${dotenv.env.keys}');
-        debugPrint(
-          'DOTENV STRIPE_PUBLISHABLE_KEY=${_maskSecret(dotenv.maybeGet('STRIPE_PUBLISHABLE_KEY'))}',
-        );
       } else {
         debugPrint(
           'Dotenv not initialized; using runtime (process env) and dart-define values.',
@@ -124,11 +121,6 @@ void main() {
               appConfigProvider.overrideWithValue(
                 AppConfig(
                   apiBaseUrl: baseUrl,
-                  stripePublishableKey: EnvResolver.stripePublishableKey,
-                  stripeMerchantDisplayName:
-                      EnvResolver.stripeMerchantDisplayName.isNotEmpty
-                      ? EnvResolver.stripeMerchantDisplayName
-                      : 'Aveli',
                   subscriptionsEnabled: subscriptionsEnabled,
                   imageLoggingEnabled: imageLoggingEnabled,
                 ),
@@ -197,13 +189,6 @@ Future<void> _loadEnvFile({required bool requiredFile}) async {
     }
     debugPrint('Warning: $message');
   }
-}
-
-String _maskSecret(String? value) {
-  final trimmed = value?.trim() ?? '';
-  if (trimmed.isEmpty) return '(empty)';
-  if (trimmed.length <= 6) return '$trimmed***';
-  return '${trimmed.substring(0, 6)}***';
 }
 
 class AveliApp extends ConsumerWidget {

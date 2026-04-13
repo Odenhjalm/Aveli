@@ -5,15 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class AppConfig {
   const AppConfig({
     required this.apiBaseUrl,
-    required this.stripePublishableKey,
-    required this.stripeMerchantDisplayName,
     required this.subscriptionsEnabled,
     this.imageLoggingEnabled = false,
   });
 
   final String apiBaseUrl;
-  final String stripePublishableKey;
-  final String stripeMerchantDisplayName;
   final bool subscriptionsEnabled;
   final bool imageLoggingEnabled;
 }

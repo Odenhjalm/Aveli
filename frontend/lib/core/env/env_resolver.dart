@@ -61,10 +61,6 @@ class EnvResolver {
   static const List<_RequiredKey> _requiredKeys = [
     _RequiredKey(displayName: 'API_BASE_URL', keys: ['API_BASE_URL']),
     _RequiredKey(
-      displayName: 'STRIPE_PUBLISHABLE_KEY',
-      keys: ['STRIPE_PUBLISHABLE_KEY'],
-    ),
-    _RequiredKey(
       displayName: 'OAUTH_REDIRECT_WEB',
       keys: ['OAUTH_REDIRECT_WEB'],
       requiredOnNonWeb: false,
@@ -83,10 +79,6 @@ class EnvResolver {
     'FRONTEND_URL': String.fromEnvironment('FRONTEND_URL'),
     'OAUTH_REDIRECT_WEB': String.fromEnvironment('OAUTH_REDIRECT_WEB'),
     'OAUTH_REDIRECT_MOBILE': String.fromEnvironment('OAUTH_REDIRECT_MOBILE'),
-    'STRIPE_PUBLISHABLE_KEY': String.fromEnvironment('STRIPE_PUBLISHABLE_KEY'),
-    'STRIPE_MERCHANT_DISPLAY_NAME': String.fromEnvironment(
-      'STRIPE_MERCHANT_DISPLAY_NAME',
-    ),
     'SUBSCRIPTIONS_ENABLED': String.fromEnvironment('SUBSCRIPTIONS_ENABLED'),
     'IMAGE_LOGGING': String.fromEnvironment('IMAGE_LOGGING'),
   };
@@ -200,12 +192,6 @@ class EnvResolver {
   static String get oauthRedirectMobile =>
       _readFirstNonEmpty(const ['OAUTH_REDIRECT_MOBILE']);
 
-  static String get stripePublishableKey =>
-      _readFirstNonEmpty(const ['STRIPE_PUBLISHABLE_KEY']);
-
-  static String get stripeMerchantDisplayName =>
-      _readFirstNonEmpty(const ['STRIPE_MERCHANT_DISPLAY_NAME']);
-
   static bool get subscriptionsEnabled {
     final raw = _read('SUBSCRIPTIONS_ENABLED');
     return (raw.isEmpty ? 'false' : raw).toLowerCase() == 'true';
@@ -224,17 +210,9 @@ class EnvResolver {
       'frontendUrl=${_logValue(frontendUrl)} '
       'oauthRedirectWeb=${_logValue(oauthRedirectWeb)} '
       'oauthRedirectMobile=${_logValue(oauthRedirectMobile)} '
-      'stripeKey=${_maskSecret(stripePublishableKey)} '
       'source=${mode == EnvResolutionMode.runtime ? 'dotenv>dart-define' : 'dart-define-only'}',
     );
   }
 
   static String _logValue(String value) => value.isEmpty ? '(empty)' : value;
-
-  static String _maskSecret(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) return '(empty)';
-    if (trimmed.length <= 6) return '$trimmed***';
-    return '${trimmed.substring(0, 6)}***';
-  }
 }
