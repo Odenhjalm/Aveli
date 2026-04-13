@@ -1,35 +1,25 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
-import 'package:aveli/features/studio/data/studio_repository.dart';
 
 class _MockApiClient extends Mock implements ApiClient {}
 
 class _MockTokenStorage extends Mock implements TokenStorage {}
-
-class _MockHttpClient extends Mock implements http.Client {}
 
 void main() {
   setUpAll(() {
     registerFallbackValue(<String, dynamic>{});
   });
 
-  group('Login → Studio → Purchase flow', () {
-    test('completes happy path via repositories', () async {
+  group('Login → Purchase flow', () {
+    test('completes happy path via backend checkout API', () async {
       final apiClient = _MockApiClient();
       final tokenStorage = _MockTokenStorage();
-      final httpClient = _MockHttpClient();
       final authRepository = AuthRepository(apiClient, tokenStorage);
-      final studioRepository = StudioRepository(client: apiClient);
-      final checkoutApi = CheckoutApi(
-        client: httpClient,
-        tokenStorage: tokenStorage,
-        baseUrl: 'https://api.example.com',
-      );
+      final checkoutApi = CheckoutApi(apiClient);
 
       when(
         () => tokenStorage.saveTokens(
@@ -37,8 +27,6 @@ void main() {
           refreshToken: any(named: 'refreshToken'),
         ),
       ).thenAnswer((_) async {});
-
-      when(tokenStorage.readAccessToken).thenAnswer((_) async => 'access_123');
 
       when(
         () => apiClient.post<Map<String, dynamic>>(
@@ -54,7 +42,9 @@ void main() {
         },
       );
 
-      when(() => apiClient.get<Map<String, dynamic>>('/profiles/me')).thenAnswer(
+      when(
+        () => apiClient.get<Map<String, dynamic>>('/profiles/me'),
+      ).thenAnswer(
         (_) async => {
           'user_id': 'user-1',
           'email': 'teacher@example.com',
@@ -81,58 +71,35 @@ void main() {
 
       when(
         () => apiClient.post<Map<String, dynamic>>(
-          '/studio/courses',
+          '/api/checkout/create',
           body: any(named: 'body'),
           skipAuth: any(named: 'skipAuth'),
           extra: any(named: 'extra'),
         ),
-      ).thenAnswer((invocation) async {
-        final payload = Map<String, dynamic>.from(
-          invocation.namedArguments[#body] as Map,
-        );
-        return {
-          'id': 'course-1',
-          'title': payload['title'],
-          'slug': payload['slug'],
-          'description': payload['description'],
-          'is_free_intro': payload['is_free_intro'],
-          'is_published': payload['is_published'],
-          'price_cents': payload['price_cents'],
-        };
-      });
-
-      final createdCourse = await studioRepository.createCourse(
-        title: 'Testkurs',
-        slug: 'test-kurs',
-        description: 'En kurs för test',
-        priceCents: 0,
-        isFreeIntro: true,
-        isPublished: true,
-      );
-
-      expect(createdCourse['id'], 'course-1');
-      expect(createdCourse['is_free_intro'], true);
-
-      when(
-        () => httpClient.post(
-          Uri.parse('https://api.example.com/api/checkout/create'),
-          headers: any(named: 'headers'),
-          body: any(named: 'body'),
-        ),
       ).thenAnswer(
-        (_) async => http.Response(
-          '{"url":"https://checkout.test/session/abc"}',
-          201,
-          headers: {'content-type': 'application/json'},
-        ),
+        (_) async => {
+          'url': 'https://checkout.test/session/abc',
+          'session_id': 'cs_test_123',
+          'order_id': 'order_123',
+        },
       );
 
-      final checkoutUrl = await checkoutApi.startCourseCheckout(
+      final checkout = await checkoutApi.createCourseCheckout(
         slug: 'test-kurs',
       );
 
-      expect(checkoutUrl, 'https://checkout.test/session/abc');
-      verify(() => tokenStorage.readAccessToken()).called(1);
+      expect(checkout.url, 'https://checkout.test/session/abc');
+      expect(checkout.sessionId, 'cs_test_123');
+      expect(checkout.orderId, 'order_123');
+      final checkoutBody = verify(
+        () => apiClient.post<Map<String, dynamic>>(
+          '/api/checkout/create',
+          body: captureAny(named: 'body'),
+          skipAuth: any(named: 'skipAuth'),
+          extra: any(named: 'extra'),
+        ),
+      ).captured.single;
+      expect(checkoutBody, {'slug': 'test-kurs'});
       verifyNoMoreInteractions(tokenStorage);
     });
   });

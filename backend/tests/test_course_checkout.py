@@ -5,6 +5,8 @@ import pytest
 
 from app import db, repositories
 from app.config import settings
+from app.repositories import courses as courses_repo
+from app.repositories import payments as payments_repo
 from app.services import checkout_service
 
 from .utils import register_user
@@ -29,11 +31,34 @@ async def _promote_to_teacher(user_id: str) -> None:
             await cur.execute(
                 """
                 UPDATE app.auth_subjects
-                   SET role_v2 = 'teacher',
+                   SET onboarding_state = 'completed',
+                       role_v2 = 'teacher',
                        role = 'teacher'
                  WHERE user_id = %s
                 """,
                 (user_id,),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.memberships (
+                    membership_id,
+                    user_id,
+                    status,
+                    effective_at,
+                    expires_at,
+                    source,
+                    created_at,
+                    updated_at
+                )
+                VALUES (%s, %s, 'active', now(), now() + interval '30 days', 'invite', now(), now())
+                ON CONFLICT (user_id) DO UPDATE
+                SET status = 'active',
+                    effective_at = COALESCE(app.memberships.effective_at, now()),
+                    expires_at = now() + interval '30 days',
+                    source = 'invite',
+                    updated_at = now()
+                """,
+                (str(uuid.uuid4()), user_id),
             )
             await conn.commit()
 
@@ -54,6 +79,7 @@ async def _cleanup_user(user_id: str) -> None:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute("DELETE FROM app.orders WHERE user_id = %s", (user_id,))
+            await cur.execute("DELETE FROM app.memberships WHERE user_id = %s", (user_id,))
             await cur.execute(
                 "DELETE FROM app.course_enrollments WHERE user_id = %s",
                 (user_id,),
@@ -126,9 +152,14 @@ def _install_course_stripe_fakes(
 
 
 async def _register_teacher(async_client) -> tuple[dict[str, str], str]:
-    headers, user_id, _ = await register_user(async_client)
+    _, user_id, email = await register_user(async_client)
     await _promote_to_teacher(str(user_id))
-    return headers, str(user_id)
+    login_resp = await async_client.post(
+        "/auth/login",
+        json={"email": email, "password": "Secret123!"},
+    )
+    assert login_resp.status_code == 200, login_resp.text
+    return {"Authorization": f"Bearer {login_resp.json()['access_token']}"}, str(user_id)
 
 
 async def test_course_checkout_unknown_slug(async_client, monkeypatch):
@@ -156,9 +187,8 @@ async def test_course_checkout_rejects_non_canonical_body(async_client, monkeypa
             json={"type": "course", "slug": "demo"},
         )
         assert extra_keys.status_code == 400, extra_keys.text
-        assert (
-            extra_keys.json()["detail"]
-            == 'Course checkout accepts only {"slug": string}'
+        assert extra_keys.json()["detail"] == (
+            "Kursbetalning accepterar bara fältet slug som text"
         )
 
         empty_slug = await async_client.post(
@@ -167,10 +197,7 @@ async def test_course_checkout_rejects_non_canonical_body(async_client, monkeypa
             json={"slug": ""},
         )
         assert empty_slug.status_code == 400, empty_slug.text
-        assert (
-            empty_slug.json()["detail"]
-            == "Course checkout requires a non-empty slug"
-        )
+        assert empty_slug.json()["detail"] == "Kursbetalning kräver en ifylld slug"
     finally:
         await _cleanup_user(str(user_id))
 
@@ -236,6 +263,7 @@ async def test_course_checkout_success(async_client, monkeypatch):
         assert response.status_code == 201, response.text
         payload = response.json()
         assert payload["url"] == "https://stripe.test/cs_checkout_success"
+        assert payload["session_id"] == "cs_checkout_success"
         assert payload["order_id"]
 
         metadata = captured_session.get("metadata") or {}
@@ -245,6 +273,10 @@ async def test_course_checkout_success(async_client, monkeypatch):
         assert captured_session["success_url"] == "https://checkout.test/success"
         assert captured_session["cancel_url"] == "https://checkout.test/cancel"
         assert captured_session["locale"] == "sv"
+        order = await repositories.get_order(payload["order_id"])
+        assert order is not None
+        assert order["status"] == "pending"
+        assert await repositories.get_membership(str(student_id)) is None
     finally:
         if course_id:
             await _cleanup_course(course_id)
@@ -345,12 +377,25 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
         )
         assert webhook_response.status_code == 200, webhook_response.text
 
-        enrollment = await async_client.get(
-            f"/courses/{course_id}/enrollment",
-            headers=student_headers,
+        order = await repositories.get_order(checkout_payload["order_id"])
+        assert order is not None
+        assert order["status"] == "paid"
+        assert order["stripe_payment_intent"] == "pi_checkout_webhook"
+        payment = await payments_repo.get_latest_payment_for_order(
+            checkout_payload["order_id"],
+            status="paid",
         )
-        assert enrollment.status_code == 200, enrollment.text
-        assert enrollment.json()["enrollment"] is not None
+        assert payment is not None
+        assert payment["provider"] == "stripe"
+        assert payment["provider_reference"] == "pi_checkout_webhook"
+        assert await repositories.get_membership(str(student_id)) is None
+
+        enrollment = await courses_repo.get_course_enrollment(
+            str(student_id),
+            course_id,
+        )
+        assert enrollment is not None
+        assert enrollment["source"] == "purchase"
     finally:
         if course_id:
             await _cleanup_course(course_id)
@@ -417,12 +462,10 @@ async def test_payment_intent_webhook_does_not_settle_checkout_backed_purchase(
         assert order is not None
         assert order["status"] == "pending"
 
-        enrollment = await async_client.get(
-            f"/courses/{course_id}/enrollment",
-            headers=student_headers,
+        assert (
+            await courses_repo.get_course_enrollment(str(student_id), course_id)
+            is None
         )
-        assert enrollment.status_code == 200, enrollment.text
-        assert enrollment.json()["enrollment"] is None
     finally:
         if course_id:
             await _cleanup_course(course_id)
@@ -502,12 +545,12 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
         )
         assert purchase_response.status_code == 200, purchase_response.text
 
-        before_refund = await async_client.get(
-            f"/courses/{course_id}/enrollment",
-            headers=student_headers,
+        before_refund = await courses_repo.get_course_enrollment(
+            str(student_id),
+            course_id,
         )
-        assert before_refund.status_code == 200, before_refund.text
-        assert before_refund.json()["enrollment"] is not None
+        assert before_refund is not None
+        assert before_refund["source"] == "purchase"
 
         captured_refund: dict[str, object] = {}
 
@@ -526,12 +569,10 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
         assert resolution["payment_intent_id"] == "pi_refund_checkout"
         assert captured_refund["payment_intent"] == "pi_refund_checkout"
 
-        after_resolution = await async_client.get(
-            f"/courses/{course_id}/enrollment",
-            headers=student_headers,
+        assert (
+            await courses_repo.get_course_enrollment(str(student_id), course_id)
+            is None
         )
-        assert after_resolution.status_code == 200, after_resolution.text
-        assert after_resolution.json()["enrollment"] is None
 
         refund_response = await async_client.post(
             "/api/stripe/webhook",
@@ -544,12 +585,10 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
         assert order is not None
         assert order["status"] == "refunded"
 
-        after_refund = await async_client.get(
-            f"/courses/{course_id}/enrollment",
-            headers=student_headers,
+        assert (
+            await courses_repo.get_course_enrollment(str(student_id), course_id)
+            is None
         )
-        assert after_refund.status_code == 200, after_refund.text
-        assert after_refund.json()["enrollment"] is None
     finally:
         if course_id:
             await _cleanup_course(course_id)

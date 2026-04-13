@@ -23,7 +23,7 @@ async def insert_payment_event(event_id: str, payload: dict[str, Any]) -> bool:
                 )
             except errors.UndefinedTable:
                 await conn.rollback()
-                return True
+                raise
             row = await cur.fetchone()
             await conn.commit()
     return row is not None
@@ -47,7 +47,7 @@ async def insert_billing_log(
                 )
             except errors.UndefinedTable:
                 await conn.rollback()
-                return
+                raise
             await conn.commit()
 
 

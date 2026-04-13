@@ -388,4 +388,27 @@ void main() {
       RoutePath.checkoutSuccess,
     );
   });
+
+  testWidgets(
+    'checkout success route does not override backend payment state',
+    (tester) async {
+      final router = await _pumpHarness(tester, paymentNeeded);
+
+      router.go(RoutePath.checkoutSuccess);
+      await tester.pump();
+
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        RoutePath.checkoutSuccess,
+      );
+
+      router.go(RoutePath.home);
+      await tester.pump();
+
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        RoutePath.subscribe,
+      );
+    },
+  );
 }

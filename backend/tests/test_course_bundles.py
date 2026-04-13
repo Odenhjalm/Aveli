@@ -5,8 +5,11 @@ import pytest
 
 from psycopg import errors
 
-from app import db
+from app import db, repositories
 from app.config import settings
+from app.repositories import courses as courses_repo
+from app.repositories import payments as payments_repo
+
 pytestmark = pytest.mark.anyio("asyncio")
 
 
@@ -42,6 +45,7 @@ async def _cleanup_user(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute("DELETE FROM app.orders WHERE user_id = %s", (user_id,))
+            await cur.execute("DELETE FROM app.memberships WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM app.course_enrollments WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM app.stripe_customers WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
@@ -83,11 +87,34 @@ async def _promote_to_teacher(user_id: str):
             await cur.execute(
                 """
                 UPDATE app.auth_subjects
-                   SET role_v2 = 'teacher',
+                   SET onboarding_state = 'completed',
+                       role_v2 = 'teacher',
                        role = 'teacher'
                  WHERE user_id = %s
                 """,
                 (user_id,),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.memberships (
+                    membership_id,
+                    user_id,
+                    status,
+                    effective_at,
+                    expires_at,
+                    source,
+                    created_at,
+                    updated_at
+                )
+                VALUES (%s, %s, 'active', now(), now() + interval '30 days', 'invite', now(), now())
+                ON CONFLICT (user_id) DO UPDATE
+                SET status = 'active',
+                    effective_at = COALESCE(app.memberships.effective_at, now()),
+                    expires_at = now() + interval '30 days',
+                    source = 'invite',
+                    updated_at = now()
+                """,
+                (str(uuid.uuid4()), user_id),
             )
             await conn.commit()
 
@@ -122,14 +149,25 @@ async def _register_user(client, email: str, password: str, display_name: str):
     return tokens["access_token"], tokens["refresh_token"], user_id
 
 
+async def _login_user(client, email: str, password: str) -> str:
+    login_resp = await client.post(
+        "/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert login_resp.status_code == 200, login_resp.text
+    return login_resp.json()["access_token"]
+
+
 async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
     if not await _bundles_table_ready():
         pytest.skip("course_bundles table missing; run migrations")
     _set_stripe_test_env(monkeypatch)
+    teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@example.com"
     teacher_token, _, teacher_id = await _register_user(
-        async_client, f"teacher_{uuid.uuid4().hex[:6]}@example.com", "Passw0rd!", "Teacher"
+        async_client, teacher_email, "Passw0rd!", "Teacher"
     )
     await _promote_to_teacher(teacher_id)
+    teacher_token = await _login_user(async_client, teacher_email, "Passw0rd!")
     student_token, _, student_id = await _register_user(
         async_client, f"student_{uuid.uuid4().hex[:6]}@example.com", "Passw0rd!", "Student"
     )
@@ -202,6 +240,7 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         assert checkout_resp.status_code == 201, checkout_resp.text
         payload = checkout_resp.json()
         assert payload["url"] == "https://stripe.test/cs_bundle_test"
+        assert payload["session_id"] == "cs_bundle_test"
         assert payload["order_id"]
         assert captured_session.get("locale") == "sv"
         metadata = captured_session.get("metadata") or {}
@@ -235,18 +274,31 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         )
         assert webhook_resp.status_code == 200, webhook_resp.text
 
-        enrollment_one = await async_client.get(
-            f"/courses/{course_one}/enrollment",
-            headers=_auth(student_token),
+        order = await repositories.get_order(payload["order_id"])
+        assert order is not None
+        assert order["status"] == "paid"
+        assert order["order_type"] == "bundle"
+        assert order["stripe_payment_intent"] == "pi_bundle_test"
+        payment = await payments_repo.get_latest_payment_for_order(
+            payload["order_id"],
+            status="paid",
         )
-        enrollment_two = await async_client.get(
-            f"/courses/{course_two}/enrollment",
-            headers=_auth(student_token),
+        assert payment is not None
+        assert payment["provider_reference"] == "pi_bundle_test"
+        assert await repositories.get_membership(str(student_id)) is None
+
+        enrollment_one = await courses_repo.get_course_enrollment(
+            str(student_id),
+            course_one,
         )
-        assert enrollment_one.status_code == 200, enrollment_one.text
-        assert enrollment_two.status_code == 200, enrollment_two.text
-        assert enrollment_one.json()["enrollment"] is not None
-        assert enrollment_two.json()["enrollment"] is not None
+        enrollment_two = await courses_repo.get_course_enrollment(
+            str(student_id),
+            course_two,
+        )
+        assert enrollment_one is not None
+        assert enrollment_two is not None
+        assert enrollment_one["source"] == "purchase"
+        assert enrollment_two["source"] == "purchase"
     finally:
         if bundle_id:
             await _cleanup_bundle(bundle_id)

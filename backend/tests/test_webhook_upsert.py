@@ -20,11 +20,34 @@ async def _promote_to_teacher(user_id: str) -> None:
             await cur.execute(
                 """
                 UPDATE app.auth_subjects
-                   SET role_v2 = 'teacher',
+                   SET onboarding_state = 'completed',
+                       role_v2 = 'teacher',
                        role = 'teacher'
                  WHERE user_id = %s
                 """,
                 (user_id,),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.memberships (
+                    membership_id,
+                    user_id,
+                    status,
+                    effective_at,
+                    expires_at,
+                    source,
+                    created_at,
+                    updated_at
+                )
+                VALUES (%s, %s, 'active', now(), now() + interval '30 days', 'invite', now(), now())
+                ON CONFLICT (user_id) DO UPDATE
+                SET status = 'active',
+                    effective_at = COALESCE(app.memberships.effective_at, now()),
+                    expires_at = now() + interval '30 days',
+                    source = 'invite',
+                    updated_at = now()
+                """,
+                (str(uuid.uuid4()), user_id),
             )
             await conn.commit()
 
@@ -32,6 +55,16 @@ async def _promote_to_teacher(user_id: str) -> None:
 async def _cleanup_user(user_id: str) -> None:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute("DELETE FROM app.orders WHERE user_id = %s", (user_id,))
+            await cur.execute("DELETE FROM app.memberships WHERE user_id = %s", (user_id,))
+            await cur.execute(
+                "DELETE FROM app.course_enrollments WHERE user_id = %s",
+                (user_id,),
+            )
+            await cur.execute(
+                "DELETE FROM app.stripe_customers WHERE user_id = %s",
+                (user_id,),
+            )
             await cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
             await conn.commit()
 
@@ -64,6 +97,15 @@ async def _create_course(async_client, headers: dict[str, str], slug: str, price
     )
     assert response.status_code == 200, response.text
     return str(response.json()["id"])
+
+
+async def _login_user(async_client, email: str, password: str) -> dict[str, str]:
+    login_resp = await async_client.post(
+        "/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert login_resp.status_code == 200, login_resp.text
+    return {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
 
 @pytest.mark.anyio("asyncio")
@@ -184,8 +226,9 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
     settings.stripe_test_webhook_secret = "whsec_test"
     settings.stripe_test_membership_price_monthly = "price_month_test"
 
-    teacher_headers, teacher_id, _ = await register_user(async_client)
+    teacher_headers, teacher_id, teacher_email = await register_user(async_client)
     await _promote_to_teacher(str(teacher_id))
+    teacher_headers = await _login_user(async_client, teacher_email, "Secret123!")
     student_headers, student_id, _ = await register_user(async_client)
 
     course_id = None
@@ -341,12 +384,12 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
         assert refreshed_order["stripe_subscription_id"] == "sub_canonical"
 
         assert captured_session.get("metadata", {}).get("order_id") == checkout_payload["order_id"]
-        enrollment_resp = await async_client.get(
-            f"/courses/{course_id}/enrollment",
-            headers=student_headers,
+        enrollment = await courses_repo.get_course_enrollment(
+            str(student_id),
+            course_id,
         )
-        assert enrollment_resp.status_code == 200, enrollment_resp.text
-        assert enrollment_resp.json()["enrollment"] is not None
+        assert enrollment is not None
+        assert enrollment["source"] == "purchase"
     finally:
         if course_id:
             await _cleanup_course(course_id)

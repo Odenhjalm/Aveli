@@ -6,16 +6,7 @@ from app.config import settings
 from .utils import register_user
 
 
-pytestmark = [
-    pytest.mark.anyio("asyncio"),
-    pytest.mark.skip(
-        reason=(
-            "Legacy polymorphic subscription checkout test. "
-            "Canonical runtime uses /api/billing/create-subscription and keeps "
-            "/api/checkout/create course-only."
-        )
-    ),
-]
+pytestmark = pytest.mark.anyio("asyncio")
 
 
 async def test_create_subscription_session(async_client, monkeypatch):
@@ -53,17 +44,25 @@ async def test_create_subscription_session(async_client, monkeypatch):
     monkeypatch.setattr("stripe.Price.retrieve", fake_price_retrieve)
 
     resp = await async_client.post(
-        "/api/checkout/create",
+        "/api/billing/create-subscription",
         headers=headers,
-        json={"type": "subscription", "interval": "month"},
+        json={"interval": "month"},
     )
     assert resp.status_code == 201, resp.text
     payload = resp.json()
     assert payload["url"] == "https://checkout.stripe.com/cs_test"
+    assert payload["session_id"] == "cs_test"
+    assert payload["order_id"]
+    assert captured_session.get("mode") == "subscription"
     assert captured_session.get("line_items")[0]["price"] == "price_month_test"
-    assert captured_session.get("ui_mode") is None
+    assert captured_session.get("metadata")["checkout_type"] == "membership"
+    assert captured_session.get("metadata")["source"] == "purchase"
+    assert captured_session.get("metadata")["order_id"] == payload["order_id"]
 
     membership = await repositories.get_membership(str(user_id))
-    assert membership is not None
-    assert membership["plan_interval"] == "month"
-    assert membership["status"] == "incomplete"
+    assert membership is None
+
+    order = await repositories.get_order(payload["order_id"])
+    assert order is not None
+    assert order["status"] == "pending"
+    assert order["order_type"] == "subscription"
