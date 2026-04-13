@@ -207,6 +207,12 @@
       "filename": "0034_payment_events_webhook_idempotency_support.sql",
       "path": "backend/supabase/baseline_slots/0034_payment_events_webhook_idempotency_support.sql",
       "sha256": "25f3b95d03497589813ef6f03d56614d1cef2a9266e0799899fdb02b552561d5"
+    },
+    {
+      "slot": 35,
+      "filename": "0035_remove_legacy_tables.sql",
+      "path": "backend/supabase/baseline_slots/0035_remove_legacy_tables.sql",
+      "sha256": "ff0f3a5ae1f6c45ed919dcba28aa713c2392cb3df3c945532b687340e4d6ab02"
     }
   ]
 }

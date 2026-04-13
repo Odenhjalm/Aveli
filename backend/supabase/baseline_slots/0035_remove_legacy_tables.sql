@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS app.subscriptions CASCADE;
+DROP TABLE IF EXISTS app.transactions CASCADE;
