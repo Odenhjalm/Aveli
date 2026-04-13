@@ -1,0 +1,30 @@
+{
+  "TREE_ID": "entry_authority_contract_consolidation",
+  "TREE_CLASSIFICATION": "BLOCKER-RESOLUTION",
+  "PHASE": "CONTRACT_ONLY_PRE_IMPLEMENTATION",
+  "STATUS": "PLANNED",
+  "TASKS": [
+    {
+      "TASK_ID": "ACE-001",
+      "TYPE": "CONTRACT_UPDATE",
+      "DEPENDS_ON": [],
+      "STATUS": "PLANNED"
+    },
+    {
+      "TASK_ID": "ACE-002",
+      "TYPE": "CONTRACT_UPDATE",
+      "DEPENDS_ON": [
+        "ACE-001"
+      ],
+      "STATUS": "PLANNED"
+    },
+    {
+      "TASK_ID": "ACE-003",
+      "TYPE": "CONTRACT_UPDATE",
+      "DEPENDS_ON": [
+        "ACE-002"
+      ],
+      "STATUS": "PLANNED"
+    }
+  ]
+}

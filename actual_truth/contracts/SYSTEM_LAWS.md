@@ -12,6 +12,19 @@ This document is the canonical contract-layer home for cross-domain system laws 
 - Domain contracts may define only their domain-owned rules.
 - Execution contracts may define only execution-owned response-shape law.
 - No contract may rely on fallback authority when the canonical owner is available.
+- Post-auth entry authority has exactly one canonical owner:
+  `onboarding_entry_authority_contract.md`.
+- `onboarding_entry_authority_contract.md` is the only contract allowed to
+  define post-auth entry composition, post-auth routing authority, or
+  current-user entry authority.
+- All other contracts may reference entry authority, but must not define or
+  redefine:
+  - entry composition
+  - routing authority
+  - alternate current-user entry surfaces
+- Any statement outside `onboarding_entry_authority_contract.md` that appears
+  to define, duplicate, or override entry authority is non-authoritative and
+  must defer to `onboarding_entry_authority_contract.md`.
 
 ## 2. Reference And Deprecation Law
 

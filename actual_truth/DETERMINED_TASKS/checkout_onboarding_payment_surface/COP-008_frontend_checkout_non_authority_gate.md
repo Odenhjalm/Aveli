@@ -4,7 +4,7 @@
 - TYPE: CURRENT_TRUTH_VERIFICATION
 - DAG_ROLE: GATE
 - LAUNCH_CLASSIFICATION: BLOCKER
-- DEPENDS_ON: [COP-005, COP-006, COP-007]
+- DEPENDS_ON: [COP-005, COP-006, COP-012]
 - GOAL: Confirm the frontend checkout/onboarding surface remains a non-authoritative renderer after frontend, copy, and residue alignment.
 - SCOPE: Read-only verification of frontend checkout/onboarding payment paths after dependent tasks. Verify membership checkout, course checkout, bundle checkout, checkout return/cancel/result handling, and local/session refresh behavior. The frontend must never grant access, mutate app.memberships, call Supabase for authority, or treat Stripe success redirects as authority.
 - VERIFICATION: Confirm all checkout entrypoints call backend APIs only. Confirm checkout result pages refresh backend-owned state and do not grant local access. Confirm no direct Supabase/Stripe authority remains in payment flows. Confirm checkout-critical product text remains Swedish.
