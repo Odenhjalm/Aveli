@@ -134,7 +134,7 @@ class DeepLinkService {
         .read(checkoutRedirectStateProvider.notifier)
         .state = const CheckoutRedirectState(
       status: CheckoutRedirectStatus.error,
-      error: 'Saknar session_id i checkout-redirect.',
+      error: 'Betalningssvaret saknar sessions-id.',
     );
     _goWithQuery(RoutePath.checkoutSuccess, errored: true);
   }

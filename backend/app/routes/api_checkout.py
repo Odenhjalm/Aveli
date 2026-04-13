@@ -25,13 +25,13 @@ async def create_checkout_handler(
     except JSONDecodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Course checkout requires a JSON body",
+            detail="Kursbetalning kräver JSON-innehåll i begäran",
         ) from exc
 
     if not isinstance(payload, dict):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Course checkout requires an object body",
+            detail="Kursbetalning kräver ett objekt i begäran",
         )
 
     allowed_keys = {"slug"}
@@ -39,14 +39,14 @@ async def create_checkout_handler(
     if extra_keys:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Course checkout accepts only {\"slug\": string}",
+            detail="Kursbetalning accepterar bara fältet slug som text",
         )
 
     slug = payload.get("slug")
     if not isinstance(slug, str) or not slug.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Course checkout requires a non-empty slug",
+            detail="Kursbetalning kräver en ifylld slug",
         )
 
     return await checkout_service.create_course_checkout(current, slug.strip())

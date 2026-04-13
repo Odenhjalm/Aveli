@@ -59,7 +59,7 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
                       gap24,
                       Text(
                         widget.success
-                            ? 'Bekraftar din betalning...'
+                            ? 'Bekräftar din betalning...'
                             : 'Uppdaterar ditt konto...',
                         textAlign: TextAlign.center,
                         style: textTheme.bodyLarge,
@@ -67,8 +67,8 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
                     ] else ...[
                       Text(
                         widget.success
-                            ? 'Vi vantar fortfarande pa betalningsbekraftelse'
-                            : 'Betalningen avbrots',
+                            ? 'Vi väntar fortfarande på betalningsbekräftelse'
+                            : 'Betalningen avbröts',
                         textAlign: TextAlign.center,
                         style: textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w700,
@@ -77,7 +77,7 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
                       gap16,
                       Text(
                         _message ??
-                            'Frontend väntar på backend-bekräftelse innan åtkomst uppdateras.',
+                            'Appen väntar på betalningsbekräftelse innan åtkomst uppdateras.',
                         textAlign: TextAlign.center,
                         style: textTheme.bodyMedium,
                       ),
@@ -85,13 +85,13 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
                         gap16,
                         if (sessionId != null)
                           Text(
-                            'session_id: $sessionId',
+                            'Betalningsreferens: $sessionId',
                             textAlign: TextAlign.center,
                             style: textTheme.bodySmall,
                           ),
                         if (orderId != null)
                           Text(
-                            'order_id: $orderId',
+                            'Orderreferens: $orderId',
                             textAlign: TextAlign.center,
                             style: textTheme.bodySmall,
                           ),
@@ -135,8 +135,8 @@ class _CheckoutResultPageState extends ConsumerState<CheckoutResultPage> {
     setState(() {
       _isRefreshing = false;
       _message = widget.success
-          ? 'Vi har uppdaterat din backend-session. Åtkomst visas först när webhooken har bekräftat köpet.'
-          : 'Ingen åtkomst ändras på frontend när checkout avbryts.';
+          ? 'Din session har uppdaterats. Åtkomst visas först när köpet har bekräftats.'
+          : 'Din åtkomst ändras inte när betalningen avbryts.';
     });
   }
 }

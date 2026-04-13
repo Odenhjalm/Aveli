@@ -52,7 +52,7 @@ def _explicit_mode_from_env() -> StripeMode | None:
         return None
     mode = _normalize_mode(raw)
     if not mode:
-        raise StripeConfigurationError("STRIPE_KEYSET/APP_ENV_MODE must be 'test' or 'live'.")
+        raise StripeConfigurationError("STRIPE_KEYSET/APP_ENV_MODE måste vara 'test' eller 'live'.")
     return mode
 
 
@@ -103,7 +103,7 @@ def _resolve_requested_mode() -> StripeMode:
     if explicit_mode:
         if _is_prod_env() and explicit_mode is StripeMode.test:
             raise StripeConfigurationError(
-                "APP_ENV indicates production but Stripe mode is test; set STRIPE_KEYSET/APP_ENV_MODE=live."
+                "APP_ENV anger produktion men Stripe-läget är test. Sätt STRIPE_KEYSET/APP_ENV_MODE=live."
             )
         return explicit_mode
     if _is_prod_env():
@@ -137,16 +137,16 @@ def _resolve_secret_key(env_mode: StripeMode) -> tuple[str, str]:
         elif value.startswith("sk_live_"):
             live_candidates.append((value, name))
         else:
-            raise StripeConfigurationError(f"{name} must start with sk_test_ or sk_live_")
+            raise StripeConfigurationError(f"{name} måste börja med sk_test_ eller sk_live_")
 
     test_values = {value for value, _ in test_candidates}
     live_values = {value for value, _ in live_candidates}
     if len(test_values) > 1:
         sources = ", ".join(name for _, name in test_candidates)
-        raise StripeConfigurationError(f"Conflicting Stripe test secrets set across: {sources}")
+        raise StripeConfigurationError(f"Motstridiga Stripe-testnycklar är satta i: {sources}")
     if len(live_values) > 1:
         sources = ", ".join(name for _, name in live_candidates)
-        raise StripeConfigurationError(f"Conflicting Stripe live secrets set across: {sources}")
+        raise StripeConfigurationError(f"Motstridiga Stripe-live-nycklar är satta i: {sources}")
 
     def pick(
         preferred_order: tuple[str, ...], candidates: list[tuple[str, str]]
@@ -168,7 +168,7 @@ def _resolve_secret_key(env_mode: StripeMode) -> tuple[str, str]:
         if match:
             return match
         if live_candidates:
-            raise StripeConfigurationError("Stripe mode is test but only live Stripe secrets are set.")
+            raise StripeConfigurationError("Stripe-läget är test men bara live-nycklar är satta.")
     else:
         preferred_live = (
             "STRIPE_SECRET_KEY",
@@ -180,9 +180,9 @@ def _resolve_secret_key(env_mode: StripeMode) -> tuple[str, str]:
         if match:
             return match
         if test_candidates:
-            raise StripeConfigurationError("Stripe mode is live but only test Stripe secrets are set.")
+            raise StripeConfigurationError("Stripe-läget är live men bara testnycklar är satta.")
 
-    raise StripeConfigurationError("Stripe secret key is missing (set STRIPE_SECRET_KEY)")
+    raise StripeConfigurationError("Stripe-nyckel saknas. Sätt STRIPE_SECRET_KEY.")
 
 
 def resolve_stripe_context() -> StripeContext:
@@ -193,15 +193,15 @@ def resolve_stripe_context() -> StripeContext:
     elif secret_key.startswith("sk_live_"):
         mode = StripeMode.live
     else:
-        raise StripeConfigurationError(f"{secret_source} must start with sk_test_ or sk_live_")
+        raise StripeConfigurationError(f"{secret_source} måste börja med sk_test_ eller sk_live_")
 
     if mode is StripeMode.test and env_mode is StripeMode.live:
         raise StripeConfigurationError(
-            f"{secret_source} is a test key (sk_test_*) but Stripe mode is live"
+            f"{secret_source} är en testnyckel (sk_test_*) men Stripe-läget är live"
         )
     if mode is StripeMode.live and env_mode is StripeMode.test:
         raise StripeConfigurationError(
-            f"{secret_source} is a live key (sk_live_*) but Stripe mode is test"
+            f"{secret_source} är en live-nyckel (sk_live_*) men Stripe-läget är test"
         )
 
     return StripeContext(secret_key=secret_key, secret_source=secret_source, mode=mode)
@@ -214,7 +214,7 @@ def resolve_membership_price(
         product_id = settings.stripe_test_membership_product_id
         if not product_id:
             raise StripeConfigurationError(
-                "STRIPE_TEST_MEMBERSHIP_PRODUCT_ID missing for Stripe test mode"
+                "STRIPE_TEST_MEMBERSHIP_PRODUCT_ID saknas för Stripe-testläge"
             )
         if interval is SubscriptionInterval.month:
             price_id = settings.stripe_test_membership_price_monthly
@@ -223,9 +223,9 @@ def resolve_membership_price(
             price_id = settings.stripe_test_membership_price_id_yearly
             env_var = "STRIPE_TEST_MEMBERSHIP_PRICE_ID_YEARLY"
         else:  # pragma: no cover - defensive
-            raise StripeConfigurationError(f"Unsupported subscription interval: {interval}")
+            raise StripeConfigurationError(f"Prenumerationsintervallet stöds inte: {interval}")
         if not price_id:
-            raise StripeConfigurationError(f"{env_var} missing for Stripe test mode")
+            raise StripeConfigurationError(f"{env_var} saknas för Stripe-testläge")
         return MembershipPriceConfig(price_id=price_id, env_var=env_var, product_id=product_id)
 
     if interval is SubscriptionInterval.month:
@@ -235,10 +235,10 @@ def resolve_membership_price(
         price_id = settings.stripe_price_yearly
         env_var = "AVELI_PRICE_YEARLY"
     else:  # pragma: no cover - defensive
-        raise StripeConfigurationError(f"Unsupported subscription interval: {interval}")
+        raise StripeConfigurationError(f"Prenumerationsintervallet stöds inte: {interval}")
 
     if not price_id:
-        raise StripeConfigurationError(f"{env_var} missing for Stripe live mode")
+        raise StripeConfigurationError(f"{env_var} saknas för Stripe-live-läge")
 
     return MembershipPriceConfig(
         price_id=price_id,
@@ -268,7 +268,7 @@ def resolve_webhook_secret(kind: str, context: StripeContext) -> tuple[str, str]
             env_var = "STRIPE_WEBHOOK_SECRET"
 
     if not secret:
-        raise StripeConfigurationError(f"{env_var} missing for Stripe {context.mode.value} mode")
+        raise StripeConfigurationError(f"{env_var} saknas för Stripe-{context.mode.value}-läge")
     return secret, env_var
 
 
@@ -284,36 +284,36 @@ async def ensure_price_accessible(
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
         if getattr(exc, "code", "") == "resource_missing":
             raise StripeConfigurationError(
-                f"{price_config.env_var} ({price_config.price_id}) is not available in "
-                f"Stripe {context.mode.value} mode ({context.secret_source})"
+                f"{price_config.env_var} ({price_config.price_id}) är inte tillgängligt i "
+                f"Stripe-{context.mode.value}-läge ({context.secret_source})"
             ) from exc
         raise StripeConfigurationError(
-            f"Stripe rejected price {price_config.price_id} from {price_config.env_var} ({context.mode.value} mode)"
+            f"Stripe avvisade priset {price_config.price_id} från {price_config.env_var} ({context.mode.value}-läge)"
         ) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise StripeConfigurationError(
-            f"Failed to load Stripe price {price_config.price_id} from {price_config.env_var} "
-            f"({context.mode.value} mode)"
+            f"Kunde inte hämta Stripe-priset {price_config.price_id} från {price_config.env_var} "
+            f"({context.mode.value}-läge)"
         ) from exc
 
     livemode = price.get("livemode")
     if isinstance(livemode, bool):
         if context.mode is StripeMode.test and livemode:
             raise StripeConfigurationError(
-                f"{price_config.env_var} ({price_config.price_id}) points to a live price while "
-                f"using sk_test_* ({context.secret_source})"
+                f"{price_config.env_var} ({price_config.price_id}) pekar på ett live-pris medan "
+                f"sk_test_* används ({context.secret_source})"
             )
         if context.mode is StripeMode.live and not livemode:
             raise StripeConfigurationError(
-                f"{price_config.env_var} ({price_config.price_id}) points to a test price while "
-                f"using sk_live_* ({context.secret_source})"
+                f"{price_config.env_var} ({price_config.price_id}) pekar på ett testpris medan "
+                f"sk_live_* används ({context.secret_source})"
             )
 
     product = price.get("product")
     if price_config.product_id and str(product) != price_config.product_id:
         raise StripeConfigurationError(
-            f"{price_config.env_var} ({price_config.price_id}) is linked to product {product} "
-            f"instead of {price_config.product_id}"
+            f"{price_config.env_var} ({price_config.price_id}) är kopplat till produkten {product} "
+            f"i stället för {price_config.product_id}"
         )
 
     return price

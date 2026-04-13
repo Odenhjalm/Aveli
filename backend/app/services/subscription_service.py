@@ -132,7 +132,7 @@ async def create_subscription_checkout(
     checkout_url = session.get("url")
     session_id = session.get("id")
     if not isinstance(checkout_url, str):
-        raise SubscriptionError("Stripe-session saknar checkout-URL", status_code=502)
+        raise SubscriptionError("Stripe-session saknar betalningsadress", status_code=502)
     if not isinstance(session_id, str) or not session_id:
         raise SubscriptionError("Stripe-session saknar id", status_code=502)
 
@@ -211,7 +211,7 @@ async def cancel_subscription_intent(
         "ok": True,
         "subscription_id": resolved_subscription_id,
         "cancel_at_period_end": cancel_at_period_end,
-        "message": "Avsiktsavbokningen ar skickad. Medlemskapsstatus andras forst efter webhook-bekraftelse.",
+        "message": "Avsiktsavbokningen är skickad. Medlemskapsstatus ändras först efter betalningsbekräftelse.",
     }
 
 
@@ -263,7 +263,7 @@ async def _apply_membership_refund_resolution(
     resolved_subscription_id = _as_string(order.get("stripe_subscription_id"))
     if not resolved_subscription_id:
         raise SubscriptionError(
-            "Prenumerationen saknar subscription-id i canonical purchase-substratet",
+            "Prenumerationen saknar prenumerations-id i köpunderlaget",
             status_code=400,
         )
     resolved_payment_intent = await _resolve_membership_refund_payment_intent(
@@ -292,7 +292,7 @@ async def _apply_membership_refund_resolution(
         await run_in_threadpool(_cancel_now)
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
         raise SubscriptionError(
-            "Stripe kunde inte stoppa framtida dragningar for medlemskapet",
+            "Stripe kunde inte stoppa framtida dragningar för medlemskapet",
             status_code=400,
         ) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
@@ -305,12 +305,12 @@ async def _apply_membership_refund_resolution(
         await run_in_threadpool(_create_refund)
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
         raise SubscriptionError(
-            "Stripe kunde inte skapa medlemskapsaterbetalningen",
+            "Stripe kunde inte skapa medlemskapsåterbetalningen",
             status_code=400,
         ) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise SubscriptionError(
-            "Stripe-fel vid medlemskapsaterbetalning",
+            "Stripe-fel vid medlemskapsåterbetalning",
             status_code=502,
         ) from exc
 
@@ -585,17 +585,16 @@ def _price_missing_message(
     context: stripe_mode.StripeContext,
 ) -> str:
     return (
-        f"{price_config.env_var} ({price_config.price_id}) ar inte tillgangligt i Stripe "
-        f"{context.mode.value}-lage for {context.secret_source}"
+        f"{price_config.env_var} ({price_config.price_id}) är inte tillgängligt i Stripe "
+        f"{context.mode.value}-läge för {context.secret_source}"
     )
 
 
 def _format_invalid_request(exc: stripe.error.InvalidRequestError) -> str:  # type: ignore[attr-defined]
-    message = exc.user_message or str(exc)
     param = getattr(exc, "param", None)
     if param:
-        return f"Stripe-checkout misslyckades: {message} (param: {param})"
-    return f"Stripe-checkout misslyckades: {message}"
+        return f"Stripe-betalningen kunde inte startas. Kontrollera parametern {param}."
+    return "Stripe-betalningen kunde inte startas."
 
 
 def _build_frontend_url(path: str) -> str:
@@ -646,13 +645,13 @@ async def _resolve_membership_subscription_id(
             break
     if not membership_subscription_id:
         raise SubscriptionError(
-            "Prenumerationen saknar subscription-id i canonical purchase-substratet",
+            "Prenumerationen saknar prenumerations-id i köpunderlaget",
             status_code=400,
         )
 
     if requested_subscription_id and requested_subscription_id != membership_subscription_id:
         raise SubscriptionError(
-            "Angivet subscription-id matchar inte ditt konto",
+            "Angivet prenumerations-id matchar inte ditt konto",
             status_code=403,
         )
     return str(membership_subscription_id)
@@ -671,7 +670,7 @@ async def _resolve_membership_purchase_order_for_resolution(
     ]
     if not subscription_orders:
         raise SubscriptionError(
-            "Ingen medlemskapsbestallning hittades",
+            "Ingen medlemskapsbeställning hittades",
             status_code=404,
         )
 
@@ -680,7 +679,7 @@ async def _resolve_membership_purchase_order_for_resolution(
             if _as_string(order.get("stripe_subscription_id")) == requested_subscription_id:
                 return order
         raise SubscriptionError(
-            "Angivet subscription-id matchar inte ditt konto",
+            "Angivet prenumerations-id matchar inte ditt konto",
             status_code=403,
         )
 
@@ -689,7 +688,7 @@ async def _resolve_membership_purchase_order_for_resolution(
             return order
 
     raise SubscriptionError(
-        "Prenumerationen saknar subscription-id i canonical purchase-substratet",
+        "Prenumerationen saknar prenumerations-id i köpunderlaget",
         status_code=400,
     )
 
@@ -708,7 +707,7 @@ async def _resolve_membership_refund_payment_intent(
         )
         if not payment:
             raise SubscriptionError(
-                "Angivet payment_intent tillhor inte medlemskapskopet",
+                "Angiven betalningsreferens tillhör inte medlemskapsköpet",
                 status_code=403,
             )
         return requested_payment_intent
@@ -726,7 +725,7 @@ async def _resolve_membership_refund_payment_intent(
         return fallback_payment_intent
 
     raise SubscriptionError(
-        "Kunde inte faststalla vilken medlemskapsbetalning som ska aterbetalas",
+        "Kunde inte fastställa vilken medlemskapsbetalning som ska återbetalas",
         status_code=400,
     )
 
@@ -755,7 +754,7 @@ async def _resolve_membership_order(
         order = await orders_repo.get_order_by_payment_intent(payment_intent_id)
     if not order:
         raise SubscriptionError(
-            "Medlemskapswebhooken kunde inte faststalla en canonical order",
+            "Medlemskapsbekräftelsen kunde inte hitta beställningen",
             status_code=500,
         )
     return order

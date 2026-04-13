@@ -26,7 +26,7 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Backend-sessionen uppdaterades. Åtkomst avgörs alltid av backendens medlemsstatus.',
+            'Sessionen uppdaterades. Åtkomst avgörs alltid av medlemsstatusen på servern.',
           ),
         ),
       );
@@ -67,17 +67,17 @@ class _MySubscriptionPageState extends ConsumerState<MySubscriptionPage> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Frontend hanterar inte kundportal, Stripe-status eller direkt medlemsmutation i launch-flödet.',
+                'Appen ändrar inte medlemskap direkt och använder inte betalstatus som åtkomstbeslut.',
                 style: t.bodyMedium,
               ),
               const SizedBox(height: 20),
               Text(
-                'Uppdatera backend-status',
+                'Uppdatera medlemsstatus',
                 style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
-                'Om du precis har gått igenom checkout kan du uppdatera din session här. Backendens webhook och medlemsstatus är fortfarande den enda auktoriteten.',
+                'Om du precis har betalat kan du uppdatera din session här. Medlemsstatusen på servern avgör alltid åtkomsten.',
                 style: t.bodyMedium,
               ),
               const SizedBox(height: 20),

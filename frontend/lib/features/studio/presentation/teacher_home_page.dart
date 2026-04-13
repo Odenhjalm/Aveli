@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter/services.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_extras.dart';
@@ -27,6 +26,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
   final TextEditingController _referralDurationCtrl = TextEditingController(
     text: '14',
   );
+  final Set<String> _checkoutBundleIds = <String>{};
   String _referralDurationUnit = 'days';
   bool _sendingReferral = false;
 
@@ -123,19 +123,58 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
         freeDays: _referralDurationUnit == 'days' ? durationValue : null,
         freeMonths: _referralDurationUnit == 'months' ? durationValue : null,
       );
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
       _referralEmailCtrl.clear();
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Invitation sent to $email')));
+      ).showSnackBar(SnackBar(content: Text('Inbjudan skickad till $email')));
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Kunde inte skicka inbjudan: $error')),
       );
     } finally {
       if (mounted) {
         setState(() => _sendingReferral = false);
+      }
+    }
+  }
+
+  Future<void> _startBundleCheckout(
+    BuildContext context,
+    Map<String, dynamic> bundle,
+  ) async {
+    final bundleId = bundle['id'] as String? ?? '';
+    if (bundleId.isEmpty || _checkoutBundleIds.contains(bundleId)) {
+      return;
+    }
+
+    setState(() => _checkoutBundleIds.add(bundleId));
+    try {
+      final repo = ref.read(courseBundlesRepositoryProvider);
+      final checkout = await repo.createBundleCheckoutSession(bundleId);
+      final url = checkout['url'];
+      final sessionId = checkout['session_id'];
+      final orderId = checkout['order_id'];
+      if (url is! String || url.isEmpty) {
+        throw StateError('Betalningssvaret saknar betalningsadress.');
+      }
+      if (sessionId is! String || sessionId.isEmpty) {
+        throw StateError('Betalningssvaret saknar sessions-id.');
+      }
+      if (orderId is! String || orderId.isEmpty) {
+        throw StateError('Betalningssvaret saknar order-id.');
+      }
+      if (!mounted || !context.mounted) return;
+      context.pushNamed(AppRoute.checkout, extra: url);
+    } catch (error) {
+      if (!mounted || !context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kunde inte starta betalning: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _checkoutBundleIds.remove(bundleId));
       }
     }
   }
@@ -154,8 +193,8 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
   String _courseReleaseLabel(CourseStudio course) {
     if (!course.dripEnabled) return 'Direktstart';
     final interval = course.dripIntervalDays;
-    if (interval == null) return 'Drip aktiv';
-    return 'Drip $interval dagar';
+    if (interval == null) return 'Dropp aktivt';
+    return 'Dropp $interval dagar';
   }
 
   @override
@@ -216,7 +255,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Sätt paketpris för flera kurser och dela betalningslänkar direkt i dina lektioner.',
+                      'Sätt paketpris för flera kurser och starta betalning när paketet ska köpas.',
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
@@ -299,30 +338,45 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                                         const SizedBox(height: 10),
                                         Row(
                                           children: [
-                                            TextButton.icon(
-                                              onPressed: () async {
-                                                final link =
-                                                    bundle['payment_link']
-                                                        as String? ??
+                                            Builder(
+                                              builder: (context) {
+                                                final bundleId =
+                                                    bundle['id'] as String? ??
                                                     '';
-                                                if (link.isEmpty) return;
-                                                await Clipboard.setData(
-                                                  ClipboardData(text: link),
+                                                final isStarting =
+                                                    _checkoutBundleIds.contains(
+                                                      bundleId,
+                                                    );
+                                                return TextButton.icon(
+                                                  onPressed:
+                                                      bundleId.isEmpty ||
+                                                          isStarting
+                                                      ? null
+                                                      : () =>
+                                                            _startBundleCheckout(
+                                                              context,
+                                                              bundle,
+                                                            ),
+                                                  icon: isStarting
+                                                      ? const SizedBox(
+                                                          width: 18,
+                                                          height: 18,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                                strokeWidth: 2,
+                                                              ),
+                                                        )
+                                                      : const Icon(
+                                                          Icons
+                                                              .payment_outlined,
+                                                        ),
+                                                  label: Text(
+                                                    isStarting
+                                                        ? 'Öppnar betalning...'
+                                                        : 'Öppna betalning',
+                                                  ),
                                                 );
-                                                if (context.mounted) {
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    const SnackBar(
-                                                      content: Text(
-                                                        'Betalningslänk kopierad',
-                                                      ),
-                                                    ),
-                                                  );
-                                                }
                                               },
-                                              icon: const Icon(Icons.copy),
-                                              label: const Text('Kopiera länk'),
                                             ),
                                             const SizedBox(width: 8),
                                             if (bundle['courses'] is List &&
@@ -629,7 +683,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Create invitation code',
+                      'Skapa inbjudningskod',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -644,7 +698,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                       controller: _referralEmailCtrl,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                        labelText: 'Email',
+                        labelText: 'E-post',
                         hintText: 'namn@example.com',
                       ),
                     ),
@@ -656,7 +710,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                             controller: _referralDurationCtrl,
                             keyboardType: TextInputType.number,
                             decoration: const InputDecoration(
-                              labelText: 'Duration',
+                              labelText: 'Längd',
                             ),
                           ),
                         ),
@@ -665,16 +719,16 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                           child: DropdownButtonFormField<String>(
                             initialValue: _referralDurationUnit,
                             decoration: const InputDecoration(
-                              labelText: 'Unit',
+                              labelText: 'Enhet',
                             ),
                             items: const [
                               DropdownMenuItem(
                                 value: 'days',
-                                child: Text('Days'),
+                                child: Text('Dagar'),
                               ),
                               DropdownMenuItem(
                                 value: 'months',
-                                child: Text('Months'),
+                                child: Text('Månader'),
                               ),
                             ],
                             onChanged: _sendingReferral
@@ -700,7 +754,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                               height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Send invitation'),
+                          : const Text('Skicka inbjudan'),
                     ),
                   ],
                 ),

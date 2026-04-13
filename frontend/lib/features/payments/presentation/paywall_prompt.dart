@@ -219,7 +219,7 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
                 ],
                 const SizedBox(height: 12),
                 Text(
-                  'Efter redirect uppdaterar appen bara backend-sessionen. Åtkomst låses upp först när webhooken har bekräftat ordern.',
+                  'Efter betalningen uppdaterar appen din session. Åtkomst låses upp först när köpet har bekräftats.',
                   style: theme.textTheme.bodySmall,
                 ),
               ],

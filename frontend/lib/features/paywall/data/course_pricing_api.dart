@@ -9,9 +9,9 @@ Object? _requiredPricingField(Object? payload, String fieldName) {
     case final Map data when data.containsKey(fieldName):
       return data[fieldName];
     case final Map _:
-      throw StateError('Course pricing is missing required field: $fieldName');
+      throw StateError('Kurssvaret saknar prisfältet $fieldName.');
     default:
-      throw StateError('Course pricing returned a non-object payload');
+      throw StateError('Kurssvaret innehåller ogiltig prisinformation.');
   }
 }
 
@@ -25,10 +25,10 @@ class CoursePricing {
     final rawAmount = _requiredPricingField(payload, 'amount_cents');
     final rawCurrency = _requiredPricingField(payload, 'currency');
     if (rawAmount is! int) {
-      throw StateError('Course pricing field "amount_cents" must be an int');
+      throw StateError('Prisfältet amount_cents måste vara ett heltal.');
     }
     if (rawCurrency is! String || rawCurrency.isEmpty) {
-      throw StateError('Course pricing field "currency" must be a string');
+      throw StateError('Prisfältet currency måste vara text.');
     }
     return CoursePricing(amountCents: rawAmount, currency: rawCurrency);
   }
@@ -59,7 +59,7 @@ class CoursePricingApi {
       final Object? body = jsonDecode(response.body);
       return CoursePricing.fromResponse(body);
     }
-    throw Exception('Failed to load pricing (${response.statusCode})');
+    throw Exception('Kunde inte hämta pris (${response.statusCode}).');
   }
 
   Future<String?> _accessToken() async {

@@ -36,7 +36,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  'Medlemskap är inte aktiverat ännu. När launch-flödet öppnas här används bara det kanoniska backend-checkoutflödet.',
+                  'Medlemskap är inte aktiverat ännu. När köpflödet öppnas här används bara det säkra betalningsflödet i appen.',
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -98,7 +98,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Checkout startas via backend och åtkomst uppdateras först efter webhook-bekräftelse.',
+                                  'Betalningen startas säkert och åtkomst uppdateras först när köpet har bekräftats.',
                                   style: Theme.of(context).textTheme.bodyMedium
                                       ?.copyWith(
                                         fontWeight: FontWeight.w600,
@@ -121,7 +121,7 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
                     ),
                     gap12,
                     const Text(
-                      'Frontend startar bara checkout och visar Stripe-sidan. Medlemsstatus och åtkomst bekräftas alltid av backend efter webhooken.',
+                      'Appen startar betalningen och visar den säkra betalningssidan. Medlemsstatus och åtkomst bekräftas alltid av servern.',
                     ),
                     gap16,
                     if (entryState?.needsPayment == true)
@@ -218,7 +218,7 @@ class _LoginPrompt extends StatelessWidget {
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
             gap8,
-            const Text('Du behöver ett konto för att starta medlemscheckout.'),
+            const Text('Du behöver ett konto för att starta medlemsköpet.'),
             gap12,
             GradientButton(
               onPressed: onRequestLogin,

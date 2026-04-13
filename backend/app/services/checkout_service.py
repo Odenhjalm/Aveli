@@ -46,16 +46,16 @@ async def can_purchase_course(
 ) -> tuple[bool, str | None]:
     user_id = str(user.get("id") or "").strip()
     if not user_id:
-        return False, "Anvandar-id saknas"
+        return False, "Användar-id saknas"
 
     course_step = str(course.get("step") or "").strip().lower()
     if course_step not in {"intro", "step1", "step2", "step3"}:
         return False, "Kurssteget saknas"
     if course_step == "intro":
-        return False, "Introkurser kraver introinskrivning"
+        return False, "Introkurser kräver introinskrivning"
     if course_step in {"step1", "step2", "step3"}:
         return True, None
-    return False, "Kurssteget stods inte"
+    return False, "Kurssteget stöds inte"
 
 
 async def create_course_checkout(
@@ -73,7 +73,7 @@ async def create_course_checkout(
     if not can_purchase:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=denial_reason or "Kurskraven ar inte uppfyllda",
+            detail=denial_reason or "Kurskraven är inte uppfyllda",
         )
 
     amount_cents = int(course.get("price_amount_cents") or 0)
@@ -110,7 +110,7 @@ async def create_course_checkout(
     if not user_id_value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Anvandar-id saknas",
+            detail="Användar-id saknas",
         )
     user_id = str(user_id_value)
     course_id_value = course.get("id")
@@ -162,7 +162,7 @@ async def create_course_checkout(
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Kunde inte skapa Stripe-checkoutsession",
+            detail="Kunde inte skapa Stripe-betalningssession",
         ) from exc
 
     await repositories.set_order_checkout_reference(
@@ -175,7 +175,7 @@ async def create_course_checkout(
     if not isinstance(url, str) or not url:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Stripe-session saknar checkout-URL",
+            detail="Stripe-session saknar betalningsadress",
         )
 
     return schemas.CheckoutCreateResponse(
@@ -254,28 +254,28 @@ async def _apply_one_off_refund_resolution(
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Anvandar-id saknas",
+            detail="Användar-id saknas",
         )
 
     order = await repositories.get_user_order(order_id, user_id)
     if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bestallningen hittades inte",
+            detail="Beställningen hittades inte",
         )
 
     order_type = str(order.get("order_type") or "").strip().lower()
     if order_type not in {"one_off", "bundle"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bestallningen ar inte en enstaka digital produkt",
+            detail="Beställningen är inte en enstaka digital produkt",
         )
 
     order_status = str(order.get("status") or "").strip().lower()
     if order_status != "paid":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Bestallningen ar inte betalad och kan inte atgardsaterbetalas",
+            detail="Beställningen är inte betalad och kan inte åtgärdsåterbetalas",
         )
 
     payment_intent_id = await _resolve_one_off_refund_payment_intent(order)
@@ -297,12 +297,12 @@ async def _apply_one_off_refund_resolution(
     except stripe.error.InvalidRequestError as exc:  # type: ignore[attr-defined]
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Stripe kunde inte skapa aterbetalningen",
+            detail="Stripe kunde inte skapa återbetalningen",
         ) from exc
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Stripe-fel vid aterbetalning av digital produkt",
+            detail="Stripe-fel vid återbetalning av digital produkt",
         ) from exc
 
     revoked_course_ids: list[str] = []
@@ -343,7 +343,7 @@ async def _resolve_one_off_refund_payment_intent(order: Mapping[str, Any]) -> st
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Bestallningen saknar betalningsreferens for aterbetalning",
+        detail="Beställningen saknar betalningsreferens för återbetalning",
     )
 
 
@@ -359,7 +359,7 @@ async def _resolve_one_off_course_ids(order: Mapping[str, Any]) -> list[str]:
     if not bundle_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bestallningen saknar canonical produktkoppling",
+            detail="Beställningen saknar produktkoppling",
         )
 
     bundle_courses = await bundle_repo.list_bundle_checkout_courses(bundle_id)
@@ -371,6 +371,6 @@ async def _resolve_one_off_course_ids(order: Mapping[str, Any]) -> list[str]:
     if not course_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Paketbestallningen saknar kurser att aterkalla",
+            detail="Paketbeställningen saknar kurser att återkalla",
         )
     return course_ids

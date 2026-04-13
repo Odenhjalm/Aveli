@@ -91,7 +91,7 @@ class _WelcomePageState extends ConsumerState<WelcomePage> {
     try {
       await ref.read(authControllerProvider.notifier).completeWelcome();
       if (!mounted || !context.mounted) return;
-      showSnack(context, 'Onboarding uppdaterad.');
+      showSnack(context, 'Introduktionen uppdaterad.');
     } catch (error, stackTrace) {
       if (!mounted) return;
       final failure = AppFailure.from(error, stackTrace);
@@ -130,7 +130,7 @@ class _WelcomeRhythm extends StatelessWidget {
         _WelcomePoint(
           title: 'Hela utbildningen',
           body:
-              'Du kan också välja ett bundle-erbjudande med steg ett, två och tre och få alla introduktionskurser släppta direkt.',
+              'Du kan också välja ett paketerbjudande med steg ett, två och tre och få alla introduktionskurser släppta direkt.',
         ),
       ],
     );

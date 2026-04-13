@@ -45,15 +45,24 @@ class CourseBundlesRepository {
   }) async {
     final res = await _client.post<Map<String, dynamic>>(
       '/api/teachers/course-bundles/$bundleId/courses',
-      body: {
-        'course_id': courseId,
-        if (position != null) 'position': position,
-      },
+      body: {'course_id': courseId, if (position != null) 'position': position},
     );
     return Map<String, dynamic>.from(res);
   }
 
-  Future<Map<String, dynamic>> getBundle(String bundleId, {bool skipAuth = false}) async {
+  Future<Map<String, dynamic>> createBundleCheckoutSession(
+    String bundleId,
+  ) async {
+    final res = await _client.post<Map<String, dynamic>>(
+      '/api/course-bundles/$bundleId/checkout-session',
+    );
+    return Map<String, dynamic>.from(res);
+  }
+
+  Future<Map<String, dynamic>> getBundle(
+    String bundleId, {
+    bool skipAuth = false,
+  }) async {
     final res = await _client.get<Map<String, dynamic>>(
       '/api/course-bundles/$bundleId',
       skipAuth: skipAuth,

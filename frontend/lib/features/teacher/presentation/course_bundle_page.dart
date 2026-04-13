@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -23,6 +22,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController(text: '0');
   final _selectedCourses = <String>{};
+  final _checkoutBundleIds = <String>{};
   bool _isActive = true;
   bool _submitting = false;
 
@@ -81,6 +81,40 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
     }
   }
 
+  Future<void> _startBundleCheckout(Map<String, dynamic> bundle) async {
+    final bundleId = bundle['id'] as String? ?? '';
+    if (bundleId.isEmpty || _checkoutBundleIds.contains(bundleId)) {
+      return;
+    }
+
+    setState(() => _checkoutBundleIds.add(bundleId));
+    try {
+      final repo = ref.read(courseBundlesRepositoryProvider);
+      final checkout = await repo.createBundleCheckoutSession(bundleId);
+      final url = checkout['url'];
+      final sessionId = checkout['session_id'];
+      final orderId = checkout['order_id'];
+      if (url is! String || url.isEmpty) {
+        throw StateError('Betalningssvaret saknar betalningsadress.');
+      }
+      if (sessionId is! String || sessionId.isEmpty) {
+        throw StateError('Betalningssvaret saknar sessions-id.');
+      }
+      if (orderId is! String || orderId.isEmpty) {
+        throw StateError('Betalningssvaret saknar order-id.');
+      }
+      if (!mounted) return;
+      context.pushNamed(AppRoute.checkout, extra: url);
+    } catch (e) {
+      if (!mounted) return;
+      showSnack(context, 'Kunde inte starta betalning: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _checkoutBundleIds.remove(bundleId));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final coursesAsync = ref.watch(myCoursesProvider);
@@ -105,7 +139,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Skapa ett paket av flera kurser och dela en betalningslänk till dina elever.',
+              'Skapa ett paket av flera kurser och starta betalning när paketet ska köpas.',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -119,7 +153,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                       controller: _titleController,
                       decoration: const InputDecoration(
                         labelText: 'Paketnamn',
-                        hintText: 'Ex: Introduktionspaket till Aveli',
+                        hintText: 'Till exempel: Introduktionspaket till Aveli',
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -229,7 +263,8 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                 }
                 return Column(
                   children: bundles.map((bundle) {
-                    final paymentLink = bundle['payment_link'] as String? ?? '';
+                    final bundleId = bundle['id'] as String? ?? '';
+                    final isStarting = _checkoutBundleIds.contains(bundleId);
                     final courses = bundle['courses'] as List? ?? const [];
                     return Card(
                       child: Padding(
@@ -286,36 +321,27 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                                 }).toList(),
                               ),
                             const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: SelectableText(
-                                    paymentLink.isEmpty
-                                        ? 'Ingen länk genererad'
-                                        : paymentLink,
-                                    style: theme.textTheme.bodySmall,
-                                  ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: bundleId.isEmpty || isStarting
+                                    ? null
+                                    : () => _startBundleCheckout(bundle),
+                                icon: isStarting
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.payment_outlined),
+                                label: Text(
+                                  isStarting
+                                      ? 'Öppnar betalning...'
+                                      : 'Öppna betalning',
                                 ),
-                                IconButton(
-                                  tooltip: 'Kopiera länk',
-                                  icon: const Icon(Icons.copy),
-                                  onPressed: paymentLink.isEmpty
-                                      ? null
-                                      : () async {
-                                          await Clipboard.setData(
-                                            ClipboardData(text: paymentLink),
-                                          );
-                                          if (!context.mounted) return;
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text('Länk kopierad'),
-                                            ),
-                                          );
-                                        },
-                                ),
-                              ],
+                              ),
                             ),
                           ],
                         ),

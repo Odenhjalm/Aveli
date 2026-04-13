@@ -34,7 +34,7 @@ sealed class AppFailure implements Exception {
     if (error is TimeoutException) {
       return TimeoutFailure(
         message:
-            'Tidsgransen overskreds. Kontrollera din uppkoppling och forsok igen.',
+            'Tidsgränsen överskreds. Kontrollera din uppkoppling och försök igen.',
         original: error,
         stackTrace: stackTrace,
       );
@@ -42,7 +42,7 @@ sealed class AppFailure implements Exception {
 
     if (_looksLikeConfigError(error)) {
       return ConfigurationFailure(
-        message: 'API ar inte korrekt konfigurerat.',
+        message: 'API är inte korrekt konfigurerat.',
         original: error,
         stackTrace: stackTrace,
       );
@@ -54,7 +54,7 @@ sealed class AppFailure implements Exception {
 
     if (_looksLikeNetworkIssue(error)) {
       return NetworkFailure(
-        message: 'Kunde inte na servern. Forsok igen.',
+        message: 'Kunde inte nå servern. Försök igen.',
         original: error,
         stackTrace: stackTrace,
       );
@@ -74,7 +74,7 @@ sealed class AppFailure implements Exception {
     final fallbackDetail = _extractFallbackDetail(payload);
     if (status == 0) {
       return NetworkFailure(
-        message: 'Kunde inte na servern. Forsok igen.',
+        message: 'Kunde inte nå servern. Försök igen.',
         original: error,
         stackTrace: stackTrace,
       );
@@ -87,7 +87,7 @@ sealed class AppFailure implements Exception {
 
     if (status == 401 || status == 403) {
       return UnauthorizedFailure(
-        message: message ?? 'Behorighet saknas. Logga in igen.',
+        message: message ?? 'Behörighet saknas. Logga in igen.',
         code: code,
         original: error,
         stackTrace: stackTrace,
@@ -105,7 +105,7 @@ sealed class AppFailure implements Exception {
       return ValidationFailure(
         message:
             message ??
-            'Forfragan kunde inte behandlas. Kontrollera uppgifterna och forsok igen.',
+            'Förfrågan kunde inte behandlas. Kontrollera uppgifterna och försök igen.',
         code: code,
         original: error,
         stackTrace: stackTrace,
@@ -114,7 +114,7 @@ sealed class AppFailure implements Exception {
     return ServerFailure(
       message:
           message ??
-          'Serverfel ($status). Forsok igen senare eller kontakta supporten om problemet kvarstar.',
+          'Serverfel ($status). Försök igen senare eller kontakta supporten om problemet kvarstår.',
       code: code,
       original: error,
       stackTrace: stackTrace,
@@ -195,29 +195,29 @@ String _localizeDetail(String detail) {
   switch (detail.toLowerCase()) {
     case 'invalid credentials':
     case 'invalid_credentials':
-      return 'Fel e-postadress eller losenord.';
+      return 'Fel e-postadress eller lösenord.';
     case 'email already registered':
     case 'email_already_registered':
-      return 'E-postadressen ar redan registrerad.';
+      return 'E-postadressen är redan registrerad.';
     case 'user not found':
     case 'user_not_found':
       return 'Kontot kunde inte hittas.';
     case 'invalid_or_expired_token':
-      return 'Lanken ar ogiltig eller har gatt ut.';
+      return 'Länken är ogiltig eller har gått ut.';
     case 'invalid_current_password':
-      return 'Nuvarande losenord ar fel.';
+      return 'Nuvarande lösenord är fel.';
     case 'new_password_must_differ':
-      return 'Det nya losenordet maste skilja sig fran det nuvarande.';
+      return 'Det nya lösenordet måste skilja sig från det nuvarande.';
     case 'rate_limited':
-      return 'For manga forsok. Vanta en stund och forsok igen.';
+      return 'För många försök. Vänta en stund och försök igen.';
     case 'unauthorized':
     case 'unauthenticated':
-      return 'Behorighet saknas. Logga in igen.';
+      return 'Behörighet saknas. Logga in igen.';
     case 'forbidden':
     case 'forbidden_action':
     case 'not_allowed':
     case 'admin_required':
-      return 'Du har inte behorighet att utfora den har atgarden.';
+      return 'Du har inte behörighet att utföra den här åtgärden.';
     case 'payment required':
     case 'payment_failed':
     case 'payment_failed_error':
@@ -225,7 +225,7 @@ String _localizeDetail(String detail) {
     case 'card_declined':
       return 'Kortet nekades av banken. Prova ett annat kort eller kontakta banken.';
     case 'insufficient_funds':
-      return 'Kortet har otillrackligt saldo for att genomfora kopet.';
+      return 'Kortet har otillräckligt saldo för att genomföra köpet.';
     default:
       return detail;
   }

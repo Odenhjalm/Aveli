@@ -21,13 +21,15 @@ class CheckoutLaunch {
     final sessionId = payload['session_id'];
     final orderId = payload['order_id'];
     if (url is! String || url.isEmpty) {
-      throw UnexpectedFailure(message: 'Checkout-svaret saknar url.');
+      throw UnexpectedFailure(
+        message: 'Betalningssvaret saknar betalningsadress.',
+      );
     }
     if (sessionId is! String || sessionId.isEmpty) {
-      throw UnexpectedFailure(message: 'Checkout-svaret saknar session_id.');
+      throw UnexpectedFailure(message: 'Betalningssvaret saknar sessions-id.');
     }
     if (orderId is! String || orderId.isEmpty) {
-      throw UnexpectedFailure(message: 'Checkout-svaret saknar order_id.');
+      throw UnexpectedFailure(message: 'Betalningssvaret saknar order-id.');
     }
     return CheckoutLaunch(url: url, sessionId: sessionId, orderId: orderId);
   }

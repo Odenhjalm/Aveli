@@ -226,7 +226,7 @@ async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> Ch
 
     url = session.get("url")
     if not isinstance(url, str) or not url:
-        raise CourseBundleError("Stripe-session saknar URL", status_code=502)
+        raise CourseBundleError("Stripe-session saknar betalningsadress", status_code=502)
 
     return CheckoutCreateResponse(
         url=url,
@@ -308,7 +308,7 @@ async def _stripe_create_bundle_product(
     teacher_id: str,
 ) -> str:
     bundle_id = str(bundle.get("id") or "").strip()
-    title = str(bundle.get("title") or "").strip() or "Course bundle"
+    title = str(bundle.get("title") or "").strip() or "Kurspaket"
 
     try:
         product = await run_in_threadpool(
@@ -362,7 +362,7 @@ async def ensure_bundle_stripe_mapping(bundle_id: str, teacher_id: str) -> Mappi
     normalized_bundle_id = str(bundle_id or "").strip()
     normalized_teacher_id = str(teacher_id or "").strip()
     if not normalized_bundle_id:
-        raise ValueError("bundle_id is required")
+        raise ValueError("Paket-id krävs")
     if not normalized_teacher_id:
         raise CourseBundleError("Paketägare krävs", status_code=403)
 
@@ -437,7 +437,7 @@ async def ensure_bundle_stripe_mapping(bundle_id: str, teacher_id: str) -> Mappi
 async def refresh_bundle_sellability(bundle_id: str) -> Mapping[str, Any] | None:
     normalized_bundle_id = str(bundle_id or "").strip()
     if not normalized_bundle_id:
-        raise ValueError("bundle_id is required")
+        raise ValueError("Paket-id krävs")
 
     bundle = await bundle_repo.get_bundle_mapping_subject(normalized_bundle_id)
     if bundle is None:

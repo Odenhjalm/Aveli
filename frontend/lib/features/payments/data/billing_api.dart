@@ -15,7 +15,7 @@ class BillingApi {
   Future<void> cancelSubscription() async {
     throw UnexpectedFailure(
       message:
-          'Avbokning via frontend är inte del av det kanoniska launch-flödet. Vänta på backenddriven hantering i ett senare steg.',
+          'Avbokning i appen är inte tillgänglig i det här köpflödet. Vänta på serverstyrd hantering i ett senare steg.',
     );
   }
 }
