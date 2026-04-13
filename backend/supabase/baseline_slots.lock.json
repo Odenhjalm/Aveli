@@ -213,6 +213,12 @@
       "filename": "0035_remove_legacy_tables.sql",
       "path": "backend/supabase/baseline_slots/0035_remove_legacy_tables.sql",
       "sha256": "ff0f3a5ae1f6c45ed919dcba28aa713c2392cb3df3c945532b687340e4d6ab02"
+    },
+    {
+      "slot": 36,
+      "filename": "0036_restore_billing_logs.sql",
+      "path": "backend/supabase/baseline_slots/0036_restore_billing_logs.sql",
+      "sha256": "8d06acdb6222735a0ec997d7f5c01e1c04d892668f9788145a6d549d4e01a84a"
     }
   ]
 }

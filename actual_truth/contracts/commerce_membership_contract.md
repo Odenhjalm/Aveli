@@ -36,6 +36,36 @@ This contract operates under `SYSTEM_LAWS.md`.
 
 Protected course-access state, including course-bundle-granted course entitlement state, is outside membership authority and is owned only by `course_access_contract.md`.
 
+## Payment Tables Classification
+
+app.payment_events:
+- TYPE: SUPPORT_TABLE
+- ROLE: webhook idempotency + observability
+- AUTHORITY: NONE
+- WRITE: backend webhook only
+- READ: observability layer allowed
+- REQUIRED: YES
+
+app.billing_logs:
+- TYPE: SUPPORT_TABLE
+- ROLE: billing observability/logging
+- AUTHORITY: NONE
+- WRITE: backend only
+- READ: observability layer allowed
+- REQUIRED: YES
+
+app.transactions:
+- TYPE: REMOVED
+- ROLE: deprecated
+- AUTHORITY: NONE
+- MUST NOT EXIST in baseline
+
+app.subscriptions:
+- TYPE: REMOVED
+- ROLE: deprecated
+- AUTHORITY: NONE
+- MUST NOT EXIST in baseline
+
 ## 3. CANONICAL MEMBERSHIP-SCOPE ENTRYPOINTS
 
 - Course purchase initiation: `POST /api/checkout/create`
