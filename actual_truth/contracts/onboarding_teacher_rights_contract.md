@@ -14,8 +14,12 @@ This file is the PRIMARY AUTHORITY for:
 - teacher-rights mutation rules
 - admin-bootstrap authority boundaries
 
+This file owns field authority and mutation authority only. It does not own
+post-auth entry authority, full entry composition, or routing authority.
+
 This contract composes with:
 
+- `onboarding_entry_authority_contract.md`
 - `auth_onboarding_contract.md`
 - `auth_onboarding_baseline_contract.md`
 
@@ -89,6 +93,9 @@ Rules:
 - `is_admin = true` does not convert `learner` into `teacher`.
 - `role` MUST NOT be used as runtime fallback when `role_v2` is missing or invalid.
 - If `role_v2` is missing or invalid, privileged non-admin role access is denied.
+- These fields may be exposed through `GET /entry-state` only as defined by
+  `onboarding_entry_authority_contract.md`.
+- Teacher-rights fields alone MUST NOT grant app entry or determine post-auth routing.
 
 ## 3. OWNERSHIP RULES
 
@@ -232,6 +239,9 @@ Rules:
 
 This contract does not define:
 
+- post-auth entry authority
+- full entry composition
+- routing authority
 - password-reset semantics
 - invite-validation semantics
 - referral redemption semantics
@@ -241,6 +251,8 @@ This contract does not define:
 ## 9. FINAL ASSERTION
 
 - `app.auth_subjects` is the only truth carrier for onboarding completion, non-admin role truth, and admin override.
+- This contract defines field authority and mutation execution only.
+- Post-auth routing authority belongs only to `onboarding_entry_authority_contract.md` through `GET /entry-state`.
 - Teacher rights are admin-only.
 - Admin bootstrap is operator-controlled only.
 - Teacher-request lifecycle is eliminated.

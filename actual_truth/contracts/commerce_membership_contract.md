@@ -4,13 +4,15 @@
 
 ACTIVE
 
-This contract defines the canonical commerce truth for launch purchase authority, membership purchase/app-entry state, payment UI boundaries, and adjacent MVP bundle separation.
+This contract defines the canonical commerce truth for launch purchase authority, membership purchase/current membership state, payment UI boundaries, and adjacent MVP bundle separation.
 This contract operates under `SYSTEM_LAWS.md`.
+Post-auth entry authority and routing composition are owned by `onboarding_entry_authority_contract.md`.
 
 ## 1. CONTRACT LAW
 
 - Purchase authority is owned only by `app.orders` and `app.payments`.
-- Membership app-entry state is owned only by `app.memberships`.
+- Membership current-state truth is owned only by `app.memberships`.
+- Membership state is an input to entry composition, not full app-entry authority by itself.
 - Membership purchase is a purchase flow and therefore MUST create an order.
 - Membership MUST NOT exist as a separate purchase authority.
 - Course purchase and membership purchase use separate canonical initiation entrypoints.
@@ -23,7 +25,7 @@ This contract operates under `SYSTEM_LAWS.md`.
 
 - `app.orders` owns purchase identity and lifecycle for all paid launch commerce flows.
 - `app.payments` owns payment-provider settlement records tied to orders.
-- `app.memberships` owns app-entry state only.
+- `app.memberships` owns current membership state only.
 - `course_enrollments` owns protected course entitlement and access state for course and course-bundle fulfillment.
 - `app.memberships` is the single canonical current-state membership authority per user.
 - `app.memberships` MUST contain exactly one authority row per `user_id`.
@@ -35,6 +37,9 @@ This contract operates under `SYSTEM_LAWS.md`.
 - A membership row is not proof of purchase without an order/payment trail.
 
 Protected course-access state, including course-bundle-granted course entitlement state, is outside membership authority and is owned only by `course_access_contract.md`.
+Full post-auth entry composition, routing, and the `GET /entry-state`
+`membership_active` projection are owned by
+`onboarding_entry_authority_contract.md`.
 
 ## Payment Tables Classification
 
@@ -122,7 +127,9 @@ Entrypoint responsibilities:
 - Payment success in frontend is NOT membership authority.
 - Membership state MUST ONLY change after backend validates the Stripe webhook and backend persists the membership update.
 - Backend remains the ONLY authority for membership state.
-- Backend remains the ONLY authority for access decisions.
+- Backend remains the ONLY authority for commerce membership-state decisions.
+- Final app-entry and routing decisions remain owned by `GET /entry-state`
+  under `onboarding_entry_authority_contract.md`.
 - Stripe remains payment processor and event emitter only.
 - Stripe is NOT membership authority.
 - Stripe is NOT access authority.
@@ -148,7 +155,7 @@ Entrypoint responsibilities:
 - The canonical purchase trail for membership is:
   - `app.orders` for purchase identity and state
   - `app.payments` for payment settlement
-  - `app.memberships` for resulting app-entry state
+  - `app.memberships` for resulting current membership state
 - Any membership flow that creates or updates membership without an order-backed purchase trail is non-canonical.
 
 ## 9. MEMBERSHIP SOURCE LAW
@@ -182,11 +189,11 @@ Canonical membership current-state statuses are:
 
 State meaning:
 
-- `inactive` = no valid current membership entitlement; app access is denied
-- `active` = valid current membership entitlement; app access is allowed
-- `past_due` = delinquent payment state; app access is denied immediately
+- `inactive` = no valid current membership entitlement; membership input is inactive
+- `active` = valid current membership entitlement; membership input is active
+- `past_due` = delinquent payment state; membership input is inactive immediately
 - `canceled` = renewal has been stopped but the current entitlement remains valid until `expires_at`
-- `expired` = membership entitlement has ended; app access is denied
+- `expired` = membership entitlement has ended; membership input is inactive
 
 Lifecycle rules:
 
@@ -202,37 +209,43 @@ Lifecycle rules:
 - No grace period exists in MVP for `past_due`
 - Any future grace-period behavior MUST require a separate explicit contract and MUST NOT be inferred from Stripe retry logic
 
-## 11. ACCESS RULE
+## 11. MEMBERSHIP STATE INPUT TO ENTRY
 
-User has app access IF AND ONLY IF:
+This contract defines the membership current-state rule consumed by
+`onboarding_entry_authority_contract.md`. Membership state is not full app-entry
+authority by itself.
+
+Membership state evaluates as active for entry composition only when:
 
 - `status = active`
 - OR `status = canceled AND current_time < expires_at`
 
-All other states MUST NOT grant app access:
+All other states MUST evaluate as inactive for entry composition:
 
 - `inactive`
 - `past_due`
 - `expired`
 
-Access rules:
+Membership input rules:
 
-- `past_due` means immediate loss of app access
-- access MUST be denied when `status = past_due`
-- app access MUST be determined only from the backend-owned current state in `app.memberships`
+- `past_due` means membership state is inactive immediately.
+- membership state MUST evaluate as inactive when `status = past_due`.
+- membership state MUST be determined only from the backend-owned current state in `app.memberships`.
+- `GET /entry-state` under `onboarding_entry_authority_contract.md` owns final app-entry and routing composition.
+- Membership alone MUST NOT grant app entry.
 
 ## 12. NOTIFICATION AUDIENCE LAW
 
 - Membership and course access are separate authorities.
-- Membership determines app-level access.
-- Membership determines app-level audience.
+- Membership determines membership-scope audience eligibility.
+- Membership does not determine final app entry by itself.
 - `course_enrollments` determines course-level access.
 - `course_enrollments` determines course-level audience.
 - Notifications MUST use membership for global app announcements.
 - Notifications MUST use membership for member-wide targeting.
 - Notifications MUST use `course_enrollments` for course-specific targeting.
 - Notifications MUST NOT use membership to infer course access.
-- Notifications MUST NOT use course enrollment to infer app access.
+- Notifications MUST NOT use course enrollment to infer app entry.
 - Notifications MUST NOT mix membership and enrollment audiences.
 
 ## 13. FORBIDDEN PATTERNS
@@ -336,5 +349,7 @@ Authority effect law:
 ## 17. FINAL ASSERTION
 
 - This contract is the canonical launch commerce and membership purchase truth.
+- This contract does not own full post-auth entry composition or routing authority.
+- Membership state is an input to `GET /entry-state` under `onboarding_entry_authority_contract.md`.
 - It is lockable as a contract artifact.
 - Contract truth and implementation drift are intentionally separated.

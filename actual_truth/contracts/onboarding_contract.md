@@ -2,31 +2,38 @@
 
 ## PURPOSE
 
-Define the canonical onboarding and entry behavior.
+Define UX companion guidance for onboarding copy, pre-entry UI sequencing, and
+onboarding completion intent.
 
-This contract is the single source of truth.
-Implementation must follow this exactly.
-
----
-
-## 1. ENTRY LAW
-
-User may enter app ONLY when:
-
-* onboarding_state = completed
-* membership is valid
-
-No other condition grants entry.
+This contract is not an entry-authority contract. Entry authority, post-auth
+routing authority, and `/entry-state` ownership are defined only by
+`onboarding_entry_authority_contract.md`.
+Implementation may use this file only as UX companion guidance.
 
 ---
 
-## 2. ONBOARDING COMPLETION
+## 1. UX ENTRY REFERENCE
 
-Onboarding is completed ONLY when:
+UX sequencing may point the user toward app entry only after delegated
+`GET /entry-state` under `onboarding_entry_authority_contract.md` permits it.
+This file does not define the entry decision.
+
+This file must not define entry composition, routing authority, or alternate
+current-user entry surfaces.
+
+---
+
+## 2. ONBOARDING COMPLETION UX INTENT
+
+UX completion intent is represented when:
 
 * user clicks:
   "Jag förstår hur Aveli fungerar"
-* profile.name is present
+* profile display name may be collected as UX projection data
+
+Persisted onboarding completion authority remains outside this UX companion and
+is governed by `auth_onboarding_contract.md` and
+`onboarding_entry_authority_contract.md`.
 
 Onboarding MUST NOT complete via:
 
@@ -60,7 +67,7 @@ Invite flow:
 * MUST NOT grant entry
 * MUST NOT complete onboarding
 
-Invite user MUST complete onboarding before entry.
+Invite user routing is still determined only by delegated `GET /entry-state`.
 
 ---
 
@@ -80,11 +87,12 @@ Referral:
 
 Profile:
 
-* name is required for onboarding completion
+* display name is UX projection data
 * bio is optional
 * image is optional
 
 Profile MUST NOT grant entry.
+Profile MUST NOT bootstrap routing.
 
 ---
 
@@ -98,11 +106,11 @@ Intro course:
 
 ---
 
-## 8. FRONTEND AUTHORITY
+## 8. FRONTEND UX SEQUENCING
 
 Frontend:
 
-* MUST use /entry-state
+* MUST use /entry-state through onboarding_entry_authority_contract.md
 * MUST NOT infer authority from:
 
   * profile
@@ -110,9 +118,9 @@ Frontend:
   * role
   * local state
 
-Routing MUST depend only on:
+Routing authority is not defined here. Routing MUST depend only on:
 
-entryState
+GET /entry-state as defined by onboarding_entry_authority_contract.md
 
 ---
 

@@ -122,6 +122,111 @@ Frontend route classes:
 | Referral authority | `app.referral_codes` | Teacher-issued referral creation and authenticated `POST /referrals/redeem` after identity exists | Baseline audit did not find `app.referral_codes`; runtime read helpers also catch missing table. This is invalid drift. |
 | Invite authority | Signed invite email token plus `app.memberships` grant with `source = 'invite'` and non-null `expires_at` | `/auth/validate-invite`, optional `invite_token` validation during `/auth/register`, and canonical non-purchase membership-grant boundary | Runtime currently validates invite token but does not create invite membership. That is invalid drift from the corrected invite law. |
 
+## POST-AUTH ENTRY-STATE SURFACE
+
+`GET /entry-state` is the only canonical post-auth routing authority surface.
+After authenticated identity is established, `GET /entry-state` is the only
+allowed source for:
+
+- app-entry decision
+- onboarding gating
+- payment gating
+
+No other surface may determine post-auth routing. This includes `/profiles/me`,
+frontend route state, token claims, local session state, Stripe checkout
+success, payment-return state, membership reads outside entry composition,
+teacher/admin metadata, course enrollment, invite-token presence, referral-link
+presence, or any public/auth/payment/webhook/read surface.
+
+### Response Ownership
+
+The allowed `GET /entry-state` response fields are exactly:
+
+- `can_enter_app`
+- `onboarding_state`
+- `onboarding_completed`
+- `membership_active`
+- `needs_onboarding`
+- `needs_payment`
+- `role_v2`
+- `role`
+- `is_admin`
+
+No other response field is allowed.
+
+Field ownership:
+
+- `onboarding_state` is sourced from `app.auth_subjects.onboarding_state` under
+  this contract and `onboarding_teacher_rights_contract.md`.
+- `role_v2`, `role`, and `is_admin` are sourced from `app.auth_subjects` under
+  `onboarding_teacher_rights_contract.md`.
+- `membership_active` is derived from the canonical current membership state
+  defined by `commerce_membership_contract.md`.
+- `can_enter_app`, `onboarding_completed`, `needs_onboarding`, and
+  `needs_payment` are entry-composition fields owned by this contract and
+  exposed only through `GET /entry-state`.
+
+### Derivation Rules
+
+- `onboarding_completed = onboarding_state == "completed"`.
+- `membership_active` is defined by `commerce_membership_contract.md`.
+- `can_enter_app = onboarding_completed && membership_active`.
+- `needs_onboarding = !onboarding_completed`.
+- `needs_payment = !membership_active`.
+
+### Forbidden Fields
+
+`GET /entry-state` must not include:
+
+- profile fields, including `user_id`, `display_name`, `bio`,
+  `avatar_media_id`, `photo_url`, `created_at`, or `updated_at`
+- `email`
+- `is_invite`
+- raw membership state, including membership `status`, `source`, `expires_at`,
+  period fields, or provider identifiers
+- payment, order, or Stripe state, including order identifiers, payment
+  identifiers, checkout-session identifiers, subscription identifiers, or
+  Stripe customer identifiers
+- token claims or raw token payload fields
+- course enrollment fields, course-access state, lesson unlock state, or
+  protected course-access fields
+
+### Relation To `/profiles/me`
+
+`/profiles/me` is projection-only. It must not be used for routing, bootstrap,
+or entry decision. `/profiles/me` must not be required before post-auth routing
+decisions, and a successful `/profiles/me` response must not repair, replace,
+or infer `GET /entry-state` truth.
+
+### Frontend Routing Rule
+
+Frontend must call `GET /entry-state` before post-auth routing. Frontend must
+not depend on `/profiles/me` before routing, and must not route from profile
+hydration, token claims, local session state, membership-only reads, checkout
+success, or role/admin metadata.
+
+### UX Distinction
+
+Entry truth is `GET /entry-state`. Pre-entry UI selection may use projection
+data to render choices or forms, including profile UI, intro-course selection,
+payment UI choice, checkout-return display, invite transport display, referral
+transport display, or other pre-entry UI state. Pre-entry UI selection must not
+affect entry authority, must not complete onboarding, and must not grant
+payment or app entry.
+
+### Contract Deferrals
+
+- Credential, token, email-verification, and onboarding-completion execution
+  details are governed by `auth_onboarding_contract.md`.
+- Profile projection shape and write boundaries are governed by
+  `profile_projection_contract.md`.
+- Membership lifecycle, purchase settlement, and current membership state are
+  governed by `commerce_membership_contract.md`.
+- Teacher-rights field authority, mutation authority, role semantics, and
+  admin semantics are governed by `onboarding_teacher_rights_contract.md`.
+- Full post-auth entry composition and post-auth routing authority remain owned
+  only by this contract.
+
 ## 3. ENTRY LAW
 
 A user is allowed to enter the authenticated app only when all conditions are
@@ -131,8 +236,10 @@ true:
 - The identity resolves to a canonical `app.auth_subjects` row.
 - `app.auth_subjects.onboarding_state = 'completed'`.
 - A single canonical current-state membership row exists in `app.memberships`.
-- Membership access evaluates as active under the membership law in this
-  contract.
+- `membership_active = true` under `commerce_membership_contract.md`.
+
+These conditions are exposed for post-auth routing only through
+`GET /entry-state`.
 
 If any condition is missing, invalid, ambiguous, or unavailable, global app-entry
 must be denied.
@@ -183,22 +290,13 @@ authenticated app surfaces. That behavior is invalid runtime drift.
 
 ## 5. MEMBERSHIP LAW
 
-`app.memberships` is the only canonical authority for global app-entry
-membership state.
+For entry composition, `membership_active` is the only membership-derived field
+owned by `GET /entry-state`.
 
-Global app-entry is active only when:
-
-- `status = 'active'`
-- OR `status = 'canceled' AND current_time < expires_at`
-
-All other membership states deny global app-entry, including:
-
-- missing row
-- `inactive`
-- `past_due`
-- `expired`
-- `canceled` without a future `expires_at`
-- unknown status values
+`membership_active` is defined by `commerce_membership_contract.md`.
+This contract does not redefine membership lifecycle, raw membership status,
+purchase settlement, payment state, order state, Stripe state, or membership
+provider metadata.
 
 No route may treat authentication alone as sufficient global app-entry.
 No frontend state may treat authentication alone as sufficient global app-entry.
@@ -215,7 +313,8 @@ substitute for the global app-entry law.
 
 Global app-entry authority and protected course-access authority are separate.
 
-Global app-entry is governed by `app.memberships` and completed onboarding.
+Global app-entry is governed by `GET /entry-state` composition from completed
+onboarding and `membership_active`.
 Protected course access is governed by `app.course_enrollments`.
 
 Protected lesson/content access must require canonical course enrollment state
@@ -348,8 +447,9 @@ behavior.
 
 Canonical auth entry is identity and token transport only.
 Canonical onboarding authority is `app.auth_subjects.onboarding_state`.
-Canonical global app-entry authority is completed onboarding plus active
-membership in `app.memberships`.
+Canonical post-auth routing authority is `GET /entry-state` in this contract.
+Canonical global app-entry authority is `GET /entry-state` composition from
+completed onboarding plus `membership_active`.
 Canonical profile projection is `app.profiles` and must remain non-authoritative.
 Canonical protected course access is `app.course_enrollments`.
 Canonical referral authority is `app.referral_codes`; if that authority is

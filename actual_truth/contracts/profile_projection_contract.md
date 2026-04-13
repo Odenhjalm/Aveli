@@ -7,6 +7,7 @@ ACTIVE
 This contract defines the canonical projection-only law for `app.profiles`.
 This contract composes with:
 
+- `onboarding_entry_authority_contract.md`
 - `auth_onboarding_contract.md`
 - `onboarding_teacher_rights_contract.md`
 - `auth_onboarding_baseline_contract.md`
@@ -31,6 +32,9 @@ This contract does not define:
 
 - identity truth
 - onboarding authority
+- post-auth entry authority
+- routing authority
+- bootstrap dependency
 - role authority
 - admin authority
 - referral redemption
@@ -73,6 +77,7 @@ Rules:
 ## 5. READ SURFACE
 
 - `GET /profiles/me` is the canonical current-user projection read surface.
+- `GET /profiles/me` is projection-only and is not a routing surface.
 - `/profiles/me` may expose:
   - `user_id`
   - `email`
@@ -86,16 +91,25 @@ Rules:
 - `photo_url` on `/profiles/me` is read composition only.
 - `photo_url` MUST be derived from canonical avatar identity when such identity is available.
 - `photo_url` may be absent when no canonical avatar identity is available.
+- `display_name` may be used only for non-authoritative UX selection after
+  `GET /entry-state` has already been evaluated.
 
 ## 6. NON-AUTHORITY LAW
 
 - `app.profiles` MUST NOT be used for onboarding decisions.
 - `app.profiles` MUST NOT be used for role, teacher-rights, or admin evaluation.
 - `app.profiles` MUST NOT be used for membership, billing, or access decisions.
+- `/profiles/me` MUST NOT be used as a bootstrap dependency.
+- `/profiles/me` MUST NOT be used as a routing input.
+- `/profiles/me` MUST NOT be required before post-auth routing decisions.
+- `/profiles/me` MUST NOT repair, infer, replace, or bypass `GET /entry-state`.
+- Post-auth routing authority is owned only by `onboarding_entry_authority_contract.md`.
 - There is no fallback authority path through `app.profiles`.
 
 ## 7. FORBIDDEN PATTERNS
 
+- Treating `/profiles/me` as bootstrap truth.
+- Treating `/profiles/me` as routing input.
 - Treating `photo_url` as writable authority.
 - Treating `avatar_media_id` as user-owned semantic authority.
 - Using `/profiles/me/avatar` as canonical Auth + Onboarding authority.
@@ -106,5 +120,6 @@ Rules:
 ## 8. FINAL ASSERTION
 
 - `app.profiles` is projection-only and non-authoritative.
+- `/profiles/me` is not a bootstrap dependency, routing input, or entry-decision surface.
 - `photo_url` is read composition only.
 - `avatar_media_id` is the only canonical persisted avatar identity field in `app.profiles`.

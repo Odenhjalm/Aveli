@@ -7,6 +7,7 @@ ACTIVE
 This contract defines the canonical Auth + Onboarding execution surface.
 This contract composes with:
 
+- `onboarding_entry_authority_contract.md`
 - `onboarding_teacher_rights_contract.md`
 - `profile_projection_contract.md`
 - `referral_membership_grant_contract.md`
@@ -21,6 +22,9 @@ This contract composes with:
 - Contracts under `actual_truth/contracts/` are the only truth for Auth + Onboarding.
 - Runtime schema introspection, frontend claims, tests, legacy routes, and remote runtime state MUST NOT redefine authority.
 - Membership, commerce, referral redemption, and binary media handling remain outside Auth + Onboarding except where this contract names an explicit boundary.
+- Post-auth routing authority is delegated to `onboarding_entry_authority_contract.md`.
+- `GET /entry-state` is the delegated post-auth routing surface.
+- Auth + Onboarding execution surfaces MUST NOT imply app entry, routing authority, or full post-auth entry composition.
 
 ## 2. AUTHORITY MODEL
 
@@ -44,6 +48,10 @@ This contract composes with:
 
 ## 3. CANONICAL ENTRYPOINTS
 
+This section lists Auth + Onboarding execution surfaces only. It does not define
+post-auth entry authority. Post-auth routing must use delegated
+`GET /entry-state` under `onboarding_entry_authority_contract.md`.
+
 - Registration: `POST /auth/register`
 - Login: `POST /auth/login`
 - Forgot password: `POST /auth/forgot-password`
@@ -53,8 +61,9 @@ This contract composes with:
 - Verify email: `GET /auth/verify-email`
 - Validate invite: `GET /auth/validate-invite`
 - Onboarding completion: `POST /auth/onboarding/complete`
-- Current profile read: `GET /profiles/me`
-- Current profile update: `PATCH /profiles/me`
+- Current profile projection read: `GET /profiles/me`
+- Current profile projection update: `PATCH /profiles/me`
+- Delegated post-auth routing: `GET /entry-state` under `onboarding_entry_authority_contract.md`
 - Grant teacher role: `POST /admin/users/{user_id}/grant-teacher-role`
 - Revoke teacher role: `POST /admin/users/{user_id}/revoke-teacher-role`
 
@@ -62,6 +71,8 @@ Entrypoint responsibilities:
 
 - `/auth/*` owns credential, token, email-verification, and onboarding-completion execution.
 - `/profiles/me` owns current-user projection read and editable profile text fields only.
+- `/profiles/me` MUST NOT be used for routing, bootstrap, or entry decision.
+- `/entry-state` is referenced here only as a delegated surface and is not owned by this contract.
 - `/admin/users/*` owns admin-only teacher-role mutation only.
 
 ## 4. REQUEST CONTRACTS
@@ -230,5 +241,7 @@ All non-2xx responses on owned surfaces are governed only by `auth_onboarding_fa
 ## 11. FINAL ASSERTION
 
 - This contract is the canonical Auth + Onboarding execution contract.
+- This contract does not own post-auth entry authority, routing authority, or full entry composition.
+- Post-auth entry authority is owned only by `onboarding_entry_authority_contract.md` through `GET /entry-state`.
 - Contract truth is separate from implementation state.
 - The canonical surface is now closed enough to drive deterministic implementation planning.
