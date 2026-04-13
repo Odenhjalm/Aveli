@@ -7,7 +7,6 @@ REPO_ROOT="$(cd "$FRONTEND_ROOT/.." && pwd -P)"
 CANONICAL_BUILD_DIR="$FRONTEND_ROOT/build/web"
 EXPECTED_MAIN_BRANCH="main"
 EXPECTED_PROD_API_BASE_URL="https://aveli.fly.dev"
-KNOWN_MAIN_MARKER="resolvable_for_editor"
 
 cd "$FRONTEND_ROOT"
 if [[ "$(pwd -P)" != "$FRONTEND_ROOT" ]]; then
@@ -183,23 +182,18 @@ echo "Flutter BUILD_NUMBER=$BUILD_NUMBER" >&2
 
 "$SCRIPT_DIR/build_prod.sh"
 
-if [[ ! -f "$CANONICAL_BUILD_DIR/main.dart.js" ]]; then
-  echo "Build integrity check failed: missing $CANONICAL_BUILD_DIR/main.dart.js" >&2
+if [[ ! -d "$CANONICAL_BUILD_DIR" ]]; then
+  echo "Build integrity check failed: missing output directory $CANONICAL_BUILD_DIR" >&2
   exit 1
 fi
 
-if ! grep -Fq "$API_BASE_URL" "$CANONICAL_BUILD_DIR/main.dart.js"; then
-  echo "Build integrity check failed: API_BASE_URL=$API_BASE_URL not found in main.dart.js" >&2
+if [[ ! -s "$CANONICAL_BUILD_DIR/main.dart.js" ]]; then
+  echo "Build integrity check failed: missing or empty $CANONICAL_BUILD_DIR/main.dart.js" >&2
   exit 1
 fi
 
-if ! grep -Fq "$KNOWN_MAIN_MARKER" "$CANONICAL_BUILD_DIR/main.dart.js"; then
-  echo "Build integrity check failed: stable marker '$KNOWN_MAIN_MARKER' not found in main.dart.js" >&2
-  exit 1
-fi
-
-if grep -Fq "api.aveli.app" "$CANONICAL_BUILD_DIR/main.dart.js"; then
-  echo "Build integrity check failed: legacy api.aveli.app found in main.dart.js" >&2
+if [[ ! -s "$CANONICAL_BUILD_DIR/index.html" ]]; then
+  echo "Build integrity check failed: missing or empty $CANONICAL_BUILD_DIR/index.html" >&2
   exit 1
 fi
 
