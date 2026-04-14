@@ -111,11 +111,14 @@ void main() {
   const completedEntry = RouteSessionSnapshot(
     entryState: EntryState(
       canEnterApp: true,
+      onboardingState: 'completed',
       onboardingCompleted: true,
       membershipActive: true,
       needsOnboarding: false,
       needsPayment: false,
-      isInvite: false,
+      roleV2: 'learner',
+      role: 'learner',
+      isAdmin: false,
     ),
     isEntryStateLoading: false,
   );
@@ -123,11 +126,14 @@ void main() {
   const paymentNeeded = RouteSessionSnapshot(
     entryState: EntryState(
       canEnterApp: false,
+      onboardingState: 'completed',
       onboardingCompleted: true,
       membershipActive: false,
       needsOnboarding: false,
       needsPayment: true,
-      isInvite: false,
+      roleV2: 'learner',
+      role: 'learner',
+      isAdmin: false,
     ),
     isEntryStateLoading: false,
   );
@@ -135,64 +141,16 @@ void main() {
   const onboardingNeeded = RouteSessionSnapshot(
     entryState: EntryState(
       canEnterApp: false,
+      onboardingState: 'incomplete',
       onboardingCompleted: false,
       membershipActive: true,
       needsOnboarding: true,
       needsPayment: false,
-      isInvite: true,
+      roleV2: 'learner',
+      role: 'learner',
+      isAdmin: false,
     ),
     isEntryStateLoading: false,
-  );
-
-  const onboardingNeededWithName = RouteSessionSnapshot(
-    entryState: EntryState(
-      canEnterApp: false,
-      onboardingCompleted: false,
-      membershipActive: true,
-      needsOnboarding: true,
-      needsPayment: false,
-      isInvite: true,
-    ),
-    isEntryStateLoading: false,
-    profileDisplayName: 'Aveli User',
-  );
-
-  const onboardingNeededNonInvite = RouteSessionSnapshot(
-    entryState: EntryState(
-      canEnterApp: false,
-      onboardingCompleted: false,
-      membershipActive: true,
-      needsOnboarding: true,
-      needsPayment: false,
-      isInvite: false,
-    ),
-    isEntryStateLoading: false,
-  );
-
-  const onboardingNeededNonInviteWithName = RouteSessionSnapshot(
-    entryState: EntryState(
-      canEnterApp: false,
-      onboardingCompleted: false,
-      membershipActive: true,
-      needsOnboarding: true,
-      needsPayment: false,
-      isInvite: false,
-    ),
-    isEntryStateLoading: false,
-    profileDisplayName: 'Aveli User',
-  );
-
-  const onboardingNeededWithBlankName = RouteSessionSnapshot(
-    entryState: EntryState(
-      canEnterApp: false,
-      onboardingCompleted: false,
-      membershipActive: true,
-      needsOnboarding: true,
-      needsPayment: false,
-      isInvite: true,
-    ),
-    isEntryStateLoading: false,
-    profileDisplayName: '   ',
   );
 
   const tentativeSession = RouteSessionSnapshot(
@@ -239,7 +197,7 @@ void main() {
     },
   );
 
-  testWidgets('onboarding without profile name redirects to create profile', (
+  testWidgets('onboarding redirects private routes to welcome', (
     tester,
   ) async {
     final router = await _pumpHarness(tester, onboardingNeeded);
@@ -249,16 +207,16 @@ void main() {
 
     expect(
       router.routeInformationProvider.value.uri.path,
-      RoutePath.createProfile,
+      RoutePath.welcome,
     );
   });
 
-  testWidgets('non-invite onboarding without profile name creates profile', (
+  testWidgets('onboarding allows create-profile route', (
     tester,
   ) async {
-    final router = await _pumpHarness(tester, onboardingNeededNonInvite);
+    final router = await _pumpHarness(tester, onboardingNeeded);
 
-    router.go(RoutePath.home);
+    router.go(RoutePath.createProfile);
     await tester.pump();
 
     expect(
@@ -268,55 +226,17 @@ void main() {
   });
 
   testWidgets(
-    'onboarding with blank profile name redirects to create profile',
+    'onboarding allows welcome route',
     (tester) async {
-      final router = await _pumpHarness(tester, onboardingNeededWithBlankName);
+      final router = await _pumpHarness(tester, onboardingNeeded);
 
-      router.go(RoutePath.home);
+      router.go(RoutePath.welcome);
       await tester.pump();
 
       expect(
         router.routeInformationProvider.value.uri.path,
-        RoutePath.createProfile,
+        RoutePath.welcome,
       );
-    },
-  );
-
-  testWidgets(
-    'onboarding with profile name redirects private routes to welcome',
-    (tester) async {
-      final router = await _pumpHarness(tester, onboardingNeededWithName);
-
-      router.go(RoutePath.home);
-      await tester.pump();
-
-      expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);
-    },
-  );
-
-  testWidgets('non-invite onboarding with profile name redirects to welcome', (
-    tester,
-  ) async {
-    final router = await _pumpHarness(
-      tester,
-      onboardingNeededNonInviteWithName,
-    );
-
-    router.go(RoutePath.home);
-    await tester.pump();
-
-    expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);
-  });
-
-  testWidgets(
-    'onboarding with profile name redirects profile step to welcome',
-    (tester) async {
-      final router = await _pumpHarness(tester, onboardingNeededWithName);
-
-      router.go(RoutePath.createProfile);
-      await tester.pump();
-
-      expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);
     },
   );
 

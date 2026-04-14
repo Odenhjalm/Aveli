@@ -18,11 +18,14 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 
 const _onboardingEntryState = EntryState(
   canEnterApp: false,
+  onboardingState: 'incomplete',
   onboardingCompleted: false,
   membershipActive: true,
   needsOnboarding: true,
   needsPayment: false,
-  isInvite: false,
+  roleV2: 'learner',
+  role: 'learner',
+  isAdmin: false,
 );
 
 Profile _profile({String? displayName, String? bio}) {

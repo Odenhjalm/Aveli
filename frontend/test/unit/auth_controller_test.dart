@@ -25,11 +25,14 @@ void main() {
     );
     const entryState = EntryState(
       canEnterApp: true,
+      onboardingState: 'completed',
       onboardingCompleted: true,
       membershipActive: true,
       needsOnboarding: false,
       needsPayment: false,
-      isInvite: false,
+      roleV2: 'learner',
+      role: 'learner',
+      isAdmin: false,
     );
 
     setUp(() {
@@ -137,11 +140,14 @@ void main() {
       () async {
         const paymentNeededEntryState = EntryState(
           canEnterApp: false,
+          onboardingState: 'completed',
           onboardingCompleted: true,
           membershipActive: false,
           needsOnboarding: false,
           needsPayment: true,
-          isInvite: false,
+          roleV2: 'learner',
+          role: 'learner',
+          isAdmin: false,
         );
         controller.dispose();
         controller = AuthController(

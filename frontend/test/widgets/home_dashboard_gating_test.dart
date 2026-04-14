@@ -162,11 +162,14 @@ final _testProfile = Profile(
 
 const _completedEntryState = EntryState(
   canEnterApp: true,
+  onboardingState: 'completed',
   onboardingCompleted: true,
   membershipActive: true,
   needsOnboarding: false,
   needsPayment: false,
-  isInvite: false,
+  roleV2: 'learner',
+  role: 'learner',
+  isAdmin: false,
 );
 
 void main() {

@@ -14,6 +14,28 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+class _FakePaymentEventClaim:
+    def __init__(self, event_id: str, status: str) -> None:
+        self.event_id = event_id
+        self.status = status
+        self.released = False
+
+    @property
+    def claimed(self) -> bool:
+        return self.status == "claimed"
+
+    @property
+    def completed(self) -> bool:
+        return self.status == "completed"
+
+    @property
+    def processing(self) -> bool:
+        return self.status == "processing"
+
+    async def release(self) -> None:
+        self.released = True
+
+
 async def _promote_to_teacher(user_id: str) -> None:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -136,8 +158,9 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
         connected_account_id=None,
     )
 
+    event_suffix = uuid.uuid4().hex
     created_event = {
-        "id": "evt_sub_create",
+        "id": f"evt_sub_create_{event_suffix}",
         "type": "customer.subscription.created",
         "data": {
             "object": {
@@ -162,7 +185,7 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
     }
 
     invoice_event = {
-        "id": "evt_invoice",
+        "id": f"evt_invoice_{event_suffix}",
         "type": "invoice.payment_succeeded",
         "data": {
             "object": {
@@ -282,9 +305,10 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
         checkout_payload = checkout_create_resp.json()
         assert checkout_payload["order_id"]
 
+        event_suffix = uuid.uuid4().hex
         events = [
             {
-                "id": "evt_sub_create_canonical",
+                "id": f"evt_sub_create_canonical_{event_suffix}",
                 "type": "customer.subscription.created",
                 "data": {
                     "object": {
@@ -308,7 +332,7 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
                 },
             },
             {
-                "id": "evt_invoice_canonical",
+                "id": f"evt_invoice_canonical_{event_suffix}",
                 "type": "invoice.payment_succeeded",
                 "data": {
                     "object": {
@@ -331,7 +355,7 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
                 },
             },
             {
-                "id": "evt_checkout_complete_canonical",
+                "id": f"evt_checkout_complete_canonical_{event_suffix}",
                 "type": "checkout.session.completed",
                 "data": {
                     "object": {
@@ -438,20 +462,34 @@ async def test_subscription_webhook_is_idempotent(async_client, monkeypatch):
         assert secret == "whsec_test"
         return event
 
-    inserted_event_ids: list[str] = []
+    claimed_event_ids: list[str] = []
+    completed_event_ids: set[str] = set()
     handled_event_ids: list[str] = []
 
-    async def fake_insert_payment_event(event_id: str, payload: dict[str, object]) -> bool:
-        inserted_event_ids.append(event_id)
-        return len(inserted_event_ids) == 1
+    async def fake_claim_payment_event(event_id: str) -> _FakePaymentEventClaim:
+        claimed_event_ids.append(event_id)
+        if event_id in completed_event_ids:
+            return _FakePaymentEventClaim(event_id, "completed")
+        return _FakePaymentEventClaim(event_id, "claimed")
+
+    async def fake_complete_payment_event(
+        claim: _FakePaymentEventClaim,
+        payload: dict[str, object],
+    ) -> None:
+        assert payload["id"] == claim.event_id
+        completed_event_ids.add(claim.event_id)
 
     async def fake_handle_event(event_payload: dict[str, object]) -> None:
         handled_event_ids.append(str(event_payload["id"]))
 
     monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
     monkeypatch.setattr(
-        "app.routes.stripe_webhooks.membership_support_repo.insert_payment_event",
-        fake_insert_payment_event,
+        "app.routes.stripe_webhooks.membership_support_repo.claim_payment_event",
+        fake_claim_payment_event,
+    )
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.membership_support_repo.complete_payment_event",
+        fake_complete_payment_event,
     )
     monkeypatch.setattr(
         "app.routes.stripe_webhooks.stripe_webhook_membership_service.handle_event",
@@ -472,5 +510,171 @@ async def test_subscription_webhook_is_idempotent(async_client, monkeypatch):
     )
     assert second_response.status_code == 200, second_response.text
 
-    assert inserted_event_ids == [event["id"], event["id"]]
+    assert claimed_event_ids == [event["id"], event["id"]]
+    assert completed_event_ids == {event["id"]}
     assert handled_event_ids == [event["id"]]
+
+
+@pytest.mark.anyio("asyncio")
+async def test_subscription_webhook_failure_does_not_complete_and_retry_reprocesses(
+    async_client,
+    monkeypatch,
+):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_value")
+    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", "sk_test_value")
+    monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
+    settings.stripe_secret_key = "sk_test_value"
+    settings.stripe_test_secret_key = "sk_test_value"
+    settings.stripe_test_webhook_billing_secret = "whsec_test"
+    settings.stripe_test_webhook_secret = "whsec_test"
+    settings.stripe_test_membership_price_monthly = "price_month_test"
+
+    event = {
+        "id": "evt_retry_subscription",
+        "type": "customer.subscription.created",
+        "data": {
+            "object": {
+                "id": "sub_retry",
+                "customer": "cus_retry",
+                "status": "active",
+                "metadata": {"user_id": str(uuid.uuid4()), "order_id": str(uuid.uuid4())},
+                "items": {
+                    "data": [
+                        {
+                            "price": {
+                                "id": settings.stripe_test_membership_price_monthly,
+                                "recurring": {"interval": "month"},
+                            }
+                        }
+                    ]
+                },
+                "current_period_start": 1,
+                "current_period_end": 2,
+            }
+        },
+    }
+
+    def fake_construct_event(payload, sig_header, secret):
+        assert sig_header == "sig"
+        assert secret == "whsec_test"
+        return event
+
+    claimed_event_ids: list[str] = []
+    completed_event_ids: set[str] = set()
+    handled_event_ids: list[str] = []
+
+    async def fake_claim_payment_event(event_id: str) -> _FakePaymentEventClaim:
+        claimed_event_ids.append(event_id)
+        if event_id in completed_event_ids:
+            return _FakePaymentEventClaim(event_id, "completed")
+        return _FakePaymentEventClaim(event_id, "claimed")
+
+    async def fake_complete_payment_event(
+        claim: _FakePaymentEventClaim,
+        payload: dict[str, object],
+    ) -> None:
+        assert payload["id"] == claim.event_id
+        completed_event_ids.add(claim.event_id)
+
+    async def fake_handle_event(event_payload: dict[str, object]) -> None:
+        handled_event_ids.append(str(event_payload["id"]))
+        if len(handled_event_ids) == 1:
+            raise RuntimeError("simulated webhook failure")
+
+    monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.membership_support_repo.claim_payment_event",
+        fake_claim_payment_event,
+    )
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.membership_support_repo.complete_payment_event",
+        fake_complete_payment_event,
+    )
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.stripe_webhook_membership_service.handle_event",
+        fake_handle_event,
+    )
+
+    first_response = await async_client.post(
+        "/api/stripe/webhook",
+        content=json.dumps({}),
+        headers={"stripe-signature": "sig"},
+    )
+    assert first_response.status_code == 500, first_response.text
+    assert completed_event_ids == set()
+
+    second_response = await async_client.post(
+        "/api/stripe/webhook",
+        content=json.dumps({}),
+        headers={"stripe-signature": "sig"},
+    )
+    assert second_response.status_code == 200, second_response.text
+
+    assert claimed_event_ids == [event["id"], event["id"]]
+    assert completed_event_ids == {event["id"]}
+    assert handled_event_ids == [event["id"], event["id"]]
+
+
+@pytest.mark.anyio("asyncio")
+async def test_subscription_webhook_in_progress_claim_returns_retryable_conflict(
+    async_client,
+    monkeypatch,
+):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_value")
+    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", "sk_test_value")
+    monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
+    settings.stripe_secret_key = "sk_test_value"
+    settings.stripe_test_secret_key = "sk_test_value"
+    settings.stripe_test_webhook_billing_secret = "whsec_test"
+    settings.stripe_test_webhook_secret = "whsec_test"
+
+    event = {
+        "id": "evt_processing_subscription",
+        "type": "customer.subscription.created",
+        "data": {"object": {"id": "sub_processing"}},
+    }
+
+    def fake_construct_event(payload, sig_header, secret):
+        assert sig_header == "sig"
+        assert secret == "whsec_test"
+        return event
+
+    handled_event_ids: list[str] = []
+    completed_event_ids: list[str] = []
+
+    async def fake_claim_payment_event(event_id: str) -> _FakePaymentEventClaim:
+        assert event_id == event["id"]
+        return _FakePaymentEventClaim(event_id, "processing")
+
+    async def fake_complete_payment_event(
+        claim: _FakePaymentEventClaim,
+        payload: dict[str, object],
+    ) -> None:
+        completed_event_ids.append(claim.event_id)
+
+    async def fake_handle_event(event_payload: dict[str, object]) -> None:
+        handled_event_ids.append(str(event_payload["id"]))
+
+    monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.membership_support_repo.claim_payment_event",
+        fake_claim_payment_event,
+    )
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.membership_support_repo.complete_payment_event",
+        fake_complete_payment_event,
+    )
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.stripe_webhook_membership_service.handle_event",
+        fake_handle_event,
+    )
+
+    response = await async_client.post(
+        "/api/stripe/webhook",
+        content=json.dumps({}),
+        headers={"stripe-signature": "sig"},
+    )
+
+    assert response.status_code == 409, response.text
+    assert handled_event_ids == []
+    assert completed_event_ids == []

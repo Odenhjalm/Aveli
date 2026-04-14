@@ -315,7 +315,7 @@ async def _apply_membership_refund_resolution(
         ) from exc
 
     now = datetime.now(timezone.utc)
-    membership, membership_updated = await _write_payment_membership_state(
+    membership, _ = await _write_payment_membership_state(
         user_id,
         status="expired",
         effective_at=None,
@@ -328,8 +328,6 @@ async def _apply_membership_refund_resolution(
         "subscription_id": resolved_subscription_id,
         "payment_intent_id": resolved_payment_intent,
     }
-    if not membership_updated:
-        log_info["membership_update_skipped"] = "existing_invite_membership"
     await membership_support_repo.insert_billing_log(
         user_id=user_id,
         step=f"membership_{resolution_kind}_applied",
@@ -799,7 +797,7 @@ async def _apply_membership_state(
     info: dict[str, Any],
 ) -> None:
     user_id = str(order["user_id"])
-    _, membership_updated = await _write_payment_membership_state(
+    _, _ = await _write_payment_membership_state(
         user_id,
         status=status,
         effective_at=effective_at,
@@ -808,8 +806,6 @@ async def _apply_membership_state(
         ended_at=ended_at,
     )
     log_info = dict(info)
-    if not membership_updated:
-        log_info["membership_update_skipped"] = "existing_invite_membership"
     await membership_support_repo.insert_billing_log(
         user_id=user_id,
         step=step,
@@ -828,9 +824,6 @@ async def _write_payment_membership_state(
     ended_at: datetime | None,
 ) -> tuple[Mapping[str, Any] | None, bool]:
     existing_membership = await memberships_repo.get_membership(user_id)
-    if _is_invite_membership(existing_membership):
-        return existing_membership, False
-
     membership = await memberships_repo.upsert_membership_record(
         user_id,
         status=status,
@@ -843,10 +836,6 @@ async def _write_payment_membership_state(
         source="purchase",
     )
     return membership, True
-
-
-def _is_invite_membership(membership: Mapping[str, Any] | None) -> bool:
-    return str((membership or {}).get("source") or "").strip().lower() == "invite"
 
 
 def _canonical_status_from_subscription_payload(payload: Mapping[str, Any]) -> str:

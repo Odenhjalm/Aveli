@@ -47,7 +47,7 @@ async def test_payment_events_missing_table_fails_closed(monkeypatch) -> None:
     monkeypatch.setattr(membership_support, "pool", _MissingSupportTablePool())
 
     with pytest.raises(errors.UndefinedTable):
-        await membership_support.insert_payment_event("evt_missing_table", {})
+        await membership_support.claim_payment_event("evt_missing_table")
 
 
 async def test_billing_logs_missing_table_fails_closed(monkeypatch) -> None:

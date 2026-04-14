@@ -19,7 +19,6 @@ import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:aveli/features/onboarding/onboarding_profile_page.dart';
 import 'package:aveli/features/onboarding/welcome_page.dart';
 import 'package:aveli/features/payments/presentation/subscribe_screen.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -286,11 +285,14 @@ void main() {
   ) async {
     const entryState = EntryState(
       canEnterApp: true,
+      onboardingState: 'completed',
       onboardingCompleted: true,
       membershipActive: true,
       needsOnboarding: false,
       needsPayment: false,
-      isInvite: false,
+      roleV2: 'learner',
+      role: 'learner',
+      isAdmin: false,
     );
 
     await tester.pumpWidget(
@@ -312,11 +314,14 @@ void main() {
   ) async {
     const entryState = EntryState(
       canEnterApp: false,
+      onboardingState: 'completed',
       onboardingCompleted: true,
       membershipActive: false,
       needsOnboarding: false,
       needsPayment: true,
-      isInvite: false,
+      roleV2: 'learner',
+      role: 'learner',
+      isAdmin: false,
     );
 
     await tester.pumpWidget(
@@ -334,15 +339,18 @@ void main() {
   });
 
   testWidgets(
-    'backend entry truth routes onboarding-needed users without name to profile',
+    'backend entry truth routes onboarding-needed users to welcome',
     (tester) async {
       const entryState = EntryState(
         canEnterApp: false,
+        onboardingState: 'incomplete',
         onboardingCompleted: false,
         membershipActive: true,
         needsOnboarding: true,
         needsPayment: false,
-        isInvite: true,
+        roleV2: 'learner',
+        role: 'learner',
+        isAdmin: false,
       );
 
       await tester.pumpWidget(
@@ -355,21 +363,24 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.byType(OnboardingProfilePage), findsOneWidget);
+      expect(find.byType(WelcomePage), findsOneWidget);
       expect(find.byType(HomeDashboardPage), findsNothing);
     },
   );
 
   testWidgets(
-    'backend entry truth routes onboarding-needed users with name to welcome',
+    'backend entry truth routes onboarding-needed users with profile to welcome',
     (tester) async {
       const entryState = EntryState(
         canEnterApp: false,
+        onboardingState: 'incomplete',
         onboardingCompleted: false,
         membershipActive: true,
         needsOnboarding: true,
         needsPayment: false,
-        isInvite: true,
+        roleV2: 'learner',
+        role: 'learner',
+        isAdmin: false,
       );
       final profile = Profile(
         id: 'user-1',

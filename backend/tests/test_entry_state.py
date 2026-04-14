@@ -67,11 +67,14 @@ async def test_entry_state_denies_incomplete_onboarding(async_client, monkeypatc
     assert response.status_code == 200, response.text
     assert response.json() == {
         "can_enter_app": False,
+        "onboarding_state": "incomplete",
         "onboarding_completed": False,
         "membership_active": True,
         "needs_onboarding": True,
         "needs_payment": False,
-        "is_invite": False,
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
     }
 
 
@@ -99,11 +102,14 @@ async def test_entry_state_denies_missing_or_inactive_membership(
     assert response.status_code == 200, response.text
     assert response.json() == {
         "can_enter_app": False,
+        "onboarding_state": "completed",
         "onboarding_completed": True,
         "membership_active": False,
         "needs_onboarding": False,
         "needs_payment": expected_needs_payment,
-        "is_invite": False,
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
     }
 
 
@@ -121,11 +127,14 @@ async def test_entry_state_allows_completed_onboarding_and_active_membership(
     assert response.status_code == 200, response.text
     assert response.json() == {
         "can_enter_app": True,
+        "onboarding_state": "completed",
         "onboarding_completed": True,
         "membership_active": True,
         "needs_onboarding": False,
         "needs_payment": False,
-        "is_invite": False,
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
     }
 
 
@@ -147,18 +156,21 @@ async def test_entry_state_handles_invite_membership_without_payment_prompt(
     assert response.status_code == 200, response.text
     assert response.json() == {
         "can_enter_app": False,
+        "onboarding_state": "completed",
         "onboarding_completed": True,
         "membership_active": False,
         "needs_onboarding": False,
-        "needs_payment": False,
-        "is_invite": True,
+        "needs_payment": True,
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
     }
 
 
 def test_entry_state_route_is_read_only_and_not_profile_backed() -> None:
     source = Path("backend/app/routes/entry_state.py").read_text(encoding="utf-8")
 
-    assert "is_app_entry_allowed" in source
+    assert "can_enter_app" in source
     assert "get_profile" not in source
     assert "profiles" not in source
     assert "payload.get" not in source

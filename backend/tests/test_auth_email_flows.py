@@ -234,11 +234,14 @@ async def test_invite_register_creates_time_bounded_membership_without_entry(
     assert entry_state_resp.status_code == 200, entry_state_resp.text
     assert entry_state_resp.json() == {
         "can_enter_app": False,
+        "onboarding_state": "incomplete",
         "onboarding_completed": False,
         "membership_active": True,
         "needs_onboarding": True,
         "needs_payment": False,
-        "is_invite": True,
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
     }
 
     home_resp = await async_client.get(

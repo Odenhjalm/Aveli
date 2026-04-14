@@ -132,13 +132,21 @@ async def stripe_payment_element_webhook(request: Request):
     event_id = event.get("id")
     data_object = event.get("data", {}).get("object", {})
 
-    if isinstance(event_id, str) and event_id:
-        inserted = await membership_support_repo.insert_payment_event(event_id, dict(event))
-        if not inserted:
-            logger.info("Skipping duplicate Stripe event %s", event_id)
-            return {"status": "ok"}
+    event_claim: membership_support_repo.PaymentEventClaim | None = None
 
     try:
+        if isinstance(event_id, str) and event_id:
+            event_claim = await membership_support_repo.claim_payment_event(event_id)
+            if event_claim.completed:
+                logger.info("Skipping completed Stripe event %s", event_id)
+                return {"status": "ok"}
+            if event_claim.processing:
+                logger.info("Stripe event %s is already being processed", event_id)
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Webhook-bearbetning pågår",
+                )
+
         if event_type == "payment_intent.succeeded":
             await stripe_webhook_support_service.handle_payment_intent_succeeded(
                 data_object,
@@ -168,6 +176,13 @@ async def stripe_payment_element_webhook(request: Request):
             logger.info("Ignoring inactive Stripe Connect event %s", event_type)
         else:
             logger.info("Unhandled Stripe event %s", event_type)
+        if event_claim is not None:
+            await membership_support_repo.complete_payment_event(
+                event_claim,
+                dict(event),
+            )
+    except HTTPException:
+        raise
     except Exception as exc:  # pragma: no cover - defensive logging
         _capture_exception(str(event_type) if event_type else None, str(event_id) if event_id else None, exc)
         logger.exception("Stripe webhook processing failed: %s", exc)
@@ -175,6 +190,9 @@ async def stripe_payment_element_webhook(request: Request):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook-bearbetningen misslyckades",
         ) from exc
+    finally:
+        if event_claim is not None:
+            await event_claim.release()
 
     _capture_message(
         status="success",
