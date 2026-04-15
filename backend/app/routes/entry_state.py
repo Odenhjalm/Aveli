@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, Mapping
+
 from fastapi import APIRouter
 
 from .. import schemas
@@ -10,8 +12,9 @@ from ..utils.membership_status import is_membership_row_active
 router = APIRouter(tags=["entry-state"])
 
 
-@router.get("/entry-state", response_model=schemas.EntryStateResponse)
-async def get_entry_state(current: CurrentUser) -> schemas.EntryStateResponse:
+async def build_entry_state(
+    current: Mapping[str, Any],
+) -> schemas.EntryStateResponse:
     membership = await memberships_repo.get_membership(str(current["id"]))
     onboarding_state = current.get("onboarding_state")
     onboarding_completed = onboarding_state == "completed"
@@ -29,3 +32,8 @@ async def get_entry_state(current: CurrentUser) -> schemas.EntryStateResponse:
         role=current.get("role"),
         is_admin=current.get("is_admin"),
     )
+
+
+@router.get("/entry-state", response_model=schemas.EntryStateResponse)
+async def get_entry_state(current: CurrentUser) -> schemas.EntryStateResponse:
+    return await build_entry_state(current)

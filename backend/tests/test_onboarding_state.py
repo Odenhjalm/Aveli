@@ -52,7 +52,7 @@ async def _delete_profile_projection(user_id: str) -> None:
             await conn.commit()
 
 
-async def test_register_initializes_canonical_auth_subject_and_profile_projection(
+async def test_register_initializes_subject_and_projection_without_required_name(
     async_client,
 ):
     user = await register_auth_user(
@@ -74,7 +74,116 @@ async def test_register_initializes_canonical_auth_subject_and_profile_projectio
         headers=auth_header(user["access_token"]),
     )
     assert me_resp.status_code == 200, me_resp.text
-    assert me_resp.json()["display_name"] == "Initial User"
+    assert me_resp.json()["display_name"] is None
+    assert me_resp.json()["bio"] is None
+
+
+async def test_create_profile_persists_required_name_and_optional_bio(
+    async_client,
+):
+    user = await register_auth_user(
+        async_client,
+        email=f"create_profile_{uuid.uuid4().hex[:8]}@example.com",
+        password="Passw0rd!",
+        display_name="Ignored Register Name",
+    )
+
+    create_resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(user["access_token"]),
+        json={
+            "display_name": "  Create Profile User  ",
+            "bio": "  Kort bio  ",
+        },
+    )
+    assert create_resp.status_code == 200, create_resp.text
+    assert create_resp.json()["display_name"] == "Create Profile User"
+    assert create_resp.json()["bio"] == "Kort bio"
+    assert create_resp.json()["photo_url"] is None
+    assert create_resp.json()["avatar_media_id"] is None
+
+    me_resp = await async_client.get(
+        "/profiles/me",
+        headers=auth_header(user["access_token"]),
+    )
+    assert me_resp.status_code == 200, me_resp.text
+    assert me_resp.json()["display_name"] == "Create Profile User"
+    assert me_resp.json()["bio"] == "Kort bio"
+
+    assert await fetch_auth_subject(user["user_id"]) == {
+        "onboarding_state": "incomplete",
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
+    }
+
+
+@pytest.mark.parametrize("payload", [{}, {"display_name": ""}, {"display_name": "   "}])
+async def test_create_profile_requires_display_name(async_client, payload):
+    user = await register_auth_user(
+        async_client,
+        email=f"create_profile_missing_{uuid.uuid4().hex[:8]}@example.com",
+        password="Passw0rd!",
+        display_name="Ignored Register Name",
+    )
+
+    create_resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(user["access_token"]),
+        json=payload,
+    )
+    assert create_resp.status_code == 422, create_resp.text
+
+    me_resp = await async_client.get(
+        "/profiles/me",
+        headers=auth_header(user["access_token"]),
+    )
+    assert me_resp.status_code == 200, me_resp.text
+    assert me_resp.json()["display_name"] is None
+    assert me_resp.json()["bio"] is None
+
+
+async def test_create_profile_rejects_non_profile_authority_and_media_fields(
+    async_client,
+):
+    user = await register_auth_user(
+        async_client,
+        email=f"create_profile_forbidden_{uuid.uuid4().hex[:8]}@example.com",
+        password="Passw0rd!",
+        display_name="Ignored Register Name",
+    )
+
+    create_resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(user["access_token"]),
+        json={
+            "display_name": "Create Profile User",
+            "bio": "Allowed bio",
+            "photo_url": "https://example.com/avatar.png",
+            "avatar_media_id": str(uuid.uuid4()),
+            "onboarding_state": "completed",
+            "role_v2": "teacher",
+            "is_admin": True,
+        },
+    )
+    assert create_resp.status_code == 422, create_resp.text
+    payload = create_resp.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "validation_error"
+    assert {entry["field"] for entry in payload["field_errors"]} == {
+        "photo_url",
+        "avatar_media_id",
+        "onboarding_state",
+        "role_v2",
+        "is_admin",
+    }
+
+    me_resp = await async_client.get(
+        "/profiles/me",
+        headers=auth_header(user["access_token"]),
+    )
+    assert me_resp.status_code == 200, me_resp.text
+    assert me_resp.json()["display_name"] is None
     assert me_resp.json()["bio"] is None
 
 
@@ -107,7 +216,7 @@ async def test_onboarding_complete_requires_explicit_refresh_boundary(async_clie
         headers=auth_header(user["access_token"]),
     )
     assert me_resp.status_code == 200, me_resp.text
-    assert me_resp.json()["display_name"] == "Complete User"
+    assert me_resp.json()["display_name"] is None
     assert me_resp.json()["bio"] is None
 
     complete_resp = await async_client.post(
@@ -141,7 +250,7 @@ async def test_onboarding_complete_requires_explicit_refresh_boundary(async_clie
 
 
 @pytest.mark.parametrize("display_name", [None, "", "   "])
-async def test_onboarding_complete_requires_profile_name_before_mutation(
+async def test_onboarding_complete_does_not_derive_completion_from_profile_name(
     async_client,
     display_name,
 ):
@@ -158,18 +267,22 @@ async def test_onboarding_complete_requires_profile_name_before_mutation(
         headers=auth_header(user["access_token"]),
     )
 
-    assert complete_resp.status_code == 409, complete_resp.text
-    assert complete_resp.json()["detail"] == "profile_name_required"
+    assert complete_resp.status_code == 200, complete_resp.text
+    assert complete_resp.json() == {
+        "status": "completed",
+        "onboarding_state": "completed",
+        "token_refresh_required": True,
+    }
     assert await fetch_auth_subject(user["user_id"]) == {
-        "onboarding_state": "incomplete",
+        "onboarding_state": "completed",
         "role_v2": "learner",
         "role": "learner",
         "is_admin": False,
     }
-    assert await _event_types_for(user["user_id"]) == []
+    assert await _event_types_for(user["user_id"]) == ["onboarding_completed"]
 
 
-async def test_onboarding_complete_requires_profile_projection_before_mutation(
+async def test_onboarding_complete_does_not_require_profile_projection_before_mutation(
     async_client,
 ):
     user = await register_auth_user(
@@ -185,15 +298,19 @@ async def test_onboarding_complete_requires_profile_projection_before_mutation(
         headers=auth_header(user["access_token"]),
     )
 
-    assert complete_resp.status_code == 409, complete_resp.text
-    assert complete_resp.json()["detail"] == "profile_name_required"
+    assert complete_resp.status_code == 200, complete_resp.text
+    assert complete_resp.json() == {
+        "status": "completed",
+        "onboarding_state": "completed",
+        "token_refresh_required": True,
+    }
     assert await fetch_auth_subject(user["user_id"]) == {
-        "onboarding_state": "incomplete",
+        "onboarding_state": "completed",
         "role_v2": "learner",
         "role": "learner",
         "is_admin": False,
     }
-    assert await _event_types_for(user["user_id"]) == []
+    assert await _event_types_for(user["user_id"]) == ["onboarding_completed"]
 
 
 async def test_login_and_refresh_do_not_complete_onboarding(async_client):

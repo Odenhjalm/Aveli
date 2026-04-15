@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
 import uuid
-from typing import Annotated, Any, Mapping
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -9,8 +9,6 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 
 from .config import settings
-from .repositories import memberships as memberships_repo
-from .utils.membership_status import is_membership_row_active
 from .utils.supabase_jwt import SupabaseJwtError, verify_supabase_access_token
 pwd_context = CryptContext(
     schemes=["bcrypt_sha256", "bcrypt"],
@@ -263,25 +261,11 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 OptionalCurrentUser = Annotated[dict | None, Depends(get_optional_user)]
 
 
-def is_app_entry_allowed(
-    current: Mapping[str, Any],
-    membership: Mapping[str, Any] | None,
-) -> bool:
-    if current.get("onboarding_state") != "completed":
-        return False
-    return is_membership_row_active(membership)
-
-
-async def evaluate_app_entry(current: dict[str, Any]) -> bool:
-    if current.get("onboarding_state") != "completed":
-        return False
-
-    membership = await memberships_repo.get_membership(str(current["id"]))
-    return is_app_entry_allowed(current, membership)
-
-
 async def require_app_entry(current: CurrentUser) -> dict[str, Any]:
-    if not await evaluate_app_entry(current):
+    from .routes.entry_state import build_entry_state
+
+    entry_state = await build_entry_state(current)
+    if not entry_state.can_enter_app:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=_CANONICAL_APP_ENTRY_REQUIRED,

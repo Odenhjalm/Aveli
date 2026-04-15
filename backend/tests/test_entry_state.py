@@ -138,7 +138,7 @@ async def test_entry_state_allows_completed_onboarding_and_active_membership(
     }
 
 
-async def test_entry_state_handles_invite_membership_without_payment_prompt(
+async def test_entry_state_handles_referral_membership_without_payment_prompt(
     async_client,
     monkeypatch,
 ) -> None:
@@ -148,7 +148,7 @@ async def test_entry_state_handles_invite_membership_without_payment_prompt(
         current_user=_current_user(),
         membership={
             "status": "inactive",
-            "source": "invite",
+            "source": "referral",
             "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
         },
     )

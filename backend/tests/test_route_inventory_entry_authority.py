@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.routing import APIRoute
 
 from app.main import app
@@ -7,7 +9,7 @@ from app.main import app
 
 RouteKey = tuple[str, str]
 
-CANONICAL_ENTRY_DEPENDENCY = "require_app_entry"
+APP_ENTRY_ENFORCEMENT_DEPENDENCY = "require_app_entry"
 AUTH_ONLY_DEPENDENCIES = {"get_current_user", "get_optional_user"}
 ROLE_DEPENDENCIES = {"require_teacher", "require_admin"}
 
@@ -22,7 +24,6 @@ NON_APP_ENTRY_ROUTE_CLASSIFICATIONS: dict[RouteKey, str] = {
     ("GET", "/entry-state"): "entry_state_pre_entry",
     ("POST", "/auth/send-verification"): "email_verification_pre_entry",
     ("GET", "/auth/verify-email"): "email_verification_pre_entry",
-    ("GET", "/auth/validate-invite"): "invite_validation_pre_entry",
     ("GET", "/profiles/me"): "profile_projection_pre_entry",
     ("PATCH", "/profiles/me"): "profile_projection_pre_entry",
     ("POST", "/referrals/redeem"): "referral_redeem_pre_entry",
@@ -102,22 +103,30 @@ def test_non_app_entry_routes_are_explicitly_classified() -> None:
     unclassified = [
         _describe_route(key, route, "missing non-app-entry classification")
         for key, route in _mounted_routes()
-        if CANONICAL_ENTRY_DEPENDENCY not in _dependency_names(route)
+        if APP_ENTRY_ENFORCEMENT_DEPENDENCY not in _dependency_names(route)
         and key not in NON_APP_ENTRY_ROUTE_CLASSIFICATIONS
     ]
 
     assert unclassified == []
 
 
-def test_every_app_entry_route_depends_on_canonical_entry_authority() -> None:
+def test_every_app_entry_route_uses_entry_state_enforcement() -> None:
     violations = [
-        _describe_route(key, route, "app-entry route missing require_app_entry")
+        _describe_route(key, route, "app-entry route missing entry-state enforcement")
         for key, route in _mounted_routes()
         if key not in NON_APP_ENTRY_ROUTE_CLASSIFICATIONS
-        and CANONICAL_ENTRY_DEPENDENCY not in _dependency_names(route)
+        and APP_ENTRY_ENFORCEMENT_DEPENDENCY not in _dependency_names(route)
     ]
 
     assert violations == []
+
+
+def test_app_entry_enforcement_reuses_entry_state_computation() -> None:
+    source = Path("backend/app/auth.py").read_text(encoding="utf-8")
+
+    assert "build_entry_state" in source
+    assert "memberships_repo" not in source
+    assert "is_membership_row_active" not in source
 
 
 def test_auth_only_dependencies_are_confined_to_explicit_pre_entry_routes() -> None:
@@ -139,19 +148,19 @@ def test_auth_only_dependencies_are_confined_to_explicit_pre_entry_routes() -> N
     assert violations == []
 
 
-def test_role_dependencies_compose_with_canonical_entry_authority() -> None:
+def test_role_dependencies_compose_with_entry_state_enforcement() -> None:
     violations: list[str] = []
     for key, route in _mounted_routes():
         role_dependencies = _dependency_names(route) & ROLE_DEPENDENCIES
         if not role_dependencies:
             continue
-        if CANONICAL_ENTRY_DEPENDENCY in _dependency_names(route):
+        if APP_ENTRY_ENFORCEMENT_DEPENDENCY in _dependency_names(route):
             continue
         violations.append(
             _describe_route(
                 key,
                 route,
-                f"role dependency without canonical entry {sorted(role_dependencies)}",
+                f"role dependency without entry-state enforcement {sorted(role_dependencies)}",
             )
         )
 

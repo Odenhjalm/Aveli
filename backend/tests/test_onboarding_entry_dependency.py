@@ -49,7 +49,7 @@ async def _set_membership(monkeypatch, membership: dict[str, object] | None) -> 
         return membership
 
     monkeypatch.setattr(
-        "app.auth.memberships_repo.get_membership",
+        "app.routes.entry_state.memberships_repo.get_membership",
         _fake_get_membership,
     )
 
@@ -57,13 +57,7 @@ async def _set_membership(monkeypatch, membership: dict[str, object] | None) -> 
 async def test_app_entry_denies_incomplete_onboarding(monkeypatch) -> None:
     from app import auth
 
-    async def _unexpected_get_membership(_: str) -> None:
-        raise AssertionError("membership must not be checked before onboarding")
-
-    monkeypatch.setattr(
-        "app.auth.memberships_repo.get_membership",
-        _unexpected_get_membership,
-    )
+    await _set_membership(monkeypatch, {"status": "active", "expires_at": None})
 
     with pytest.raises(HTTPException) as exc_info:
         await auth.require_app_entry(_current_user(onboarding_state="incomplete"))
@@ -91,15 +85,15 @@ async def test_teacher_route_denies_incomplete_onboarding_before_role_check(
         _teacher_current_user(onboarding_state="incomplete")
     )
 
-    async def _unexpected_get_membership(_: str) -> None:
-        raise AssertionError("membership must not be checked before onboarding")
+    async def _fake_get_membership(_: str) -> dict[str, object]:
+        return {"status": "active", "expires_at": None}
 
     async def _unexpected_is_teacher_user(_: str) -> None:
-        raise AssertionError("teacher role must not be checked before app-entry")
+        raise AssertionError("teacher role must not be checked before entry-state allows app entry")
 
     monkeypatch.setattr(
-        "app.auth.memberships_repo.get_membership",
-        _unexpected_get_membership,
+        "app.routes.entry_state.memberships_repo.get_membership",
+        _fake_get_membership,
     )
     monkeypatch.setattr("app.models.is_teacher_user", _unexpected_is_teacher_user)
 
@@ -122,10 +116,10 @@ async def test_teacher_route_denies_missing_membership_before_role_check(
         return None
 
     async def _unexpected_is_teacher_user(_: str) -> None:
-        raise AssertionError("teacher role must not be checked before app-entry")
+        raise AssertionError("teacher role must not be checked before entry-state allows app entry")
 
     monkeypatch.setattr(
-        "app.auth.memberships_repo.get_membership",
+        "app.routes.entry_state.memberships_repo.get_membership",
         _fake_get_membership,
     )
     monkeypatch.setattr("app.models.is_teacher_user", _unexpected_is_teacher_user)
@@ -147,15 +141,15 @@ async def test_admin_route_denies_incomplete_onboarding_before_role_check(
         _admin_current_user(onboarding_state="incomplete")
     )
 
-    async def _unexpected_get_membership(_: str) -> None:
-        raise AssertionError("membership must not be checked before onboarding")
+    async def _fake_get_membership(_: str) -> dict[str, object]:
+        return {"status": "active", "expires_at": None}
 
     async def _unexpected_is_admin_user(_: str) -> None:
-        raise AssertionError("admin role must not be checked before app-entry")
+        raise AssertionError("admin role must not be checked before entry-state allows app entry")
 
     monkeypatch.setattr(
-        "app.auth.memberships_repo.get_membership",
-        _unexpected_get_membership,
+        "app.routes.entry_state.memberships_repo.get_membership",
+        _fake_get_membership,
     )
     monkeypatch.setattr("app.models.is_admin_user", _unexpected_is_admin_user)
 
@@ -178,10 +172,10 @@ async def test_admin_route_denies_missing_membership_before_role_check(
         return None
 
     async def _unexpected_is_admin_user(_: str) -> None:
-        raise AssertionError("admin role must not be checked before app-entry")
+        raise AssertionError("admin role must not be checked before entry-state allows app entry")
 
     monkeypatch.setattr(
-        "app.auth.memberships_repo.get_membership",
+        "app.routes.entry_state.memberships_repo.get_membership",
         _fake_get_membership,
     )
     monkeypatch.setattr("app.models.is_admin_user", _unexpected_is_admin_user)
@@ -215,7 +209,7 @@ async def test_teacher_route_allows_after_app_entry_and_teacher_role(
         }
 
     monkeypatch.setattr(
-        "app.auth.memberships_repo.get_membership",
+        "app.routes.entry_state.memberships_repo.get_membership",
         _fake_get_membership,
     )
     monkeypatch.setattr("app.models.is_teacher_user", _fake_is_teacher_user)
@@ -253,7 +247,7 @@ async def test_admin_route_allows_after_app_entry_and_admin_role(
         return {}
 
     monkeypatch.setattr(
-        "app.auth.memberships_repo.get_membership",
+        "app.routes.entry_state.memberships_repo.get_membership",
         _fake_get_membership,
     )
     monkeypatch.setattr("app.models.is_admin_user", _fake_is_admin_user)
@@ -357,17 +351,27 @@ async def test_app_entry_denies_canceled_membership_after_expiry(monkeypatch) ->
     assert exc_info.value.detail == "canonical_app_entry_required"
 
 
-async def test_invite_membership_without_onboarding_completion_cannot_enter() -> None:
-    from app import auth
+async def test_entry_state_reuse_requires_completed_onboarding_for_referral_membership(
+    monkeypatch,
+) -> None:
+    from app.routes import entry_state
 
-    assert (
-        auth.is_app_entry_allowed(
-            _current_user(onboarding_state="incomplete"),
-            {
-                "status": "active",
-                "source": "invite",
-                "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
-            },
-        )
-        is False
+    async def _fake_get_membership(_: str) -> dict[str, object]:
+        return {
+            "status": "active",
+            "source": "referral",
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+        }
+
+    monkeypatch.setattr(
+        entry_state.memberships_repo,
+        "get_membership",
+        _fake_get_membership,
     )
+
+    response = await entry_state.build_entry_state(
+        _current_user(onboarding_state="incomplete")
+    )
+
+    assert response.can_enter_app is False
+    assert response.needs_onboarding is True
