@@ -48,11 +48,10 @@ class MvpApiClient {
   Future<void> register({
     required String email,
     required String password,
-    required String displayName,
   }) async {
     await _dio.post(
       ApiPaths.authRegister,
-      data: {'email': email, 'password': password, 'display_name': displayName},
+      data: {'email': email, 'password': password},
     );
   }
 

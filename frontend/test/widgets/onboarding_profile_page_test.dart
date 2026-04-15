@@ -71,8 +71,29 @@ class _FakeAuthController extends AuthController {
   }
 
   final _FakeProfileRepository profileRepository;
+  int createProfileCalls = 0;
   int loadSessionCalls = 0;
   int completeWelcomeCalls = 0;
+  String? savedDisplayName;
+  String? savedBio;
+  String? savedReferralCode;
+
+  @override
+  Future<void> createProfile({
+    required String displayName,
+    String? bio,
+    String? referralCode,
+  }) async {
+    createProfileCalls += 1;
+    savedDisplayName = displayName;
+    savedBio = bio;
+    savedReferralCode = referralCode;
+    profileRepository.profile = profileRepository.profile.copyWith(
+      displayName: displayName,
+      bio: bio,
+    );
+    state = state.copyWith(profile: profileRepository.profile);
+  }
 
   @override
   Future<void> loadSession({bool hydrateProfile = true}) async {
@@ -96,19 +117,12 @@ class _FakeAuthRepository implements AuthRepository {
   Future<Profile> register({
     required String email,
     required String password,
-    required String displayName,
-    String? inviteToken,
   }) {
     throw UnsupportedError('Not implemented in this test');
   }
 
   @override
   Future<void> sendVerificationEmail(String email) {
-    throw UnsupportedError('Not implemented in this test');
-  }
-
-  @override
-  Future<String> validateInvite(String token) {
     throw UnsupportedError('Not implemented in this test');
   }
 
@@ -136,7 +150,20 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<Profile> createProfile({
+    required String displayName,
+    String? bio,
+  }) {
+    throw UnsupportedError('Not implemented in this test');
+  }
+
+  @override
   Future<Profile> completeWelcome() {
+    throw UnsupportedError('Not implemented in this test');
+  }
+
+  @override
+  Future<void> redeemReferral({required String code}) {
     throw UnsupportedError('Not implemented in this test');
   }
 
@@ -147,14 +174,18 @@ class _FakeAuthRepository implements AuthRepository {
   Future<String?> currentToken() async => 'token';
 }
 
-GoRouter _router() {
+GoRouter _router({String? referralCode}) {
   return GoRouter(
-    initialLocation: RoutePath.createProfile,
+    initialLocation: referralCode == null
+        ? RoutePath.createProfile
+        : '${RoutePath.createProfile}?referral_code=$referralCode',
     routes: [
       GoRoute(
         path: RoutePath.createProfile,
         name: AppRoute.createProfile,
-        builder: (context, state) => const OnboardingProfilePage(),
+        builder: (context, state) => OnboardingProfilePage(
+          referralCode: state.uri.queryParameters['referral_code'],
+        ),
       ),
       GoRoute(
         path: RoutePath.welcome,
@@ -169,13 +200,13 @@ Future<GoRouter> _pumpProfilePage(
   WidgetTester tester,
   _FakeProfileRepository profileRepository,
   _FakeAuthController authController,
+  {String? referralCode}
 ) async {
-  final router = _router();
+  final router = _router(referralCode: referralCode);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         authControllerProvider.overrideWith((ref) => authController),
-        profileRepositoryProvider.overrideWithValue(profileRepository),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -205,7 +236,7 @@ void main() {
     await _tapContinue(tester);
     await tester.pump();
 
-    expect(profileRepository.updateCalls, 0);
+    expect(authController.createProfileCalls, 0);
     expect(authController.loadSessionCalls, 0);
     expect(find.text('Skriv ditt namn för att fortsätta.'), findsOneWidget);
     expect(
@@ -229,12 +260,39 @@ void main() {
     await _tapContinue(tester);
     await tester.pumpAndSettle();
 
-    expect(profileRepository.updateCalls, 1);
-    expect(profileRepository.savedDisplayName, 'Aveli User');
-    expect(profileRepository.savedBio, '');
-    expect(authController.loadSessionCalls, 1);
+    expect(authController.createProfileCalls, 1);
+    expect(authController.savedDisplayName, 'Aveli User');
+    expect(authController.savedBio, '');
+    expect(profileRepository.updateCalls, 0);
+    expect(authController.loadSessionCalls, 0);
     expect(authController.completeWelcomeCalls, 0);
     expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);
+  });
+
+  testWidgets('onboarding profile redeems referral code after profile save', (
+    tester,
+  ) async {
+    final profileRepository = _FakeProfileRepository(_profile());
+    final authController = _FakeAuthController(profileRepository);
+    await _pumpProfilePage(
+      tester,
+      profileRepository,
+      authController,
+      referralCode: 'REF123',
+    );
+
+    expect(
+      find.text('Din referenskod kopplas nÃ¤r profilen sparas.'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(TextField).first, '  Aveli User  ');
+    await _tapContinue(tester);
+    await tester.pumpAndSettle();
+
+    expect(authController.createProfileCalls, 1);
+    expect(authController.savedReferralCode, 'REF123');
+    expect(profileRepository.updateCalls, 0);
   });
 
   testWidgets('welcome step has exact CTA and no profile input fields', (

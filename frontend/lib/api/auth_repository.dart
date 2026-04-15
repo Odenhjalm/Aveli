@@ -45,17 +45,12 @@ class AuthRepository {
   Future<Profile> register({
     required String email,
     required String password,
-    required String displayName,
-    String? inviteToken,
   }) async {
     final data = await _client.post<Map<String, dynamic>>(
       ApiPaths.authRegister,
       body: {
         'email': email,
         'password': password,
-        'display_name': displayName,
-        if (inviteToken != null && inviteToken.trim().isNotEmpty)
-          'invite_token': inviteToken.trim(),
       },
       skipAuth: true,
     );
@@ -119,24 +114,6 @@ class AuthRepository {
     }
   }
 
-  Future<String> validateInvite(String token) async {
-    try {
-      final data = await _client.get<Map<String, dynamic>>(
-        ApiPaths.authValidateInvite,
-        queryParameters: {'token': token},
-        skipAuth: true,
-      );
-      final email = data['email'] as String?;
-      if (email == null || email.trim().isEmpty) {
-        throw const FormatException('E-post saknas i inbjudningssvaret');
-      }
-      return email;
-    } on DioException catch (e) {
-      debugPrint('Invite validation failed: ${e.response?.data ?? e.message}');
-      rethrow;
-    }
-  }
-
   Future<void> resetPassword({
     required String token,
     required String newPassword,
@@ -156,6 +133,27 @@ class AuthRepository {
   Future<Profile> getCurrentProfile() async {
     final data = await _client.get<Map<String, dynamic>>(ApiPaths.authMe);
     return Profile.fromJson(data);
+  }
+
+  Future<Profile> createProfile({
+    required String displayName,
+    String? bio,
+  }) async {
+    final data = await _client.post<Map<String, dynamic>>(
+      ApiPaths.authOnboardingCreateProfile,
+      body: {
+        'display_name': displayName,
+        if (bio != null) 'bio': bio,
+      },
+    );
+    return Profile.fromJson(data);
+  }
+
+  Future<void> redeemReferral({required String code}) async {
+    await _client.post<Map<String, dynamic>>(
+      ApiPaths.referralsRedeem,
+      body: {'code': code},
+    );
   }
 
   Future<Profile> completeWelcome() async {

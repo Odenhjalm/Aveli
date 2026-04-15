@@ -45,7 +45,7 @@ async def test_redeem_referral_routes_membership_grant_through_canonical_service
     )
     grant_mock.assert_awaited_once_with(
         user_id="user_1",
-        source="invite",
+        source="referral",
         effective_at=effective_at,
         expires_at=expires_at,
         audit_step="referral_membership_grant_applied",
@@ -68,7 +68,7 @@ async def test_grant_non_purchase_membership_writes_once_and_logs_once(monkeypat
         "expires_at": expires_at,
         "canceled_at": None,
         "ended_at": None,
-        "source": "invite",
+        "source": "referral",
         "created_at": effective_at,
         "updated_at": effective_at,
     }
@@ -91,7 +91,7 @@ async def test_grant_non_purchase_membership_writes_once_and_logs_once(monkeypat
 
     result = await membership_grant_service.grant_non_purchase_membership(
         user_id="user_1",
-        source="invite",
+        source="referral",
         effective_at=effective_at,
         expires_at=expires_at,
         audit_step="referral_membership_grant_applied",
@@ -106,26 +106,25 @@ async def test_grant_non_purchase_membership_writes_once_and_logs_once(monkeypat
         expires_at=expires_at,
         canceled_at=None,
         ended_at=None,
-        source="invite",
+        source="referral",
     )
     log_mock.assert_awaited_once()
     sync_mock.assert_awaited_once_with("user_1")
 
 
-async def test_invite_membership_grant_requires_expires_at() -> None:
-    with pytest.raises(ValueError, match="invite membership grants require expires_at"):
+async def test_referral_membership_grant_requires_expires_at() -> None:
+    with pytest.raises(ValueError, match="referral membership grants require expires_at"):
         await membership_grant_service.grant_non_purchase_membership(
             user_id="user_1",
-            source="invite",
+            source="referral",
             effective_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
             expires_at=None,
-            audit_step="invite_membership_grant_applied",
+            audit_step="referral_membership_grant_applied",
         )
 
 
 def test_referral_link_does_not_target_register_parameter() -> None:
     link = referral_service.build_signup_url("REFCODE1")
 
-    assert link.endswith("/login")
-    assert "/signup?referral_code=" not in link
-    assert "referral_code=" not in link
+    assert link.endswith("/create-profile?referral_code=REFCODE1")
+    assert "/login" not in link

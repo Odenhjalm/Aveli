@@ -310,7 +310,17 @@ class _StubAuthRepository implements AuthRepository {
   Future<Profile> completeWelcome() => throw UnimplementedError();
 
   @override
+  Future<Profile> createProfile({
+    required String displayName,
+    String? bio,
+  }) =>
+      throw UnimplementedError();
+
+  @override
   Future<Profile> getCurrentProfile() => throw UnimplementedError();
+
+  @override
+  Future<void> redeemReferral({required String code}) async {}
 
   @override
   Future<Profile> login({required String email, required String password}) =>
@@ -326,8 +336,6 @@ class _StubAuthRepository implements AuthRepository {
   Future<Profile> register({
     required String email,
     required String password,
-    required String displayName,
-    String? inviteToken,
   }) => throw UnimplementedError();
 
   @override
@@ -341,9 +349,6 @@ class _StubAuthRepository implements AuthRepository {
 
   @override
   Future<void> sendVerificationEmail(String email) async {}
-
-  @override
-  Future<String> validateInvite(String token) async => '';
 
   @override
   Future<void> verifyEmail(String token) async {}

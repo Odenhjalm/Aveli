@@ -7,7 +7,7 @@ from jose import JWTError, jwt
 
 from ..config import settings
 
-_SUPPORTED_TOKEN_TYPES = frozenset({"invite", "reset", "verify"})
+_SUPPORTED_TOKEN_TYPES = frozenset({"reset", "verify"})
 
 
 class EmailTokenError(ValueError):

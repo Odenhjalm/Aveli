@@ -11,15 +11,12 @@ from .email_tokens import (
     EmailTokenError,
     create_email_token,
     verify_email_token,
-    verify_email_token_claims,
 )
 
 _VERIFY_TOKEN_EXPIRY_MINUTES = 15
 _RESET_TOKEN_EXPIRY_MINUTES = 10
-_INVITE_TOKEN_EXPIRY_MINUTES = 24 * 60
 _VERIFY_EMAIL_SUBJECT = "Verifiera ditt Aveli-konto"
 _RESET_PASSWORD_SUBJECT = "Återställ ditt Aveli-lösenord"
-_INVITE_EMAIL_SUBJECT = "Du är inbjuden till Aveli"
 _DEFAULT_FRONTEND_BASE_URL = "https://app.aveli.app"
 
 
@@ -28,10 +25,6 @@ class InvalidEmailVerificationTokenError(ValueError):
 
 
 class InvalidPasswordResetTokenError(ValueError):
-    pass
-
-
-class InvalidInviteTokenError(ValueError):
     pass
 
 
@@ -107,58 +100,6 @@ async def reset_password_with_token(token: str, new_password: str) -> dict[str, 
     await models.update_user_password(user["id"], new_password)
     await repositories.revoke_refresh_tokens_for_user(user["id"])
     return {"status": "password_reset", "email": email}
-
-
-async def send_invite_email(email: str, *, inviter_email: str | None = None) -> None:
-    normalized_email = email.strip().lower()
-    token = create_email_token(
-        normalized_email,
-        token_type="invite",
-        expires_minutes=_INVITE_TOKEN_EXPIRY_MINUTES,
-    )
-    invite_url = _build_frontend_url("/invite", token)
-    html_body = render_template(
-        "invite_email.html",
-        invite_url=invite_url,
-        inviter_email=(inviter_email or "").strip().lower(),
-    )
-    inviter_line = (
-        f"Du har blivit inbjuden av {inviter_email.strip().lower()} att gå med i Aveli."
-        if inviter_email and inviter_email.strip()
-        else "Du har blivit inbjuden att gå med i Aveli."
-    )
-    text_body = f"{inviter_line} Acceptera din inbjudan: {invite_url}"
-
-    await send_email(
-        to_email=normalized_email,
-        subject=_INVITE_EMAIL_SUBJECT,
-        text_body=text_body,
-        html_body=html_body,
-    )
-
-
-def validate_invite_token(token: str) -> str:
-    return str(validate_invite_token_claims(token)["email"])
-
-
-def validate_invite_token_claims(token: str) -> dict[str, object]:
-    return _verify_token_claims(
-        token,
-        expected_type="invite",
-        error_type=InvalidInviteTokenError,
-    )
-
-
-def _verify_token_claims(
-    token: str,
-    *,
-    expected_type: str,
-    error_type: type[ValueError],
-) -> dict[str, object]:
-    try:
-        return verify_email_token_claims(token, expected_type=expected_type)
-    except EmailTokenError as exc:
-        raise error_type("invalid_or_expired_token") from exc
 
 
 def _verify_token(

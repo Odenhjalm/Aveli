@@ -15,7 +15,6 @@ class MvpLoginPage extends StatefulWidget {
 class _MvpLoginPageState extends State<MvpLoginPage> {
   final _email = TextEditingController();
   final _password = TextEditingController();
-  final _displayName = TextEditingController();
   bool _isRegister = false;
   bool _loading = false;
   String? _error;
@@ -24,7 +23,6 @@ class _MvpLoginPageState extends State<MvpLoginPage> {
   void dispose() {
     _email.dispose();
     _password.dispose();
-    _displayName.dispose();
     super.dispose();
   }
 
@@ -38,7 +36,6 @@ class _MvpLoginPageState extends State<MvpLoginPage> {
         await widget.client.register(
           email: _email.text.trim(),
           password: _password.text,
-          displayName: _displayName.text.isEmpty ? 'Aveli Teacher' : _displayName.text,
         );
       }
       await widget.client.login(
@@ -69,7 +66,7 @@ class _MvpLoginPageState extends State<MvpLoginPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
-                      'AVELI Studio Login',
+                      'Aveli Studio',
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 12),
@@ -82,17 +79,6 @@ class _MvpLoginPageState extends State<MvpLoginPage> {
                       controller: _password,
                       decoration: const InputDecoration(labelText: 'Lösenord'),
                       obscureText: true,
-                    ),
-                    const SizedBox(height: 12),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      child: _isRegister
-                          ? TextField(
-                              key: const ValueKey('display-name'),
-                              controller: _displayName,
-                              decoration: const InputDecoration(labelText: 'Visningsnamn'),
-                            )
-                          : const SizedBox.shrink(),
                     ),
                     const SizedBox(height: 16),
                     if (_error != null)

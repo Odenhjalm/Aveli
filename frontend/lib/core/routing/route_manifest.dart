@@ -66,11 +66,6 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.public,
   ),
   RouteManifestEntry(
-    name: AppRoute.invite,
-    path: RoutePath.invite,
-    access: RouteAccessLevel.public,
-  ),
-  RouteManifestEntry(
     name: AppRoute.courseIntro,
     path: RoutePath.courseIntro,
     access: RouteAccessLevel.public,

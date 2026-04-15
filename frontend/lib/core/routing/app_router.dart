@@ -11,7 +11,6 @@ import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/routing/route_session.dart';
 import 'package:aveli/core/routing/route_extras.dart';
 import 'package:aveli/features/auth/presentation/forgot_password_page.dart';
-import 'package:aveli/features/auth/presentation/invite_page.dart';
 import 'package:aveli/features/auth/presentation/login_page.dart';
 import 'package:aveli/features/auth/presentation/new_password_page.dart';
 import 'package:aveli/features/auth/presentation/settings_page.dart';
@@ -168,7 +167,7 @@ String _resolvePreEntryTarget(RouteSessionSnapshot session) {
     return RoutePath.subscribe;
   }
   if (session.needsOnboarding) {
-    return RoutePath.welcome;
+    return RoutePath.createProfile;
   }
   return RoutePath.login;
 }
@@ -260,7 +259,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: AppRoute.signup,
         builder: (context, state) => SignupPage(
           initialEmail: state.uri.queryParameters['email'],
-          inviteToken: state.uri.queryParameters['invite_token'],
         ),
       ),
       GoRoute(
@@ -279,12 +277,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: AppRoute.resetPassword,
         builder: (context, state) =>
             NewPasswordPage(token: state.uri.queryParameters['token']),
-      ),
-      GoRoute(
-        path: RoutePath.invite,
-        name: AppRoute.invite,
-        builder: (context, state) =>
-            InvitePage(token: state.uri.queryParameters['token']),
       ),
       GoRoute(
         path: RoutePath.landingRoot,
@@ -363,7 +355,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.createProfile,
         name: AppRoute.createProfile,
-        builder: (context, state) => const OnboardingProfilePage(),
+        builder: (context, state) => OnboardingProfilePage(
+          referralCode: state.uri.queryParameters['referral_code'],
+        ),
       ),
       GoRoute(
         path: RoutePath.welcome,

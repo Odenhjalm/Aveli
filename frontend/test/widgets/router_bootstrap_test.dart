@@ -19,7 +19,7 @@ import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:aveli/features/onboarding/welcome_page.dart';
+import 'package:aveli/features/onboarding/onboarding_profile_page.dart';
 import 'package:aveli/features/payments/presentation/subscribe_screen.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/main.dart';
@@ -129,19 +129,12 @@ class _FakeAuthRepository implements AuthRepository {
   Future<Profile> register({
     required String email,
     required String password,
-    required String displayName,
-    String? inviteToken,
   }) {
     throw UnsupportedError('Not implemented in tests');
   }
 
   @override
   Future<void> sendVerificationEmail(String email) {
-    throw UnsupportedError('Not implemented in tests');
-  }
-
-  @override
-  Future<String> validateInvite(String token) {
     throw UnsupportedError('Not implemented in tests');
   }
 
@@ -172,7 +165,18 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<Profile> createProfile({
+    required String displayName,
+    String? bio,
+  }) =>
+      throw UnsupportedError('Not implemented in tests');
+
+  @override
   Future<Profile> completeWelcome() =>
+      throw UnsupportedError('Not implemented in tests');
+
+  @override
+  Future<void> redeemReferral({required String code}) =>
       throw UnsupportedError('Not implemented in tests');
 
   @override
@@ -339,7 +343,7 @@ void main() {
   });
 
   testWidgets(
-    'backend entry truth routes onboarding-needed users to welcome',
+    'backend entry truth routes onboarding-needed users to create profile',
     (tester) async {
       const entryState = EntryState(
         canEnterApp: false,
@@ -363,13 +367,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.byType(WelcomePage), findsOneWidget);
+      expect(find.byType(OnboardingProfilePage), findsOneWidget);
       expect(find.byType(HomeDashboardPage), findsNothing);
     },
   );
 
   testWidgets(
-    'backend entry truth routes onboarding-needed users with profile to welcome',
+    'backend entry truth routes onboarding-needed users with profile to create profile',
     (tester) async {
       const entryState = EntryState(
         canEnterApp: false,
@@ -402,7 +406,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.byType(WelcomePage), findsOneWidget);
+      expect(find.byType(OnboardingProfilePage), findsOneWidget);
       expect(find.byType(HomeDashboardPage), findsNothing);
     },
   );

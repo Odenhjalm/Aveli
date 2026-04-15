@@ -145,10 +145,8 @@ class AuthController extends StateNotifier<AuthState> {
 
   Future<void> register(
     String email,
-    String password, {
-    String? displayName,
-    String? inviteToken,
-  }) async {
+    String password,
+  ) async {
     state = state.copyWith(
       isLoading: true,
       error: null,
@@ -160,10 +158,6 @@ class AuthController extends StateNotifier<AuthState> {
       final profile = await _repo.register(
         email: email,
         password: password,
-        displayName: displayName?.trim().isNotEmpty == true
-            ? displayName!.trim()
-            : email.split('@').first,
-        inviteToken: inviteToken,
       );
       final entryState = await _fetchEntryState();
       state = AuthState(
@@ -190,6 +184,36 @@ class AuthController extends StateNotifier<AuthState> {
     await _repo.logout();
     gate.reset();
     state = const AuthState();
+  }
+
+  Future<void> createProfile({
+    required String displayName,
+    String? bio,
+    String? referralCode,
+  }) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final profile = await _repo.createProfile(
+        displayName: displayName,
+        bio: bio,
+      );
+      final normalizedReferralCode = referralCode?.trim();
+      if (normalizedReferralCode != null && normalizedReferralCode.isNotEmpty) {
+        await _repo.redeemReferral(code: normalizedReferralCode);
+      }
+      final entryState = await _fetchEntryState();
+      state = AuthState(
+        profile: profile,
+        entryState: entryState,
+        hasStoredToken: true,
+        isLoading: false,
+      );
+      gate.reset();
+    } catch (err, stackTrace) {
+      final failure = AppFailure.from(err, stackTrace);
+      state = state.copyWith(isLoading: false, error: failure.message);
+      throw failure;
+    }
   }
 
   Future<void> completeWelcome() async {

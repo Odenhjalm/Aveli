@@ -10,7 +10,6 @@ abstract class AppRoute {
   static const verifyEmail = 'verify-email';
   static const forgotPassword = 'forgot-password';
   static const resetPassword = 'reset-password';
-  static const invite = 'invite';
   static const courseIntro = 'course-intro';
   static const courseIntroRedirect = 'course-intro-redirect';
   static const courseCatalog = 'course-catalog';

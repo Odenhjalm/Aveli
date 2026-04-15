@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 from typing import Any
+from urllib.parse import urlencode
 
 from ..config import settings
 from ..repositories import referrals as referrals_repo
@@ -19,9 +20,9 @@ def generate_referral_code(length: int = _CODE_LENGTH) -> str:
 
 
 def build_signup_url(code: str) -> str:
-    del code
     base = (settings.frontend_base_url or "http://localhost:3000").rstrip("/")
-    return f"{base}/login"
+    query = urlencode({"referral_code": code.strip().upper()})
+    return f"{base}/create-profile?{query}"
 
 
 async def create_referral_invitation(
@@ -73,7 +74,7 @@ async def redeem_referral(
     )
     await membership_grant_service.grant_non_purchase_membership(
         user_id=user_id,
-        source="invite",
+        source="referral",
         effective_at=redemption.get("effective_at"),
         expires_at=redemption.get("expires_at"),
         audit_step="referral_membership_grant_applied",
@@ -100,7 +101,7 @@ def _build_referral_email_text(
     return (
         "Du har blivit inbjuden till Aveli.\n\n"
         f"Din kod ger {duration} medlemskap utan att starta någon Stripe-provperiod.\n"
-        f"Logga in eller skapa konto: {signup_url}\n\n"
+        f"Skapa profil eller fortsÃ¤tt onboarding: {signup_url}\n\n"
         f"Använd koden efter inloggning: {code}\n"
     )
 

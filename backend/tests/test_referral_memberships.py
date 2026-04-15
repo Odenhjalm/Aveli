@@ -29,12 +29,17 @@ async def register_user(
     payload = {
         "email": email,
         "password": password,
-        "display_name": display_name,
     }
 
     register_resp = await client.post("/auth/register", json=payload)
     assert register_resp.status_code == 201, register_resp.text
     tokens = register_resp.json()
+    profile_resp = await client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(tokens["access_token"]),
+        json={"display_name": display_name},
+    )
+    assert profile_resp.status_code == 200, profile_resp.text
     if referral_code:
         redeem_resp = await client.post(
             "/referrals/redeem",
@@ -138,6 +143,8 @@ async def test_referral_redeem_grants_membership_without_stripe(async_client, mo
         referral = payload["referral"]
         assert payload["email_delivery"] == "sent"
         assert sent_messages and sent_messages[0][0] == invited_email
+        assert "/create-profile?referral_code=" in sent_messages[0][1]
+        assert "/login" not in sent_messages[0][1]
 
         _, invited_user_id = await register_user(
             async_client,
@@ -150,7 +157,7 @@ async def test_referral_redeem_grants_membership_without_stripe(async_client, mo
         membership = await repositories.get_membership(invited_user_id)
         assert membership is not None
         assert membership["status"] == "active"
-        assert membership["source"] == "invite"
+        assert membership["source"] == "referral"
         assert membership["effective_at"] is not None
         assert membership["expires_at"] is not None
 
@@ -186,7 +193,7 @@ async def test_membership_access_logic_uses_canonical_status_and_expires_at(asyn
         await repositories.upsert_membership_record(
             user_id,
             status="expired",
-            source="invite",
+            source="referral",
             effective_at=datetime.now(timezone.utc) - timedelta(days=2),
             expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
         )
@@ -198,7 +205,7 @@ async def test_membership_access_logic_uses_canonical_status_and_expires_at(asyn
         await repositories.upsert_membership_record(
             user_id,
             status="canceled",
-            source="invite",
+            source="referral",
             effective_at=datetime.now(timezone.utc) - timedelta(days=1),
             expires_at=datetime.now(timezone.utc) + timedelta(days=2),
         )
@@ -367,7 +374,7 @@ async def test_membership_expiry_warning_job_sends_once(async_client, monkeypatc
         membership = await repositories.upsert_membership_record(
             user_id,
             status="active",
-            source="invite",
+            source="referral",
             effective_at=now - timedelta(days=1),
             expires_at=now + timedelta(days=7, hours=12),
         )

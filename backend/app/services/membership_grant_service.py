@@ -7,7 +7,7 @@ from ..repositories import membership_support as membership_support_repo
 from ..repositories import memberships as memberships_repo
 from .onboarding_state import sync_onboarding_state
 
-_NON_PURCHASE_SOURCES = {"coupon", "invite"}
+_NON_PURCHASE_SOURCES = {"coupon", "referral"}
 
 
 async def grant_non_purchase_membership(
@@ -22,8 +22,8 @@ async def grant_non_purchase_membership(
     normalized_source = str(source or "").strip().lower()
     if normalized_source not in _NON_PURCHASE_SOURCES:
         raise ValueError("grant_non_purchase_membership requires canonical non-purchase source")
-    if normalized_source == "invite" and expires_at is None:
-        raise ValueError("invite membership grants require expires_at")
+    if normalized_source == "referral" and expires_at is None:
+        raise ValueError("referral membership grants require expires_at")
 
     membership = await memberships_repo.upsert_membership_record(
         user_id,
