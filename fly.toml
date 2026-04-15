@@ -13,7 +13,7 @@ kill_timeout = "5s"
   PORT = "8080"
 
 [processes]
-  app = "uvicorn app.main:app --host 0.0.0.0 --port 8080"
+  app = "sh -c 'exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}'"
   worker = "env RUN_MEDIA_WORKER=true RUN_COURSE_DRIP_WORKER=true python -m app.services.mvp_worker"
 
 [http_service]
