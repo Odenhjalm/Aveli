@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: OWNER
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: [T05]
 
 ## Purpose
@@ -46,11 +46,12 @@ representations, and stable JSON serialization with sorted keys and LF endings.
 
 ## Mutation Rules
 
-No mutation is allowed during this design task.
+No runtime mutation is allowed during this design task. Controller execution may
+update this task status and write `T06_execution_result.md` only.
 
 ## Output Artifacts
 
-Future execution may produce a hashing specification result document.
+- `T06_execution_result.md`
 
 ## Next Transitions
 
