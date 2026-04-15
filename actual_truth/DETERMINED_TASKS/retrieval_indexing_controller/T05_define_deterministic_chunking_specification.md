@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: OWNER
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: [T04]
 
 ## Purpose
@@ -47,11 +47,12 @@ canonical chunk order by normalized `file` then `chunk_index`.
 
 ## Mutation Rules
 
-No mutation is allowed during this design task.
+No runtime mutation is allowed during this design task. Controller execution may
+update this task status and write `T05_execution_result.md` only.
 
 ## Output Artifacts
 
-Future execution may produce a chunking specification result document.
+- `T05_execution_result.md`
 
 ## Next Transitions
 

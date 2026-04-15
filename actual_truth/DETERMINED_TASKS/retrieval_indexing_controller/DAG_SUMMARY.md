@@ -30,7 +30,7 @@ through T17.
 | T02 | [T01] | OWNER | PASS |
 | T03 | [T02] | OWNER | PASS |
 | T04 | [T02, T03] | OWNER | PASS |
-| T05 | [T04] | OWNER | NOT_STARTED |
+| T05 | [T04] | OWNER | PASS |
 | T06 | [T05] | OWNER | NOT_STARTED |
 | T07 | [T02, T06] | OWNER | NOT_STARTED |
 | T08 | [T02, T03] | OWNER | NOT_STARTED |
@@ -91,4 +91,4 @@ dependency is complete and verified.
 
 ## Next Allowed Task
 
-T05 is the only allowed next executable task.
+T06 is the only allowed next executable task.

@@ -99,7 +99,7 @@
       "type": "design",
       "os_role": "OWNER",
       "depends_on": ["T04"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
