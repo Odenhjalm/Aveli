@@ -69,7 +69,10 @@ Deterministic topological order:
   requires non-blank `display_name`, permits optional `bio`, rejects media and
   authority fields, and the frontend onboarding flow no longer writes through
   `/profiles/me`
-- `T11` planned
+- `T11` completed as referral transport and membership handoff rewrite;
+  referral email transport now lands at `/create-profile?referral_code=...`,
+  referral redemption grants membership with source `referral`, and frontend
+  create-profile redeems referral codes after profile creation
 - `T12` planned
 
 ## Blockers Resolved
@@ -83,7 +86,6 @@ Deterministic topological order:
 
 ## Blockers Remaining
 
-- Referral transport and membership handoff still reflect pre-canonical drift
 - Active invite surfaces still exist outside the rewritten contract corpus
 
 ## Final Assertion

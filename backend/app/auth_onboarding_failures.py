@@ -15,7 +15,7 @@ _COVERED_STATIC_SURFACES = {
     ("POST", "/auth/refresh"),
     ("POST", "/auth/send-verification"),
     ("GET", "/auth/verify-email"),
-    ("GET", "/auth/validate-invite"),
+    ("POST", "/auth/onboarding/create-profile"),
     ("POST", "/auth/onboarding/complete"),
     ("GET", "/profiles/me"),
     ("PATCH", "/profiles/me"),

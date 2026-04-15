@@ -61,12 +61,12 @@ async def _promote_to_teacher(user_id: str) -> None:
                     created_at,
                     updated_at
                 )
-                VALUES (%s, %s, 'active', now(), now() + interval '30 days', 'invite', now(), now())
+                VALUES (%s, %s, 'active', now(), now() + interval '30 days', 'purchase', now(), now())
                 ON CONFLICT (user_id) DO UPDATE
                 SET status = 'active',
                     effective_at = COALESCE(app.memberships.effective_at, now()),
                     expires_at = now() + interval '30 days',
-                    source = 'invite',
+                    source = 'purchase',
                     updated_at = now()
                 """,
                 (str(uuid.uuid4()), user_id),

@@ -262,7 +262,7 @@ async def test_course_enrollment_cannot_substitute_for_global_app_entry(
 
     app.dependency_overrides[auth.get_current_user] = fake_get_current_user
     monkeypatch.setattr(
-        "app.auth.memberships_repo.get_membership",
+        "app.routes.entry_state.memberships_repo.get_membership",
         no_membership,
     )
     monkeypatch.setattr(

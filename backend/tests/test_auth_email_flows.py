@@ -7,7 +7,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
 
-from app import repositories
 from app.config import settings
 from app.main import app
 from app.services.email_tokens import (
@@ -15,7 +14,7 @@ from app.services.email_tokens import (
     create_email_token,
     verify_email_token,
 )
-from .utils import auth_header, current_test_headers, fetch_auth_subject
+from .utils import current_test_headers
 
 
 def _unique_email(prefix: str) -> str:
@@ -163,90 +162,3 @@ async def test_reset_password_flow(auth_client, monkeypatch):
     assert revoked_users == ["user-456"]
 
 
-@pytest.mark.anyio("asyncio")
-async def test_invite_token_validation(auth_client):
-    invited_email = _unique_email("invite")
-    invited_token = create_email_token(invited_email, "invite", 24 * 60)
-
-    validate_resp = await auth_client.get(
-        "/auth/validate-invite",
-        params={"token": invited_token},
-    )
-    assert validate_resp.status_code == 200, validate_resp.text
-    assert validate_resp.json() == {"status": "valid", "email": invited_email}
-
-    mismatch_resp = await auth_client.post(
-        "/auth/register",
-        json={
-            "email": _unique_email("mismatch"),
-            "password": "Secret123!",
-            "display_name": "Mismatch",
-            "invite_token": invited_token,
-        },
-    )
-    assert mismatch_resp.status_code == 400, mismatch_resp.text
-    assert mismatch_resp.json() == {
-        "status": "error",
-        "error_code": "invalid_or_expired_token",
-        "message": "Lanken ar ogiltig eller har gatt ut.",
-    }
-
-
-@pytest.mark.anyio("asyncio")
-async def test_invite_register_creates_time_bounded_membership_without_entry(
-    async_client,
-):
-    invited_email = _unique_email("invite_register")
-    invited_token = create_email_token(invited_email, "invite", 24 * 60)
-
-    register_resp = await async_client.post(
-        "/auth/register",
-        json={
-            "email": invited_email,
-            "password": "Secret123!",
-            "display_name": "Invite Member",
-            "invite_token": invited_token,
-        },
-    )
-    assert register_resp.status_code == 201, register_resp.text
-    tokens = register_resp.json()
-
-    profile_resp = await async_client.get(
-        "/profiles/me",
-        headers=auth_header(tokens["access_token"]),
-    )
-    assert profile_resp.status_code == 200, profile_resp.text
-    user_id = str(profile_resp.json()["user_id"])
-
-    membership = await repositories.get_membership(user_id)
-    assert membership is not None
-    assert membership["status"] == "active"
-    assert membership["source"] == "invite"
-    assert membership["expires_at"] is not None
-
-    subject = await fetch_auth_subject(user_id)
-    assert subject["onboarding_state"] == "incomplete"
-
-    entry_state_resp = await async_client.get(
-        "/entry-state",
-        headers=auth_header(tokens["access_token"]),
-    )
-    assert entry_state_resp.status_code == 200, entry_state_resp.text
-    assert entry_state_resp.json() == {
-        "can_enter_app": False,
-        "onboarding_state": "incomplete",
-        "onboarding_completed": False,
-        "membership_active": True,
-        "needs_onboarding": True,
-        "needs_payment": False,
-        "role_v2": "learner",
-        "role": "learner",
-        "is_admin": False,
-    }
-
-    home_resp = await async_client.get(
-        "/home/audio",
-        headers=auth_header(tokens["access_token"]),
-    )
-    assert home_resp.status_code == 403
-    assert home_resp.json() == {"detail": "canonical_app_entry_required"}

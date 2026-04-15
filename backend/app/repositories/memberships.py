@@ -85,8 +85,8 @@ async def upsert_membership_record(
         "ended_at": _resolve_explicit(ended_at, (existing or {}).get("ended_at")),
         "source": resolved_source,
     }
-    if values["source"] == "invite" and values["expires_at"] is None:
-        raise RuntimeError("invite memberships require expires_at")
+    if values["source"] == "referral" and values["expires_at"] is None:
+        raise RuntimeError("referral memberships require expires_at")
 
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]

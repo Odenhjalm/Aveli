@@ -23,7 +23,7 @@ async def register_user(async_client):
     password = "Secret123!"
     register_resp = await async_client.post(
         "/auth/register",
-        json={"email": email, "password": password, "display_name": "Billing"},
+        json={"email": email, "password": password},
     )
     assert register_resp.status_code == 201
     tokens = register_resp.json()
@@ -42,11 +42,7 @@ async def register_auth_user(
 ) -> dict[str, str]:
     register_resp = await async_client.post(
         "/auth/register",
-        json={
-            "email": email,
-            "password": password,
-            "display_name": display_name,
-        },
+        json={"email": email, "password": password},
         headers=current_test_headers(),
     )
     assert register_resp.status_code == 201, register_resp.text

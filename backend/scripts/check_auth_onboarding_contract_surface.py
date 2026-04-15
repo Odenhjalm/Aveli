@@ -70,7 +70,7 @@ CANONICAL_AUTH_ROUTE_SET = {
     ("POST", "/auth/refresh"),
     ("POST", "/auth/send-verification"),
     ("GET", "/auth/verify-email"),
-    ("GET", "/auth/validate-invite"),
+    ("POST", "/auth/onboarding/create-profile"),
     ("POST", "/auth/onboarding/complete"),
     ("GET", "/profiles/me"),
     ("PATCH", "/profiles/me"),
@@ -82,6 +82,7 @@ REQUIRED_CANONICAL_ROUTES = {
     ("POST", "/auth/register"),
     ("POST", "/auth/login"),
     ("POST", "/auth/refresh"),
+    ("POST", "/auth/onboarding/create-profile"),
     ("POST", "/auth/onboarding/complete"),
     ("POST", "/admin/users/{user_id}/grant-teacher-role"),
     ("POST", "/admin/users/{user_id}/revoke-teacher-role"),
@@ -225,7 +226,6 @@ async def _register_user(
         json={
             "email": email,
             "password": password,
-            "display_name": display_name,
         },
         headers=_test_headers(),
     )
@@ -535,7 +535,6 @@ async def _failure_envelope_section() -> ReportSection:
             json={
                 "email": f"referral_{uuid4().hex[:8]}@example.com",
                 "password": "Passw0rd!",
-                "display_name": "Referral",
                 "referral_code": "legacy-referral",
             },
         )

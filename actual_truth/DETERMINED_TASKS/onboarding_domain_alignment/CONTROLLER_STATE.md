@@ -1,5 +1,30 @@
 # Onboarding Domain Alignment Controller State
 
+## T11
+
+- Task executed: T11 Rewire Referral Transport And Membership Handoff
+- Resulting status: completed
+- Repo-visible artifacts:
+  - `backend/app/services/membership_grant_service.py`
+  - `backend/app/services/referral_service.py`
+  - `backend/tests/test_referral_memberships.py`
+  - `frontend/lib/api/api_paths.dart`
+  - `frontend/lib/api/auth_repository.dart`
+  - `frontend/lib/core/auth/auth_controller.dart`
+  - `frontend/lib/core/routing/app_router.dart`
+  - `frontend/lib/features/onboarding/onboarding_profile_page.dart`
+  - `frontend/test/widgets/onboarding_profile_page_test.dart`
+  - `frontend/test/unit/auth_controller_test.dart`
+- Verification evidence:
+  - referral email transport now builds `/create-profile?referral_code=CODE` instead of `/login`
+  - referral redemption grants membership with source `referral`
+  - `membership_grant_service` supports `coupon` and `referral`; referral grants require `expires_at`
+  - frontend create-profile route accepts `referral_code` and `AuthController.createProfile` redeems it after profile creation
+  - local verification database was aligned by applying append-only baseline slot `0037_memberships_referral_source_alignment.sql` from repo-visible T05 authority
+  - scoped backend verification passed: `backend/tests/test_referral_memberships.py`, `backend/tests/test_onboarding_state.py`, and `backend/tests/test_profiles_owner.py`
+  - Flutter runtime unavailable in the current shell, so frontend verification was static
+- Controller decision: continue
+
 ## T10
 
 - Task executed: T10 Separate Create-Profile From /profiles/me

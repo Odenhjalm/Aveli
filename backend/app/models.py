@@ -373,7 +373,11 @@ async def get_user_by_id(user_id: str):
     return await repo_get_user_by_id(user_id)
 
 
-async def create_user(email: str, password: str, display_name: str):
+async def create_user(
+    email: str,
+    password: str,
+    display_name: str | None = None,
+):
     hashed = hash_password(password)
     result = await repo_create_user(
         email=email,
