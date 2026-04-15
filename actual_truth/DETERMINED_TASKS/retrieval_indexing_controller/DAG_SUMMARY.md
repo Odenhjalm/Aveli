@@ -1,6 +1,6 @@
 # Retrieval Indexing Controller DAG Summary
 
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: IN_PROGRESS
 
 ## Purpose
 
@@ -26,7 +26,7 @@ through T17.
 
 | Task | Depends On | Role | Status |
 | --- | --- | --- | --- |
-| T01 | [] | OWNER | NOT_STARTED |
+| T01 | [] | OWNER | PASS |
 | T02 | [T01] | OWNER | NOT_STARTED |
 | T03 | [T02] | OWNER | NOT_STARTED |
 | T04 | [T02, T03] | OWNER | NOT_STARTED |
@@ -91,4 +91,4 @@ dependency is complete and verified.
 
 ## Next Allowed Task
 
-T01 is the only allowed next executable task.
+T02 is the only allowed next executable task.

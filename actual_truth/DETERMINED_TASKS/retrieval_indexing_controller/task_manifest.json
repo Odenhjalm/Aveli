@@ -1,7 +1,7 @@
 {
   "task_tree": "retrieval_indexing_controller",
-  "mode": "generate",
-  "execution_status": "NOT_STARTED",
+  "mode": "execute",
+  "execution_status": "IN_PROGRESS",
   "authority_inputs": [
     "codex/AVELI_OPERATING_SYSTEM.md",
     "actual_truth/Aveli_System_Decisions.md",
@@ -59,7 +59,7 @@
       "type": "design",
       "os_role": "OWNER",
       "depends_on": [],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {

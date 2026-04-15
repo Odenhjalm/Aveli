@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: OWNER
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: []
 
 ## Purpose
@@ -66,8 +66,7 @@ materialization task authorizes writing the T01 result artifact.
 
 ## Output Artifacts
 
-Future execution may produce a T01 authority-resolution result document under
-this task tree. This materialization file is not that result.
+- `T01_execution_result.md`
 
 ## Next Transitions
 
