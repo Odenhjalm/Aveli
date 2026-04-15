@@ -44,10 +44,13 @@ It operates under `SYSTEM_LAWS.md`, `auth_onboarding_contract.md`,
 
 ## 2. BACKEND-OWNED DOMAIN AUTHORITIES
 
-- `app.auth_subjects` owns onboarding state, roles, and admin/access flags.
+- `app.auth_subjects` is the canonical application subject authority for:
+  - onboarding subject state
+  - app-level role subject fields
+  - app-level admin subject fields
 - `app.profiles` is projection-only and non-authoritative.
-- `memberships` owns app-access truth.
-- `course_enrollments` owns protected course-content access truth.
+- `app.memberships` owns app-access truth.
+- `app.course_enrollments` owns protected course-content access truth.
 - `app.runtime_media` owns media runtime truth.
 - Backend read composition owns frontend-facing media/profile representation.
 

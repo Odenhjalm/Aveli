@@ -1,0 +1,339 @@
+{
+  "dag_id": "onboarding_domain_alignment",
+  "deterministic_topological_order": [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08",
+    "T09",
+    "T10",
+    "T11",
+    "T12"
+  ],
+  "dependency_spine": [
+    "T01,T02,T03 -> T04 -> T05",
+    "T04 -> T06 -> T07",
+    "T02 -> T08,T09 -> T10",
+    "T01,T02,T05,T09,T10 -> T11",
+    "T04,T05,T07,T11 -> T12"
+  ],
+  "tasks": [
+    {
+      "task_id": "T01",
+      "title": "Lock Referral Source Vocabulary",
+      "owner_domains": [
+        "Referral",
+        "Global App Membership"
+      ],
+      "contradictions_resolved": [
+        "C12"
+      ],
+      "dependencies": [],
+      "mutation_scope": [
+        "actual_truth/contracts/ratifications",
+        "future contracts",
+        "future baseline",
+        "future backend runtime",
+        "future fixtures",
+        "future tests"
+      ],
+      "verification_requirement": "Exactly one surviving non-purchase membership source label is chosen; the label is `referral`; `invite` is retired from target vocabulary.",
+      "stop_conditions": [
+        "Any proposal preserves multiple surviving labels",
+        "Any proposal keeps `invite` as canonical vocabulary"
+      ],
+      "status": "resolved_ratified"
+    },
+    {
+      "task_id": "T02",
+      "title": "Lock Canonical Create-Profile Surface And Ownership Split",
+      "owner_domains": [
+        "Onboarding",
+        "Profile Projection",
+        "Media"
+      ],
+      "contradictions_resolved": [
+        "C13"
+      ],
+      "dependencies": [],
+      "mutation_scope": [
+        "actual_truth/contracts/ratifications",
+        "future backend auth/onboarding surfaces",
+        "future frontend onboarding flow",
+        "future tests"
+      ],
+      "verification_requirement": "Canonical create-profile execution surface is `POST /auth/onboarding/create-profile`; `/profiles/me` remains projection-only; required name, optional bio, and optional image ownership split is explicit.",
+      "stop_conditions": [
+        "Any proposal makes `/profiles/me` create-profile authority",
+        "Any proposal makes create-profile media authority"
+      ],
+      "status": "resolved_ratified"
+    },
+    {
+      "task_id": "T03",
+      "title": "Lock Canonical Application-Subject Naming",
+      "owner_domains": [
+        "Application Subject"
+      ],
+      "contradictions_resolved": [
+        "C11"
+      ],
+      "dependencies": [],
+      "mutation_scope": [
+        "actual_truth/contracts/ratifications",
+        "future active contract wording"
+      ],
+      "verification_requirement": "`app.auth_subjects` is named as the canonical application subject authority for onboarding subject state, app-level role subject fields, and app-level admin subject fields.",
+      "stop_conditions": [
+        "Any competing subject-owner naming survives",
+        "Any proposal weakens the canonical authority phrase"
+      ],
+      "status": "resolved_ratified"
+    },
+    {
+      "task_id": "T04",
+      "title": "Rewrite Active Contract Corpus To Remove Invite As Active Doctrine",
+      "owner_domains": [
+        "Referral",
+        "Onboarding",
+        "Application Subject",
+        "Global App Membership",
+        "Profile Projection"
+      ],
+      "contradictions_resolved": [
+        "C10"
+      ],
+      "dependencies": [
+        "T01",
+        "T02",
+        "T03"
+      ],
+      "mutation_scope": [
+        "actual_truth/contracts"
+      ],
+      "verification_requirement": "Invite no longer survives as active canonical doctrine in rewritten active contracts; referral is the sole canonical non-purchase grant doctrine in the rewritten active contracts.",
+      "stop_conditions": [
+        "Any rewritten active contract keeps invite as active doctrine",
+        "Any rewritten active contract reopens T01, T02, or T03"
+      ],
+      "status": "completed"
+    },
+    {
+      "task_id": "T05",
+      "title": "Append-Only Baseline Referral Vocabulary Alignment",
+      "owner_domains": [
+        "Baseline / Schema Evolution",
+        "Global App Membership",
+        "Referral"
+      ],
+      "contradictions_resolved": [
+        "C07.baseline"
+      ],
+      "dependencies": [
+        "T04"
+      ],
+      "mutation_scope": [
+        "backend/supabase/baseline_slots",
+        "backend/supabase/baseline_slots.lock.json"
+      ],
+      "verification_requirement": "A new append-only slot, not an in-place edit, aligns membership-source vocabulary and comments from `invite` to `referral`.",
+      "stop_conditions": [
+        "Any proposal edits slot `0032` in place",
+        "Any proposal mutates unrelated purchase/payment or course-access doctrine"
+      ],
+      "status": "defined_append_only_required"
+    },
+    {
+      "task_id": "T06",
+      "title": "Remove Duplicate Backend App Entry Model",
+      "owner_domains": [
+        "Post-Auth Entry Composition",
+        "Runtime Projections"
+      ],
+      "contradictions_resolved": [
+        "C01"
+      ],
+      "dependencies": [
+        "T04"
+      ],
+      "mutation_scope": [
+        "backend/app/auth.py",
+        "backend/app/permissions.py",
+        "related backend guard call sites"
+      ],
+      "verification_requirement": "`GET /entry-state` remains the sole post-auth routing authority and backend guards enforce without defining a second app-entry model.",
+      "stop_conditions": [
+        "Any backend guard continues to derive separate entry semantics",
+        "Any change makes `/profiles/me` or token claims entry authority"
+      ],
+      "status": "planned"
+    },
+    {
+      "task_id": "T07",
+      "title": "Replace Tests That Canonize require_app_entry",
+      "owner_domains": [
+        "Post-Auth Entry Composition"
+      ],
+      "contradictions_resolved": [
+        "C02"
+      ],
+      "dependencies": [
+        "T06"
+      ],
+      "mutation_scope": [
+        "backend/tests",
+        "frontend tests that assert obsolete guard doctrine"
+      ],
+      "verification_requirement": "Tests assert `GET /entry-state` as sole routing authority and treat backend guards as enforcement reuse only.",
+      "stop_conditions": [
+        "Any replacement test still canonizes `require_app_entry` as authority",
+        "Any test encodes a second app-entry model"
+      ],
+      "status": "planned"
+    },
+    {
+      "task_id": "T08",
+      "title": "Remove Profile-Derived Onboarding Completion",
+      "owner_domains": [
+        "Onboarding",
+        "Application Subject"
+      ],
+      "contradictions_resolved": [
+        "C03"
+      ],
+      "dependencies": [
+        "T02"
+      ],
+      "mutation_scope": [
+        "backend auth/onboarding runtime",
+        "related verification tests"
+      ],
+      "verification_requirement": "Onboarding completion depends only on explicit completion semantics and `app.auth_subjects.onboarding_state`, not profile-name presence.",
+      "stop_conditions": [
+        "Any implementation still blocks completion on `display_name`",
+        "Any fallback turns profile projection into onboarding authority"
+      ],
+      "status": "planned"
+    },
+    {
+      "task_id": "T09",
+      "title": "Move Required Name To Create-Profile",
+      "owner_domains": [
+        "Onboarding",
+        "Profile Projection"
+      ],
+      "contradictions_resolved": [
+        "C04"
+      ],
+      "dependencies": [
+        "T02"
+      ],
+      "mutation_scope": [
+        "backend auth register schemas and routes",
+        "frontend signup flow",
+        "tests and fixtures"
+      ],
+      "verification_requirement": "Registration no longer requires name and the required name is enforced only at canonical create-profile.",
+      "stop_conditions": [
+        "Any path keeps required name on registration",
+        "Any path moves required name away from create-profile"
+      ],
+      "status": "planned"
+    },
+    {
+      "task_id": "T10",
+      "title": "Separate Create-Profile From /profiles/me",
+      "owner_domains": [
+        "Onboarding",
+        "Profile Projection",
+        "Media"
+      ],
+      "contradictions_resolved": [
+        "C05"
+      ],
+      "dependencies": [
+        "T08",
+        "T09"
+      ],
+      "mutation_scope": [
+        "backend auth/onboarding route surfaces",
+        "frontend onboarding flow",
+        "profile and onboarding tests"
+      ],
+      "verification_requirement": "`POST /auth/onboarding/create-profile` becomes the onboarding-owned mutation surface and `/profiles/me` remains projection-only.",
+      "stop_conditions": [
+        "Any implementation routes create-profile through `/profiles/me`",
+        "Any implementation moves media authority into create-profile"
+      ],
+      "status": "planned"
+    },
+    {
+      "task_id": "T11",
+      "title": "Rewire Referral Transport And Membership Handoff",
+      "owner_domains": [
+        "Referral",
+        "Global App Membership",
+        "Onboarding"
+      ],
+      "contradictions_resolved": [
+        "C06",
+        "C07.runtime"
+      ],
+      "dependencies": [
+        "T01",
+        "T02",
+        "T05",
+        "T09",
+        "T10"
+      ],
+      "mutation_scope": [
+        "backend referral services",
+        "backend membership grant services",
+        "frontend referral entry flow",
+        "tests"
+      ],
+      "verification_requirement": "Referral email transport lands at create-profile and referral-derived membership handoff uses source `referral` without creating purchase/payment truth.",
+      "stop_conditions": [
+        "Any runtime handoff still uses source `invite`",
+        "Any referral transport lands outside canonical create-profile onboarding"
+      ],
+      "status": "planned"
+    },
+    {
+      "task_id": "T12",
+      "title": "Remove Active Invite Surfaces",
+      "owner_domains": [
+        "Authentication Identity",
+        "Referral",
+        "Global App Membership",
+        "Runtime Projections"
+      ],
+      "contradictions_resolved": [
+        "C08",
+        "C09"
+      ],
+      "dependencies": [
+        "T04",
+        "T05",
+        "T07",
+        "T11"
+      ],
+      "mutation_scope": [
+        "backend runtime auth/invite surfaces",
+        "frontend invite surfaces",
+        "tests and fixtures",
+        "derived docs that still present invite as active runtime doctrine"
+      ],
+      "verification_requirement": "Invite no longer survives as an active runtime, frontend, fixture, or test surface and referral remains the only canonical non-purchase grant doctrine for this onboarding path.",
+      "stop_conditions": [
+        "Any active invite token or invite membership path survives as runtime doctrine",
+        "Any removal breaks the locked referral grant path"
+      ],
+      "status": "planned"
+    }
+  ]
+}

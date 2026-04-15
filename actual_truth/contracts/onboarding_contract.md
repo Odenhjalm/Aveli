@@ -2,8 +2,8 @@
 
 ## PURPOSE
 
-Define UX companion guidance for onboarding copy, pre-entry UI sequencing, and
-onboarding completion intent.
+Define UX companion guidance for onboarding copy, pre-entry UI sequencing,
+create-profile intent, and onboarding completion intent.
 
 This contract is not an entry-authority contract. Entry authority, post-auth
 routing authority, and `/entry-state` ownership are defined only by
@@ -23,13 +23,29 @@ current-user entry surfaces.
 
 ---
 
-## 2. ONBOARDING COMPLETION UX INTENT
+## 2. CREATE-PROFILE UX INTENT
+
+Create-profile is an onboarding step.
+
+At create-profile:
+
+* user must provide name
+* user may optionally add bio
+* user may optionally add image through a media-mediated flow
+
+Create-profile is not profile-projection authority.
+Persisted onboarding completion authority remains outside this UX companion and
+is governed by `auth_onboarding_contract.md` and
+`onboarding_entry_authority_contract.md`.
+
+---
+
+## 3. ONBOARDING COMPLETION UX INTENT
 
 UX completion intent is represented when:
 
 * user clicks:
   "Jag förstår hur Aveli fungerar"
-* profile display name may be collected as UX projection data
 
 Persisted onboarding completion authority remains outside this UX companion and
 is governed by `auth_onboarding_contract.md` and
@@ -40,14 +56,14 @@ Onboarding MUST NOT complete via:
 * register
 * login
 * payment
-* invite
 * referral
+* create-profile alone
 * profile update
 * email verification
 
 ---
 
-## 3. PAYMENT
+## 4. PAYMENT
 
 Payment:
 
@@ -57,42 +73,35 @@ Payment:
 
 ---
 
-## 4. INVITE
-
-Invite flow:
-
-* creates membership:
-  source = "invite"
-  expires_at is required
-* MUST NOT grant entry
-* MUST NOT complete onboarding
-
-Invite user routing is still determined only by delegated `GET /entry-state`.
-
----
-
 ## 5. REFERRAL
 
 Referral:
 
-* MUST be post-auth only
+* occurs via email link
+* MUST bring the user into onboarding at the create-profile step
+* MUST be post-auth only for redemption
 * MUST use:
   POST /referrals/redeem
+* MUST create a non-purchase membership grant only through canonical commerce
+  membership authority using source = "referral"
 * MUST NOT exist in register flow
 * MUST NOT create entry
+* MUST NOT complete onboarding
 
 ---
 
 ## 6. PROFILE
 
-Profile:
+Profile projection:
 
-* display name is UX projection data
-* bio is optional
-* image is optional
+* reflects persisted display name
+* reflects optional bio
+* may reflect optional image through the media boundary
 
+`/profiles/me` remains projection-only.
 Profile MUST NOT grant entry.
 Profile MUST NOT bootstrap routing.
+Profile MUST NOT own create-profile.
 
 ---
 
@@ -110,7 +119,8 @@ Intro course:
 
 Frontend:
 
-* MUST use /entry-state through onboarding_entry_authority_contract.md
+* MUST use `/entry-state` through `onboarding_entry_authority_contract.md`
+* MUST land referral recipients at create-profile
 * MUST NOT infer authority from:
 
   * profile
@@ -120,7 +130,7 @@ Frontend:
 
 Routing authority is not defined here. Routing MUST depend only on:
 
-GET /entry-state as defined by onboarding_entry_authority_contract.md
+`GET /entry-state` as defined by `onboarding_entry_authority_contract.md`
 
 ---
 
@@ -129,5 +139,4 @@ GET /entry-state as defined by onboarding_entry_authority_contract.md
 Home:
 
 * is post-entry
-
 * MUST NOT grant entry

@@ -18,7 +18,7 @@ This contract applies only to the following surfaces:
 - `POST /auth/refresh`
 - `POST /auth/send-verification`
 - `GET /auth/verify-email`
-- `GET /auth/validate-invite`
+- `POST /auth/onboarding/create-profile`
 - `POST /auth/onboarding/complete`
 - `GET /profiles/me`
 - `PATCH /profiles/me`

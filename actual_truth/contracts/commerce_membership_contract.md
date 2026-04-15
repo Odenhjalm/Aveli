@@ -150,13 +150,18 @@ Entrypoint responsibilities:
 
 ## 8. MEMBERSHIP ALIGNMENT DECISION
 
-- Membership MUST create order.
-- Membership MUST NOT be a separate non-order purchase authority.
+- Membership purchase MUST create order.
+- Membership purchase MUST NOT be a separate non-order purchase authority.
+- Canonical non-purchase membership grants may exist only when explicitly
+  authorized by contract.
 - The canonical purchase trail for membership is:
   - `app.orders` for purchase identity and state
   - `app.payments` for payment settlement
   - `app.memberships` for resulting current membership state
-- Any membership flow that creates or updates membership without an order-backed purchase trail is non-canonical.
+- Canonical non-purchase membership grants for this onboarding path are owned
+  only by `referral_membership_grant_contract.md`.
+- Any purchase-backed membership flow that creates or updates membership
+  without an order-backed purchase trail is non-canonical.
 
 ## 9. MEMBERSHIP SOURCE LAW
 
@@ -166,14 +171,19 @@ Allowed sources:
 
 - purchase
 - coupon
-- invite
+- referral
 
 Rules:
 
 - purchase MUST create an order
 - purchase MAY include a trial period
 - trial via Stripe is still a purchase and MUST have an order
-- non-purchase sources MUST NOT create an order
+- coupon MUST NOT create an order unless a later explicit contract says
+  otherwise
+- referral MUST NOT create an order
+- referral MUST NOT create payment truth
+- referral is the sole canonical non-purchase grant doctrine relevant to this
+  onboarding path
 - all memberships MUST include explicit source metadata
 - implicit membership creation is forbidden
 

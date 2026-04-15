@@ -33,6 +33,10 @@ The following physical objects are required:
 
 ### `app.auth_subjects`
 
+- is the canonical application subject authority for:
+  - onboarding subject state
+  - app-level role subject fields
+  - app-level admin subject fields
 - owns:
   - `onboarding_state`
   - `role_v2`
@@ -48,6 +52,10 @@ The following physical objects are required:
   - `avatar_media_id`
   - `created_at`
   - `updated_at`
+- supports projection persistence for onboarding-collected `display_name` and
+  optional `bio` under the canonical create-profile surface
+- supports media-mediated avatar attachment through `avatar_media_id` without
+  moving media authority into Auth + Onboarding
 
 ### `app.refresh_tokens`
 
@@ -137,4 +145,5 @@ The following are forbidden as Auth + Onboarding requirements:
 ## 5. FINAL ASSERTION
 
 - Auth + Onboarding baseline truth is limited to the objects named in this contract.
+- `app.auth_subjects` remains the canonical application subject authority.
 - Any implementation dependency outside this set is either optional by explicit contract or drift.

@@ -14,6 +14,9 @@ This file is the PRIMARY AUTHORITY for:
 - teacher-rights mutation rules
 - admin-bootstrap authority boundaries
 
+`app.auth_subjects` is the canonical application subject authority for this
+file's owned fields.
+
 This file owns field authority and mutation authority only. It does not own
 post-auth entry authority, full entry composition, or routing authority.
 
@@ -243,14 +246,15 @@ This contract does not define:
 - full entry composition
 - routing authority
 - password-reset semantics
-- invite-validation semantics
 - referral redemption semantics
 - profile projection response shape
 - binary avatar/media upload behavior
 
 ## 9. FINAL ASSERTION
 
-- `app.auth_subjects` is the only truth carrier for onboarding completion, non-admin role truth, and admin override.
+- `app.auth_subjects` is the canonical application subject authority for
+  onboarding subject state, app-level role subject fields, and app-level admin
+  subject fields.
 - This contract defines field authority and mutation execution only.
 - Post-auth routing authority belongs only to `onboarding_entry_authority_contract.md` through `GET /entry-state`.
 - Teacher rights are admin-only.

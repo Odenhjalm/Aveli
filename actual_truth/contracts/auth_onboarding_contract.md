@@ -17,39 +17,46 @@ This contract composes with:
 ## 1. CONTRACT LAW
 
 - `auth.users` is the only identity and credential authority.
-- `app.auth_subjects` is the only onboarding, non-admin role, and admin-override authority.
+- `app.auth_subjects` is the canonical application subject authority for:
+  - onboarding subject state
+  - app-level role subject fields
+  - app-level admin subject fields
 - `app.profiles` is projection-only and non-authoritative.
-- Contracts under `actual_truth/contracts/` are the only truth for Auth + Onboarding.
-- Runtime schema introspection, frontend claims, tests, legacy routes, and remote runtime state MUST NOT redefine authority.
-- Membership, commerce, referral redemption, and binary media handling remain outside Auth + Onboarding except where this contract names an explicit boundary.
-- Post-auth routing authority is delegated to `onboarding_entry_authority_contract.md`.
-- `GET /entry-state` is the delegated post-auth routing surface.
-- Auth + Onboarding execution surfaces MUST NOT imply app entry, routing authority, or full post-auth entry composition.
+- `POST /auth/onboarding/create-profile` is the canonical onboarding-owned
+  create-profile surface.
+- `POST /auth/onboarding/complete` is the canonical onboarding-completion
+  surface.
+- Contracts under `actual_truth/contracts/` are the only truth for Auth +
+  Onboarding.
+- Membership, commerce, referral redemption, and binary media handling remain
+  outside Auth + Onboarding except where this contract names an explicit
+  boundary.
+- Post-auth routing authority is delegated to
+  `onboarding_entry_authority_contract.md` through `GET /entry-state`.
 
 ## 2. AUTHORITY MODEL
 
-- `auth.users` owns:
-  - identity creation
-  - authentication
-  - credential truth
-  - canonical email identity
-  - canonical email-verification state
-- `app.auth_subjects` owns:
-  - `onboarding_state`
-  - `role_v2`
-  - `role`
-  - `is_admin`
-- `app.profiles` remains projection-only and is governed by `profile_projection_contract.md`.
-- `POST /auth/onboarding/complete` is the single canonical onboarding-completion authority.
-- First-admin bootstrap is operator-controlled only and has no app-runtime route.
-- Teacher role assignment and revocation are admin-only and are limited to the canonical routes in this contract.
-- `photo_url` is read composition only and never write authority.
-- `referral_code` remains forbidden on `POST /auth/register`.
+- `auth.users` owns identity creation, authentication, credential truth,
+  canonical email identity, and canonical email-verification state.
+- `app.auth_subjects` owns `onboarding_state`, `role_v2`, `role`, and
+  `is_admin`.
+- `app.profiles` remains projection-only and is governed by
+  `profile_projection_contract.md`.
+- `POST /auth/onboarding/create-profile` owns onboarding-step execution for
+  required name plus optional bio input.
+- Optional image input at create-profile is media-mediated only and MUST NOT
+  move media authority into Auth + Onboarding.
+- `POST /auth/onboarding/complete` is the single canonical onboarding
+  transition authority.
+- First-admin bootstrap is operator-controlled only and has no app-runtime
+  route.
+- Teacher role assignment and revocation are admin-only and are limited to the
+  canonical routes in this contract.
 
 ## 3. CANONICAL ENTRYPOINTS
 
-This section lists Auth + Onboarding execution surfaces only. It does not define
-post-auth entry authority. Post-auth routing must use delegated
+This section lists Auth + Onboarding execution surfaces only. It does not
+define post-auth entry authority. Post-auth routing must use delegated
 `GET /entry-state` under `onboarding_entry_authority_contract.md`.
 
 - Registration: `POST /auth/register`
@@ -59,65 +66,66 @@ post-auth entry authority. Post-auth routing must use delegated
 - Refresh token: `POST /auth/refresh`
 - Send verification: `POST /auth/send-verification`
 - Verify email: `GET /auth/verify-email`
-- Validate invite: `GET /auth/validate-invite`
+- Create profile: `POST /auth/onboarding/create-profile`
 - Onboarding completion: `POST /auth/onboarding/complete`
 - Current profile projection read: `GET /profiles/me`
 - Current profile projection update: `PATCH /profiles/me`
-- Delegated post-auth routing: `GET /entry-state` under `onboarding_entry_authority_contract.md`
+- Delegated post-auth routing: `GET /entry-state`
 - Grant teacher role: `POST /admin/users/{user_id}/grant-teacher-role`
 - Revoke teacher role: `POST /admin/users/{user_id}/revoke-teacher-role`
 
 Entrypoint responsibilities:
 
-- `/auth/*` owns credential, token, email-verification, and onboarding-completion execution.
-- `/profiles/me` owns current-user projection read and editable profile text fields only.
-- `/profiles/me` MUST NOT be used for routing, bootstrap, or entry decision.
-- `/entry-state` is referenced here only as a delegated surface and is not owned by this contract.
+- `/auth/*` owns credential, token, email-verification, and onboarding
+  execution surfaces.
+- `POST /auth/onboarding/create-profile` owns the onboarding step that captures
+  required name and optional bio while remaining non-authoritative for
+  routing.
+- `POST /auth/onboarding/create-profile` MUST NOT own binary image upload or
+  media lifecycle authority.
+- `/profiles/me` owns current-user projection read and editable profile text
+  fields only.
+- `/profiles/me` MUST NOT be used for create-profile authority, routing,
+  bootstrap, or entry decision.
 - `/admin/users/*` owns admin-only teacher-role mutation only.
 
 ## 4. REQUEST CONTRACTS
 
 - `POST /auth/register`
-  - Request shape: `{ "email": string, "password": string, "display_name": string, "invite_token"?: string }`
-  - Required fields:
-    - `email`
-    - `password`
-    - `display_name`
-  - Forbidden fields:
-    - `referral_code`
-- `POST /auth/login`
   - Request shape: `{ "email": string, "password": string }`
   - Required fields:
     - `email`
     - `password`
+  - Forbidden fields:
+    - `display_name`
+    - `invite_token`
+    - `referral_code`
+- `POST /auth/login`
+  - Request shape: `{ "email": string, "password": string }`
 - `POST /auth/forgot-password`
   - Request shape: `{ "email": string }`
-  - Required fields:
-    - `email`
 - `POST /auth/reset-password`
   - Request shape: `{ "token": string, "new_password": string }`
-  - Required fields:
-    - `token`
-    - `new_password`
 - `POST /auth/refresh`
   - Request shape: `{ "refresh_token": string }`
-  - Required fields:
-    - `refresh_token`
 - `POST /auth/send-verification`
   - Request shape: `{ "email": string }`
-  - Required fields:
-    - `email`
 - `GET /auth/verify-email`
   - Request shape: query parameter `token`
+- `POST /auth/onboarding/create-profile`
+  - Request shape: `{ "display_name": string, "bio"?: string }`
   - Required fields:
-    - `token`
-- `GET /auth/validate-invite`
-  - Request shape: query parameter `token`
-  - Required fields:
-    - `token`
+    - `display_name`
+  - Forbidden fields:
+    - `photo_url`
+    - `avatar_media_id`
+    - onboarding fields
+    - role fields
+    - admin fields
+    - membership fields
+    - referral fields
+    - binary media payload fields
 - `POST /auth/onboarding/complete`
-  - No request body.
-- `GET /profiles/me`
   - No request body.
 - `PATCH /profiles/me`
   - Request shape: `{ "display_name"?: string, "bio"?: string }`
@@ -131,49 +139,35 @@ Entrypoint responsibilities:
     - `membership_active`
     - `is_teacher`
     - `referral_code`
-- `POST /admin/users/{user_id}/grant-teacher-role`
-  - No request body.
-- `POST /admin/users/{user_id}/revoke-teacher-role`
-  - No request body.
 
 ## 5. SUCCESS RESPONSE CONTRACTS
 
 - `POST /auth/register`
-  - Response shape: `{ "access_token": string, "token_type": "bearer", "refresh_token": string }`
-  - Required fields:
-    - `access_token`
-    - `token_type`
-    - `refresh_token`
+  - Response shape:
+    `{ "access_token": string, "token_type": "bearer", "refresh_token": string }`
 - `POST /auth/login`
-  - Response shape: `{ "access_token": string, "token_type": "bearer", "refresh_token": string }`
-  - Required fields:
-    - `access_token`
-    - `token_type`
-    - `refresh_token`
+  - Response shape:
+    `{ "access_token": string, "token_type": "bearer", "refresh_token": string }`
 - `POST /auth/forgot-password`
   - Response shape: `{ "status": "ok" }`
 - `POST /auth/reset-password`
   - Response shape: `{ "status": "password_reset" }`
 - `POST /auth/refresh`
-  - Response shape: `{ "access_token": string, "token_type": "bearer", "refresh_token": string }`
-  - Required fields:
-    - `access_token`
-    - `token_type`
-    - `refresh_token`
+  - Response shape:
+    `{ "access_token": string, "token_type": "bearer", "refresh_token": string }`
 - `POST /auth/send-verification`
   - Response shape: `{ "status": "ok" }`
 - `GET /auth/verify-email`
-  - Response shape: `{ "status": "verified" }` or `{ "status": "already_verified" }`
-- `GET /auth/validate-invite`
-  - Response shape: `{ "status": "valid", "email": string }`
+  - Response shape:
+    `{ "status": "verified" }` or `{ "status": "already_verified" }`
+- `POST /auth/onboarding/create-profile`
+  - Response shape matches `GET /profiles/me`
 - `POST /auth/onboarding/complete`
-  - Response shape: `{ "status": "completed", "onboarding_state": "completed", "token_refresh_required": true }`
-  - Required fields:
-    - `status`
-    - `onboarding_state`
-    - `token_refresh_required`
+  - Response shape:
+    `{ "status": "completed", "onboarding_state": "completed", "token_refresh_required": true }`
 - `GET /profiles/me`
-  - Response shape: `{ "user_id": string, "email": string, "display_name"?: string, "bio"?: string, "photo_url"?: string, "avatar_media_id"?: string, "created_at": string, "updated_at": string }`
+  - Response shape:
+    `{ "user_id": string, "email": string, "display_name"?: string, "bio"?: string, "photo_url"?: string, "avatar_media_id"?: string, "created_at": string, "updated_at": string }`
   - Forbidden response fields:
     - `membership_active`
     - `is_teacher`
@@ -188,60 +182,87 @@ Entrypoint responsibilities:
 - `POST /admin/users/{user_id}/revoke-teacher-role`
   - Response: `204 No Content`
 
-All non-2xx responses on owned surfaces are governed only by `auth_onboarding_failure_contract.md`.
+All non-2xx responses on owned surfaces are governed only by
+`auth_onboarding_failure_contract.md`.
 
-## 6. ONBOARDING COMPLETION LAW
+## 6. CREATE-PROFILE LAW
 
-- `POST /auth/onboarding/complete` is the only canonical transition surface for `incomplete -> completed`.
+- `POST /auth/onboarding/create-profile` is the only canonical onboarding-owned
+  create-profile surface.
+- Required name belongs at create-profile and MUST NOT be required by
+  `POST /auth/register`.
+- Optional bio may be collected at create-profile and persisted to
+  `app.profiles.bio`.
+- Optional image at create-profile is media-mediated only and may be attached
+  only through the profile/media boundary defined by media contracts.
+- `POST /auth/onboarding/create-profile` MUST NOT become profile-projection
+  authority, media authority, routing authority, or entry authority.
+
+## 7. ONBOARDING COMPLETION LAW
+
+- `POST /auth/onboarding/complete` is the only canonical transition surface for
+  `incomplete -> completed`.
 - Onboarding completion is explicit-action-derived only.
+- `POST /auth/onboarding/create-profile` is an onboarding step but does not by
+  itself complete onboarding.
 - `PATCH /profiles/me` MUST NOT mutate onboarding state.
-- Email verification, referral transport, membership state, webhooks, and profile projection writes MUST NOT implicitly complete onboarding.
+- Email verification, referral transport, referral redemption, membership
+  state, webhooks, media writes, and profile projection writes MUST NOT
+  implicitly complete onboarding.
 - `app.auth_subjects.onboarding_state` owns the persisted transition.
-- `completed -> completed` is allowed as an idempotent success.
-- The completion route does not mint new tokens.
-- After a successful completion response, the client must call `POST /auth/refresh` before relying on refreshed auth context.
+- Onboarding completion MUST NOT be derived from profile-name presence.
+- After a successful completion response, the client must call
+  `POST /auth/refresh` before relying on refreshed auth context.
 
-## 7. ADMIN BOOTSTRAP BOUNDARY
+## 8. ADMIN BOOTSTRAP BOUNDARY
 
-- The first admin is established only through the operator-controlled bootstrap defined by `auth_onboarding_baseline_contract.md`.
+- The first admin is established only through the operator-controlled bootstrap
+  defined by `auth_onboarding_baseline_contract.md`.
 - No public app-runtime route exists for mutating `is_admin`.
 - After bootstrap, `is_admin` remains operator-controlled only.
-- Tests, seeds, frontend flows, and legacy routes MUST NOT create admin authority.
 
-## 8. TEACHER ROLE BOUNDARY
+## 9. TEACHER ROLE BOUNDARY
 
-- No teacher-request lifecycle exists.
-- No pending or request state exists for teacher rights.
-- Teacher role may be assigned only through `POST /admin/users/{user_id}/grant-teacher-role`.
-- Teacher role may be revoked only through `POST /admin/users/{user_id}/revoke-teacher-role`.
-- Teacher role state remains owned by `app.auth_subjects` under `onboarding_teacher_rights_contract.md`.
+- Teacher role may be assigned only through
+  `POST /admin/users/{user_id}/grant-teacher-role`.
+- Teacher role may be revoked only through
+  `POST /admin/users/{user_id}/revoke-teacher-role`.
+- Teacher role state remains owned by `app.auth_subjects` under
+  `onboarding_teacher_rights_contract.md`.
 
-## 9. PROFILE AND REFERRAL BOUNDARY
+## 10. PROFILE, REFERRAL, AND MEDIA BOUNDARY
 
-- Profile projection semantics are governed only by `profile_projection_contract.md`.
-- `photo_url` on `/profiles/me` is read composition only.
+- Profile projection semantics are governed only by
+  `profile_projection_contract.md`.
 - Auth + Onboarding routes MUST NOT own referral redemption.
-- `referral_code` remains transport-only pre-redemption context under `referral_membership_grant_contract.md`.
+- `referral_code` remains transport-only pre-redemption context under
+  `referral_membership_grant_contract.md`.
 - `POST /auth/register` MUST continue to reject `referral_code`.
+- Referral email transport may bring the user into onboarding at the
+  create-profile step, but it does not create identity, authenticate a user,
+  complete onboarding, or grant membership by itself.
+- Auth + Onboarding routes MUST NOT own binary media upload authority.
 
-## 10. FORBIDDEN PATTERNS
+## 11. FORBIDDEN PATTERNS
 
-- `/auth/me` as canonical current-user authority.
-- `/auth/change-password` as canonical Auth + Onboarding authority.
-- `/auth/request-password-reset` as canonical password-reset initiation.
+- `GET /auth/validate-invite`
+- Accepting `invite_token` on `POST /auth/register`
+- Requiring `display_name` on `POST /auth/register`
+- `/auth/me` as canonical current-user authority
 - `/profiles/me/avatar`
 - `/api/upload/profile`
-- `/admin/teacher-requests/*`
-- `/admin/teachers/*`
-- Accepting `referral_code` on `POST /auth/register`.
-- Any profile-derived onboarding completion.
-- Any certificate-, approval-, or queue-based teacher-role authority.
-- Any fallback authority through runtime schema introspection.
+- Accepting `referral_code` on `POST /auth/register`
+- Any profile-derived onboarding completion
 
-## 11. FINAL ASSERTION
+## 12. FINAL ASSERTION
 
 - This contract is the canonical Auth + Onboarding execution contract.
-- This contract does not own post-auth entry authority, routing authority, or full entry composition.
-- Post-auth entry authority is owned only by `onboarding_entry_authority_contract.md` through `GET /entry-state`.
-- Contract truth is separate from implementation state.
-- The canonical surface is now closed enough to drive deterministic implementation planning.
+- `app.auth_subjects` is the canonical application subject authority for
+  onboarding subject state, app-level role subject fields, and app-level admin
+  subject fields.
+- `POST /auth/onboarding/create-profile` is the canonical onboarding-owned
+  create-profile surface.
+- `POST /auth/onboarding/complete` is completion-only.
+- `/profiles/me` is projection-only and remains non-authoritative.
+- Post-auth entry authority is owned only by
+  `onboarding_entry_authority_contract.md` through `GET /entry-state`.
