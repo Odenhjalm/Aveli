@@ -1,17 +1,16 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aveli/api/auth_repository.dart';
-import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
+import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/studio/application/home_player_library_controller.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/widgets/home_player_upload_routing.dart';
-import 'package:aveli/shared/models/request_headers.dart';
 
 import 'wav_upload_source.dart';
 import 'wav_upload_types.dart';
@@ -38,7 +37,6 @@ class HomePlayerUploadDialog extends ConsumerStatefulWidget {
 class _HomePlayerUploadDialogState
     extends ConsumerState<HomePlayerUploadDialog> {
   static const _pollInterval = Duration(seconds: 5);
-  static const _contextCourseKey = 'home-player';
 
   double _progress = 0.0;
   String? _status;
@@ -62,22 +60,6 @@ class _HomePlayerUploadDialogState
     super.dispose();
   }
 
-  String get _contextLessonKey {
-    final profile = ref.read(authControllerProvider).profile;
-    return profile?.id ?? 'library';
-  }
-
-  String _friendlyUploadFailure(WavUploadFailureKind kind) {
-    switch (kind) {
-      case WavUploadFailureKind.cancelled:
-        return 'Uppladdningen avbröts.';
-      case WavUploadFailureKind.expired:
-        return 'Kunde inte återautentisera uppladdningen. Försök igen.';
-      case WavUploadFailureKind.failed:
-        return 'Uppladdningen misslyckades. Försök igen.';
-    }
-  }
-
   void _cancelUpload() {
     _cancelToken?.cancel();
   }
@@ -90,7 +72,7 @@ class _HomePlayerUploadDialogState
     setState(() {
       _progress = 0.0;
       _error = null;
-      _status = 'Förbereder uppladdning…';
+      _status = 'Förbereder uppladdning...';
       _uploading = true;
       _processing = false;
     });
@@ -115,178 +97,77 @@ class _HomePlayerUploadDialogState
       return;
     }
 
-    await _uploadViaHomeStorage(
+    await _uploadViaCanonicalHomePlayerRoute(
       normalizedMimeType: homePlayerUploadNormalizedMimeType(route),
     );
   }
 
-  Future<void> _uploadViaMediaPipeline() async {
-    final normalizedMime = _normalizeWavMimeType(
-      widget.contentType,
-      widget.file.name,
-    );
+  Future<void> _uploadViaMediaPipeline({String? normalizedMimeOverride}) async {
+    final normalizedMime = (normalizedMimeOverride?.trim().isNotEmpty ?? false)
+        ? normalizedMimeOverride!.trim().toLowerCase()
+        : _normalizeWavMimeType(widget.contentType, widget.file.name);
 
-    WavResumableSession? resumableSession;
-    try {
-      resumableSession = await findResumableSession(
-        courseId: _contextCourseKey,
-        lessonId: _contextLessonKey,
-        file: widget.file,
-      );
-    } catch (_) {
-      resumableSession = null;
-    }
-
-    if (resumableSession != null) {
-      try {
-        final repo = ref.read(mediaPipelineRepositoryProvider);
-        final db = await repo.fetchStatus(resumableSession.mediaId);
-        final dbState = db.state.trim().toLowerCase();
-        final dbAllowsResume = dbState == 'uploaded' || dbState == 'processing';
-        if (!dbAllowsResume) {
-          clearResumableSession(resumableSession);
-          resumableSession = null;
-        }
-      } catch (_) {
-        // If status fails we still try resuming; signing refresh will catch auth issues.
-      }
-    }
-
-    Uri uploadUrl;
-    String objectPath;
-    RequestHeaders uploadHeaders;
-    String mediaId;
-
-    if (resumableSession != null) {
-      mediaId = resumableSession.mediaId;
-      uploadUrl = resumableSession.sessionUrl;
-      objectPath = resumableSession.objectPath;
-      uploadHeaders = resumableSession.resumableHeaders();
-      if (mounted) {
-        setState(() => _status = 'Återupptar uppladdning…');
-      }
-    } else {
-      try {
-        final repo = ref.read(mediaPipelineRepositoryProvider);
-        final upload = await repo.requestUploadUrl(
-          filename: widget.file.name,
-          mimeType: normalizedMime,
-          sizeBytes: widget.file.size,
-          mediaType: 'audio',
-          purpose: 'home_player_audio',
-        );
-        mediaId = upload.mediaId;
-        uploadUrl = upload.uploadUrl;
-        objectPath = upload.objectPath;
-        uploadHeaders = upload.headers;
-        if (mounted) {
-          setState(() => _status = 'Laddar upp…');
-        }
-      } catch (error, stackTrace) {
-        final failure = AppFailure.from(error, stackTrace);
-        var message = 'Kunde inte starta uppladdningen. Försök igen.';
-        if (failure is ValidationFailure) {
-          final detail = failure.message.trim();
-          if (detail.isNotEmpty) {
-            message = detail.startsWith('File too large')
-                ? detail.replaceFirst('File too large', 'Filen är för stor')
-                : detail;
-          }
-        } else if (failure is ServerFailure) {
-          message = failure.message;
-        } else if (failure is NetworkFailure ||
-            failure is TimeoutFailure ||
-            failure is UnauthorizedFailure ||
-            failure is NotFoundFailure ||
-            failure is ConfigurationFailure) {
-          message = failure.message;
-        } else {
-          final detail = failure.message.trim();
-          if (detail.isNotEmpty) {
-            message = 'Kunde inte starta uppladdningen: $detail';
-          }
-        }
-        if (!mounted) return;
-        setState(() {
-          _uploading = false;
-          _error = message;
-          _status = message;
-        });
-        return;
-      }
-    }
-
-    _cancelToken = WavUploadCancelToken();
-
-    try {
-      await uploadWavFile(
-        mediaId: mediaId,
-        courseId: _contextCourseKey,
-        lessonId: _contextLessonKey,
-        uploadUrl: uploadUrl,
-        objectPath: objectPath,
-        headers: uploadHeaders,
-        file: widget.file,
-        contentType: normalizedMime,
-        onProgress: (sent, total) {
-          if (!mounted) return;
-          final fraction = total <= 0 ? 0.0 : sent / total;
-          setState(() => _progress = fraction.clamp(0.0, 1.0));
-        },
-        cancelToken: _cancelToken,
-        onResume: (resumed) {
-          if (!mounted || !resumed) return;
-          setState(() => _status = 'Återupptar uppladdning…');
-        },
-        ensureAuth: () async {
-          final client = ref.read(apiClientProvider);
-          return client.ensureAuth(
-            onRefresh: () {
-              if (!mounted) return;
-              setState(() => _status = 'Återautentiserar session…');
-            },
-          );
-        },
-        refreshSigning: (session) async {
-          final repo = ref.read(mediaPipelineRepositoryProvider);
-          final refreshed = await repo.refreshUploadUrl(
-            mediaId: session.mediaId,
-          );
-          return WavUploadSigningRefresh(
-            uploadUrl: refreshed.uploadUrl,
-            objectPath: refreshed.objectPath,
-            headers: refreshed.headers,
-            expiresAt: refreshed.expiresAt,
-          );
-        },
-        onSigningRefresh: () {
-          if (!mounted) return;
-          setState(() => _status = 'Återautentiserar uppladdning…');
-        },
-        resumableSession: resumableSession,
-      );
-    } on WavUploadFailure catch (failure) {
-      final message = _friendlyUploadFailure(failure.kind);
+    if (!normalizedMime.startsWith('audio/')) {
+      const message =
+          'MP4-uppladdning kräver backendstöd innan den kan publiceras.';
       if (!mounted) return;
       setState(() {
         _uploading = false;
         _error = message;
         _status = message;
-        _cancelToken = null;
       });
       return;
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint('Home WAV upload failed: $error');
+    }
+
+    final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
+    final uploadCancel = WavUploadCancelToken();
+    final dioCancel = CancelToken();
+    uploadCancel.onCancel(() => dioCancel.cancel('Upload cancelled'));
+    _cancelToken = uploadCancel;
+
+    late final String mediaId;
+
+    try {
+      final upload = await pipelineRepo.requestUploadUrl(
+        filename: widget.file.name,
+        mimeType: normalizedMime,
+        sizeBytes: widget.file.size,
+        mediaType: 'audio',
+        purpose: 'home_player_audio',
+      );
+      if (upload.uploadEndpoint.isEmpty || upload.uploadSessionId.isEmpty) {
+        throw StateError('Uppladdningssession saknas.');
       }
-      final message = 'Uppladdningen misslyckades. Försök igen.';
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _error = message;
-        _status = message;
-        _cancelToken = null;
-      });
+      mediaId = upload.mediaId;
+
+      if (mounted) {
+        setState(() => _status = 'Laddar upp...');
+      }
+
+      await pipelineRepo.uploadBytes(
+        target: upload,
+        data: await widget.file.readAsBytes(),
+        contentType: normalizedMime,
+        cancelToken: dioCancel,
+        onSendProgress: (sent, total) {
+          if (!mounted) return;
+          final resolvedTotal = total > 0 ? total : widget.file.size;
+          final fraction = resolvedTotal <= 0 ? 0.0 : sent / resolvedTotal;
+          setState(() => _progress = fraction.clamp(0.0, 1.0));
+        },
+      );
+    } on DioException catch (error, stackTrace) {
+      if (error.type == DioExceptionType.cancel) {
+        _showUploadFailure('Uppladdningen avbröts.');
+        return;
+      }
+      _showUploadFailure(_messageForUploadStartFailure(error, stackTrace));
+      return;
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('Home upload failed: $error');
+      }
+      _showUploadFailure(_messageForUploadStartFailure(error, stackTrace));
       return;
     }
 
@@ -294,12 +175,11 @@ class _HomePlayerUploadDialogState
     setState(() {
       _uploading = false;
       _processing = true;
-      _status = 'Registrerar media…';
+      _status = 'Registrerar media...';
       _cancelToken = null;
     });
 
     try {
-      final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
       await pipelineRepo.completeUpload(mediaId: mediaId);
       final repo = ref.read(studioRepositoryProvider);
       await repo.uploadHomePlayerUpload(
@@ -309,7 +189,7 @@ class _HomePlayerUploadDialogState
       );
       if (!mounted) return;
       ref.invalidate(homePlayerLibraryProvider);
-      setState(() => _status = 'Bearbetar ljud…');
+      setState(() => _status = 'Bearbetar ljud...');
       _startPolling(mediaId);
     } catch (error, stackTrace) {
       final failure = AppFailure.from(error, stackTrace);
@@ -323,188 +203,58 @@ class _HomePlayerUploadDialogState
     }
   }
 
-  Future<void> _uploadViaHomeStorage({
+  Future<void> _uploadViaCanonicalHomePlayerRoute({
     required String normalizedMimeType,
   }) async {
     final mimeType = normalizedMimeType.trim().toLowerCase();
-    WavResumableSession? resumableSession;
-    try {
-      resumableSession = await findResumableSession(
-        courseId: _contextCourseKey,
-        lessonId: _contextLessonKey,
-        file: widget.file,
-      );
-    } catch (_) {
-      resumableSession = null;
-    }
-
-    Uri uploadUrl;
-    String objectPath;
-    RequestHeaders uploadHeaders;
-    String sessionId;
-
-    if (resumableSession != null) {
-      sessionId = resumableSession.mediaId;
-      uploadUrl = resumableSession.sessionUrl;
-      objectPath = resumableSession.objectPath;
-      uploadHeaders = resumableSession.resumableHeaders();
-      if (mounted) {
-        setState(() => _status = 'Återupptar uppladdning…');
-      }
-    } else {
-      try {
-        final repo = ref.read(studioRepositoryProvider);
-        final signing = await repo.requestHomePlayerUploadUrl(
-          filename: widget.file.name,
-          mimeType: mimeType,
-          sizeBytes: widget.file.size,
-        );
-        final uploadUrlRaw = signing['upload_url']?.toString() ?? '';
-        final objectPathRaw = signing['object_path']?.toString() ?? '';
-        final headersRaw = signing['headers'] as Map? ?? const {};
-        if (uploadUrlRaw.isEmpty || objectPathRaw.isEmpty) {
-          throw StateError('Uppladdningslänk saknas.');
-        }
-        uploadUrl = Uri.parse(uploadUrlRaw);
-        objectPath = objectPathRaw;
-        uploadHeaders = RequestHeaders.fromResponseObject(
-          headersRaw,
-          label: 'Home player upload headers',
-        );
-        sessionId = objectPathRaw;
-        if (mounted) {
-          setState(() => _status = 'Laddar upp…');
-        }
-      } catch (error, stackTrace) {
-        final failure = AppFailure.from(error, stackTrace);
-        final message = 'Kunde inte starta uppladdningen: ${failure.message}';
-        if (!mounted) return;
-        setState(() {
-          _uploading = false;
-          _error = message;
-          _status = message;
-        });
-        return;
-      }
-    }
-
-    _cancelToken = WavUploadCancelToken();
-
-    try {
-      await uploadWavFile(
-        mediaId: sessionId,
-        courseId: _contextCourseKey,
-        lessonId: _contextLessonKey,
-        uploadUrl: uploadUrl,
-        objectPath: objectPath,
-        headers: uploadHeaders,
-        file: widget.file,
-        contentType: mimeType,
-        onProgress: (sent, total) {
-          if (!mounted) return;
-          final fraction = total <= 0 ? 0.0 : sent / total;
-          setState(() => _progress = fraction.clamp(0.0, 1.0));
-        },
-        cancelToken: _cancelToken,
-        onResume: (resumed) {
-          if (!mounted || !resumed) return;
-          setState(() => _status = 'Återupptar uppladdning…');
-        },
-        ensureAuth: () async {
-          final client = ref.read(apiClientProvider);
-          return client.ensureAuth(
-            onRefresh: () {
-              if (!mounted) return;
-              setState(() => _status = 'Återautentiserar session…');
-            },
-          );
-        },
-        refreshSigning: (session) async {
-          final repo = ref.read(studioRepositoryProvider);
-          final refreshed = await repo.refreshHomePlayerUploadUrl(
-            objectPath: session.objectPath,
-            mimeType: session.contentType,
-          );
-          final uploadUrlRaw = refreshed['upload_url']?.toString() ?? '';
-          final objectPathRaw = refreshed['object_path']?.toString() ?? '';
-          final headersRaw = refreshed['headers'] as Map? ?? const {};
-          if (uploadUrlRaw.isEmpty || objectPathRaw.isEmpty) {
-            throw const WavUploadFailure(WavUploadFailureKind.failed);
-          }
-          return WavUploadSigningRefresh(
-            uploadUrl: Uri.parse(uploadUrlRaw),
-            objectPath: objectPathRaw,
-            headers: RequestHeaders.fromResponseObject(
-              headersRaw,
-              label: 'Home player refresh headers',
-            ),
-            expiresAt:
-                DateTime.tryParse(
-                  refreshed['expires_at']?.toString() ?? '',
-                )?.toUtc() ??
-                DateTime.now().toUtc().add(const Duration(hours: 2)),
-          );
-        },
-        onSigningRefresh: () {
-          if (!mounted) return;
-          setState(() => _status = 'Återautentiserar uppladdning…');
-        },
-        resumableSession: resumableSession,
-      );
-    } on WavUploadFailure catch (failure) {
-      final message = _friendlyUploadFailure(failure.kind);
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _error = message;
-        _status = message;
-        _cancelToken = null;
-      });
-      return;
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint('Home upload failed: $error');
-      }
-      final message = 'Uppladdningen misslyckades. Försök igen.';
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _error = message;
-        _status = message;
-        _cancelToken = null;
-      });
+    if (mimeType.startsWith('audio/')) {
+      await _uploadViaMediaPipeline(normalizedMimeOverride: mimeType);
       return;
     }
-
+    const message =
+        'MP4-uppladdning kräver backendstöd innan den kan publiceras.';
     if (!mounted) return;
     setState(() {
       _uploading = false;
-      _status = 'Registrerar media…';
+      _error = message;
+      _status = message;
+    });
+  }
+
+  String _messageForUploadStartFailure(Object error, StackTrace stackTrace) {
+    final failure = AppFailure.from(error, stackTrace);
+    var message = 'Kunde inte starta uppladdningen. Försök igen.';
+    if (failure is ValidationFailure) {
+      final detail = failure.message.trim();
+      if (detail.isNotEmpty) {
+        message = detail.startsWith('File too large')
+            ? detail.replaceFirst('File too large', 'Filen är för stor')
+            : detail;
+      }
+    } else if (failure is ServerFailure ||
+        failure is NetworkFailure ||
+        failure is TimeoutFailure ||
+        failure is UnauthorizedFailure ||
+        failure is NotFoundFailure ||
+        failure is ConfigurationFailure) {
+      message = failure.message;
+    } else {
+      final detail = failure.message.trim();
+      if (detail.isNotEmpty) {
+        message = 'Kunde inte starta uppladdningen: $detail';
+      }
+    }
+    return message;
+  }
+
+  void _showUploadFailure(String message) {
+    if (!mounted) return;
+    setState(() {
+      _uploading = false;
+      _error = message;
+      _status = message;
       _cancelToken = null;
     });
-
-    try {
-      final repo = ref.read(studioRepositoryProvider);
-      await repo.createHomePlayerUploadFromStorage(
-        title: widget.title,
-        storagePath: objectPath,
-        contentType: mimeType,
-        byteSize: widget.file.size,
-        originalName: widget.file.name,
-        active: widget.active,
-      );
-      if (!mounted) return;
-      ref.invalidate(homePlayerLibraryProvider);
-      Navigator.of(context).pop(true);
-    } catch (error, stackTrace) {
-      final failure = AppFailure.from(error, stackTrace);
-      final message = 'Kunde inte spara uppladdningen: ${failure.message}';
-      if (!mounted) return;
-      setState(() {
-        _error = message;
-        _status = message;
-      });
-    }
   }
 
   void _startPolling(String mediaId) {
@@ -524,7 +274,7 @@ class _HomePlayerUploadDialogState
         ref.invalidate(homePlayerLibraryProvider);
         setState(() {
           _processing = false;
-          _status = 'MP3 klar – ljudet kan spelas upp';
+          _status = 'MP3 klar - ljudet kan spelas upp';
         });
         _pollTimer?.cancel();
         _pollTimer = null;
@@ -545,7 +295,7 @@ class _HomePlayerUploadDialogState
       }
 
       setState(() {
-        _status = 'Bearbetar ljud…';
+        _status = 'Bearbetar ljud...';
       });
     } catch (_) {
       if (!mounted) return;
@@ -608,7 +358,7 @@ class _HomePlayerUploadDialogState
                 children: [
                   Expanded(
                     child: Text(
-                      _status ?? (_uploading ? 'Laddar upp…' : 'Förbereder…'),
+                      _status ?? (_uploading ? 'Laddar upp...' : 'Förbereder...'),
                       style: theme.textTheme.bodySmall,
                     ),
                   ),

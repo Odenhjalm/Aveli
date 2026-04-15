@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-import 'package:aveli/shared/models/request_headers.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
@@ -114,17 +113,6 @@ ResolvedMediaData? _nullableResolvedMedia(
     default:
       throw StateError('$label returned a non-object payload');
   }
-}
-
-RequestHeaders _requiredResponseHeaders(
-  Object? payload,
-  String key,
-  String label,
-) {
-  return RequestHeaders.fromResponseObject(
-    _requireResponseField(payload, key, label),
-    label: '$label field "$key"',
-  );
 }
 
 DateTime _requiredResponseUtcDateTime(
@@ -572,15 +560,15 @@ class StudioLessonMediaUploadTarget {
   const StudioLessonMediaUploadTarget({
     required this.mediaAssetId,
     required this.assetState,
-    required this.uploadUrl,
-    required this.headers,
+    required this.uploadSessionId,
+    required this.uploadEndpoint,
     required this.expiresAt,
   });
 
   final String mediaAssetId;
   final String assetState;
-  final String uploadUrl;
-  final RequestHeaders headers;
+  final String uploadSessionId;
+  final String uploadEndpoint;
   final DateTime expiresAt;
 
   factory StudioLessonMediaUploadTarget.fromResponse(Object? payload) {
@@ -595,14 +583,14 @@ class StudioLessonMediaUploadTarget {
         'asset_state',
         'StudioLessonMediaUploadTarget',
       ),
-      uploadUrl: _requiredResponseString(
+      uploadSessionId: _requiredResponseString(
         payload,
-        'upload_url',
+        'upload_session_id',
         'StudioLessonMediaUploadTarget',
       ),
-      headers: _requiredResponseHeaders(
+      uploadEndpoint: _requiredResponseString(
         payload,
-        'headers',
+        'upload_endpoint',
         'StudioLessonMediaUploadTarget',
       ),
       expiresAt: _requiredResponseUtcDateTime(

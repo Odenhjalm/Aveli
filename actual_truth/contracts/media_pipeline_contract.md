@@ -280,8 +280,8 @@ Response fields:
 
 - `media_asset_id: uuid`
 - `asset_state: pending_upload`
-- `upload_url: string`
-- `headers: map<string, string>`
+- `upload_session_id: uuid`
+- `upload_endpoint: string`
 - `expires_at: datetime`
 
 Response rules:
@@ -289,6 +289,8 @@ Response rules:
 - no placement identity may be returned
 - no runtime identity may be returned
 - no storage path may be returned as contract truth
+- `upload_endpoint` must be a backend Aveli API path
+- no storage URL, storage headers, or storage signature may be returned
 - no resolved playback data may be returned
 
 ### 6.2 Upload-Completion Request

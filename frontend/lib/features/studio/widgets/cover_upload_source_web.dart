@@ -4,8 +4,6 @@ import 'dart:async';
 import 'dart:html';
 import 'dart:typed_data';
 
-import 'package:aveli/shared/models/request_headers.dart';
-
 class CoverUploadPreview {
   CoverUploadPreview({this.resolvedUrl, this.bytes});
 
@@ -27,6 +25,30 @@ class CoverUploadFile {
   String get name => file.name;
   int get size => file.size;
   String? get mimeType => file.type.isEmpty ? null : file.type;
+
+  Future<Uint8List> readAsBytes() async {
+    final reader = FileReader();
+    final completer = Completer<Uint8List>();
+
+    reader.onLoad.listen((_) {
+      final result = reader.result;
+      if (result is ByteBuffer) {
+        completer.complete(Uint8List.view(result));
+        return;
+      }
+      if (result is Uint8List) {
+        completer.complete(result);
+        return;
+      }
+      completer.completeError(StateError('Unsupported upload buffer'));
+    });
+    reader.onError.listen((_) {
+      completer.completeError(StateError('Failed to read cover bytes'));
+    });
+    reader.readAsArrayBuffer(file);
+
+    return completer.future;
+  }
 
   Future<CoverUploadPreview> buildPreview() async {
     final reader = FileReader();
@@ -87,8 +109,8 @@ Future<CoverUploadFile?> pickCoverFile() async {
 }
 
 Future<void> uploadCoverFile({
-  required Uri uploadUrl,
-  required RequestHeaders headers,
+  required Uri uploadEndpoint,
+  required String contentType,
   required CoverUploadFile file,
   required void Function(int sent, int total) onProgress,
 }) async {
@@ -96,10 +118,10 @@ Future<void> uploadCoverFile({
   final request = HttpRequest();
 
   request
-    ..open('PUT', uploadUrl.toString())
+    ..open('PUT', uploadEndpoint.toString())
     ..responseType = 'text';
 
-  headers.forEach(request.setRequestHeader);
+  request.setRequestHeader('Content-Type', contentType);
 
   request.upload.onProgress.listen((event) {
     final loaded = (event.loaded ?? 0).toInt();

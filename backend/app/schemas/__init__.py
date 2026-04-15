@@ -1311,8 +1311,8 @@ class CanonicalLessonMediaUploadUrlResponse(BaseModel):
 
     media_asset_id: UUID
     asset_state: Literal["pending_upload"]
-    upload_url: str
-    headers: dict[str, str]
+    upload_session_id: UUID
+    upload_endpoint: str
     expires_at: datetime
 
 
@@ -1329,9 +1329,34 @@ class CanonicalCourseCoverUploadUrlResponse(BaseModel):
 
     media_asset_id: UUID
     asset_state: Literal["pending_upload"]
-    upload_url: str
-    headers: dict[str, str]
+    upload_session_id: UUID
+    upload_endpoint: str
     expires_at: datetime
+
+
+class CanonicalHomePlayerMediaUploadUrlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=1)
+
+
+class CanonicalHomePlayerMediaUploadUrlResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_asset_id: UUID
+    asset_state: Literal["pending_upload"]
+    upload_session_id: UUID
+    upload_endpoint: str
+    expires_at: datetime
+
+
+class CanonicalMediaAssetUploadBytesResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_asset_id: UUID
+    uploaded: Literal[True]
 
 
 class CanonicalMediaAssetUploadCompletionRequest(BaseModel):

@@ -1,5 +1,5 @@
 import 'package:aveli/api/api_client.dart';
-import 'package:aveli/shared/models/request_headers.dart';
+import 'package:dio/dio.dart';
 
 Object? _requireResponseField(Object? payload, String key, String label) {
   switch (payload) {
@@ -85,43 +85,31 @@ DateTime _requiredResponseUtcDateTime(
   return DateTime.parse(value).toUtc();
 }
 
-RequestHeaders _requiredResponseHeaders(
-  Object? payload,
-  String key,
-  String label,
-) {
-  return RequestHeaders.fromResponseObject(
-    _requireResponseField(payload, key, label),
-    label: '$label field "$key"',
-  );
-}
-
 class MediaUploadTarget {
   const MediaUploadTarget({
     required this.mediaId,
-    required this.uploadUrl,
-    required this.objectPath,
-    required this.headers,
+    required this.uploadSessionId,
+    required this.uploadEndpoint,
     required this.expiresAt,
   });
 
   final String mediaId;
-  final Uri uploadUrl;
-  final String objectPath;
-  final RequestHeaders headers;
+  final String uploadSessionId;
+  final String uploadEndpoint;
   final DateTime expiresAt;
 
   factory MediaUploadTarget.fromResponse(Object? payload) => MediaUploadTarget(
     mediaId: _requiredResponseString(payload, 'media_id', 'MediaUploadTarget'),
-    uploadUrl: Uri.parse(
-      _requiredResponseString(payload, 'upload_url', 'MediaUploadTarget'),
-    ),
-    objectPath: _requiredResponseString(
+    uploadSessionId: _requiredResponseString(
       payload,
-      'object_path',
+      'upload_session_id',
       'MediaUploadTarget',
     ),
-    headers: _requiredResponseHeaders(payload, 'headers', 'MediaUploadTarget'),
+    uploadEndpoint: _requiredResponseString(
+      payload,
+      'upload_endpoint',
+      'MediaUploadTarget',
+    ),
     expiresAt: _requiredResponseUtcDateTime(
       payload,
       'expires_at',
@@ -136,13 +124,14 @@ class MediaUploadTarget {
           'media_asset_id',
           'MediaUploadTarget',
         ),
-        uploadUrl: Uri.parse(
-          _requiredResponseString(payload, 'upload_url', 'MediaUploadTarget'),
-        ),
-        objectPath: '',
-        headers: _requiredResponseHeaders(
+        uploadSessionId: _requiredResponseString(
           payload,
-          'headers',
+          'upload_session_id',
+          'MediaUploadTarget',
+        ),
+        uploadEndpoint: _requiredResponseString(
+          payload,
+          'upload_endpoint',
           'MediaUploadTarget',
         ),
         expiresAt: _requiredResponseUtcDateTime(
@@ -253,6 +242,17 @@ class MediaPipelineRepository {
     String? courseId,
     String? lessonId,
   }) async {
+    if (purpose == 'home_player_audio') {
+      final response = await _client.raw.post<Object?>(
+        '/api/home-player/media-assets/upload-url',
+        data: <String, Object?>{
+          'filename': filename,
+          'mime_type': mimeType,
+          'size_bytes': sizeBytes,
+        },
+      );
+      return MediaUploadTarget.fromCanonicalMediaAssetResponse(response.data);
+    }
     _unavailable();
   }
 
@@ -306,5 +306,28 @@ class MediaPipelineRepository {
       '/api/media-assets/$mediaId/status',
     );
     return MediaStatus.fromResponse(response.data);
+  }
+}
+
+extension MediaPipelineUploadBytes on MediaPipelineRepository {
+  Future<void> uploadBytes({
+    required MediaUploadTarget target,
+    required Object data,
+    required String contentType,
+    ProgressCallback? onSendProgress,
+    CancelToken? cancelToken,
+  }) async {
+    await _client.raw.put<Object?>(
+      target.uploadEndpoint,
+      data: data,
+      options: Options(
+        contentType: contentType,
+        headers: <String, Object?>{
+          'X-Aveli-Upload-Session': target.uploadSessionId,
+        },
+      ),
+      onSendProgress: onSendProgress,
+      cancelToken: cancelToken,
+    );
   }
 }

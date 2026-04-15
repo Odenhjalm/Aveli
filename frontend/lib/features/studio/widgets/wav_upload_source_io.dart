@@ -3,8 +3,6 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart' as fs;
 
-import 'package:aveli/shared/models/request_headers.dart';
-
 import 'wav_upload_types.dart';
 
 class WavUploadFile {
@@ -71,26 +69,14 @@ Future<WavResumableSession?> findResumableSession({
 }
 
 void clearResumableSession(WavResumableSession session) {
-  // No localStorage to clear on IO platforms.
 }
 
 Future<void> uploadWavFile({
-  required String mediaId,
-  required String courseId,
-  required String lessonId,
-  required Uri uploadUrl,
-  required String objectPath,
-  required RequestHeaders headers,
+  required Uri uploadEndpoint,
   required WavUploadFile file,
   required String contentType,
   required void Function(int sent, int total) onProgress,
   WavUploadCancelToken? cancelToken,
-  void Function(bool resumed)? onResume,
-  Future<bool> Function()? ensureAuth,
-  Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
-  refreshSigning,
-  void Function()? onSigningRefresh,
-  WavResumableSession? resumableSession,
 }) async {
   if (cancelToken?.isCancelled == true) {
     throw const WavUploadFailure(WavUploadFailureKind.cancelled);
@@ -103,9 +89,9 @@ Future<void> uploadWavFile({
   try {
     final stream = file.file.openRead();
     await dio.putUri<void>(
-      uploadUrl,
+      uploadEndpoint,
       data: stream,
-      options: Options(headers: headers.toMap()),
+      options: Options(contentType: contentType),
       cancelToken: dioCancel,
       onSendProgress: (sent, total) {
         final resolvedTotal = total > 0 ? total : file.size;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -241,6 +242,41 @@ class StorageService:
             path=normalized_path,
             expires_in=7200,
         )
+
+    async def upload_object(
+        self,
+        path: str,
+        *,
+        content: bytes | AsyncIterable[bytes],
+        content_type: str | None = None,
+        upsert: bool = False,
+        cache_seconds: int | None = None,
+    ) -> PresignedUpload:
+        """Upload bytes to storage through a server-owned signed upload."""
+
+        upload = await self.create_upload_url(
+            path,
+            content_type=content_type,
+            upsert=upsert,
+            cache_seconds=cache_seconds,
+        )
+        timeout = httpx.Timeout(15.0, read=None, write=None)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            try:
+                response = await client.put(
+                    upload.url,
+                    headers=dict(upload.headers),
+                    content=content,
+                )
+            except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+                raise StorageServiceError("Failed to upload storage object") from exc
+
+        if response.status_code >= 400:
+            raise StorageServiceError(
+                f"Supabase Storage upload failed with status {response.status_code}",
+                status_code=response.status_code,
+            )
+        return upload
 
     async def delete_object(self, path: str) -> bool:
         if not path:

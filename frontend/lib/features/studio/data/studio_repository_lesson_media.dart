@@ -101,7 +101,7 @@ class _StudioLessonMediaScope {
       mediaType: mediaType,
       lessonId: lessonId,
     );
-    if (upload.uploadUrl.isEmpty) {
+    if (upload.uploadEndpoint.isEmpty || upload.uploadSessionId.isEmpty) {
       throw StateError('Ofullständigt svar från studio media upload-url.');
     }
     if (upload.assetState != 'pending_upload') {
@@ -110,11 +110,15 @@ class _StudioLessonMediaScope {
       );
     }
 
-    final dio = Dio();
-    await dio.putUri<void>(
-      Uri.parse(upload.uploadUrl),
+    await _client.raw.put<Object?>(
+      upload.uploadEndpoint,
       data: data,
-      options: Options(headers: upload.headers.toMap()),
+      options: Options(
+        contentType: contentType,
+        headers: <String, Object?>{
+          'X-Aveli-Upload-Session': upload.uploadSessionId,
+        },
+      ),
       cancelToken: cancelToken,
       onSendProgress: (sent, total) {
         if (onProgress == null) return;

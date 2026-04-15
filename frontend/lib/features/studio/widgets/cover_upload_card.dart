@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/shared/models/request_headers.dart';
+import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/utils/snack.dart';
 
@@ -24,8 +24,8 @@ class CoverUploadCard extends ConsumerStatefulWidget {
   final void Function(String courseId, String message)? onUploadError;
   final Future<CoverUploadFile?> Function()? pickFileOverride;
   final Future<void> Function({
-    required Uri uploadUrl,
-    required RequestHeaders headers,
+    required Uri uploadEndpoint,
+    required String contentType,
     required CoverUploadFile file,
     required void Function(int sent, int total) onProgress,
   })?
@@ -101,17 +101,31 @@ class _CoverUploadCardState extends ConsumerState<CoverUploadCard> {
       if (!mounted) return;
       setState(() => _status = 'Laddar upp kursbild...');
 
-      final uploader = widget.uploadFileOverride ?? uploadCoverFile;
-      await uploader(
-        uploadUrl: upload.uploadUrl,
-        headers: upload.headers,
-        file: picked,
-        onProgress: (sent, total) {
-          if (!mounted) return;
-          final fraction = total <= 0 ? 0.0 : sent / total;
-          setState(() => _progress = fraction.clamp(0.0, 1.0));
-        },
-      );
+      void updateProgress(int sent, int total) {
+        if (!mounted) return;
+        final fraction = total <= 0 ? 0.0 : sent / total;
+        setState(() => _progress = fraction.clamp(0.0, 1.0));
+      }
+
+      final uploadOverride = widget.uploadFileOverride;
+      if (uploadOverride != null) {
+        await uploadOverride(
+          uploadEndpoint: Uri.parse(upload.uploadEndpoint),
+          contentType: resolvedMime,
+          file: picked,
+          onProgress: updateProgress,
+        );
+      } else {
+        await repo.uploadBytes(
+          target: upload,
+          data: await picked.readAsBytes(),
+          contentType: resolvedMime,
+          onSendProgress: (sent, total) {
+            final resolvedTotal = total > 0 ? total : picked.size;
+            updateProgress(sent, resolvedTotal);
+          },
+        );
+      }
       if (!mounted) return;
       setState(() => _status = 'Verifierar uppladdning...');
 

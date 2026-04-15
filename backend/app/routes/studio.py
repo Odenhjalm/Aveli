@@ -23,6 +23,7 @@ from ..permissions import TeacherEntryUser
 from ..repositories import courses as courses_repo
 from ..repositories import home_audio_sources as home_audio_sources_repo
 from ..repositories import media_assets as media_assets_repo
+from ..repositories import storage_objects
 from ..services import (
     courses_service,
     email_service,
@@ -310,6 +311,36 @@ def _canonical_course_cover_asset_scope(media_asset: dict[str, Any]) -> str:
     return course_id
 
 
+def _canonical_home_player_asset_scope(media_asset: dict[str, Any]) -> str:
+    purpose = str(media_asset.get("purpose") or "").strip().lower()
+    media_type = str(media_asset.get("media_type") or "").strip().lower()
+    if purpose != "home_player_audio" or media_type != "audio":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only home player audio assets can use the home-player pipeline",
+        )
+
+    object_path = str(media_asset.get("original_object_path") or "").strip().lstrip("/")
+    parts = Path(object_path).parts
+    if len(parts) < 6 or parts[:4] != (
+        "media",
+        "source",
+        "audio",
+        "home-player",
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Home player audio must use the canonical source media path",
+        )
+    user_id = parts[4].strip()
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Home player audio is missing owner context",
+        )
+    return user_id
+
+
 async def _require_canonical_lesson_media_authoring_context(
     *,
     lesson_id: str,
@@ -422,6 +453,12 @@ async def _authorize_canonical_media_upload_asset(
         )
         return media_asset
 
+    if purpose == "home_player_audio":
+        user_id = _canonical_home_player_asset_scope(media_asset)
+        if user_id != str(current["id"]):
+            raise HTTPException(status_code=403, detail="Not media owner")
+        return media_asset
+
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail="Unsupported media purpose",
@@ -430,6 +467,7 @@ async def _authorize_canonical_media_upload_asset(
 
 _MAX_MEDIA_BYTES = settings.lesson_media_max_bytes
 _MAX_COURSE_COVER_BYTES = max(1, int(settings.media_upload_max_image_bytes))
+_UPLOAD_SESSION_EXPIRES_SECONDS = 2 * 60 * 60
 _LIVE_RECORDINGS_ROOT = "live-recordings"
 
 
@@ -515,15 +553,92 @@ async def _require_studio_lesson(lesson_id: str) -> dict[str, Any]:
     return lesson
 
 
-async def _issue_canonical_media_upload_url(
+def _canonical_upload_endpoint(media_asset_id: str) -> str:
+    return f"/api/media-assets/{media_asset_id}/upload-bytes"
+
+
+def _canonical_upload_storage_bucket(media_asset: dict[str, Any]) -> str:
+    purpose = str(media_asset.get("purpose") or "").strip().lower()
+    media_type = str(media_asset.get("media_type") or "").strip().lower()
+    if purpose == "lesson_media" and media_type == "image":
+        return settings.media_public_bucket
+    return settings.media_source_bucket
+
+
+def _canonical_upload_content_type(media_asset: dict[str, Any]) -> str:
+    media_type = str(media_asset.get("media_type") or "").strip().lower()
+    ingest_format = str(media_asset.get("ingest_format") or "").strip().lower()
+    if media_type == "audio":
+        return {
+            "mp3": "audio/mpeg",
+            "m4a": "audio/mp4",
+            "wav": "audio/wav",
+        }.get(ingest_format, "application/octet-stream")
+    if media_type == "image":
+        return {
+            "jpeg": "image/jpeg",
+            "jpg": "image/jpeg",
+            "png": "image/png",
+            "webp": "image/webp",
+        }.get(ingest_format, "application/octet-stream")
+    if media_type == "video":
+        return f"video/{ingest_format}" if ingest_format else "application/octet-stream"
+    if media_type == "document":
+        return "application/pdf" if ingest_format == "pdf" else "application/octet-stream"
+    return "application/octet-stream"
+
+
+def _max_upload_bytes_for_asset(media_asset: dict[str, Any]) -> int:
+    purpose = str(media_asset.get("purpose") or "").strip().lower()
+    if purpose == "course_cover":
+        return _MAX_COURSE_COVER_BYTES
+    return _MAX_MEDIA_BYTES
+
+
+async def _assert_canonical_media_storage_write(media_asset: dict[str, Any]) -> None:
+    bucket = _canonical_upload_storage_bucket(media_asset)
+    object_path = str(media_asset.get("original_object_path") or "").strip().lstrip("/")
+    if not bucket or not object_path:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset storage target is incomplete",
+        )
+
+    existence, table_available = await storage_objects.fetch_storage_object_existence(
+        [(bucket, object_path)]
+    )
+    if table_available:
+        if not existence.get((bucket, object_path), False):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Uploaded file is missing from storage",
+            )
+        return
+
+    try:
+        service = storage_service.get_storage_service(bucket)
+        await service.get_presigned_url(object_path, ttl=60, download=False)
+    except storage_service.StorageObjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Uploaded file is missing from storage",
+        ) from exc
+    except storage_service.StorageServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage verification unavailable",
+        ) from exc
+
+
+async def _issue_canonical_media_upload_session(
     *,
     object_path: str,
     mime_type: str,
     media_type: str,
     purpose: str,
     ingest_format: str,
-    storage_client: Any,
-) -> tuple[dict[str, Any], Any, datetime]:
+) -> tuple[dict[str, Any], datetime]:
+    del mime_type
     try:
         validated_object_path = upload_routes.media_paths.validate_new_upload_object_path(
             object_path
@@ -534,29 +649,18 @@ async def _issue_canonical_media_upload_url(
             detail=str(exc),
         ) from exc
 
-    try:
-        upload = await storage_client.create_upload_url(
-            validated_object_path,
-            content_type=mime_type,
-            upsert=False,
-            cache_seconds=settings.media_public_cache_seconds,
-        )
-    except storage_service.StorageServiceError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Storage signing unavailable",
-        ) from exc
-
     media_asset = await media_assets_repo.create_media_asset(
         media_asset_id=str(uuid4()),
         media_type=media_type,
         purpose=purpose,
-        original_object_path=upload.path,
+        original_object_path=validated_object_path,
         ingest_format=ingest_format,
         state="pending_upload",
     )
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=upload.expires_in)
-    return media_asset, upload, expires_at
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        seconds=_UPLOAD_SESSION_EXPIRES_SECONDS
+    )
+    return media_asset, expires_at
 
 
 def _preview_file_name(row: dict[str, Any]) -> str | None:
@@ -790,7 +894,6 @@ async def canonical_issue_lesson_media_upload_url(
 
     normalized_media_type = _normalize_studio_media_type(payload.media_type)
     exact_mime_type = _require_studio_mime_type(payload.mime_type)
-    storage_client = storage_service.storage_service
     if normalized_media_type == "audio":
         ingest_format = _studio_audio_ingest_format(
             filename=payload.filename,
@@ -813,22 +916,20 @@ async def canonical_issue_lesson_media_upload_url(
             media_kind=normalized_media_type,
             filename=payload.filename,
         )
-        if normalized_media_type == "image":
-            storage_client = storage_service.public_storage_service
 
-    media_asset, upload, expires_at = await _issue_canonical_media_upload_url(
+    media_asset, expires_at = await _issue_canonical_media_upload_session(
         object_path=object_path,
         mime_type=exact_mime_type,
         media_type=normalized_media_type,
         purpose="lesson_media",
         ingest_format=ingest_format,
-        storage_client=storage_client,
     )
+    media_asset_id = UUID(str(media_asset["id"]))
     return schemas.CanonicalLessonMediaUploadUrlResponse(
-        media_asset_id=UUID(str(media_asset["id"])),
+        media_asset_id=media_asset_id,
         asset_state="pending_upload",
-        upload_url=upload.url,
-        headers=dict(upload.headers),
+        upload_session_id=media_asset_id,
+        upload_endpoint=_canonical_upload_endpoint(str(media_asset_id)),
         expires_at=expires_at,
     )
 
@@ -861,20 +962,141 @@ async def canonical_issue_course_cover_upload_url(
         course_id_str,
         payload.filename,
     )
-    media_asset, upload, expires_at = await _issue_canonical_media_upload_url(
+    media_asset, expires_at = await _issue_canonical_media_upload_session(
         object_path=object_path,
         mime_type=exact_mime_type,
         media_type="image",
         purpose="course_cover",
         ingest_format=ingest_format,
-        storage_client=storage_service.storage_service,
     )
+    media_asset_id = UUID(str(media_asset["id"]))
     return schemas.CanonicalCourseCoverUploadUrlResponse(
-        media_asset_id=UUID(str(media_asset["id"])),
+        media_asset_id=media_asset_id,
         asset_state="pending_upload",
-        upload_url=upload.url,
-        headers=dict(upload.headers),
+        upload_session_id=media_asset_id,
+        upload_endpoint=_canonical_upload_endpoint(str(media_asset_id)),
         expires_at=expires_at,
+    )
+
+
+@media_pipeline_router.post(
+    "/home-player/media-assets/upload-url",
+    response_model=schemas.CanonicalHomePlayerMediaUploadUrlResponse,
+)
+async def canonical_issue_home_player_upload_url(
+    payload: schemas.CanonicalHomePlayerMediaUploadUrlRequest,
+    current: TeacherEntryUser,
+):
+    if payload.size_bytes > _MAX_MEDIA_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large",
+        )
+
+    exact_mime_type = _require_studio_mime_type(payload.mime_type)
+    ingest_format = _studio_audio_ingest_format(
+        filename=payload.filename,
+        mime_type=exact_mime_type,
+    )
+    object_path = upload_routes.media_paths.build_home_player_audio_source_object_path(
+        str(current["id"]),
+        payload.filename,
+    )
+    media_asset, expires_at = await _issue_canonical_media_upload_session(
+        object_path=object_path,
+        mime_type=exact_mime_type,
+        media_type="audio",
+        purpose="home_player_audio",
+        ingest_format=ingest_format,
+    )
+    media_asset_id = UUID(str(media_asset["id"]))
+    return schemas.CanonicalHomePlayerMediaUploadUrlResponse(
+        media_asset_id=media_asset_id,
+        asset_state="pending_upload",
+        upload_session_id=media_asset_id,
+        upload_endpoint=_canonical_upload_endpoint(str(media_asset_id)),
+        expires_at=expires_at,
+    )
+
+
+@media_pipeline_router.put(
+    "/media-assets/{media_asset_id}/upload-bytes",
+    response_model=schemas.CanonicalMediaAssetUploadBytesResponse,
+)
+async def canonical_upload_media_asset_bytes(
+    media_asset_id: UUID,
+    request: Request,
+    current: TeacherEntryUser,
+):
+    media_asset_id_str = str(media_asset_id)
+    media_asset = await _authorize_canonical_media_upload_asset(
+        media_asset_id=media_asset_id_str,
+        current=current,
+    )
+    asset_state = str(media_asset.get("state") or "").strip().lower()
+    if asset_state != "pending_upload":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset cannot receive upload bytes from its current state",
+        )
+
+    content_length_raw = request.headers.get("content-length")
+    if content_length_raw:
+        try:
+            content_length = int(content_length_raw)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid content length",
+            ) from exc
+        if content_length <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File payload is empty",
+            )
+        if content_length > _max_upload_bytes_for_asset(media_asset):
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File too large",
+            )
+
+    object_path = str(media_asset.get("original_object_path") or "").strip().lstrip("/")
+    if not object_path:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media asset storage target is incomplete",
+        )
+    bucket = _canonical_upload_storage_bucket(media_asset)
+    content_type = (
+        request.headers.get("content-type") or _canonical_upload_content_type(media_asset)
+    )
+    storage = storage_service.get_storage_service(bucket)
+
+    try:
+        await storage.upload_object(
+            object_path,
+            content=request.stream(),
+            content_type=content_type,
+            upsert=False,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+    except storage_service.StorageServiceError as exc:
+        logger.warning(
+            "Backend media upload failed media_asset_id=%s bucket=%s path=%s error=%s",
+            media_asset_id_str,
+            bucket,
+            object_path,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage upload failed",
+        ) from exc
+
+    await _assert_canonical_media_storage_write(media_asset)
+    return schemas.CanonicalMediaAssetUploadBytesResponse(
+        media_asset_id=media_asset_id,
+        uploaded=True,
     )
 
 
@@ -893,6 +1115,7 @@ async def canonical_complete_lesson_media_upload(
         media_asset_id=media_asset_id_str,
         current=current,
     )
+    await _assert_canonical_media_storage_write(media_asset)
     purpose = str(media_asset.get("purpose") or "").strip().lower()
     if purpose == "course_cover":
         updated = await media_assets_repo.mark_media_asset_uploaded(
