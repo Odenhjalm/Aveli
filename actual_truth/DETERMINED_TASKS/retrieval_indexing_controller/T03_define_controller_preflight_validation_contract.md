@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: OWNER
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: [T02]
 
 ## Purpose
@@ -52,11 +52,12 @@ approval state for build requests.
 
 ## Mutation Rules
 
-No mutation is allowed during this design task.
+No runtime mutation is allowed during this design task. Controller execution may
+update this task status and write `T03_execution_result.md` only.
 
 ## Output Artifacts
 
-Future execution may produce a preflight contract result document.
+- `T03_execution_result.md`
 
 ## Next Transitions
 
