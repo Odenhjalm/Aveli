@@ -52,13 +52,23 @@ Deterministic topological order:
 - `T02` resolved and ratified
 - `T03` resolved and ratified
 - `T04` completed as active-contract rewrite
-- `T05` defined as append-only baseline mutation task; baseline mutation not yet
-  executed
-- `T06` planned
-- `T07` planned
-- `T08` planned
-- `T09` planned
-- `T10` planned
+- `T05` completed as append-only baseline mutation task; slot `0037` carries
+  the referral source alignment and the baseline lockfile records slot `0037`
+- `T06` completed as backend guard cleanup; backend guards now enforce the
+  canonical `GET /entry-state` computation without defining a second app-entry
+  model
+- `T07` completed as test doctrine rewrite; tests now treat backend guards as
+  enforcement-only reuse of canonical entry-state computation
+- `T08` completed as onboarding-completion runtime cleanup; completion no
+  longer derives authority from profile-name presence
+- `T09` completed as registration/name split; registration no longer requires
+  or accepts `display_name`, and onboarding-needed routing now enters
+  create-profile before welcome
+- `T10` completed as create-profile/profile projection split;
+  `POST /auth/onboarding/create-profile` owns onboarding profile creation,
+  requires non-blank `display_name`, permits optional `bio`, rejects media and
+  authority fields, and the frontend onboarding flow no longer writes through
+  `/profiles/me`
 - `T11` planned
 - `T12` planned
 
@@ -73,15 +83,6 @@ Deterministic topological order:
 
 ## Blockers Remaining
 
-- Append-only baseline mutation for membership-source vocabulary is not yet
-  created
-- Backend still contains duplicate app-entry model logic outside
-  `GET /entry-state`
-- Tests still canonize `require_app_entry`
-- Runtime still derives onboarding completion from profile-name presence
-- Registration still requires name before canonical create-profile execution
-- Runtime/frontend still use `/profiles/me` instead of a dedicated
-  create-profile mutation
 - Referral transport and membership handoff still reflect pre-canonical drift
 - Active invite surfaces still exist outside the rewritten contract corpus
 
