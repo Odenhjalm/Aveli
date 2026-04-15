@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: OWNER
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: [T07, T09, T10]
 
 ## Purpose
@@ -55,11 +55,12 @@ evidence objects only.
 
 ## Mutation Rules
 
-No mutation is allowed in retrieval. Retrieval is read-only.
+No runtime mutation is allowed in retrieval. Retrieval is read-only. Controller
+execution may update this task status and write `T11_execution_result.md` only.
 
 ## Output Artifacts
 
-None for query execution.
+- `T11_execution_result.md`
 
 ## Next Transitions
 

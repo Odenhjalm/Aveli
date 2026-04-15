@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: AGGREGATE
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: [T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14]
 
 ## Purpose
@@ -77,13 +77,13 @@ The controller loop is:
 
 ## Mutation Rules
 
-No mutation is allowed during this design task.
+No runtime mutation is allowed during this design task. Controller execution may
+update this task status and write `T15_execution_result.md` only.
 
 ## Output Artifacts
 
-Future execution may produce a controller loop result document.
+- `T15_execution_result.md`
 
 ## Next Transitions
 
 - T16
-- T17

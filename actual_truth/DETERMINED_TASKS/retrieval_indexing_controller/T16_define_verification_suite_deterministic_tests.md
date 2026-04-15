@@ -2,7 +2,7 @@
 
 TYPE: verification
 OS_ROLE: GATE
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: BLOCKED
 DEPENDS_ON: [T15]
 
 ## Purpose
@@ -54,12 +54,13 @@ equivalence, Windows forbidden construct scan, and exact fail-closed messages.
 
 ## Mutation Rules
 
-No mutation is allowed during this verification-design task.
+No runtime mutation is allowed during this verification-design task. Controller
+execution may update this task status and write `T16_execution_result.md` only.
 
 ## Output Artifacts
 
-Future execution may produce a verification suite design result document.
+- `T16_execution_result.md`
 
 ## Next Transitions
 
-- T17
+- T17 only after T16 is re-run and reaches `PASS`

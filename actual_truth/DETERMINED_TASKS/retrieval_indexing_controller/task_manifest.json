@@ -119,7 +119,7 @@
       "type": "design",
       "os_role": "OWNER",
       "depends_on": ["T02", "T06"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
@@ -129,7 +129,7 @@
       "type": "design",
       "os_role": "OWNER",
       "depends_on": ["T02", "T03"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
@@ -139,7 +139,7 @@
       "type": "design",
       "os_role": "OWNER",
       "depends_on": ["T06", "T07"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
@@ -149,7 +149,7 @@
       "type": "design",
       "os_role": "OWNER",
       "depends_on": ["T06", "T07", "T08"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
@@ -159,7 +159,7 @@
       "type": "design",
       "os_role": "OWNER",
       "depends_on": ["T07", "T09", "T10"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
@@ -169,7 +169,7 @@
       "type": "design",
       "os_role": "OWNER",
       "depends_on": ["T11"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
@@ -179,7 +179,7 @@
       "type": "design",
       "os_role": "GATE",
       "depends_on": ["T03", "T08", "T11", "T12"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
@@ -189,7 +189,7 @@
       "type": "design",
       "os_role": "GATE",
       "depends_on": ["T01", "T03", "T07", "T13"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
@@ -199,7 +199,7 @@
       "type": "design",
       "os_role": "AGGREGATE",
       "depends_on": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {
@@ -209,7 +209,7 @@
       "type": "verification",
       "os_role": "GATE",
       "depends_on": ["T15"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "BLOCKED",
       "executable": true
     },
     {

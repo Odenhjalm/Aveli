@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: GATE
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: [T03, T08, T11, T12]
 
 ## Purpose
@@ -55,13 +55,13 @@ known.
 
 ## Mutation Rules
 
-No mutation is allowed during this design task.
+No runtime mutation is allowed during this design task. Controller execution may
+update this task status and write `T13_execution_result.md` only.
 
 ## Output Artifacts
 
-Future execution may produce a Windows enforcement result document.
+- `T13_execution_result.md`
 
 ## Next Transitions
 
 - T14
-- T15

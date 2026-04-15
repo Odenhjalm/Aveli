@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: OWNER
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: [T06, T07, T08]
 
 ## Purpose
@@ -54,11 +54,12 @@ doc_id sets; and query cannot create or repair collection state.
 
 ## Mutation Rules
 
-No mutation is allowed during this design task.
+No runtime mutation is allowed during this design task. Controller execution may
+update this task status and write `T10_execution_result.md` only.
 
 ## Output Artifacts
 
-Future execution may produce a vector contract result document.
+- `T10_execution_result.md`
 
 ## Next Transitions
 

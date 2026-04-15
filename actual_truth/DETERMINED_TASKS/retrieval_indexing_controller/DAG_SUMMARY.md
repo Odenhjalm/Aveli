@@ -32,16 +32,16 @@ through T17.
 | T04 | [T02, T03] | OWNER | PASS |
 | T05 | [T04] | OWNER | PASS |
 | T06 | [T05] | OWNER | PASS |
-| T07 | [T02, T06] | OWNER | NOT_STARTED |
-| T08 | [T02, T03] | OWNER | NOT_STARTED |
-| T09 | [T06, T07] | OWNER | NOT_STARTED |
-| T10 | [T06, T07, T08] | OWNER | NOT_STARTED |
-| T11 | [T07, T09, T10] | OWNER | NOT_STARTED |
-| T12 | [T11] | OWNER | NOT_STARTED |
-| T13 | [T03, T08, T11, T12] | GATE | NOT_STARTED |
-| T14 | [T01, T03, T07, T13] | GATE | NOT_STARTED |
-| T15 | [T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14] | AGGREGATE | NOT_STARTED |
-| T16 | [T15] | GATE | NOT_STARTED |
+| T07 | [T02, T06] | OWNER | PASS |
+| T08 | [T02, T03] | OWNER | PASS |
+| T09 | [T06, T07] | OWNER | PASS |
+| T10 | [T06, T07, T08] | OWNER | PASS |
+| T11 | [T07, T09, T10] | OWNER | PASS |
+| T12 | [T11] | OWNER | PASS |
+| T13 | [T03, T08, T11, T12] | GATE | PASS |
+| T14 | [T01, T03, T07, T13] | GATE | PASS |
+| T15 | [T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14] | AGGREGATE | PASS |
+| T16 | [T15] | GATE | BLOCKED |
 | T17 | [T15, T16] | GATE | NOT_STARTED |
 
 ## Topological Order
@@ -91,4 +91,6 @@ dependency is complete and verified.
 
 ## Next Allowed Task
 
-T07 is the only allowed next executable task.
+No task is currently allowed to execute.
+
+T16 is BLOCKED. T17 requires T16 = PASS.

@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: OWNER
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: [T02, T03]
 
 ## Purpose
@@ -55,11 +55,12 @@ sufficient for reproducibility.
 
 ## Mutation Rules
 
-No mutation is allowed during this design task.
+No runtime mutation is allowed during this design task. Controller execution may
+update this task status and write `T08_execution_result.md` only.
 
 ## Output Artifacts
 
-Future execution may produce a model policy result document.
+- `T08_execution_result.md`
 
 ## Next Transitions
 
