@@ -32,7 +32,6 @@ async def test_register_rejects_referral_code_with_canonical_failure_envelope(
         json={
             "email": "referral@example.com",
             "password": "Secret123!",
-            "display_name": "Referral User",
             "referral_code": "legacy-code",
         },
     )
@@ -45,6 +44,33 @@ async def test_register_rejects_referral_code_with_canonical_failure_envelope(
         "field_errors": [
             {
                 "field": "referral_code",
+                "error_code": "extra_forbidden",
+                "message": "Faltet ar inte tillatet.",
+            }
+        ],
+    }
+
+
+async def test_register_rejects_display_name_with_canonical_failure_envelope(
+    async_client,
+):
+    resp = await async_client.post(
+        "/auth/register",
+        json={
+            "email": "name-at-register@example.com",
+            "password": "Secret123!",
+            "display_name": "Register Name",
+        },
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json() == {
+        "status": "error",
+        "error_code": "validation_error",
+        "message": "Begaran innehaller ogiltiga eller saknade falt.",
+        "field_errors": [
+            {
+                "field": "display_name",
                 "error_code": "extra_forbidden",
                 "message": "Faltet ar inte tillatet.",
             }

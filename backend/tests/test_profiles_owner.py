@@ -8,6 +8,25 @@ from .utils import auth_header, register_auth_user
 pytestmark = pytest.mark.anyio("asyncio")
 
 
+async def _create_profile(
+    async_client,
+    *,
+    access_token: str,
+    display_name: str,
+    bio: str | None = None,
+) -> dict:
+    payload = {"display_name": display_name}
+    if bio is not None:
+        payload["bio"] = bio
+    resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(access_token),
+        json=payload,
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
 async def test_profiles_me_limits_updates_to_the_authenticated_user(async_client):
     password = "Passw0rd!"
     owner = await register_auth_user(
@@ -20,6 +39,16 @@ async def test_profiles_me_limits_updates_to_the_authenticated_user(async_client
         async_client,
         email=f"other_{uuid.uuid4().hex[:6]}@example.com",
         password=password,
+        display_name="Other",
+    )
+    await _create_profile(
+        async_client,
+        access_token=owner["access_token"],
+        display_name="Owner",
+    )
+    await _create_profile(
+        async_client,
+        access_token=other["access_token"],
         display_name="Other",
     )
 
@@ -58,6 +87,11 @@ async def test_profiles_me_is_projection_only_and_excludes_authority_fields(
         password="Passw0rd!",
         display_name="Projection User",
     )
+    await _create_profile(
+        async_client,
+        access_token=user["access_token"],
+        display_name="Projection User",
+    )
 
     me_resp = await async_client.get(
         "/profiles/me",
@@ -83,6 +117,11 @@ async def test_profiles_me_patch_rejects_non_projection_authority_fields(async_c
         async_client,
         email=f"forbidden_{uuid.uuid4().hex[:8]}@example.com",
         password="Passw0rd!",
+        display_name="Forbidden Fields",
+    )
+    await _create_profile(
+        async_client,
+        access_token=user["access_token"],
         display_name="Forbidden Fields",
     )
 

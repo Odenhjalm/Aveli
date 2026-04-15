@@ -15,11 +15,9 @@ class SignupPage extends ConsumerStatefulWidget {
   const SignupPage({
     super.key,
     this.initialEmail,
-    this.inviteToken,
   });
 
   final String? initialEmail;
-  final String? inviteToken;
 
   @override
   ConsumerState<SignupPage> createState() => _SignupPageState();
@@ -28,9 +26,7 @@ class SignupPage extends ConsumerStatefulWidget {
 class _SignupPageState extends ConsumerState<SignupPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _emailCtrl = TextEditingController();
-  final TextEditingController _displayNameCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
-  String? _inviteToken;
 
   @override
   void initState() {
@@ -39,16 +35,11 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     if (email != null && email.isNotEmpty) {
       _emailCtrl.text = email;
     }
-    final inviteToken = widget.inviteToken?.trim();
-    if (inviteToken != null && inviteToken.isNotEmpty) {
-      _inviteToken = inviteToken;
-    }
   }
 
   @override
   void dispose() {
     _emailCtrl.dispose();
-    _displayNameCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
   }
@@ -60,8 +51,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     final envBlocked = envInfo.hasIssues;
     final busy = authState.isLoading;
     final textTheme = Theme.of(context).textTheme;
-    final hasInviteToken = _inviteToken != null;
-
     return AppScaffold(
       title: 'Skapa konto',
       showHomeAction: false,
@@ -118,19 +107,9 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                                 : const SizedBox(key: ValueKey('signup-ok')),
                           ),
                           gap24,
-                          if (hasInviteToken)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
-                              child: Text(
-                                'Du registrerar dig via en personlig inbjudan. E-postadressen är förifylld från länken.',
-                                style: textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
                           TextFormField(
                             controller: _emailCtrl,
-                            enabled: !envBlocked && !hasInviteToken,
+                            enabled: !envBlocked,
                             keyboardType: TextInputType.emailAddress,
                             autofillHints: const [AutofillHints.email],
                             textInputAction: TextInputAction.next,
@@ -142,22 +121,11 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                           ),
                           gap16,
                           TextFormField(
-                            controller: _displayNameCtrl,
-                            enabled: !envBlocked,
-                            textInputAction: TextInputAction.next,
-                            decoration: const InputDecoration(
-                              labelText: 'Namn',
-                              hintText: 'Vad vill du kallas?',
-                            ),
-                            validator: _validateDisplayName,
-                          ),
-                          gap16,
-                          TextFormField(
                             controller: _passwordCtrl,
                             enabled: !envBlocked,
                             obscureText: true,
                             autofillHints: const [AutofillHints.newPassword],
-                            textInputAction: TextInputAction.next,
+                            textInputAction: TextInputAction.done,
                             decoration: const InputDecoration(
                               labelText: 'Lösenord',
                               hintText: 'Minst 6 tecken',
@@ -230,7 +198,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     if (form == null || !form.validate()) return;
 
     final email = _emailCtrl.text.trim();
-    final displayName = _displayNameCtrl.text.trim();
     final password = _passwordCtrl.text;
 
     try {
@@ -238,8 +205,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
       await controller.register(
         email,
         password,
-        displayName: displayName,
-        inviteToken: _inviteToken,
       );
       if (!mounted || !context.mounted) return;
       showSnack(
@@ -264,17 +229,6 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     final regex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
     if (!regex.hasMatch(email)) {
       return 'Ogiltig e-postadress.';
-    }
-    return null;
-  }
-
-  String? _validateDisplayName(String? value) {
-    final name = value?.trim() ?? '';
-    if (name.isEmpty) {
-      return 'Ange ett namn eller alias.';
-    }
-    if (name.length < 2) {
-      return 'Namnet måste vara minst 2 tecken.';
     }
     return null;
   }

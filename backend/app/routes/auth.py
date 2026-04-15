@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import JSONResponse
 from jose import JWTError
 from psycopg.rows import dict_row
 
@@ -22,12 +21,9 @@ from ..db import pool
 from ..repositories import auth_subjects as auth_subjects_repo
 from .. import models, schemas
 from ..services.email_verification import (
-    InvalidInviteTokenError,
     InvalidPasswordResetTokenError,
     reset_password_with_token,
-    validate_invite_token_claims,
 )
-from ..services import membership_grant_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -80,36 +76,6 @@ def _reset_login_rate_limit(request: Request, email: str | None) -> None:
 
 def _normalized_email(email: str) -> str:
     return email.strip().lower()
-
-
-def _require_valid_invite_token(
-    email: str,
-    invite_token: str | None,
-) -> dict[str, object] | None:
-    if not invite_token:
-        return None
-
-    try:
-        claims = validate_invite_token_claims(invite_token)
-    except InvalidInviteTokenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid_or_expired_token",
-        ) from exc
-
-    invited_email = str(claims.get("email") or "")
-    if invited_email != _normalized_email(email):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid_or_expired_token",
-        )
-    expires_at = claims.get("expires_at")
-    if not isinstance(expires_at, datetime):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid_or_expired_token",
-        )
-    return claims
 
 
 async def _record_auth_event(
@@ -182,24 +148,10 @@ async def _complete_onboarding_at_canonical_route(user_id: str) -> dict[str, Any
             return dict(row) if row else None
 
 
-def _profile_name_is_present(current_user: dict[str, Any]) -> bool:
-    display_name = current_user.get("display_name")
-    return isinstance(display_name, str) and bool(display_name.strip())
-
-
-def _profile_name_required_response() -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content={"detail": "profile_name_required"},
-    )
-
-
 @router.post(
     "/register", response_model=schemas.Token, status_code=status.HTTP_201_CREATED
 )
 async def register(payload: schemas.AuthRegisterRequest, request: Request):
-    invite_claims = _require_valid_invite_token(payload.email, payload.invite_token)
-
     if not _enforce_login_rate_limit(request, payload.email):
         await _record_auth_event(
             user_id=None,
@@ -225,25 +177,8 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
             detail="email_already_registered",
         )
 
-    user_id = await models.create_user(
-        payload.email, payload.password, payload.display_name
-    )
+    user_id = await models.create_user(payload.email, payload.password)
     user_id_str = str(user_id)
-    if invite_claims is not None:
-        invite_expires_at = invite_claims["expires_at"]
-        if not isinstance(invite_expires_at, datetime):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="invalid_or_expired_token",
-            )
-        await membership_grant_service.grant_non_purchase_membership(
-            user_id=user_id_str,
-            source="invite",
-            effective_at=datetime.now(timezone.utc),
-            expires_at=invite_expires_at,
-            audit_step="invite_membership_grant_applied",
-            audit_info={"invite_email": _normalized_email(payload.email)},
-        )
     claims = await _compatibility_token_claims(user_id_str)
     access_token = create_access_token(user_id_str, claims=claims)
     refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id_str)
@@ -400,6 +335,24 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
     return schemas.Token(access_token=access_token, refresh_token=new_refresh_token)
 
 
+@router.post("/onboarding/create-profile", response_model=schemas.Profile)
+async def create_onboarding_profile(
+    payload: schemas.OnboardingCreateProfileRequest,
+    current_user: CurrentUser,
+):
+    profile = await models.update_profile(
+        current_user["id"],
+        display_name=payload.display_name,
+        bio=payload.bio,
+    )
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="profile_not_found",
+        )
+    return schemas.Profile(**profile)
+
+
 @router.post(
     "/onboarding/complete",
     response_model=schemas.OnboardingCompletionResponse,
@@ -419,9 +372,6 @@ async def complete_onboarding(request: Request, current_user: CurrentUser):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="internal_error",
         )
-
-    if not _profile_name_is_present(current_user):
-        return _profile_name_required_response()
 
     updated_subject = await _complete_onboarding_at_canonical_route(user_id)
     if not updated_subject:

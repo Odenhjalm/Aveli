@@ -77,8 +77,6 @@ class AuthRegisterRequest(BaseModel):
 
     email: str
     password: str
-    display_name: str
-    invite_token: str | None = None
 
 
 class AuthForgotPasswordRequest(BaseModel):
@@ -1488,6 +1486,28 @@ class ProfileUpdate(BaseModel):
 
     display_name: Optional[str] = None
     bio: Optional[str] = None
+
+
+class OnboardingCreateProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str
+    bio: Optional[str] = None
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("display_name_required")
+        return normalized
+
+    @field_validator("bio")
+    @classmethod
+    def normalize_bio(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()
 
 
 class StudioCertificateCreate(BaseModel):

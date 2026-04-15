@@ -6,13 +6,14 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/profile.dart';
-import 'package:aveli/data/repositories/profile_repository.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class OnboardingProfilePage extends ConsumerStatefulWidget {
-  const OnboardingProfilePage({super.key});
+  const OnboardingProfilePage({super.key, this.referralCode});
+
+  final String? referralCode;
 
   @override
   ConsumerState<OnboardingProfilePage> createState() =>
@@ -79,6 +80,16 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
+                  if (widget.referralCode?.trim().isNotEmpty == true) ...[
+                    gap12,
+                    Text(
+                      'Din referenskod kopplas nÃ¤r profilen sparas.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                   gap24,
                   TextField(
                     controller: _displayNameCtrl,
@@ -145,9 +156,12 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
     try {
       final bio = _bioCtrl.text.trim();
       await ref
-          .read(profileRepositoryProvider)
-          .updateMe(displayName: displayName, bio: bio);
-      await ref.read(authControllerProvider.notifier).loadSession();
+          .read(authControllerProvider.notifier)
+          .createProfile(
+            displayName: displayName,
+            bio: bio,
+            referralCode: widget.referralCode,
+          );
       if (!mounted || !context.mounted) return;
       context.goNamed(AppRoute.welcome);
     } catch (error, stackTrace) {
