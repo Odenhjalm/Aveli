@@ -69,7 +69,7 @@
       "type": "design",
       "os_role": "OWNER",
       "depends_on": ["T01"],
-      "execution_status": "NOT_STARTED",
+      "execution_status": "PASS",
       "executable": true
     },
     {

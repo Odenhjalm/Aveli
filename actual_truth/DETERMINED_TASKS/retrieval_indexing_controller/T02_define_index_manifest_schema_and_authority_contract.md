@@ -2,7 +2,7 @@
 
 TYPE: design
 OS_ROLE: OWNER
-EXECUTION_STATUS: NOT_STARTED
+EXECUTION_STATUS: PASS
 DEPENDS_ON: [T01]
 
 ## Purpose
@@ -50,12 +50,14 @@ rules, Windows interpreter, CPU baseline, and rebuild approval state.
 
 ## Mutation Rules
 
-No mutation is allowed during this design task.
+No runtime mutation is allowed during this design task. Controller execution may
+update this task status and write `T02_execution_result.md` only.
 
 ## Output Artifacts
 
-Future execution may produce a schema design result document. No runtime
-manifest may be written by this task.
+- `T02_execution_result.md`
+
+No runtime manifest may be written by this task.
 
 ## Next Transitions
 
