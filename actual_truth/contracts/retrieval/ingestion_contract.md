@@ -14,32 +14,41 @@ index is built.
 
 **RULE**
 
-The searchable corpus MUST be defined by one canonical ingestion manifest:
+The searchable corpus MUST be defined by one canonical index manifest:
 
-.repo_index/search_manifest.txt
+`.repo_index/index_manifest.json` -> `corpus.files`
 
 Vector indexing, lexical indexing, retrieval, analysis, prompt construction,
-and validation MUST all consume this manifest. A non-search inventory MAY exist,
-but it MUST NOT be treated as search authority.
+and validation MUST all consume the manifest-owned corpus definition. No
+separate file list, filesystem scan, cache, vector-store metadata, lexical
+metadata, or MCP wrapper output MAY define corpus membership.
+
+`search_manifest.txt` and `searchable_files.txt` MAY exist only as optional,
+non-authoritative debug/export artifacts derived from
+`index_manifest.json -> corpus.files`. They MUST NOT be consumed as corpus
+authority.
 
 **RATIONALE**
 
-One authority removes drift between file discovery, chunk ingestion, retrieval
-corpus membership, and downstream evidence.
+One manifest-owned authority removes drift between file discovery, chunk
+ingestion, retrieval corpus membership, and downstream evidence.
 
 **VIOLATION CONDITION**
 
-- Any indexed or retrieved document originates from a path not present in the
-  canonical ingestion manifest.
+- Any indexed or retrieved document originates from a path not present in
+  `index_manifest.json -> corpus.files`.
 - Different stages consume different file lists.
-- A fallback inventory is used as search authority when the canonical manifest
-  exists.
+- A fallback inventory is used as search authority when the canonical index
+  manifest exists.
+- `search_manifest.txt` or `searchable_files.txt` is consumed as corpus
+  authority.
 
 **VERIFICATION METHOD**
 
-- Compare the canonical manifest to the set of indexed document paths.
-- Assert that all downstream stages reference the same manifest hash.
-- Fail if any search-stage path is absent from the canonical manifest.
+- Compare `index_manifest.json -> corpus.files` to the set of indexed document
+  paths.
+- Assert that all downstream stages reference the same `corpus_manifest_hash`.
+- Fail if any search-stage path is absent from the manifest-owned corpus.
 
 ---
 
@@ -47,8 +56,8 @@ corpus membership, and downstream evidence.
 
 **RULE**
 
-Every manifest entry MUST be a normalized repo-root-relative path. The manifest
-MUST be:
+Every `index_manifest.json -> corpus.files` entry MUST be a normalized
+repo-root-relative path. The corpus file list MUST be:
 
 - unique
 - sorted in ascending byte order
@@ -63,13 +72,15 @@ portable verification across machines.
 
 **VIOLATION CONDITION**
 
-- Any manifest line is absolute.
-- Any manifest line contains duplicate or unresolved path segments.
-- Re-running ingestion from a different working directory changes manifest bytes.
+- Any corpus file entry is absolute.
+- Any corpus file entry contains duplicate or unresolved path segments.
+- Re-running ingestion from a different working directory changes canonical
+  corpus serialization bytes.
 
 **VERIFICATION METHOD**
 
-- Generate manifest from multiple working directories and compare byte-for-byte.
+- Generate canonical corpus serialization from multiple working directories and
+  compare byte-for-byte.
 - Assert uniqueness and sorted order.
 - Assert all paths resolve inside repo root.
 
@@ -141,14 +152,14 @@ Secrets and generated artifacts must never enter the searchable corpus.
 
 **VIOLATION CONDITION**
 
-- A secret-bearing file appears in the manifest.
+- A secret-bearing file appears in `index_manifest.json -> corpus.files`.
 - Generated artifacts are ingested.
 - Ingestion continues after detecting excluded files.
 
 **VERIFICATION METHOD**
 
 - Inject fixture files (.env, logs, caches) and assert system STOP.
-- Scan manifest against exclusion patterns.
+- Scan `index_manifest.json -> corpus.files` against exclusion patterns.
 - Fail if any excluded file is present.
 
 ---
@@ -191,7 +202,7 @@ Stable chunk boundaries are required for deterministic indexing and retrieval.
 
 **RULE**
 
-If the canonical ingestion manifest is:
+If `.repo_index/index_manifest.json` or its canonical `corpus.files` field is:
 
 - missing
 - unreadable
@@ -207,12 +218,15 @@ Silent fallback creates hidden corpus drift and breaks determinism.
 
 **VIOLATION CONDITION**
 
-- Indexing continues after manifest failure.
+- Indexing continues after index manifest or corpus field failure.
 - Alternative file lists are used without explicit contract.
+- `search_manifest.txt` or `searchable_files.txt` is used as fallback corpus
+  authority.
 
 **VERIFICATION METHOD**
 
-- Corrupt manifest and assert hard STOP.
+- Corrupt `index_manifest.json` or its `corpus.files` field and assert hard
+  STOP.
 - Verify no artifacts are updated after failure.
 
 ---

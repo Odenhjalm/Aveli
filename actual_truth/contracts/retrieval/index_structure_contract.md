@@ -41,7 +41,6 @@ The structure contract extends that requirement to the full indexing surface.
 
 The canonical index structure MUST contain these authoritative artifacts:
 
-- `.repo_index/searchable_files.txt`
 - `.repo_index/index_manifest.json`
 - `.repo_index/chunk_manifest.jsonl`
 - `.repo_index/chroma_db/`
@@ -50,31 +49,44 @@ The canonical index structure MUST contain these authoritative artifacts:
 Optional caches MAY exist, but they are non-authoritative and MUST be clearly
 separated from the authoritative artifact set.
 
+`searchable_files.txt` and `search_manifest.txt` MAY exist only as optional,
+non-authoritative debug/export artifacts derived from
+`.repo_index/index_manifest.json`. They are not required for a healthy index and
+MUST NOT define corpus membership, configuration, ranking policy, artifact
+validity, or retrieval behavior.
+
 **RATIONALE**
 
-The system needs one authoritative corpus manifest, one authoritative chunk
+The system needs one authoritative index manifest, one authoritative chunk
 manifest, one authoritative vector store, and one authoritative lexical store.
+Corpus authority lives only in `.repo_index/index_manifest.json`.
 
 **VIOLATION CONDITION**
 
 - Any required authoritative artifact is missing from a healthy index.
 - Retrieval depends on an artifact not declared here as authoritative.
 - Optional caches are treated as authority for corpus membership or ranking.
+- `searchable_files.txt` or `search_manifest.txt` is treated as required or
+  authoritative.
 
 **VERIFICATION METHOD**
 
 - Validate presence and readability of every required artifact.
 - Fail if the retrieval pipeline reads an undeclared authoritative artifact.
 - Fail if cache deletion changes authoritative retrieval results.
+- Fail if deleting `searchable_files.txt` or `search_manifest.txt` changes
+  authoritative retrieval behavior.
 
 ## RULE 3 - SINGLE INDEX MANIFEST SCHEMA
 
 **RULE**
 
 `index_manifest.json` MUST be the single canonical configuration and versioning
-surface for indexing and retrieval. At minimum it MUST define:
+surface for indexing and retrieval, including corpus membership. At minimum it
+MUST define:
 
 - `contract_version`
+- `corpus`
 - `corpus_manifest_hash`
 - `chunk_manifest_hash`
 - `chunk_size`
