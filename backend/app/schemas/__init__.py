@@ -1133,7 +1133,9 @@ class StudioCourseCreate(BaseModel):
         if self.drip_enabled and self.drip_interval_days is None:
             raise ValueError("drip_interval_days is required when drip_enabled is true")
         if not self.drip_enabled and self.drip_interval_days is not None:
-            raise ValueError("drip_interval_days must be null when drip_enabled is false")
+            raise ValueError(
+                "drip_interval_days must be null when drip_enabled is false"
+            )
         return self
 
 
@@ -1350,6 +1352,30 @@ class CanonicalHomePlayerMediaUploadUrlResponse(BaseModel):
     upload_session_id: UUID
     upload_endpoint: str
     expires_at: datetime
+
+
+class CanonicalProfileAvatarInitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(ge=1)
+
+
+class CanonicalProfileAvatarInitResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_asset_id: UUID
+    asset_state: Literal["pending_upload"]
+    upload_session_id: UUID
+    upload_endpoint: str
+    expires_at: datetime
+
+
+class CanonicalProfileAvatarAttachRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_asset_id: UUID
 
 
 class CanonicalMediaAssetUploadBytesResponse(BaseModel):

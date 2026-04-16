@@ -93,6 +93,22 @@ def build_home_player_audio_source_object_path(
     return path.as_posix()
 
 
+def build_profile_avatar_source_object_path(
+    user_id: str,
+    filename: str,
+) -> str:
+    safe_name = _sanitize_media_filename(filename)
+    token = uuid4().hex
+    path = (
+        Path("media")
+        / "source"
+        / "profile-avatar"
+        / str(user_id)
+        / f"{token}_{safe_name}"
+    )
+    return path.as_posix()
+
+
 def build_lesson_passthrough_object_path(
     *,
     course_id: str,

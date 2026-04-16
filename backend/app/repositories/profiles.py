@@ -71,3 +71,25 @@ async def update_profile(
             await cur.fetchone()
             await conn.commit()
             return await get_profile(user_id)
+
+
+async def update_avatar_media_projection(
+    user_id: str | UUID,
+    *,
+    avatar_media_id: str | UUID,
+) -> dict[str, Any] | None:
+    query = """
+        UPDATE app.profiles
+           SET avatar_media_id = %s::uuid,
+               updated_at = now()
+         WHERE user_id = %s::uuid
+         RETURNING user_id
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (str(avatar_media_id), str(user_id)))
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        return None
+    return await get_profile(user_id)

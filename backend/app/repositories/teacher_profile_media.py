@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from pathlib import PurePosixPath
 from typing import Any, Optional
 from uuid import uuid4
@@ -49,25 +50,28 @@ def _profile_media_path_subject_user_id(asset: dict[str, Any]) -> str | None:
     return None
 
 
-def _profile_media_asset_belongs_to_subject(
+def profile_media_asset_belongs_to_subject(
     *,
     asset: dict[str, Any],
-    teacher_id: str,
+    subject_user_id: str,
 ) -> bool:
-    normalized_teacher_id = _normalized_string(teacher_id)
+    normalized_subject_user_id = _normalized_string(subject_user_id)
     for owner_key in ("owner_id", "subject_user_id", "user_id"):
         owner_id = _normalized_string(asset.get(owner_key))
         if owner_id:
-            return owner_id == normalized_teacher_id
+            return owner_id == normalized_subject_user_id
 
     path_subject_user_id = _profile_media_path_subject_user_id(asset)
-    return bool(path_subject_user_id and path_subject_user_id == normalized_teacher_id)
+    return bool(
+        path_subject_user_id and path_subject_user_id == normalized_subject_user_id
+    )
 
 
 async def validate_profile_media_asset_for_subject(
     *,
     teacher_id: str,
     media_asset_id: str,
+    allowed_states: Collection[str] | None = None,
 ) -> dict[str, Any] | None:
     media_asset = await media_assets_repo.get_media_asset(media_asset_id)
     if not media_asset:
@@ -77,14 +81,16 @@ async def validate_profile_media_asset_for_subject(
         return None
     if _normalized_string(media_asset.get("media_type")).lower() != "image":
         return None
-    if (
-        _normalized_string(media_asset.get("state")).lower()
-        not in _PROFILE_MEDIA_BINDING_STATES
-    ):
+    accepted_states = {
+        _normalized_string(state).lower()
+        for state in (allowed_states or _PROFILE_MEDIA_BINDING_STATES)
+        if _normalized_string(state)
+    }
+    if _normalized_string(media_asset.get("state")).lower() not in accepted_states:
         return None
-    if not _profile_media_asset_belongs_to_subject(
+    if not profile_media_asset_belongs_to_subject(
         asset=media_asset,
-        teacher_id=teacher_id,
+        subject_user_id=teacher_id,
     ):
         return None
     return media_asset
@@ -119,6 +125,32 @@ async def get_teacher_profile_media(
     )
     async with get_conn() as cur:
         await cur.execute(query, {"item_id": item_id, "teacher_id": teacher_id})
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_teacher_profile_media_by_asset(
+    *,
+    teacher_id: str,
+    media_asset_id: str,
+) -> Optional[dict[str, Any]]:
+    query = (
+        _ITEM_SELECT
+        + """
+        where pmp.subject_user_id = %(teacher_id)s
+          and pmp.media_asset_id = %(media_asset_id)s
+        order by pmp.id asc
+        limit 1
+        """
+    )
+    async with get_conn() as cur:
+        await cur.execute(
+            query,
+            {
+                "teacher_id": teacher_id,
+                "media_asset_id": media_asset_id,
+            },
+        )
         row = await cur.fetchone()
     return dict(row) if row else None
 
@@ -163,6 +195,32 @@ async def create_teacher_profile_media(
         if not row:
             return None
     return await get_teacher_profile_media(item_id=item_id, teacher_id=teacher_id)
+
+
+async def ensure_teacher_profile_media_placement(
+    *,
+    teacher_id: str,
+    media_asset_id: str,
+    visibility: str,
+) -> Optional[dict[str, Any]]:
+    existing = await get_teacher_profile_media_by_asset(
+        teacher_id=teacher_id,
+        media_asset_id=media_asset_id,
+    )
+    if existing:
+        if str(existing.get("visibility") or "") == visibility:
+            return existing
+        return await update_teacher_profile_media(
+            item_id=str(existing["id"]),
+            teacher_id=teacher_id,
+            fields={"visibility": visibility},
+        )
+
+    return await create_teacher_profile_media(
+        teacher_id=teacher_id,
+        media_asset_id=media_asset_id,
+        visibility=visibility,
+    )
 
 
 async def update_teacher_profile_media(

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from ..auth import CurrentUser
 from .. import models, schemas
+from ..utils.profile_media import profile_projection_with_avatar
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
@@ -14,6 +15,7 @@ async def get_me(current_user: CurrentUser):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="profile_not_found",
         )
+    profile = await profile_projection_with_avatar(profile)
     return schemas.Profile(**profile)
 
 
@@ -31,6 +33,7 @@ async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="profile_not_found",
             )
+        profile = await profile_projection_with_avatar(profile)
         return schemas.Profile(**profile)
 
     updated = await models.update_profile(
@@ -43,4 +46,5 @@ async def patch_me(payload: schemas.ProfileUpdate, current_user: CurrentUser):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="profile_not_found",
         )
+    updated = await profile_projection_with_avatar(updated)
     return schemas.Profile(**updated)

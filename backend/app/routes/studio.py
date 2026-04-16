@@ -17,6 +17,7 @@ from fastapi import (
 )
 
 from .. import models, repositories, schemas
+from ..auth import CurrentUser
 from ..config import settings
 from ..db import get_conn
 from ..permissions import TeacherEntryUser
@@ -24,6 +25,7 @@ from ..repositories import courses as courses_repo
 from ..repositories import home_audio_sources as home_audio_sources_repo
 from ..repositories import media_assets as media_assets_repo
 from ..repositories import storage_objects
+from ..repositories import teacher_profile_media as profile_media_repo
 from ..services import (
     courses_service,
     email_service,
@@ -151,7 +153,14 @@ def _studio_audio_ingest_format(*, filename: str, mime_type: str) -> str:
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Unsupported audio format",
         )
-    if mime_type not in {"audio/mpeg", "audio/mp3", "audio/m4a", "audio/mp4", "audio/wav", "audio/x-wav"}:
+    if mime_type not in {
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/m4a",
+        "audio/mp4",
+        "audio/wav",
+        "audio/x-wav",
+    }:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Unsupported audio format",
@@ -414,7 +423,7 @@ async def _authorize_canonical_lesson_media_asset(
 async def _authorize_canonical_media_upload_asset(
     *,
     media_asset_id: str,
-    current: TeacherEntryUser,
+    current: CurrentUser,
 ) -> dict[str, Any]:
     try:
         return await _authorize_canonical_lesson_media_asset(
@@ -457,6 +466,22 @@ async def _authorize_canonical_media_upload_asset(
         user_id = _canonical_home_player_asset_scope(media_asset)
         if user_id != str(current["id"]):
             raise HTTPException(status_code=403, detail="Not media owner")
+        return media_asset
+
+    if purpose == "profile_media":
+        if str(media_asset.get("media_type") or "").strip().lower() != "image":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Mediafilen måste vara en bild.",
+            )
+        if not profile_media_repo.profile_media_asset_belongs_to_subject(
+            asset=media_asset,
+            subject_user_id=str(current["id"]),
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Du saknar åtkomst till mediafilen.",
+            )
         return media_asset
 
     raise HTTPException(
@@ -584,13 +609,18 @@ def _canonical_upload_content_type(media_asset: dict[str, Any]) -> str:
     if media_type == "video":
         return f"video/{ingest_format}" if ingest_format else "application/octet-stream"
     if media_type == "document":
-        return "application/pdf" if ingest_format == "pdf" else "application/octet-stream"
+        return (
+            "application/pdf" if ingest_format == "pdf" else "application/octet-stream"
+        )
     return "application/octet-stream"
 
 
 def _max_upload_bytes_for_asset(media_asset: dict[str, Any]) -> int:
     purpose = str(media_asset.get("purpose") or "").strip().lower()
-    if purpose == "course_cover":
+    media_type = str(media_asset.get("media_type") or "").strip().lower()
+    if purpose == "course_cover" or (
+        purpose == "profile_media" and media_type == "image"
+    ):
         return _MAX_COURSE_COVER_BYTES
     return _MAX_MEDIA_BYTES
 
@@ -640,8 +670,8 @@ async def _issue_canonical_media_upload_session(
 ) -> tuple[dict[str, Any], datetime]:
     del mime_type
     try:
-        validated_object_path = upload_routes.media_paths.validate_new_upload_object_path(
-            object_path
+        validated_object_path = (
+            upload_routes.media_paths.validate_new_upload_object_path(object_path)
         )
     except ValueError as exc:
         raise HTTPException(
@@ -1026,7 +1056,7 @@ async def canonical_issue_home_player_upload_url(
 async def canonical_upload_media_asset_bytes(
     media_asset_id: UUID,
     request: Request,
-    current: TeacherEntryUser,
+    current: CurrentUser,
 ):
     media_asset_id_str = str(media_asset_id)
     media_asset = await _authorize_canonical_media_upload_asset(
@@ -1067,9 +1097,9 @@ async def canonical_upload_media_asset_bytes(
             detail="Media asset storage target is incomplete",
         )
     bucket = _canonical_upload_storage_bucket(media_asset)
-    content_type = (
-        request.headers.get("content-type") or _canonical_upload_content_type(media_asset)
-    )
+    content_type = request.headers.get(
+        "content-type"
+    ) or _canonical_upload_content_type(media_asset)
     storage = storage_service.get_storage_service(bucket)
 
     try:
@@ -1107,7 +1137,7 @@ async def canonical_upload_media_asset_bytes(
 async def canonical_complete_lesson_media_upload(
     media_asset_id: UUID,
     payload: schemas.CanonicalMediaAssetUploadCompletionRequest,
-    current: TeacherEntryUser,
+    current: CurrentUser,
 ):
     del payload
     media_asset_id_str = str(media_asset_id)
@@ -1117,7 +1147,7 @@ async def canonical_complete_lesson_media_upload(
     )
     await _assert_canonical_media_storage_write(media_asset)
     purpose = str(media_asset.get("purpose") or "").strip().lower()
-    if purpose == "course_cover":
+    if purpose in {"course_cover", "profile_media"}:
         updated = await media_assets_repo.mark_media_asset_uploaded(
             media_id=media_asset_id_str,
         )
@@ -1142,7 +1172,7 @@ async def canonical_complete_lesson_media_upload(
 )
 async def canonical_read_media_asset_status(
     media_asset_id: UUID,
-    current: TeacherEntryUser,
+    current: CurrentUser,
 ):
     media_asset = await _authorize_canonical_media_upload_asset(
         media_asset_id=str(media_asset_id),
@@ -1406,8 +1436,11 @@ async def studio_request_lesson_media_previews(
     }
     return schemas.MediaPreviewBatchResponse(items=ordered_items)
 
+
 @router.get("/lessons/{lesson_id}/media")
-async def list_lesson_media(request: Request, lesson_id: UUID, current: TeacherEntryUser):
+async def list_lesson_media(
+    request: Request, lesson_id: UUID, current: TeacherEntryUser
+):
     lesson_id_str = str(lesson_id)
     _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
     if not course_id or not await models.is_course_owner(current["id"], course_id):
@@ -1651,7 +1684,9 @@ async def studio_update_home_player_course_link(
 @router.delete(
     "/home-player/course-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-async def studio_delete_home_player_course_link(link_id: UUID, current: TeacherEntryUser):
+async def studio_delete_home_player_course_link(
+    link_id: UUID, current: TeacherEntryUser
+):
     deleted = await home_audio_sources_repo.delete_home_player_course_link(
         link_id=str(link_id),
         teacher_id=str(current["id"]),

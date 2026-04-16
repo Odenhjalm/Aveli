@@ -59,6 +59,7 @@ from .routes import (
     logs_mcp,
     media_control_plane_mcp,
     profiles,
+    profile_avatar,
     referrals,
     stripe_webhooks,
     studio,
@@ -86,7 +87,11 @@ _WorkerStart = Callable[..., Awaitable[None]]
 def _local_background_workers() -> tuple[tuple[str, _WorkerStart, _WorkerStop], ...]:
     return (
         ("livekit_webhooks", livekit_events.start_worker, livekit_events.stop_worker),
-        ("media_transcode", media_transcode_worker.start_worker, media_transcode_worker.stop_worker),
+        (
+            "media_transcode",
+            media_transcode_worker.start_worker,
+            media_transcode_worker.stop_worker,
+        ),
         (
             "membership_expiry_warnings",
             membership_expiry_warnings.start_worker,
@@ -220,6 +225,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(admin.router)
     app.include_router(home.router)
     app.include_router(playback.router)
+    app.include_router(profile_avatar.router)
     app.include_router(courses.router)
     app.include_router(courses.api_router)
     app.include_router(billing.router)
