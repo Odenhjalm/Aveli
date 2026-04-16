@@ -1,5 +1,5 @@
+import hashlib
 import importlib.util
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,53 +15,47 @@ build_vector_index = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(build_vector_index)
 
 
-class BuildVectorIndexManifestBootstrapTests(unittest.TestCase):
-    def test_bootstrap_index_manifest_is_deterministic(self) -> None:
+class BuildVectorIndexManifestCorpusTests(unittest.TestCase):
+    def test_corpus_manifest_hash_uses_canonical_serialization(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            search_manifest_path = temp_path / "search_manifest.txt"
-            search_manifest_path.write_text("a.py\nb.md\n", encoding="utf-8")
-            corpus_manifest_hash = build_vector_index.compute_sha256_bytes(search_manifest_path.read_bytes())
-            index_manifest_path = temp_path / "index_manifest.json"
+            (temp_path / "a.py").write_text("print('a')  \r\n", encoding="utf-8")
+            (temp_path / "b.md").write_text("# B\t\n", encoding="utf-8")
 
-            expected_manifest = build_vector_index.build_canonical_index_manifest(corpus_manifest_hash)
+            previous_root = build_vector_index.ROOT
+            build_vector_index.ROOT = temp_path
+            try:
+                files = ["a.py", "b.md"]
+                manifest = build_vector_index.build_canonical_index_manifest(
+                    "placeholder",
+                    corpus_files=files,
+                )
 
-            first_manifest = build_vector_index.bootstrap_index_manifest(
-                corpus_manifest_hash,
-                path=index_manifest_path,
-            )
-            second_manifest = build_vector_index.bootstrap_index_manifest(
-                corpus_manifest_hash,
-                path=index_manifest_path,
-            )
+                corpus_files = build_vector_index.load_manifest_corpus_files(manifest)
+                serialization = build_vector_index.render_canonical_corpus_serialization(corpus_files)
+                corpus_hash = build_vector_index.compute_corpus_manifest_hash(corpus_files)
 
-            self.assertEqual(first_manifest, expected_manifest)
-            self.assertEqual(second_manifest, expected_manifest)
-            self.assertEqual(
-                json.loads(index_manifest_path.read_text(encoding="utf-8")),
-                expected_manifest,
-            )
+                self.assertEqual(corpus_files, files)
+                self.assertEqual(corpus_hash, hashlib.sha256(serialization).hexdigest())
+                self.assertTrue(serialization.startswith(b"AVELI_CORPUS_NORMALIZATION_V1\n"))
+            finally:
+                build_vector_index.ROOT = previous_root
 
-    def test_bootstrap_rewrites_invalid_manifest_without_guessing(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            index_manifest_path = Path(temp_dir) / "index_manifest.json"
-            index_manifest_path.write_text(
-                '{"classification_rules": {"unexpected": true}}\n',
-                encoding="utf-8",
-            )
+    def test_manifest_corpus_files_fail_closed_on_unstable_order(self) -> None:
+        manifest = build_vector_index.build_canonical_index_manifest(
+            "deadbeef",
+            corpus_files=["b.md", "a.py"],
+        )
 
-            manifest = build_vector_index.bootstrap_index_manifest(
-                "deadbeef",
-                path=index_manifest_path,
-            )
-
-            self.assertEqual(
-                manifest,
-                build_vector_index.build_canonical_index_manifest("deadbeef"),
-            )
+        with self.assertRaisesRegex(RuntimeError, "sorterad"):
+            build_vector_index.load_manifest_corpus_files(manifest)
 
     def test_validate_index_manifest_hard_stops_on_policy_drift(self) -> None:
-        manifest = build_vector_index.build_canonical_index_manifest("abc123", "chunk123")
+        manifest = build_vector_index.build_canonical_index_manifest(
+            "abc123",
+            "chunk123",
+            corpus_files=["a.py"],
+        )
         manifest["ranking_policy"] = {"formula": "private_score"}
 
         with self.assertRaisesRegex(RuntimeError, "ranking_policy"):

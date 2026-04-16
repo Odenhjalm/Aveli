@@ -30,7 +30,6 @@ except ModuleNotFoundError:
 # ---------------------------------------------------------
 
 INDEX_DIR = ROOT / ".repo_index"
-SEARCH_MANIFEST = INDEX_DIR / "search_manifest.txt"
 INDEX_MANIFEST = INDEX_DIR / "index_manifest.json"
 CHUNK_MANIFEST = INDEX_DIR / "chunk_manifest.jsonl"
 LEXICAL_INDEX_DIR = INDEX_DIR / "lexical_index"
@@ -48,6 +47,7 @@ BATCH_SIZE_GPU = 16
 BATCH_SIZE_CPU = 32
 INDEX_MANIFEST_REQUIRED_FIELDS = {
     "contract_version",
+    "corpus",
     "corpus_manifest_hash",
     "chunk_manifest_hash",
     "chunk_size",
@@ -109,43 +109,6 @@ REBUILD = True   # True = wipe index, False = reuse
 DEVICE, DEVICE_SOURCE = resolve_index_device()
 print(f"[INFO] Enhet: {DEVICE} ({DEVICE_SOURCE})")
 
-SEARCHABLE_SUFFIXES = {
-    ".css",
-    ".csv",
-    ".dart",
-    ".go",
-    ".graphql",
-    ".html",
-    ".ini",
-    ".js",
-    ".json",
-    ".jsx",
-    ".kt",
-    ".md",
-    ".mjs",
-    ".py",
-    ".rb",
-    ".scss",
-    ".sh",
-    ".sql",
-    ".svg",
-    ".swift",
-    ".toml",
-    ".ts",
-    ".tsx",
-    ".txt",
-    ".yaml",
-    ".yml",
-}
-
-SEARCHABLE_FILENAMES = {
-    ".gitignore",
-    "dockerfile",
-    "makefile",
-    "procfile",
-}
-
-
 EXCLUDED_DIRECTORIES = {
     ".repo_index",
     ".venv",
@@ -174,26 +137,6 @@ def is_excluded_path(relative_file: str) -> bool:
     return False
 
 
-def is_searchable_file(path: Path, relative_file: str) -> bool:
-    if is_excluded_path(relative_file):
-        return False
-    if "archive" in relative_file:
-        return False
-    name = path.name.lower()
-    suffix = path.suffix.lower()
-    if not (name in SEARCHABLE_FILENAMES or suffix in SEARCHABLE_SUFFIXES):
-        return False
-    try:
-        head = path.read_bytes()[:8192]
-    except OSError as exc:
-        raise RuntimeError(f"FEL: kunde inte läsa filhuvud för {relative_file}") from exc
-    if not head:
-        return False
-    if b"\x00" in head:
-        return False
-    return True
-
-
 def normalize_repo_relative_path(file_path: str) -> str:
     path = Path(file_path)
 
@@ -209,7 +152,10 @@ def normalize_repo_relative_path(file_path: str) -> str:
     if normalized.is_absolute() or ".." in normalized.parts:
         raise RuntimeError(f"FEL: ogiltig repo-relativ filidentitet: {file_path}")
 
-    return normalized.as_posix().lstrip("./")
+    normalized_path = normalized.as_posix()
+    if normalized_path.startswith("./"):
+        normalized_path = normalized_path[2:]
+    return normalized_path
 
 
 def classify(path: str, manifest: dict) -> str:
@@ -234,6 +180,28 @@ def normalize_ingested_text(text: str) -> str:
     normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
     normalized = normalized.replace("\t", "    ")
     return "\n".join(line.rstrip() for line in normalized.split("\n"))
+
+
+def normalize_corpus_text_for_hash(raw_bytes: bytes, file_path: str) -> str:
+    if b"\x00" in raw_bytes:
+        raise RuntimeError(f"FEL: binart corpusinnehall nekas: {file_path}")
+    try:
+        text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"FEL: corpusfil maste vara UTF-8: {file_path}") from exc
+
+    if text.startswith("\ufeff"):
+        text = text[1:]
+
+    normalized = unicodedata.normalize("NFC", text)
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalized.replace("\t", "    ")
+    normalized = "\n".join(line.rstrip(" ") for line in normalized.split("\n"))
+
+    if not normalized.strip():
+        raise RuntimeError(f"FEL: tom corpusfil nekas: {file_path}")
+
+    return normalized.rstrip("\n") + "\n"
 
 
 def normalize_document_text(text: str) -> str:
@@ -267,15 +235,6 @@ def save_json_object(path: Path, data: dict) -> None:
     )
 
 
-def try_load_optional_json_object(path: Path) -> dict | None:
-    if not path.exists():
-        return None
-    try:
-        return load_json_object(path)
-    except (OSError, RuntimeError, json.JSONDecodeError):
-        return None
-
-
 def serialize_chunk_record(record: dict) -> str:
     return json.dumps(record, ensure_ascii=False, sort_keys=True)
 
@@ -284,6 +243,73 @@ def build_canonical_doc_id(file_path: str, chunk_index: int, content_hash: str) 
     normalized_file = normalize_repo_relative_path(file_path)
     identity = f"{normalized_file}\n{int(chunk_index)}\n{content_hash}"
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def validate_manifest_corpus_files(corpus_files: object) -> list[str]:
+    if not isinstance(corpus_files, list) or not corpus_files:
+        raise RuntimeError("FEL: index_manifest.json corpus.files maste vara en icke-tom lista")
+
+    files: list[str] = []
+    seen: set[str] = set()
+
+    for entry in corpus_files:
+        if not isinstance(entry, str) or not entry:
+            raise RuntimeError("FEL: corpus.files far endast innehalla icke-tomma strangsokvagar")
+        if "\\" in entry:
+            raise RuntimeError(f"FEL: corpus.files maste anvanda forward slash: {entry}")
+
+        path = Path(entry)
+        if path.is_absolute():
+            raise RuntimeError(f"FEL: corpus.files far inte innehalla absoluta sokvagar: {entry}")
+
+        normalized = normalize_repo_relative_path(entry)
+        if normalized != entry:
+            raise RuntimeError(f"FEL: corpus.files maste vara repo-relativt normaliserad: {entry}")
+        if normalized in seen:
+            raise RuntimeError(f"FEL: duplicerad corpusfil i index_manifest.json: {normalized}")
+
+        files.append(normalized)
+        seen.add(normalized)
+
+    expected_order = sorted(files, key=lambda item: item.encode("utf-8"))
+    if files != expected_order:
+        raise RuntimeError("FEL: corpus.files maste vara sorterad enligt UTF-8 byteordning")
+
+    return files
+
+
+def load_manifest_corpus_files(manifest: dict) -> list[str]:
+    corpus = manifest.get("corpus")
+    if not isinstance(corpus, dict):
+        raise RuntimeError("FEL: index_manifest.json corpus maste vara ett JSON-objekt")
+    return validate_manifest_corpus_files(corpus.get("files"))
+
+
+def render_canonical_corpus_serialization(files: list[str]) -> bytes:
+    parts = [
+        b"AVELI_CORPUS_NORMALIZATION_V1\n",
+        f"FILE_COUNT {len(files)}\n".encode("ascii"),
+    ]
+
+    for file in files:
+        path = ROOT / file
+        if not path.exists() or not path.is_file():
+            raise RuntimeError(f"FEL: fil i index_manifest.json corpus.files saknas: {file}")
+
+        path_bytes = file.encode("utf-8")
+        text_bytes = normalize_corpus_text_for_hash(path.read_bytes(), file).encode("utf-8")
+
+        parts.append(f"PATH_LEN {len(path_bytes)}\n".encode("ascii"))
+        parts.append(path_bytes)
+        parts.append(b"\n")
+        parts.append(f"CONTENT_LEN {len(text_bytes)}\n".encode("ascii"))
+        parts.append(text_bytes)
+
+    return b"".join(parts)
+
+
+def compute_corpus_manifest_hash(files: list[str]) -> str:
+    return compute_sha256_bytes(render_canonical_corpus_serialization(files))
 
 
 def order_chunk_records(records: list[dict]) -> list[dict]:
@@ -302,13 +328,18 @@ def render_chunk_manifest(records: list[dict]) -> str:
     return "\n".join(serialize_chunk_record(record) for record in ordered_records)
 
 
-def build_canonical_index_manifest(corpus_manifest_hash: str, chunk_manifest_hash: str = "") -> dict:
+def build_canonical_index_manifest(
+    corpus_manifest_hash: str,
+    chunk_manifest_hash: str = "",
+    corpus_files: list[str] | None = None,
+) -> dict:
     return {
         "chunk_manifest_hash": str(chunk_manifest_hash),
         "chunk_overlap": CANONICAL_CHUNK_OVERLAP,
         "chunk_size": CANONICAL_CHUNK_SIZE,
         "classification_rules": deepcopy(CANONICAL_CLASSIFICATION_RULES),
         "contract_version": CANONICAL_CONTRACT_VERSION,
+        "corpus": {"files": list(corpus_files or [])},
         "corpus_manifest_hash": corpus_manifest_hash,
         "embedding_model": CANONICAL_EMBEDDING_MODEL,
         "lexical_candidate_k": CANONICAL_LEXICAL_CANDIDATE_K,
@@ -365,10 +396,12 @@ def validate_index_manifest(
             "FEL: index_manifest.json saknar fält: " + ", ".join(missing)
         )
 
+    load_manifest_corpus_files(manifest)
+
     if str(manifest["contract_version"]) != CANONICAL_CONTRACT_VERSION:
         raise RuntimeError("FEL: contract_version matchar inte kanoniskt värde")
     if str(manifest["corpus_manifest_hash"]) != corpus_manifest_hash:
-        raise RuntimeError("FEL: corpus_manifest_hash matchar inte search_manifest.txt")
+        raise RuntimeError("FEL: corpus_manifest_hash matchar inte kanonisk corpusserialisering")
     if int(manifest["chunk_size"]) != CANONICAL_CHUNK_SIZE:
         raise RuntimeError("FEL: chunk_size matchar inte kanoniskt värde")
     if int(manifest["chunk_overlap"]) != CANONICAL_CHUNK_OVERLAP:
@@ -394,45 +427,18 @@ def validate_index_manifest(
     validate_ranking_policy(manifest.get("ranking_policy"))
 
 
-def bootstrap_index_manifest(corpus_manifest_hash: str, path: Path = INDEX_MANIFEST) -> dict:
-    existing_manifest = try_load_optional_json_object(path)
-    preserved_chunk_manifest_hash = ""
-
-    if existing_manifest is not None:
-        existing_chunk_manifest_hash = existing_manifest.get("chunk_manifest_hash", "")
-        if isinstance(existing_chunk_manifest_hash, str):
-            preserved_chunk_manifest_hash = existing_chunk_manifest_hash
-
-    manifest = build_canonical_index_manifest(
-        corpus_manifest_hash=corpus_manifest_hash,
-        chunk_manifest_hash=preserved_chunk_manifest_hash,
-    )
-    if existing_manifest != manifest:
-        save_json_object(path, manifest)
-
-    materialized_manifest = load_json_object(path)
-    validate_index_manifest(
-        materialized_manifest,
-        corpus_manifest_hash,
-        require_chunk_manifest_hash=False,
-    )
-    return materialized_manifest
-
-
 def finalize_index_manifest(
-    corpus_manifest_hash: str,
+    manifest: dict,
     chunk_manifest_hash: str,
     path: Path = INDEX_MANIFEST,
 ) -> dict:
-    manifest = build_canonical_index_manifest(
-        corpus_manifest_hash=corpus_manifest_hash,
-        chunk_manifest_hash=chunk_manifest_hash,
-    )
-    save_json_object(path, manifest)
+    finalized_manifest = deepcopy(manifest)
+    finalized_manifest["chunk_manifest_hash"] = chunk_manifest_hash
+    save_json_object(path, finalized_manifest)
     materialized_manifest = load_json_object(path)
     validate_index_manifest(
         materialized_manifest,
-        corpus_manifest_hash,
+        str(materialized_manifest["corpus_manifest_hash"]),
         require_chunk_manifest_hash=True,
     )
     return materialized_manifest
@@ -515,10 +521,7 @@ def build_chunk_artifacts(files: list[str], manifest: dict) -> tuple[list[str], 
         path = ROOT / file
 
         if not path.exists():
-            raise RuntimeError(f"FEL: fil i search_manifest.txt saknas: {file}")
-
-        if not is_searchable_file(path, file):
-            continue
+            raise RuntimeError(f"FEL: fil i index_manifest.json corpus.files saknas: {file}")
 
         try:
             content = path.read_text(encoding="utf-8")
@@ -593,34 +596,34 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> Iterable[str]:
 
 def main():
 
-    if not SEARCH_MANIFEST.exists():
+    if not INDEX_MANIFEST.exists():
         raise RuntimeError(
-            f"{SEARCH_MANIFEST} saknas. Bygg repoindex först."
+            f"{INDEX_MANIFEST} saknas. Bygg repoindex först."
         )
 
-    print("\n[STEG] Läser fillista...")
+    print("\n[STEG] Läser indexmanifest...")
 
-    files = [
-        line.strip()
-        for line in SEARCH_MANIFEST.read_text().splitlines()
-        if line.strip()
-    ]
+    manifest = load_json_object(INDEX_MANIFEST)
+    files = load_manifest_corpus_files(manifest)
 
     excluded_paths = [file for file in files if is_excluded_path(file)]
     if excluded_paths:
         raise RuntimeError(
-            "search_manifest.txt innehaller exkluderade paths: "
+            "index_manifest.json corpus.files innehaller exkluderade paths: "
             + ", ".join(excluded_paths[:5])
         )
 
     print(f"[INFO] {len(files)} filer hittades")
 
-    corpus_manifest_hash = compute_sha256_bytes(SEARCH_MANIFEST.read_bytes())
+    corpus_manifest_hash = compute_corpus_manifest_hash(files)
 
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
-    print("\n[STEG] Bootstrappar indexmanifest...")
-    manifest = bootstrap_index_manifest(corpus_manifest_hash)
+    validate_index_manifest(
+        manifest,
+        corpus_manifest_hash,
+        require_chunk_manifest_hash=False,
+    )
 
     documents, metadatas, ids, chunk_records = build_chunk_artifacts(files, manifest)
 
@@ -630,7 +633,7 @@ def main():
     versioned_chunk_records = bind_contract_version(chunk_records, contract_version)
     chunk_manifest_hash = compute_chunk_manifest_hash(versioned_chunk_records)
     manifest = finalize_index_manifest(
-        corpus_manifest_hash=corpus_manifest_hash,
+        manifest=manifest,
         chunk_manifest_hash=chunk_manifest_hash,
     )
     embedding_model = str(manifest["embedding_model"])

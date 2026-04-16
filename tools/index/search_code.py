@@ -27,7 +27,6 @@ except ModuleNotFoundError:
 # ---------------------------------------------------------
 
 INDEX_MANIFEST = ROOT / ".repo_index" / "index_manifest.json"
-SEARCH_MANIFEST = ROOT / ".repo_index" / "search_manifest.txt"
 DB_PATH = str(ROOT / ".repo_index" / "chroma_db")
 CHUNK_MANIFEST = ROOT / ".repo_index" / "chunk_manifest.jsonl"
 LEXICAL_INDEX_DIR = ROOT / ".repo_index" / "lexical_index"
@@ -36,6 +35,7 @@ LEXICAL_INDEX_DOCUMENTS = LEXICAL_INDEX_DIR / "documents.jsonl"
 COLLECTION_NAME = "aveli_repo"
 INDEX_MANIFEST_REQUIRED_FIELDS = {
     "contract_version",
+    "corpus",
     "corpus_manifest_hash",
     "chunk_manifest_hash",
     "chunk_size",
@@ -121,6 +121,41 @@ def load_json_object(path: Path) -> dict:
     return data
 
 
+def validate_manifest_corpus_files(manifest: dict) -> None:
+    corpus = manifest.get("corpus")
+    if not isinstance(corpus, dict):
+        raise SystemExit("FEL: indexmanifest corpus maste vara ett JSON-objekt")
+
+    files = corpus.get("files")
+    if not isinstance(files, list) or not files:
+        raise SystemExit("FEL: indexmanifest corpus.files maste vara en icke-tom lista")
+
+    seen: set[str] = set()
+    normalized_files: list[str] = []
+    for entry in files:
+        if not isinstance(entry, str) or not entry:
+            raise SystemExit("FEL: corpus.files far endast innehalla icke-tomma strangsokvagar")
+        if "\\" in entry:
+            raise SystemExit(f"FEL: corpus.files maste anvanda forward slash: {entry}")
+        path = Path(entry)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit(f"FEL: ogiltig repo-relativ corpusfil: {entry}")
+
+        normalized = path.as_posix()
+        if normalized.startswith("./"):
+            normalized = normalized[2:]
+        if normalized != entry:
+            raise SystemExit(f"FEL: corpus.files maste vara normaliserad: {entry}")
+        if normalized in seen:
+            raise SystemExit(f"FEL: duplicerad corpusfil i indexmanifestet: {normalized}")
+
+        normalized_files.append(normalized)
+        seen.add(normalized)
+
+    if normalized_files != sorted(normalized_files, key=lambda item: item.encode("utf-8")):
+        raise SystemExit("FEL: corpus.files maste vara sorterad enligt UTF-8 byteordning")
+
+
 def load_index_manifest() -> dict:
     if not INDEX_MANIFEST.exists():
         raise SystemExit(f"FEL: indexmanifest saknas vid {INDEX_MANIFEST}")
@@ -133,12 +168,12 @@ def load_index_manifest() -> dict:
         )
     if "classification_rules" not in manifest:
         raise SystemExit("FEL: classification_rules saknas i indexmanifestet")
+    validate_manifest_corpus_files(manifest)
     return manifest
 
 
 def validate_canonical_index_health() -> None:
     required_files = [
-        SEARCH_MANIFEST,
         INDEX_MANIFEST,
         CHUNK_MANIFEST,
         LEXICAL_INDEX_MANIFEST,
