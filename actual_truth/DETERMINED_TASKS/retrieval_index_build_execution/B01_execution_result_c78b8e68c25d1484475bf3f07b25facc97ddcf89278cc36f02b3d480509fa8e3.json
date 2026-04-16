@@ -1,0 +1,167 @@
+{
+  "artifact_type": "build_execution_result",
+  "controller_scope": "retrieval_index_build_execution",
+  "task_id": "B01",
+  "mode": "build",
+  "status": "BLOCKED",
+  "build_id": "c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+  "approval_artifact": "actual_truth/build_approvals/build_approval_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+  "manifest_input": "actual_truth/build_approvals/index_manifest_candidate_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+  "environment_bootstrap_result": "actual_truth/DETERMINED_TASKS/retrieval_index_environment_bootstrap/E01_environment_bootstrap_result_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+  "repo_root": "c:/Users/Odenh/app/Aveli",
+  "target_path": ".repo_index",
+  "staging_root": ".repo_index/_staging/c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+  "canonical_interpreter": ".repo_index/.search_venv/Scripts/python.exe",
+  "started_at_utc": "2026-04-16T11:50:13.6543264Z",
+  "completed_at_utc": "2026-04-16T11:50:13.6543264Z",
+  "write_phase": "pre_staging_dependency_validation",
+  "artifact_paths": {
+    "index_manifest": ".repo_index/_staging/c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3/index_manifest.json",
+    "chunk_manifest": ".repo_index/_staging/c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3/chunk_manifest.jsonl",
+    "lexical_index": ".repo_index/_staging/c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3/lexical_index/",
+    "chroma_db": ".repo_index/_staging/c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3/chroma_db/",
+    "build_execution_result": "actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/B01_execution_result_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+    "staging_verification_result": null,
+    "promotion_result": null
+  },
+  "artifact_hashes": {
+    "index_manifest_hash": null,
+    "corpus_manifest_hash": "3967ae852269bfbdd357b0c7a6f9f166ab48711499f68a4cff22c38874378d69",
+    "chunk_manifest_hash": null,
+    "lexical_index_hash": null,
+    "chroma_db_hash": null,
+    "vector_export_hash": null,
+    "build_execution_result_hash": null,
+    "staging_verification_result_hash": null
+  },
+  "verification_checkpoints": {
+    "approval_validation": {
+      "status": "PASS",
+      "authority": "actual_truth/contracts/retrieval/build_approval_contract.md",
+      "expected": "APPROVED_FOR_SINGLE_BUILD with exact approval phrase and no network or fallback permissions",
+      "actual": "approval artifact valid and build_id matched manifest candidate",
+      "failure_class": null
+    },
+    "windows_runtime_validation": {
+      "status": "PASS",
+      "authority": "actual_truth/DETERMINED_TASKS/retrieval_index_environment_bootstrap/E01_environment_bootstrap_result_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+      "expected": ".repo_index/.search_venv/Scripts/python.exe exists and is invokable",
+      "actual": "canonical interpreter exists and E01 status is PASS",
+      "failure_class": null
+    },
+    "manifest_input_validation": {
+      "status": "PASS",
+      "authority": "actual_truth/build_approvals/index_manifest_candidate_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+      "expected": "manifest candidate exists, build_id matches, corpus.files is explicit manifest-owned input",
+      "actual": "manifest candidate valid for B01 precheck",
+      "failure_class": null
+    },
+    "dependency_validation": {
+      "status": "FAIL",
+      "authority": "actual_truth/contracts/retrieval/build_approval_contract.md",
+      "expected": "canonical interpreter can import build dependencies without install, download, network, or fallback",
+      "actual": "sentence_transformers=false, chromadb=false, numpy=false, tqdm=false in canonical interpreter",
+      "failure_class": "BLOCKED"
+    },
+    "staging_write_validation": {
+      "status": "NOT_APPLICABLE",
+      "authority": "actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/B01_controller_governed_index_build.md",
+      "expected": "staging writes occur only after dependency preflight passes",
+      "actual": "staging was not created because dependency validation failed",
+      "failure_class": null
+    },
+    "chunk_manifest_validation": {
+      "status": "NOT_APPLICABLE",
+      "authority": "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+      "expected": "chunk manifest verification after staging build",
+      "actual": "not reached",
+      "failure_class": null
+    },
+    "lexical_index_validation": {
+      "status": "NOT_APPLICABLE",
+      "authority": "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+      "expected": "lexical index verification after staging build",
+      "actual": "not reached",
+      "failure_class": null
+    },
+    "vector_index_validation": {
+      "status": "NOT_APPLICABLE",
+      "authority": "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+      "expected": "vector index verification after staging build",
+      "actual": "not reached",
+      "failure_class": null
+    },
+    "cpu_gpu_equivalence_validation": {
+      "status": "NOT_APPLICABLE",
+      "authority": "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+      "expected": "CPU/GPU equivalence verification if embeddings are built",
+      "actual": "not reached",
+      "failure_class": null
+    },
+    "artifact_hash_validation": {
+      "status": "NOT_APPLICABLE",
+      "authority": "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+      "expected": "artifact hash verification after staging build",
+      "actual": "not reached",
+      "failure_class": null
+    },
+    "pre_promotion_validation": {
+      "status": "NOT_APPLICABLE",
+      "authority": "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+      "expected": "promotion forbidden unless staging verification passes",
+      "actual": "not reached; promotion not attempted",
+      "failure_class": null
+    },
+    "promotion_validation": {
+      "status": "NOT_APPLICABLE",
+      "authority": "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+      "expected": "atomic promotion only after staging verification PASS",
+      "actual": "not reached; promotion not attempted",
+      "failure_class": null
+    },
+    "post_promotion_validation": {
+      "status": "NOT_APPLICABLE",
+      "authority": "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+      "expected": "active artifact verification after promotion",
+      "actual": "not reached; active index remains absent",
+      "failure_class": null
+    }
+  },
+  "dependency_probe": {
+    "canonical_interpreter": ".repo_index/.search_venv/Scripts/python.exe",
+    "sentence_transformers": false,
+    "chromadb": false,
+    "numpy": false,
+    "tqdm": false,
+    "dependency_install_allowed": false,
+    "network_allowed": false,
+    "fallback_allowed": false
+  },
+  "forbidden_side_effect_check": {
+    "active_index_manifest_created": false,
+    "active_chunk_manifest_created": false,
+    "active_lexical_index_created": false,
+    "active_chroma_db_created": false,
+    "staging_root_created": false,
+    "staging_index_manifest_created": false,
+    "staging_chunk_manifest_created": false,
+    "staging_lexical_index_created": false,
+    "staging_chroma_db_created": false,
+    "model_loaded": false,
+    "cuda_executed": false,
+    "promotion_executed": false,
+    "network_used": false,
+    "dependency_install_attempted": false,
+    "fallback_used": false
+  },
+  "failure": {
+    "failure_class": "BLOCKED",
+    "stop_reason": "Canonical interpreter lacks required build dependencies, while build approval and E01 environment policy forbid dependency installation, downloads, network, and fallback.",
+    "authority_file": "actual_truth/contracts/retrieval/build_approval_contract.md",
+    "affected_path": ".repo_index/.search_venv/Scripts/python.exe",
+    "active_index_touched": false,
+    "staging_invalidated": false,
+    "next_allowed_action": "Create explicit offline dependency authority and materialize approved dependencies into the canonical interpreter, then rerun B01."
+  },
+  "final_verdict": "BLOCKED"
+}
