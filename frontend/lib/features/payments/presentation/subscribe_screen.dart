@@ -84,7 +84,7 @@ class _MembershipCheckoutScreenState
             ),
           ),
           Positioned.fill(
-            child: ColoredBox(color: Colors.black.withValues(alpha: 0.18)),
+            child: ColoredBox(color: Colors.white.withValues(alpha: 0.06)),
           ),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -398,24 +398,26 @@ class _ResponsiveCheckoutLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 820;
-        if (!wide) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [promise, gap24, action],
+    return _SharedCheckoutPanel(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 820;
+          if (!wide) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [promise, const SizedBox(height: 28), action],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 9, child: promise),
+              const SizedBox(width: 42),
+              Expanded(flex: 11, child: action),
+            ],
           );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(flex: 9, child: promise),
-            const SizedBox(width: 42),
-            Expanded(flex: 11, child: action),
-          ],
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -453,42 +455,40 @@ class _MembershipPromise extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Starta ditt medlemskap i Aveli',
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              height: 1.1,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Starta ditt medlemskap i Aveli',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            height: 1.1,
           ),
-          gap16,
-          Text(
-            'Du får 14 dagar att testa appen. Kortuppgifter krävs, men du debiteras inte under provperioden.',
-            style: theme.textTheme.titleMedium?.copyWith(height: 1.45),
+        ),
+        gap16,
+        Text(
+          'Du får 14 dagar att testa appen. Kortuppgifter krävs, men du debiteras inte under provperioden.',
+          style: theme.textTheme.titleMedium?.copyWith(height: 1.45),
+        ),
+        gap20,
+        Text(
+          'I medlemskapet ingår:',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
           ),
-          gap20,
-          Text(
-            'I medlemskapet ingår:',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          gap12,
-          const _BenefitLine('Livelektioner'),
-          const _BenefitLine(
-            'Tillgång till ett stort kursutbud och en plattform för likasinnade spirituellt intresserade människor i olika skeden av sin utveckling',
-          ),
-          const _BenefitLine('Meditationsmusik och guidade meditationer'),
-          const _BenefitLine(
-            'En trygg plats för lärande och spirituell utveckling',
-          ),
-          gap20,
-          const _TrustLine(),
-        ],
-      ),
+        ),
+        gap12,
+        const _BenefitLine('Livelektioner'),
+        const _BenefitLine(
+          'Tillgång till ett stort kursutbud och en plattform för likasinnade spirituellt intresserade människor i olika skeden av sin utveckling',
+        ),
+        const _BenefitLine('Meditationsmusik och guidade meditationer'),
+        const _BenefitLine(
+          'En trygg plats för lärande och spirituell utveckling',
+        ),
+        gap20,
+        const _TrustLine(),
+      ],
     );
   }
 }
@@ -537,38 +537,36 @@ class _CheckoutActionPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final launch = checkoutLaunch;
-    return _Panel(
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 180),
-        child: backendSyncInProgress || backendSyncTimedOut
-            ? _BackendConfirmationState(
-                key: const ValueKey('membership-backend-confirmation'),
-                timedOut: backendSyncTimedOut,
-                message: backendSyncMessage,
-                onRetry: onRetryBackendSync,
-              )
-            : launch == null
-            ? _CheckoutStartState(
-                key: const ValueKey('membership-checkout-start'),
-                envMessage: envMessage,
-                subscriptionsEnabled: subscriptionsEnabled,
-                stripeKeyMissing: stripeKeyMissing,
-                platformSupported: platformSupported,
-                entryStateAvailable: entryStateAvailable,
-                needsPayment: needsPayment,
-                checkoutBlocked: checkoutBlocked,
-                submittingInterval: submittingInterval,
-                onRequestLogin: onRequestLogin,
-                onStartCheckout: onStartCheckout,
-              )
-            : _EmbeddedCheckoutState(
-                key: ValueKey(launch.sessionId),
-                launch: launch,
-                interval: checkoutInterval,
-                stripePublishableKey: stripePublishableKey,
-                onCheckoutRedirect: onCheckoutRedirect,
-              ),
-      ),
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      child: backendSyncInProgress || backendSyncTimedOut
+          ? _BackendConfirmationState(
+              key: const ValueKey('membership-backend-confirmation'),
+              timedOut: backendSyncTimedOut,
+              message: backendSyncMessage,
+              onRetry: onRetryBackendSync,
+            )
+          : launch == null
+          ? _CheckoutStartState(
+              key: const ValueKey('membership-checkout-start'),
+              envMessage: envMessage,
+              subscriptionsEnabled: subscriptionsEnabled,
+              stripeKeyMissing: stripeKeyMissing,
+              platformSupported: platformSupported,
+              entryStateAvailable: entryStateAvailable,
+              needsPayment: needsPayment,
+              checkoutBlocked: checkoutBlocked,
+              submittingInterval: submittingInterval,
+              onRequestLogin: onRequestLogin,
+              onStartCheckout: onStartCheckout,
+            )
+          : _EmbeddedCheckoutState(
+              key: ValueKey(launch.sessionId),
+              launch: launch,
+              interval: checkoutInterval,
+              stripePublishableKey: stripePublishableKey,
+              onCheckoutRedirect: onCheckoutRedirect,
+            ),
     );
   }
 }
@@ -830,8 +828,8 @@ class _EmbeddedCheckoutFrame extends StatelessWidget {
   }
 }
 
-class _Panel extends StatelessWidget {
-  const _Panel({required this.child});
+class _SharedCheckoutPanel extends StatelessWidget {
+  const _SharedCheckoutPanel({required this.child});
 
   final Widget child;
 
@@ -841,8 +839,8 @@ class _Panel extends StatelessWidget {
     return ClipRRect(
       borderRadius: radius,
       child: EffectsBackdropFilter(
-        sigmaX: 18,
-        sigmaY: 18,
+        sigmaX: 20,
+        sigmaY: 20,
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.12),
@@ -853,18 +851,18 @@ class _Panel extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.14),
-                blurRadius: 46,
-                offset: const Offset(0, 24),
+                color: const Color(0xFF5B6DA6).withValues(alpha: 0.16),
+                blurRadius: 54,
+                offset: const Offset(0, 28),
               ),
               BoxShadow(
-                color: Colors.white.withValues(alpha: 0.18),
+                color: Colors.white.withValues(alpha: 0.22),
                 blurRadius: 0,
                 spreadRadius: 1,
               ),
             ],
           ),
-          child: Padding(padding: const EdgeInsets.all(30), child: child),
+          child: Padding(padding: const EdgeInsets.all(32), child: child),
         ),
       ),
     );
