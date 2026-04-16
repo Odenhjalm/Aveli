@@ -138,6 +138,21 @@ void main() {
     isEntryStateLoading: false,
   );
 
+  const ordinaryPaymentAndOnboardingNeeded = RouteSessionSnapshot(
+    entryState: EntryState(
+      canEnterApp: false,
+      onboardingState: 'incomplete',
+      onboardingCompleted: false,
+      membershipActive: false,
+      needsOnboarding: true,
+      needsPayment: true,
+      roleV2: 'learner',
+      role: 'learner',
+      isAdmin: false,
+    ),
+    isEntryStateLoading: false,
+  );
+
   const onboardingNeeded = RouteSessionSnapshot(
     entryState: EntryState(
       canEnterApp: false,
@@ -194,6 +209,24 @@ void main() {
         router.routeInformationProvider.value.uri.path,
         RoutePath.subscribe,
       );
+    },
+  );
+
+  testWidgets(
+    'ordinary both payment and onboarding needed routes to subscribe',
+    (tester) async {
+      final router = await _pumpHarness(
+        tester,
+        ordinaryPaymentAndOnboardingNeeded,
+      );
+
+      router.go(RoutePath.home);
+      await tester.pump();
+
+      final uri = router.routeInformationProvider.value.uri;
+      expect(uri.path, RoutePath.subscribe);
+      expect(uri.path, isNot(RoutePath.createProfile));
+      expect(uri.queryParameters.containsKey('referral_code'), isFalse);
     },
   );
 

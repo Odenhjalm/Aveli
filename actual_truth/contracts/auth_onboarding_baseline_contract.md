@@ -42,6 +42,10 @@ The following physical objects are required:
   - `role_v2`
   - `role`
   - `is_admin`
+- valid onboarding state values for the ordinary/referral onboarding chain are:
+  - `incomplete`
+  - `welcome_pending`
+  - `completed`
 
 ### `app.profiles`
 

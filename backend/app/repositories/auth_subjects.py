@@ -7,7 +7,7 @@ from psycopg.rows import dict_row
 
 from ..db import get_conn, pool
 
-_VALID_ONBOARDING_STATES = frozenset({"incomplete", "completed"})
+_VALID_ONBOARDING_STATES = frozenset({"incomplete", "welcome_pending", "completed"})
 _VALID_ROLES = frozenset({"learner", "teacher"})
 
 
@@ -26,6 +26,8 @@ def _validated_initial_onboarding_state(value: object) -> str:
     normalized = _validated_onboarding_state(value)
     if normalized == "completed":
         raise ValueError("Auth subject creation cannot complete onboarding")
+    if normalized == "welcome_pending":
+        raise ValueError("Auth subject creation cannot skip create-profile")
     return normalized
 
 
@@ -125,6 +127,29 @@ async def set_role_authority(
                  RETURNING user_id, onboarding_state, role_v2, role, is_admin
                 """,
                 (validated_role_v2, validated_role, user_id),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+            return dict(row) if row else None
+
+
+async def mark_create_profile_step_complete(
+    user_id: str | UUID,
+) -> dict[str, Any] | None:
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.auth_subjects
+                   SET onboarding_state = CASE
+                         WHEN onboarding_state = 'incomplete' THEN 'welcome_pending'
+                         ELSE onboarding_state
+                       END
+                 WHERE user_id = %s
+                   AND onboarding_state IN ('incomplete', 'welcome_pending', 'completed')
+                 RETURNING user_id, onboarding_state, role_v2, role, is_admin
+                """,
+                (user_id,),
             )
             row = await cur.fetchone()
             await conn.commit()

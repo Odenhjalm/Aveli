@@ -78,6 +78,14 @@ Entrypoint responsibilities:
 
 - `/auth/*` owns credential, token, email-verification, and onboarding
   execution surfaces.
+- Successful registration creates identity and token transport only. It does
+  not guarantee create-profile routing, app-entry, membership, onboarding
+  completion, or any post-auth route.
+- After registration or login, post-auth routing is governed only by
+  `GET /entry-state` plus the Post-Auth Routing Precedence rule in
+  `onboarding_entry_authority_contract.md`.
+- For ordinary self-signup, checkout is required before create-profile:
+  register -> checkout -> create-profile -> welcome -> onboarding-complete -> app.
 - `POST /auth/onboarding/create-profile` owns the onboarding step that captures
   required name and optional bio while remaining non-authoritative for
   routing.
@@ -127,6 +135,7 @@ Entrypoint responsibilities:
     - binary media payload fields
 - `POST /auth/onboarding/complete`
   - No request body.
+  - Invoked only by explicit confirmation on the welcome step.
 - `PATCH /profiles/me`
   - Request shape: `{ "display_name"?: string, "bio"?: string }`
   - Forbidden fields:
@@ -197,14 +206,19 @@ All non-2xx responses on owned surfaces are governed only by
   only through the profile/media boundary defined by media contracts.
 - `POST /auth/onboarding/create-profile` MUST NOT become profile-projection
   authority, media authority, routing authority, or entry authority.
+- Successful create-profile persists required name and optional bio projection
+  data and moves `app.auth_subjects.onboarding_state` to `welcome_pending`.
+- Successful create-profile does not complete onboarding.
 
 ## 7. ONBOARDING COMPLETION LAW
 
 - `POST /auth/onboarding/complete` is the only canonical transition surface for
-  `incomplete -> completed`.
-- Onboarding completion is explicit-action-derived only.
+  `welcome_pending -> completed`.
+- Onboarding completion is explicit welcome-confirmation-derived only.
 - `POST /auth/onboarding/create-profile` is an onboarding step but does not by
   itself complete onboarding.
+- The required welcome confirmation text is exactly:
+  `Jag förstår hur Aveli fungerar`.
 - `PATCH /profiles/me` MUST NOT mutate onboarding state.
 - Email verification, referral transport, referral redemption, membership
   state, webhooks, media writes, and profile projection writes MUST NOT
@@ -241,6 +255,12 @@ All non-2xx responses on owned surfaces are governed only by
 - Referral email transport may bring the user into onboarding at the
   create-profile step, but it does not create identity, authenticate a user,
   complete onboarding, or grant membership by itself.
+- Referral context is the explicit exception to ordinary self-signup
+  checkout-first routing:
+  register -> create-profile -> redeem -> welcome -> onboarding-complete -> app.
+  The exception is owned by `onboarding_entry_authority_contract.md` routing
+  precedence and `referral_membership_grant_contract.md`, not by
+  `POST /auth/register`.
 - Auth + Onboarding routes MUST NOT own binary media upload authority.
 
 ## 11. FORBIDDEN PATTERNS
@@ -253,6 +273,8 @@ All non-2xx responses on owned surfaces are governed only by
 - `/api/upload/profile`
 - Accepting `referral_code` on `POST /auth/register`
 - Any profile-derived onboarding completion
+- Any create-profile-derived onboarding completion
+- Any checkout-derived onboarding completion
 
 ## 12. FINAL ASSERTION
 
@@ -262,7 +284,10 @@ All non-2xx responses on owned surfaces are governed only by
   subject fields.
 - `POST /auth/onboarding/create-profile` is the canonical onboarding-owned
   create-profile surface.
-- `POST /auth/onboarding/complete` is completion-only.
+- `POST /auth/onboarding/complete` is welcome-confirmation completion-only.
 - `/profiles/me` is projection-only and remains non-authoritative.
 - Post-auth entry authority is owned only by
   `onboarding_entry_authority_contract.md` through `GET /entry-state`.
+- Registration is identity-only and never guarantees create-profile routing;
+  post-auth routing is delegated to `GET /entry-state` plus canonical routing
+  precedence.

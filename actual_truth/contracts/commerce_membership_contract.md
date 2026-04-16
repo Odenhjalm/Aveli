@@ -115,6 +115,15 @@ Entrypoint responsibilities:
 12. Webhook records payment in `app.payments`.
 13. Webhook updates `app.memberships` to the canonical membership state.
 
+Ordinary self-signup membership checkout semantics:
+
+- Ordinary self-signup membership checkout is required before create-profile.
+- Ordinary self-signup membership checkout MUST configure a 30-day free trial.
+- Card details are still required during that trial.
+- Trial-backed checkout is still a purchase flow and MUST create an order.
+- Checkout remains purchase/payment authority only and MUST NOT complete
+  onboarding or write onboarding state.
+
 ## 6. PAYMENT UI MODEL
 
 - Stripe MAY be embedded in Aveli UI for payment collection, including Stripe Elements or equivalent embedded collection surfaces.
@@ -176,7 +185,8 @@ Allowed sources:
 Rules:
 
 - purchase MUST create an order
-- purchase MAY include a trial period
+- ordinary self-signup purchase MUST include a 30-day free trial with card
+  details required
 - trial via Stripe is still a purchase and MUST have an order
 - coupon MUST NOT create an order unless a later explicit contract says
   otherwise

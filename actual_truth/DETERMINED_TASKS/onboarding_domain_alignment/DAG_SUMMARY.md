@@ -29,6 +29,7 @@ Deterministic dependency spine:
 - `T04 -> T06 -> T07`
 - `T02 -> T08, T09 -> T10`
 - `T01, T02, T05, T09, T10 -> T11`
+- `T04, T06, T08, T09, T10, T11 -> T13`
 - `T04, T05, T07, T11 -> T12`
 
 Deterministic topological order:
@@ -44,7 +45,8 @@ Deterministic topological order:
 9. `T09`
 10. `T10`
 11. `T11`
-12. `T12`
+12. `T13`
+13. `T12`
 
 ## Task Status
 
@@ -73,6 +75,10 @@ Deterministic topological order:
   referral email transport now lands at `/create-profile?referral_code=...`,
   referral redemption grants membership with source `referral`, and frontend
   create-profile redeems referral codes after profile creation
+- `T13` in progress as the revised ordinary checkout/welcome flow owner;
+  it supersedes the old ordinary target
+  `register -> subscribe -> create-profile -> app` and locks
+  `register -> checkout -> create-profile -> welcome -> onboarding-complete -> app`
 - `T12` planned
 
 ## Blockers Resolved
@@ -95,5 +101,8 @@ This task tree is deterministic because:
 - the decision gates T01-T03 are locked and ratified
 - T04 is completed
 - T05 is resolved as an append-only baseline task requirement
-- every remaining task T06-T12 has explicit upstream dependencies
+- every remaining task T06-T13 has explicit upstream dependencies
 - no remaining task reopens target truth already locked upstream
+- T13 does not reopen referral vocabulary, create-profile ownership, or
+  application-subject naming; it revises the ordinary flow target and extends
+  the shared welcome completion gate

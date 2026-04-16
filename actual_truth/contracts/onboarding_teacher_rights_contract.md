@@ -134,14 +134,15 @@ Canonical route:
 
 Allowed transitions:
 
-- `incomplete -> completed`
+- `welcome_pending -> completed`
 - `completed -> completed`
 
 Rules:
 
-- Completion is explicit-action-derived only.
+- Completion is explicit welcome-confirmation-derived only.
 - `PATCH /profiles/me` MUST NOT mutate `onboarding_state`.
 - Email verification, referral transport, membership state, webhooks, and profile writes MUST NOT mutate `onboarding_state`.
+- Create-profile moves onboarding to `welcome_pending` but does not complete it.
 - `completed -> incomplete` is forbidden.
 - The completion route does not issue tokens.
 - After success, the subject user must refresh auth context through `POST /auth/refresh`.

@@ -89,6 +89,10 @@ membership state.
 - Referral links may transport `referral_code` only as pre-redemption context.
 - Referral email transport must bring the user into onboarding at the
   create-profile step.
+- Referral flow is the explicit exception to ordinary self-signup
+  checkout-first routing. When `referral_code` context is present,
+  create-profile must occur before payment or checkout/subscribe routing.
+- Referral flow still uses the shared onboarding welcome step before app entry.
 - Transport of `referral_code` does not create identity, authenticate a user,
   complete onboarding, or grant membership by itself.
 - `POST /auth/register` remains governed only by `auth_onboarding_contract.md`
@@ -97,6 +101,10 @@ membership state.
   concrete user identity exists.
 - Referral must not create a separate onboarding authority or a separate
   onboarding state machine.
+- This exception selects only referral pre-entry route order:
+  register -> create-profile -> redeem -> welcome -> onboarding-complete -> app.
+  It does not make referral transport, link presence, or redemption final
+  app-entry authority.
 
 ## 7. REFERRAL GRANT SEMANTICS
 
@@ -144,13 +152,18 @@ membership state.
 4. The recipient completes identity creation through the canonical Auth flow
    without `referral_code` in `POST /auth/register`.
 5. The referral recipient enters onboarding at the canonical create-profile
-   step under `auth_onboarding_contract.md`.
+   step under `auth_onboarding_contract.md`, before any ordinary
+   checkout-first route.
 6. After identity creation, a referral redemption flow validates the
    transported code against referral identity and recipient email.
 7. If the referral is valid, referral marks the code redeemed and initiates a
    non-purchase membership grant handoff with source `referral`.
 8. `commerce_membership_contract.md` governs the resulting `app.memberships`
    state as the canonical app membership record.
+9. The user continues through the canonical welcome step and explicit
+   onboarding completion under `auth_onboarding_contract.md`.
+10. App-entry remains governed only by `GET /entry-state` under
+   `onboarding_entry_authority_contract.md`.
 
 ## 11. FORBIDDEN PATTERNS
 
@@ -166,10 +179,10 @@ membership state.
 ## 12. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
 
 - Mounted auth runtime keeps `referral_code` forbidden on `POST /auth/register`.
-- Current referral email transport resolves to `/login` instead of the
-  canonical create-profile onboarding step.
-- Current referral-derived membership handoff still uses source `invite`
-  instead of the canonical source `referral`.
+- Referral email transport that resolves to `/login` or any route other than
+  the canonical create-profile onboarding step is drift.
+- Referral-derived membership handoff using source `invite` instead of the
+  canonical source `referral` is drift.
 - Referral redemption and resulting non-purchase membership grant now route
   through dedicated referral and membership-grant surfaces instead of auth
   registration.

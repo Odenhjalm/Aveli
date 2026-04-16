@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .. import repositories
 
-_VALID_ONBOARDING_STATES = frozenset({"incomplete", "completed"})
+_VALID_ONBOARDING_STATES = frozenset({"incomplete", "welcome_pending", "completed"})
 
 
 async def derive_onboarding_state(user_id: str) -> str:

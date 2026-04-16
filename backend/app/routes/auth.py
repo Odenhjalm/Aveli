@@ -138,7 +138,7 @@ async def _complete_onboarding_at_canonical_route(user_id: str) -> dict[str, Any
                 UPDATE app.auth_subjects
                    SET onboarding_state = 'completed'
                  WHERE user_id = %s
-                   AND onboarding_state IN ('incomplete', 'completed')
+                   AND onboarding_state IN ('welcome_pending', 'completed')
                  RETURNING user_id, onboarding_state, role_v2, role, is_admin
                 """,
                 (user_id,),
@@ -350,6 +350,14 @@ async def create_onboarding_profile(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="profile_not_found",
         )
+    updated_subject = await auth_subjects_repo.mark_create_profile_step_complete(
+        current_user["id"]
+    )
+    if not updated_subject:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="subject_not_found",
+        )
     return schemas.Profile(**profile)
 
 
@@ -371,6 +379,11 @@ async def complete_onboarding(request: Request, current_user: CurrentUser):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="internal_error",
+        )
+    if previous_state not in {"welcome_pending", "completed"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="welcome_confirmation_required",
         )
 
     updated_subject = await _complete_onboarding_at_canonical_route(user_id)

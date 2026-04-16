@@ -23,6 +23,7 @@ RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
 CANCEL_PATH = "checkout/cancel"
 RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
 CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
+ORDINARY_MEMBERSHIP_TRIAL_DAYS = 30
 
 
 class SubscriptionError(Exception):
@@ -113,8 +114,10 @@ async def create_subscription_checkout(
             cancel_url=cancel_url,
             locale="sv",
             metadata=metadata,
+            payment_method_collection="always",
             subscription_data={
                 "metadata": metadata,
+                "trial_period_days": ORDINARY_MEMBERSHIP_TRIAL_DAYS,
             },
         )
 
@@ -424,12 +427,34 @@ async def _handle_subscription_created(payload: Mapping[str, Any]) -> None:
             "subscription_id": _as_string(payload.get("id")),
         },
     )
+    if _subscription_is_trialing(payload):
+        await _apply_membership_state(
+            order,
+            status="active",
+            effective_at=_to_datetime(payload.get("trial_start"))
+            or _to_datetime(payload.get("current_period_start")),
+            expires_at=_subscription_expires_at(payload),
+            canceled_at=None,
+            ended_at=None,
+            step="membership_subscription_trial_started",
+            info={
+                "order_id": str(order["id"]),
+                "subscription_id": _as_string(payload.get("id")),
+                "trial_end": _to_datetime(payload.get("trial_end")).isoformat()
+                if _to_datetime(payload.get("trial_end"))
+                else None,
+            },
+        )
 
 
 async def _handle_subscription_updated(payload: Mapping[str, Any]) -> None:
     order = await _sync_membership_order_references(payload)
     canonical_status = _canonical_status_from_subscription_payload(payload)
-    if canonical_status == "active" and str(order.get("status") or "").lower() != "paid":
+    if (
+        canonical_status == "active"
+        and str(order.get("status") or "").lower() != "paid"
+        and not _subscription_is_trialing(payload)
+    ):
         return
 
     now = datetime.now(timezone.utc)
@@ -855,7 +880,7 @@ def _canonical_status_from_subscription_payload(payload: Mapping[str, Any]) -> s
         return "expired"
     if expires_at and expires_at <= now and status_value not in {"active"}:
         return "expired"
-    if status_value == "active":
+    if status_value in {"active", "trialing"}:
         return "active"
     return "inactive"
 
@@ -863,9 +888,14 @@ def _canonical_status_from_subscription_payload(payload: Mapping[str, Any]) -> s
 def _subscription_expires_at(payload: Mapping[str, Any]) -> datetime | None:
     return _to_datetime(
         payload.get("current_period_end")
+        or payload.get("trial_end")
         or payload.get("cancel_at")
         or payload.get("ended_at")
     )
+
+
+def _subscription_is_trialing(payload: Mapping[str, Any]) -> bool:
+    return str(payload.get("status") or "").strip().lower() == "trialing"
 
 
 def _subscription_canceled_at(payload: Mapping[str, Any]) -> datetime | None:

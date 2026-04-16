@@ -95,7 +95,8 @@ undifferentiated map.
 - Application Subject: `app.auth_subjects` is the canonical application subject
   authority.
 - Onboarding: onboarding state belongs only to `app.auth_subjects`;
-  create-profile is an onboarding step and not profile-projection authority.
+  create-profile and welcome are onboarding steps and not profile-projection,
+  checkout, or frontend-local authority.
 - Profile Projection: `/profiles/me` is projection only.
 - Global App Membership: `app.memberships` is the sole current-state authority
   for global app membership.
@@ -104,11 +105,13 @@ undifferentiated map.
 - Protected Course Access: `app.course_enrollments` owns protected course
   access truth only.
 - Post-Auth Entry Composition: `GET /entry-state` owns the canonical post-auth
-  decision model and is the sole authority for post-auth routing outputs.
+  decision model, post-auth routing precedence, and the sole authority for
+  post-auth routing outputs.
 - Referral: referral must converge into one canonical grant path into
   `app.memberships`, grants time-bounded global paid-access-equivalent
   membership state, does not create purchase or payment truth, occurs via email
-  link, and must bring the user into onboarding at the create-profile step.
+  link, and must bring the user into onboarding at the create-profile step
+  before the shared welcome completion gate.
 - Invite: invite must be removed from active runtime domain topology.
 - Admin / Rights: app-level role/admin subject fields remain on
   `app.auth_subjects` and must not create separate entry semantics.
@@ -168,10 +171,15 @@ surface. In target topology, create-profile belongs to this domain. Profile and
 media domains may supply projection or asset inputs, but they must not own
 onboarding truth.
 
-Unresolved ownership: the locked target truth defines create-profile as an
-onboarding step, but the current contract set does not yet define the canonical
-target execution surface or the exact persistence split for required name and
-optional image/bio inputs. That gap is unresolved and must not be guessed.
+Resolved ownership: `auth_onboarding_contract.md` defines
+`POST /auth/onboarding/create-profile` as the canonical create-profile
+execution surface for required name plus optional bio, while media remains
+separate for optional image handling.
+
+Welcome-step ownership: welcome is an onboarding-owned step. The canonical
+intermediate state after create-profile is `welcome_pending`, persisted on
+`app.auth_subjects.onboarding_state`. Onboarding is completed only after the
+explicit welcome confirmation `Jag förstår hur Aveli fungerar`.
 
 ### Profile Projection
 
@@ -204,10 +212,8 @@ non-purchase grant path. Post-Auth Entry Composition may derive
 `membership_active` from this domain, but it must not redefine membership
 truth.
 
-Unresolved vocabulary: target topology removes invite, but the locked target
-decisions do not yet define the replacement non-purchase membership source
-label for referral-derived grants. That label is unresolved and must not be
-invented in this contract.
+Resolved vocabulary: the canonical non-purchase membership source label for
+referral-derived grants is `referral`.
 
 ### Purchase / Payment
 
@@ -241,7 +247,8 @@ course-access authority.
 Classification: `composition`.
 
 Owns the canonical post-auth decision model and routing outputs through
-`GET /entry-state`.
+`GET /entry-state`. Routing precedence is domain authority, not frontend
+implementation detail.
 
 Must not own identity truth, subject truth, raw membership truth,
 purchase/payment truth, profile projection truth, or protected course-access
@@ -250,6 +257,24 @@ truth.
 Relations: This domain may compose only from canonical upstream sources. Backend
 guards may enforce the canonical decision model technically, but they must not
 define, derive, extend, or invent a separate app-entry model.
+
+Routing precedence:
+
+1. If `can_enter_app` is `true`, route to the authenticated app.
+2. Else if explicit referral context is present and
+   `onboarding_state = "incomplete"`, route to create-profile.
+3. Else if `needs_payment` is `true`, route to the checkout/subscribe
+   pre-entry payment-initiation surface.
+4. Else if `needs_onboarding` is `true` and
+   `onboarding_state = "incomplete"`, route to create-profile.
+5. Else if `needs_onboarding` is `true` and
+   `onboarding_state = "welcome_pending"`, route to welcome.
+6. Else fail closed.
+
+For ordinary self-signup, checkout takes precedence over create-profile. For
+referral flow, explicit `referral_code` context is the exception and routes to
+create-profile before referral redemption. These rules select pre-entry route
+order only and do not move authority into frontend route state.
 
 ### Referral
 
@@ -265,9 +290,10 @@ routing outputs.
 
 Relations: Referral occurs via email link and must land the user in onboarding
 at create-profile in target topology. Referral may transport pre-redemption
-context, but redemption alone never grants purchase/payment truth. Referral and
-Invite must not coexist as overlapping active grant doctrines in target
-topology.
+context used by Post-Auth Entry Composition's routing precedence, but
+redemption alone never grants purchase/payment truth, onboarding completion, or
+app-entry. Referral and Invite must not coexist as overlapping active grant
+doctrines in target topology.
 
 ### Invite
 
@@ -371,6 +397,13 @@ after canonical truth has been defined elsewhere.
   course access.
 - Post-Auth Entry Composition may compose only from Application Subject and
   Global App Membership for the identity-to-entry chain named in this contract.
+- Post-Auth Entry Composition owns routing precedence as domain authority;
+  frontend routing may implement that order but must not own or redefine it.
+- Ordinary self-signup target flow is:
+  register -> checkout -> create-profile -> welcome -> onboarding-complete -> app.
+- Referral target flow remains the checkout-first exception and continues
+  through the shared welcome gate:
+  register -> create-profile -> redeem -> welcome -> onboarding-complete -> app.
 - `/profiles/me` may expose projection data only after or independently of
   routing decisions, but it must never repair, replace, or bypass
   `GET /entry-state`.
@@ -477,6 +510,8 @@ Migration must obey all of the following:
 - profile-derived onboarding completion must be removed rather than renamed
 - create-profile must be implemented as an onboarding-owned step and must not
   be collapsed into `/profiles/me`
+- routing precedence must remain owned by Post-Auth Entry Composition, not
+  frontend implementation convenience
 - referral must converge into one canonical grant path into `app.memberships`
 - the replacement non-purchase membership source vocabulary that survives invite
   removal must be explicitly locked before baseline or runtime mutation is

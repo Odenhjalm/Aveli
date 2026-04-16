@@ -225,6 +225,12 @@
       "filename": "0037_memberships_referral_source_alignment.sql",
       "path": "backend/supabase/baseline_slots/0037_memberships_referral_source_alignment.sql",
       "sha256": "cbfdfc4b7f747b506520824db3b8aede5476945e6645e3e889fb38669854f0f2"
+    },
+    {
+      "slot": 38,
+      "filename": "0038_auth_subjects_welcome_pending_onboarding_state.sql",
+      "path": "backend/supabase/baseline_slots/0038_auth_subjects_welcome_pending_onboarding_state.sql",
+      "sha256": "7f80fdd7fbf035422391463c173dfa247a62e0685718e5234fc0da76c54cdca2"
     }
   ]
 }

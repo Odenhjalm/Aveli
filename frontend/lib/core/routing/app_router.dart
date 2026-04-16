@@ -107,8 +107,12 @@ class AppRouterNotifier extends ChangeNotifier {
       return null;
     }
 
-    final preEntryTarget = _resolvePreEntryTarget(session);
-    if (_isAllowedPreEntryRoute(state, session)) {
+    final referralCode = state.uri.queryParameters['referral_code'];
+    final preEntryTarget = _resolvePreEntryTarget(
+      session,
+      referralCode: referralCode,
+    );
+    if (_isAllowedPreEntryRoute(state, session, referralCode: referralCode)) {
       return null;
     }
 
@@ -162,11 +166,24 @@ String _resolveDefaultAuthedTarget() {
   return RoutePath.home;
 }
 
-String _resolvePreEntryTarget(RouteSessionSnapshot session) {
+String _resolvePreEntryTarget(
+  RouteSessionSnapshot session, {
+  String? referralCode,
+}) {
+  final hasReferralContext = referralCode?.trim().isNotEmpty == true;
+  if (hasReferralContext && session.needsCreateProfile) {
+    return Uri(
+      path: RoutePath.createProfile,
+      queryParameters: {'referral_code': referralCode!.trim()},
+    ).toString();
+  }
   if (session.needsPayment) {
     return RoutePath.subscribe;
   }
-  if (session.needsOnboarding) {
+  if (session.needsWelcome) {
+    return RoutePath.welcome;
+  }
+  if (session.needsCreateProfile) {
     return RoutePath.createProfile;
   }
   return RoutePath.login;
@@ -178,20 +195,34 @@ bool _isPreEntryRoute(GoRouterState state) {
 
 bool _isAllowedPreEntryRoute(
   GoRouterState state,
-  RouteSessionSnapshot session,
+  RouteSessionSnapshot session, {
+  String? referralCode,
+}
 ) {
   final location = state.matchedLocation;
+  final hasReferralContext = referralCode?.trim().isNotEmpty == true;
+  if (hasReferralContext &&
+      session.needsCreateProfile &&
+      location == RoutePath.createProfile) {
+    return true;
+  }
   if (session.needsPayment) {
     return _paymentPreEntryPaths.contains(location);
   }
-  if (session.needsOnboarding) {
-    return _onboardingPreEntryPaths.contains(location);
+  if (session.needsWelcome) {
+    return _welcomePreEntryPaths.contains(location);
+  }
+  if (session.needsCreateProfile) {
+    return _createProfilePreEntryPaths.contains(location);
   }
   return location == RoutePath.login || location == RoutePath.signup;
 }
 
-const Set<String> _onboardingPreEntryPaths = {
+const Set<String> _createProfilePreEntryPaths = {
   RoutePath.createProfile,
+};
+
+const Set<String> _welcomePreEntryPaths = {
   RoutePath.welcome,
   RoutePath.courseIntro,
 };
@@ -205,7 +236,8 @@ const Set<String> _paymentPreEntryPaths = {
 };
 
 const Set<String> _preEntryPaths = {
-  ..._onboardingPreEntryPaths,
+  ..._createProfilePreEntryPaths,
+  ..._welcomePreEntryPaths,
   ..._paymentPreEntryPaths,
 };
 

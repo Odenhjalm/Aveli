@@ -12,6 +12,7 @@
     "T09",
     "T10",
     "T11",
+    "T13",
     "T12"
   ],
   "dependency_spine": [
@@ -19,6 +20,7 @@
     "T04 -> T06 -> T07",
     "T02 -> T08,T09 -> T10",
     "T01,T02,T05,T09,T10 -> T11",
+    "T04,T06,T08,T09,T10,T11 -> T13",
     "T04,T05,T07,T11 -> T12"
   ],
   "tasks": [
@@ -441,6 +443,57 @@
         ],
         "controller_decision": "continue"
       }
+    },
+    {
+      "task_id": "T13",
+      "title": "Lock And Implement Ordinary Checkout Welcome Flow",
+      "TYPE": "OWNER",
+      "DEPENDS_ON": [
+        "T04",
+        "T06",
+        "T08",
+        "T09",
+        "T10",
+        "T11"
+      ],
+      "owner_domains": [
+        "Onboarding",
+        "Post-Auth Entry Composition",
+        "Global App Membership",
+        "Purchase / Payment",
+        "Referral"
+      ],
+      "contradictions_resolved": [
+        "ordinary_flow_superseded",
+        "welcome_step_completion_gate",
+        "checkout_trial_card_required"
+      ],
+      "dependencies": [
+        "T04",
+        "T06",
+        "T08",
+        "T09",
+        "T10",
+        "T11"
+      ],
+      "mutation_scope": [
+        "actual_truth/contracts",
+        "backend/supabase/baseline_slots",
+        "backend auth/onboarding runtime",
+        "backend membership checkout runtime",
+        "frontend post-auth routing",
+        "frontend welcome/onboarding flow",
+        "tests"
+      ],
+      "verification_requirement": "Old ordinary flow register -> subscribe -> create-profile -> app is superseded; new ordinary flow register -> checkout -> create-profile -> welcome -> onboarding-complete -> app is enforced; checkout has 30-day trial with card required; referral remains coherent through welcome completion.",
+      "stop_conditions": [
+        "Any contract keeps the old ordinary flow as canonical",
+        "Any implementation completes onboarding at create-profile",
+        "Any implementation routes post-create-profile from /profiles/me",
+        "Any checkout implementation omits 30-day trial or required card collection for ordinary membership checkout",
+        "Any referral handling bypasses welcome completion"
+      ],
+      "status": "in_progress"
     },
     {
       "task_id": "T12",

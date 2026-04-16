@@ -91,6 +91,7 @@ The following fields are forbidden on covered surfaces:
 ### `409 Conflict`
 
 - `email_already_registered`
+- `welcome_confirmation_required`
 - `already_teacher`
 - `already_learner`
 - `admin_bootstrap_already_consumed`

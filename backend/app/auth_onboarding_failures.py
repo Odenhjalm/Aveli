@@ -37,6 +37,7 @@ _ERROR_MESSAGES = {
     "subject_not_found": "Auth-subjektet kunde inte hittas.",
     "profile_not_found": "Profilen kunde inte hittas.",
     "email_already_registered": "E-postadressen ar redan registrerad.",
+    "welcome_confirmation_required": "Bekrafta valkomststeget innan onboarding kan slutforas.",
     "already_teacher": "Anvandaren har redan lararrollen.",
     "already_learner": "Anvandaren har redan elevrollen.",
     "admin_bootstrap_already_consumed": "Admin-bootstrap har redan forbrukats.",

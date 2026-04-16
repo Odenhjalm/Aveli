@@ -159,7 +159,7 @@ def _normalized_subject_role(role_v2: object, role: object) -> str | None:
 
 def _validated_onboarding_state(value: object) -> str | None:
     normalized = str(value or "").strip().lower()
-    if normalized in {"incomplete", "completed"}:
+    if normalized in {"incomplete", "welcome_pending", "completed"}:
         return normalized
     return None
 

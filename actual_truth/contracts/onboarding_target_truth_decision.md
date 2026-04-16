@@ -63,8 +63,24 @@ repo current state.
 - Create-profile is an onboarding step, not profile-projection authority.
 - At create-profile, the user must provide name and may optionally add image and
   bio.
+- The old ordinary self-signup target flow
+  `register -> subscribe -> create-profile -> app` is superseded.
+- The new locked ordinary self-signup target flow is:
+  `register -> checkout -> create-profile -> welcome -> onboarding-complete -> app`.
+- Ordinary self-signup checkout is required before create-profile.
+- Ordinary self-signup checkout creates purchase-backed membership state with a
+  30-day free trial and required card details.
+- Checkout remains purchase/payment authority only and does not own onboarding
+  completion.
+- Welcome is an onboarding-owned step.
+- Successful create-profile moves onboarding state to `welcome_pending`.
+- Onboarding completes only after explicit welcome confirmation:
+  `Jag förstår hur Aveli fungerar`.
 - Referral must not create a separate onboarding authority.
 - Referral must not create a separate onboarding state machine.
+- Referral remains coherent by keeping the create-profile exception before
+  payment routing and by continuing through the shared welcome completion gate
+  before app entry.
 - Invite must be removed.
 
 ## EXPLICIT OUT-OF-SCOPE ITEMS
