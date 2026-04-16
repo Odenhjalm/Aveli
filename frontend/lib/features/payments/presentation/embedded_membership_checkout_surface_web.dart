@@ -42,6 +42,7 @@ class _EmbeddedMembershipCheckoutSurfaceState
   late final html.DivElement _status;
   late final html.DivElement _mount;
   bool _mountStarted = false;
+  bool _completionHandled = false;
 
   @override
   void initState() {
@@ -57,6 +58,7 @@ class _EmbeddedMembershipCheckoutSurfaceState
     if (oldWidget.clientSecret != widget.clientSecret ||
         oldWidget.stripePublishableKey != widget.stripePublishableKey) {
       _mountStarted = false;
+      _completionHandled = false;
       _status
         ..text = 'Betalningspanelen laddas.'
         ..classes.remove('error');
@@ -124,6 +126,7 @@ class _EmbeddedMembershipCheckoutSurfaceState
         'fetchClientSecret',
         (() => widget.clientSecret).toJS,
       );
+      js_util.setProperty(options, 'onComplete', _handleCheckoutComplete.toJS);
       final checkoutPromise = js_util.callMethod<Object>(
         stripe,
         'initEmbeddedCheckout',
@@ -159,6 +162,24 @@ class _EmbeddedMembershipCheckoutSurfaceState
     });
     html.document.head?.append(script);
     return completer.future;
+  }
+
+  void _handleCheckoutComplete() {
+    if (_completionHandled || !mounted) return;
+    _completionHandled = true;
+    widget.onCheckoutRedirect(_successUri());
+  }
+
+  Uri _successUri() {
+    return Uri(
+      scheme: 'aveliapp',
+      host: 'checkout',
+      path: '/return',
+      queryParameters: {
+        if (widget.sessionId.isNotEmpty) 'session_id': widget.sessionId,
+        if (widget.orderId.isNotEmpty) 'order_id': widget.orderId,
+      },
+    );
   }
 
   void _showDomError(String message) {

@@ -326,6 +326,57 @@ void main() {
     );
 
     test(
+      'embedded membership success polls backend entry state before routing',
+      () {
+        final membershipCheckout = _readFrontendSource(
+          'lib/features/payments/presentation/subscribe_screen.dart',
+        );
+        final authController = _readFrontendSource(
+          'lib/core/auth/auth_controller.dart',
+        );
+        final embeddedWeb = _readFrontendSource(
+          'lib/features/payments/presentation/embedded_membership_checkout_surface_web.dart',
+        );
+        final embeddedHtml = _readFrontendSource(
+          'lib/features/payments/presentation/embedded_checkout_html.dart',
+        );
+        final embeddedWebView = _readFrontendSource(
+          'lib/features/payments/presentation/embedded_membership_checkout_surface_webview.dart',
+        );
+
+        expect(
+          membershipCheckout,
+          contains('await _waitForBackendMembershipConfirmation(uri);'),
+        );
+        expect(membershipCheckout, contains('refreshEntryState()'));
+        expect(membershipCheckout, contains('!entryState.needsPayment'));
+        expect(
+          membershipCheckout,
+          contains('context.go(RoutePath.createProfile)'),
+        );
+        expect(membershipCheckout, contains('context.go(RoutePath.welcome)'));
+        expect(membershipCheckout, contains('context.go(RoutePath.home)'));
+        expect(
+          membershipCheckout,
+          isNot(contains('context.go(RoutePath.checkoutMembership)')),
+        );
+        expect(
+          authController,
+          contains('Future<EntryState?> refreshEntryState()'),
+        );
+        expect(embeddedWeb, contains("'onComplete'"));
+        expect(
+          embeddedWeb,
+          contains('widget.onCheckoutRedirect(_successUri())'),
+        );
+        expect(embeddedHtml, contains('onComplete'));
+        expect(embeddedHtml, contains('window.location.href = successUri'));
+        expect(embeddedWebView, contains('sessionId: widget.sessionId'));
+        expect(embeddedWebView, contains('orderId: widget.orderId'));
+      },
+    );
+
+    test(
       'payment surface has no direct Stripe or Supabase runtime authority',
       () {
         const forbidden = [

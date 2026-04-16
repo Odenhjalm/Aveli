@@ -80,6 +80,8 @@ class _EmbeddedMembershipCheckoutSurfaceState
       buildEmbeddedCheckoutHtml(
         stripePublishableKey: widget.stripePublishableKey,
         clientSecret: widget.clientSecret,
+        sessionId: widget.sessionId,
+        orderId: widget.orderId,
       ),
       baseUrl: 'https://aveli.app',
     );

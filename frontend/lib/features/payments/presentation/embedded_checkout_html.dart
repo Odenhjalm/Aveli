@@ -3,9 +3,22 @@ import 'dart:convert';
 String buildEmbeddedCheckoutHtml({
   required String stripePublishableKey,
   required String clientSecret,
+  required String sessionId,
+  required String orderId,
 }) {
   final publishableKeyLiteral = jsonEncode(stripePublishableKey);
   final clientSecretLiteral = jsonEncode(clientSecret);
+  final successUriLiteral = jsonEncode(
+    Uri(
+      scheme: 'aveliapp',
+      host: 'checkout',
+      path: '/return',
+      queryParameters: {
+        if (sessionId.isNotEmpty) 'session_id': sessionId,
+        if (orderId.isNotEmpty) 'order_id': orderId,
+      },
+    ).toString(),
+  );
   return '''
 <!doctype html>
 <html lang="sv">
@@ -70,6 +83,7 @@ String buildEmbeddedCheckoutHtml({
   <script>
     const publishableKey = $publishableKeyLiteral;
     const clientSecret = $clientSecretLiteral;
+    const successUri = $successUriLiteral;
 
     function setStatus(message, isError) {
       const status = document.getElementById('status');
@@ -94,7 +108,10 @@ String buildEmbeddedCheckoutHtml({
       try {
         const stripe = window.Stripe(publishableKey);
         const checkout = await stripe.initEmbeddedCheckout({
-          fetchClientSecret: async () => clientSecret
+          fetchClientSecret: async () => clientSecret,
+          onComplete: () => {
+            window.location.href = successUri;
+          }
         });
         document.getElementById('status').remove();
         checkout.mount('#checkout');

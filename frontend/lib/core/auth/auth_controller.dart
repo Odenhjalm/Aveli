@@ -96,6 +96,25 @@ class AuthController extends StateNotifier<AuthState> {
     await _hydrateProfile();
   }
 
+  Future<EntryState?> refreshEntryState() async {
+    try {
+      final entryState = await _fetchEntryState();
+      if (entryState == null) return null;
+      state = state.copyWith(
+        entryState: entryState,
+        hasStoredToken: true,
+        isLoading: false,
+        error: null,
+      );
+      gate.reset();
+      return entryState;
+    } catch (err, stackTrace) {
+      final failure = AppFailure.from(err, stackTrace);
+      state = state.copyWith(isLoading: false, error: failure.message);
+      throw failure;
+    }
+  }
+
   Future<void> _hydrateProfile() async {
     try {
       final profile = await _repo.getCurrentProfile();
@@ -143,10 +162,7 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> register(
-    String email,
-    String password,
-  ) async {
+  Future<void> register(String email, String password) async {
     state = state.copyWith(
       isLoading: true,
       error: null,
@@ -155,10 +171,7 @@ class AuthController extends StateNotifier<AuthState> {
       clearEntryState: true,
     );
     try {
-      final profile = await _repo.register(
-        email: email,
-        password: password,
-      );
+      final profile = await _repo.register(email: email, password: password);
       final entryState = await _fetchEntryState();
       state = AuthState(
         profile: profile,

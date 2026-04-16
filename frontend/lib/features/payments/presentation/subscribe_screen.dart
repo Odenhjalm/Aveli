@@ -12,6 +12,7 @@ import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/payments/presentation/embedded_membership_checkout_surface.dart';
 import 'package:aveli/features/paywall/application/checkout_flow.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
@@ -31,9 +32,23 @@ class MembershipCheckoutScreen extends ConsumerStatefulWidget {
 
 class _MembershipCheckoutScreenState
     extends ConsumerState<MembershipCheckoutScreen> {
+  static const Duration _entryStatePollInterval = Duration(milliseconds: 1500);
+  static const Duration _entryStatePollTimeout = Duration(seconds: 15);
+
   String? _submittingInterval;
   String? _checkoutInterval;
   MembershipCheckoutLaunch? _checkoutLaunch;
+  Uri? _checkoutSuccessUri;
+  bool _isWaitingForBackendConfirmation = false;
+  bool _backendSyncTimedOut = false;
+  String? _backendSyncMessage;
+  int _backendSyncGeneration = 0;
+
+  @override
+  void dispose() {
+    _backendSyncGeneration += 1;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -108,10 +123,15 @@ class _MembershipCheckoutScreenState
                               checkoutLaunch: _checkoutLaunch,
                               checkoutInterval: _checkoutInterval,
                               submittingInterval: _submittingInterval,
+                              backendSyncInProgress:
+                                  _isWaitingForBackendConfirmation,
+                              backendSyncTimedOut: _backendSyncTimedOut,
+                              backendSyncMessage: _backendSyncMessage,
                               stripePublishableKey: config.stripePublishableKey,
                               onRequestLogin: _redirectToLogin,
                               onStartCheckout: _startMembershipCheckout,
                               onCheckoutRedirect: _handleCheckoutRedirect,
+                              onRetryBackendSync: _retryBackendConfirmation,
                             ),
                           ),
                         ],
@@ -159,8 +179,13 @@ class _MembershipCheckoutScreenState
       );
       if (!mounted) return;
       setState(() {
+        _backendSyncGeneration += 1;
         _checkoutLaunch = launch;
         _checkoutInterval = interval;
+        _checkoutSuccessUri = null;
+        _isWaitingForBackendConfirmation = false;
+        _backendSyncTimedOut = false;
+        _backendSyncMessage = null;
       });
     } catch (error, stackTrace) {
       if (!mounted) return;
@@ -178,12 +203,142 @@ class _MembershipCheckoutScreenState
   }
 
   Future<void> _handleCheckoutRedirectAsync(Uri uri) async {
+    if (_isSuccessUri(uri)) {
+      await _waitForBackendMembershipConfirmation(uri);
+      return;
+    }
+
     final handled = await ref.read(deepLinkServiceProvider).handleUri(uri);
     if (handled || !mounted) return;
 
     await ref.read(authControllerProvider.notifier).loadSession();
     if (!mounted || !context.mounted) return;
     context.go(_checkoutResultPath(uri));
+  }
+
+  Future<void> _retryBackendConfirmation() async {
+    final uri = _checkoutSuccessUri ?? _successUriFromLaunch();
+    if (uri == null) return;
+    await _waitForBackendMembershipConfirmation(uri);
+  }
+
+  Future<void> _waitForBackendMembershipConfirmation(Uri uri) async {
+    final generation = ++_backendSyncGeneration;
+    _checkoutSuccessUri = uri;
+    final sessionId = _checkoutSessionId(uri);
+    final orderId = _checkoutOrderId(uri);
+    ref
+        .read(checkoutRedirectStateProvider.notifier)
+        .state = CheckoutRedirectState(
+      status: CheckoutRedirectStatus.processing,
+      sessionId: sessionId,
+      orderId: orderId,
+    );
+
+    if (mounted) {
+      setState(() {
+        _isWaitingForBackendConfirmation = true;
+        _backendSyncTimedOut = false;
+        _backendSyncMessage = null;
+      });
+    }
+
+    final deadline = DateTime.now().add(_entryStatePollTimeout);
+    Object? lastError;
+    while (mounted &&
+        generation == _backendSyncGeneration &&
+        DateTime.now().isBefore(deadline)) {
+      try {
+        final entryState = await ref
+            .read(authControllerProvider.notifier)
+            .refreshEntryState();
+        if (!mounted || generation != _backendSyncGeneration) return;
+        if (entryState != null && !entryState.needsPayment) {
+          ref
+              .read(checkoutRedirectStateProvider.notifier)
+              .state = CheckoutRedirectState(
+            status: CheckoutRedirectStatus.success,
+            sessionId: sessionId,
+            orderId: orderId,
+          );
+          _routeForward(entryState);
+          return;
+        }
+        lastError = null;
+      } catch (error, stackTrace) {
+        lastError = AppFailure.from(error, stackTrace).message;
+      }
+
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) break;
+      await Future<void>.delayed(
+        remaining < _entryStatePollInterval
+            ? remaining
+            : _entryStatePollInterval,
+      );
+    }
+
+    if (!mounted || generation != _backendSyncGeneration) return;
+    ref
+        .read(checkoutRedirectStateProvider.notifier)
+        .state = CheckoutRedirectState(
+      status: CheckoutRedirectStatus.error,
+      sessionId: sessionId,
+      orderId: orderId,
+      error: lastError ?? 'Webhook confirmation timed out.',
+    );
+    setState(() {
+      _isWaitingForBackendConfirmation = false;
+      _backendSyncTimedOut = true;
+      _backendSyncMessage = lastError == null
+          ? 'Vi väntar fortfarande på bekräftelsen från Stripe. Kontrollera igen om en stund.'
+          : 'Kunde inte kontrollera medlemskapet just nu. Försök igen.';
+    });
+  }
+
+  String? _checkoutSessionId(Uri uri) {
+    return _nonEmpty(uri.queryParameters['session_id']) ??
+        _nonEmpty(ref.read(checkoutRedirectStateProvider).sessionId) ??
+        _nonEmpty(_checkoutLaunch?.sessionId);
+  }
+
+  String? _checkoutOrderId(Uri uri) {
+    return _nonEmpty(uri.queryParameters['order_id']) ??
+        _nonEmpty(ref.read(checkoutRedirectStateProvider).orderId) ??
+        _nonEmpty(_checkoutLaunch?.orderId);
+  }
+
+  String? _nonEmpty(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    return value;
+  }
+
+  Uri? _successUriFromLaunch() {
+    final launch = _checkoutLaunch;
+    if (launch == null) return null;
+    return Uri(
+      scheme: 'aveliapp',
+      host: 'checkout',
+      path: '/return',
+      queryParameters: {
+        if (launch.sessionId.isNotEmpty) 'session_id': launch.sessionId,
+        if (launch.orderId.isNotEmpty) 'order_id': launch.orderId,
+      },
+    );
+  }
+
+  void _routeForward(EntryState entryState) {
+    if (!mounted || !context.mounted) return;
+    if (entryState.needsPayment) return;
+    if (entryState.needsOnboarding) {
+      if (entryState.onboardingState == 'welcome_pending') {
+        context.go(RoutePath.welcome);
+      } else {
+        context.go(RoutePath.createProfile);
+      }
+      return;
+    }
+    context.go(RoutePath.home);
   }
 
   String _checkoutResultPath(Uri uri) {
@@ -350,10 +505,14 @@ class _CheckoutActionPanel extends StatelessWidget {
     required this.checkoutLaunch,
     required this.checkoutInterval,
     required this.submittingInterval,
+    required this.backendSyncInProgress,
+    required this.backendSyncTimedOut,
+    required this.backendSyncMessage,
     required this.stripePublishableKey,
     required this.onRequestLogin,
     required this.onStartCheckout,
     required this.onCheckoutRedirect,
+    required this.onRetryBackendSync,
   });
 
   final String? envMessage;
@@ -366,10 +525,14 @@ class _CheckoutActionPanel extends StatelessWidget {
   final MembershipCheckoutLaunch? checkoutLaunch;
   final String? checkoutInterval;
   final String? submittingInterval;
+  final bool backendSyncInProgress;
+  final bool backendSyncTimedOut;
+  final String? backendSyncMessage;
   final String stripePublishableKey;
   final VoidCallback onRequestLogin;
   final ValueChanged<String> onStartCheckout;
   final ValueChanged<Uri> onCheckoutRedirect;
+  final Future<void> Function() onRetryBackendSync;
 
   @override
   Widget build(BuildContext context) {
@@ -377,7 +540,14 @@ class _CheckoutActionPanel extends StatelessWidget {
     return _Panel(
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 180),
-        child: launch == null
+        child: backendSyncInProgress || backendSyncTimedOut
+            ? _BackendConfirmationState(
+                key: const ValueKey('membership-backend-confirmation'),
+                timedOut: backendSyncTimedOut,
+                message: backendSyncMessage,
+                onRetry: onRetryBackendSync,
+              )
+            : launch == null
             ? _CheckoutStartState(
                 key: const ValueKey('membership-checkout-start'),
                 envMessage: envMessage,
@@ -496,6 +666,55 @@ class _CheckoutStartState extends StatelessWidget {
       return 'Inbyggd betalning är inte tillgänglig på den här plattformen.';
     }
     return null;
+  }
+}
+
+class _BackendConfirmationState extends StatelessWidget {
+  const _BackendConfirmationState({
+    super.key,
+    required this.timedOut,
+    required this.message,
+    required this.onRetry,
+  });
+
+  final bool timedOut;
+  final String? message;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          timedOut
+              ? 'Vi väntar fortfarande på bekräftelsen'
+              : 'Bekräftar medlemskapet',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        gap12,
+        Text(
+          message ??
+              'Betalningen är klar hos Stripe. Aveli väntar på serverns bekräftelse innan du skickas vidare.',
+          style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+        ),
+        gap24,
+        if (!timedOut) ...[
+          const Center(child: CircularProgressIndicator()),
+        ] else ...[
+          GradientButton(
+            borderRadius: BorderRadius.circular(8),
+            onPressed: () => unawaited(onRetry()),
+            child: const Text('Kontrollera igen'),
+          ),
+        ],
+        gap20,
+        const _TrustLine(),
+      ],
+    );
   }
 }
 
