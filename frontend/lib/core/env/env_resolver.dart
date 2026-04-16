@@ -77,6 +77,7 @@ class EnvResolver {
     'BUILD_NUMBER': String.fromEnvironment('BUILD_NUMBER'),
     'API_BASE_URL': String.fromEnvironment('API_BASE_URL'),
     'FRONTEND_URL': String.fromEnvironment('FRONTEND_URL'),
+    'STRIPE_PUBLISHABLE_KEY': String.fromEnvironment('STRIPE_PUBLISHABLE_KEY'),
     'OAUTH_REDIRECT_WEB': String.fromEnvironment('OAUTH_REDIRECT_WEB'),
     'OAUTH_REDIRECT_MOBILE': String.fromEnvironment('OAUTH_REDIRECT_MOBILE'),
     'SUBSCRIPTIONS_ENABLED': String.fromEnvironment('SUBSCRIPTIONS_ENABLED'),
@@ -186,6 +187,9 @@ class EnvResolver {
 
   static String get apiBaseUrl => _readFirstNonEmpty(const ['API_BASE_URL']);
 
+  static String get stripePublishableKey =>
+      _readFirstNonEmpty(const ['STRIPE_PUBLISHABLE_KEY']);
+
   static String get oauthRedirectWeb =>
       _readFirstNonEmpty(const ['OAUTH_REDIRECT_WEB']);
 
@@ -208,6 +212,7 @@ class EnvResolver {
       'EnvResolver (${mode.name}) resolved: '
       'apiBaseUrl=${_logValue(apiBaseUrl)} '
       'frontendUrl=${_logValue(frontendUrl)} '
+      'stripePublishableKey=${stripePublishableKey.isEmpty ? '(empty)' : '(set)'} '
       'oauthRedirectWeb=${_logValue(oauthRedirectWeb)} '
       'oauthRedirectMobile=${_logValue(oauthRedirectMobile)} '
       'source=${mode == EnvResolutionMode.runtime ? 'dotenv>dart-define' : 'dart-define-only'}',

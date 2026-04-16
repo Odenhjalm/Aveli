@@ -95,7 +95,7 @@ void main() {
             requests.add(options);
             expect(options.path, '/api/billing/create-subscription');
             return _jsonResponse({
-              'url': 'https://checkout.test/membership',
+              'client_secret': 'cs_secret_membership',
               'session_id': 'cs_membership',
               'order_id': 'order_membership',
             });
@@ -107,7 +107,7 @@ void main() {
         expect(requests, hasLength(1));
         expect(requests.single.path, '/api/billing/create-subscription');
         expect(requests.single.data, {'interval': 'month'});
-        expect(launch.url, 'https://checkout.test/membership');
+        expect(launch.clientSecret, 'cs_secret_membership');
         expect(launch.sessionId, 'cs_membership');
         expect(launch.orderId, 'order_membership');
       },
@@ -261,6 +261,30 @@ void main() {
 
   group('COP-010 non-authority source contract', () {
     test(
+      'ordinary membership checkout uses embedded launch data without hosted URL navigation',
+      () {
+        final api = _readFrontendSource(
+          'lib/features/paywall/data/checkout_api.dart',
+        );
+        final subscribe = _readFrontendSource(
+          'lib/features/payments/presentation/subscribe_screen.dart',
+        );
+
+        expect(api, contains('MembershipCheckoutLaunch'));
+        expect(api, contains("payload['client_secret']"));
+        expect(subscribe, contains('EmbeddedMembershipCheckoutSurface'));
+        expect(subscribe, contains('launch.clientSecret'));
+        expect(subscribe, contains('14 dagar'));
+        expect(subscribe, contains('Kortuppgifter krävs'));
+        expect(
+          subscribe,
+          isNot(contains('router.pushNamed(AppRoute.checkout')),
+        );
+        expect(subscribe, isNot(contains('launch.url')));
+      },
+    );
+
+    test(
       'payment surface has no direct Stripe or Supabase runtime authority',
       () {
         const forbidden = [
@@ -359,6 +383,11 @@ void main() {
 const _paymentSurfaceSourceFiles = [
   'lib/features/payments/application/billing_providers.dart',
   'lib/features/payments/data/billing_api.dart',
+  'lib/features/payments/presentation/embedded_checkout_html.dart',
+  'lib/features/payments/presentation/embedded_membership_checkout_surface.dart',
+  'lib/features/payments/presentation/embedded_membership_checkout_surface_stub.dart',
+  'lib/features/payments/presentation/embedded_membership_checkout_surface_web.dart',
+  'lib/features/payments/presentation/embedded_membership_checkout_surface_webview.dart',
   'lib/features/payments/presentation/paywall_prompt.dart',
   'lib/features/payments/presentation/subscribe_screen.dart',
   'lib/features/paywall/application/checkout_flow.dart',

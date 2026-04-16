@@ -22,6 +22,8 @@ abstract class RoutePath {
   static const welcome = '/welcome';
   static const profileSubscription = '/profile/subscription';
   static const checkout = '/checkout/web';
+  static const checkoutReturn = '/checkout/return';
+  static const checkoutHostedCancel = '/checkout/cancel';
   static const profileView = '/profile/view/:id';
   static const teacherProfile = '/teacher/profile/:id';
   static const serviceDetail = '/service/:id';

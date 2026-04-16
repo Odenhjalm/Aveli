@@ -197,8 +197,7 @@ bool _isAllowedPreEntryRoute(
   GoRouterState state,
   RouteSessionSnapshot session, {
   String? referralCode,
-}
-) {
+}) {
   final location = state.matchedLocation;
   final hasReferralContext = referralCode?.trim().isNotEmpty == true;
   if (hasReferralContext &&
@@ -218,9 +217,7 @@ bool _isAllowedPreEntryRoute(
   return location == RoutePath.login || location == RoutePath.signup;
 }
 
-const Set<String> _createProfilePreEntryPaths = {
-  RoutePath.createProfile,
-};
+const Set<String> _createProfilePreEntryPaths = {RoutePath.createProfile};
 
 const Set<String> _welcomePreEntryPaths = {
   RoutePath.welcome,
@@ -231,6 +228,8 @@ const Set<String> _paymentPreEntryPaths = {
   RoutePath.subscribe,
   RoutePath.profileSubscription,
   RoutePath.checkout,
+  RoutePath.checkoutReturn,
+  RoutePath.checkoutHostedCancel,
   RoutePath.checkoutSuccess,
   RoutePath.checkoutCancel,
 };
@@ -289,9 +288,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.signup,
         name: AppRoute.signup,
-        builder: (context, state) => SignupPage(
-          initialEmail: state.uri.queryParameters['email'],
-        ),
+        builder: (context, state) =>
+            SignupPage(initialEmail: state.uri.queryParameters['email']),
       ),
       GoRoute(
         path: RoutePath.verifyEmail,
@@ -411,6 +409,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           }
           return CheckoutWebViewPage(url: url);
         },
+      ),
+      GoRoute(
+        path: RoutePath.checkoutReturn,
+        name: AppRoute.checkoutReturn,
+        builder: (context, state) => const CheckoutResultPage(success: true),
+      ),
+      GoRoute(
+        path: RoutePath.checkoutHostedCancel,
+        name: AppRoute.checkoutHostedCancel,
+        builder: (context, state) => const CheckoutResultPage(success: false),
       ),
       GoRoute(
         path: RoutePath.checkoutSuccess,

@@ -76,6 +76,16 @@ final _testAppRouterProvider = Provider<GoRouter>((ref) {
         name: AppRoute.checkoutSuccess,
         builder: (context, _) => const SizedBox.shrink(),
       ),
+      GoRoute(
+        path: RoutePath.checkoutReturn,
+        name: AppRoute.checkoutReturn,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: RoutePath.checkoutHostedCancel,
+        name: AppRoute.checkoutHostedCancel,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
     ],
   );
 });
@@ -168,6 +178,21 @@ void main() {
     isEntryStateLoading: false,
   );
 
+  const welcomePending = RouteSessionSnapshot(
+    entryState: EntryState(
+      canEnterApp: false,
+      onboardingState: 'welcome_pending',
+      onboardingCompleted: false,
+      membershipActive: true,
+      needsOnboarding: true,
+      needsPayment: false,
+      roleV2: 'learner',
+      role: 'learner',
+      isAdmin: false,
+    ),
+    isEntryStateLoading: false,
+  );
+
   const tentativeSession = RouteSessionSnapshot(
     entryState: null,
     isEntryStateLoading: true,
@@ -230,23 +255,22 @@ void main() {
     },
   );
 
-  testWidgets('onboarding redirects private routes to welcome', (
-    tester,
-  ) async {
-    final router = await _pumpHarness(tester, onboardingNeeded);
+  testWidgets(
+    'incomplete onboarding redirects private routes to create profile',
+    (tester) async {
+      final router = await _pumpHarness(tester, onboardingNeeded);
 
-    router.go(RoutePath.home);
-    await tester.pump();
+      router.go(RoutePath.home);
+      await tester.pump();
 
-    expect(
-      router.routeInformationProvider.value.uri.path,
-      RoutePath.welcome,
-    );
-  });
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        RoutePath.createProfile,
+      );
+    },
+  );
 
-  testWidgets('onboarding allows create-profile route', (
-    tester,
-  ) async {
+  testWidgets('onboarding allows create-profile route', (tester) async {
     final router = await _pumpHarness(tester, onboardingNeeded);
 
     router.go(RoutePath.createProfile);
@@ -258,18 +282,26 @@ void main() {
     );
   });
 
-  testWidgets(
-    'onboarding allows welcome route',
-    (tester) async {
-      final router = await _pumpHarness(tester, onboardingNeeded);
+  testWidgets('welcome-pending onboarding allows welcome route', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, welcomePending);
 
-      router.go(RoutePath.welcome);
+    router.go(RoutePath.welcome);
+    await tester.pump();
+
+    expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);
+  });
+
+  testWidgets(
+    'welcome-pending onboarding redirects private routes to welcome',
+    (tester) async {
+      final router = await _pumpHarness(tester, welcomePending);
+
+      router.go(RoutePath.home);
       await tester.pump();
 
-      expect(
-        router.routeInformationProvider.value.uri.path,
-        RoutePath.welcome,
-      );
+      expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);
     },
   );
 
@@ -361,6 +393,21 @@ void main() {
       expect(
         router.routeInformationProvider.value.uri.path,
         RoutePath.subscribe,
+      );
+    },
+  );
+
+  testWidgets(
+    'checkout return routes to create profile after backend confirms membership',
+    (tester) async {
+      final router = await _pumpHarness(tester, onboardingNeeded);
+
+      router.go(RoutePath.checkoutReturn);
+      await tester.pump();
+
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        RoutePath.createProfile,
       );
     },
   );

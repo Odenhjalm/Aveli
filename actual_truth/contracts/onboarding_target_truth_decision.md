@@ -69,7 +69,7 @@ repo current state.
   `register -> checkout -> create-profile -> welcome -> onboarding-complete -> app`.
 - Ordinary self-signup checkout is required before create-profile.
 - Ordinary self-signup checkout creates purchase-backed membership state with a
-  30-day free trial and required card details.
+  14-day trial/test period and required card details.
 - Checkout remains purchase/payment authority only and does not own onboarding
   completion.
 - Welcome is an onboarding-owned step.

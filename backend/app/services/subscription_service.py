@@ -20,10 +20,7 @@ from ..services.onboarding_state import sync_onboarding_state
 logger = logging.getLogger(__name__)
 
 RETURN_PATH = "checkout/return?session_id={CHECKOUT_SESSION_ID}"
-CANCEL_PATH = "checkout/cancel"
-RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
-CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
-ORDINARY_MEMBERSHIP_TRIAL_DAYS = 30
+ORDINARY_MEMBERSHIP_TRIAL_DAYS = 14
 
 
 class SubscriptionError(Exception):
@@ -102,22 +99,24 @@ async def create_subscription_checkout(
     )
     metadata["order_id"] = str(order["id"])
 
-    success_url = settings.checkout_success_url or _build_frontend_url(RETURN_PATH) or RETURN_DEEP_LINK
-    cancel_url = settings.checkout_cancel_url or _build_frontend_url(CANCEL_PATH) or CANCEL_DEEP_LINK
+    return_url = _build_frontend_url(RETURN_PATH)
 
     def _create_session() -> dict[str, Any]:
         return stripe.checkout.Session.create(
             mode="subscription",
             customer=customer_id,
             line_items=[{"price": price_config.price_id, "quantity": 1}],
-            success_url=success_url,
-            cancel_url=cancel_url,
+            ui_mode="embedded",
+            return_url=return_url,
             locale="sv",
             metadata=metadata,
             payment_method_collection="always",
             subscription_data={
                 "metadata": metadata,
                 "trial_period_days": ORDINARY_MEMBERSHIP_TRIAL_DAYS,
+                "trial_settings": {
+                    "end_behavior": {"missing_payment_method": "cancel"},
+                },
             },
         )
 
@@ -132,10 +131,10 @@ async def create_subscription_checkout(
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise SubscriptionError("Stripe-fel vid prenumerationssession", status_code=502) from exc
 
-    checkout_url = session.get("url")
+    client_secret = session.get("client_secret")
     session_id = session.get("id")
-    if not isinstance(checkout_url, str):
-        raise SubscriptionError("Stripe-session saknar betalningsadress", status_code=502)
+    if not isinstance(client_secret, str) or not client_secret:
+        raise SubscriptionError("Stripe-session saknar klienthemlighet", status_code=502)
     if not isinstance(session_id, str) or not session_id:
         raise SubscriptionError("Stripe-session saknar id", status_code=502)
 
@@ -158,7 +157,7 @@ async def create_subscription_checkout(
     )
 
     return SubscriptionCheckoutResponse(
-        url=checkout_url,
+        client_secret=client_secret,
         session_id=session_id,
         order_id=str(order["id"]),
     )

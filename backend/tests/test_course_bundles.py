@@ -131,13 +131,12 @@ async def _bundles_table_ready() -> bool:
     return bool(row and row[0])
 
 
-async def _register_user(client, email: str, password: str, display_name: str):
+async def _register_user(client, email: str, password: str, _display_name: str):
     register_resp = await client.post(
         "/auth/register",
         json={
             "email": email,
             "password": password,
-            "display_name": display_name,
         },
     )
     assert register_resp.status_code == 201, register_resp.text

@@ -27,6 +27,8 @@ abstract class AppRoute {
   static const welcome = 'welcome';
   static const profileSubscription = 'profile-subscription';
   static const checkout = 'checkout';
+  static const checkoutReturn = 'checkout-return';
+  static const checkoutHostedCancel = 'checkout-hosted-cancel';
   static const tarot = 'tarot';
   static const admin = 'admin';
   static const adminMedia = 'admin-media';

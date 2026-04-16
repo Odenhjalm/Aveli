@@ -6,11 +6,13 @@ class AppConfig {
   const AppConfig({
     required this.apiBaseUrl,
     required this.subscriptionsEnabled,
+    this.stripePublishableKey = '',
     this.imageLoggingEnabled = false,
   });
 
   final String apiBaseUrl;
   final bool subscriptionsEnabled;
+  final String stripePublishableKey;
   final bool imageLoggingEnabled;
 }
 

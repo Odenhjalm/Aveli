@@ -18,6 +18,12 @@ Post-auth entry authority and routing composition are owned by `onboarding_entry
 - Course purchase and membership purchase use separate canonical initiation entrypoints.
 - Stripe webhook completion is the only canonical payment-confirmation path.
 - Stripe MAY be embedded in Aveli UI for payment collection only and this MUST NOT change authority.
+- Ordinary purchase-backed membership checkout uses embedded Stripe Checkout as
+  the canonical implementation path.
+- Hosted or raw Stripe URL membership checkout is superseded for ordinary
+  purchase-backed membership checkout.
+- Course and bundle checkout remain on the current hosted checkout path unless
+  a later explicit contract expands embedded checkout scope.
 - Course bundles are included in MVP as a separate order-backed and payment-backed commerce domain.
 - Notification audiences MUST preserve separation between membership authority and course-access authority.
 
@@ -105,10 +111,12 @@ Entrypoint responsibilities:
 2. Backend validates the membership purchase request.
 3. Backend resolves the membership Stripe price.
 4. Backend creates a pending order in `app.orders`.
-5. Backend creates a Stripe subscription checkout session.
+5. Backend creates a Stripe subscription Checkout Session configured for
+   embedded checkout.
 6. Backend stores order linkage in Stripe metadata.
 7. Backend ensures the single canonical current-state row in `app.memberships` remains non-access-granting until canonical payment confirmation is applied.
-8. Backend returns checkout session data to the client.
+8. Backend returns embedded checkout launch data to the client:
+   `{ "client_secret": "string", "session_id": "string", "order_id": "string" }`.
 9. Stripe sends subscription and invoice events to `POST /api/stripe/webhook`.
 10. Webhook resolves the event back to the membership purchase order.
 11. Webhook marks the order as paid.
@@ -118,16 +126,25 @@ Entrypoint responsibilities:
 Ordinary self-signup membership checkout semantics:
 
 - Ordinary self-signup membership checkout is required before create-profile.
-- Ordinary self-signup membership checkout MUST configure a 30-day free trial.
+- Ordinary self-signup membership checkout MUST configure a 14-day trial/test
+  period.
 - Card details are still required during that trial.
 - Trial-backed checkout is still a purchase flow and MUST create an order.
+- Embedded Stripe Checkout is the canonical ordinary self-signup membership
+  payment collection path.
+- Hosted or raw Stripe URL membership checkout is superseded and is not a
+  canonical fallback unless a later explicit fallback decision authorizes it.
 - Checkout remains purchase/payment authority only and MUST NOT complete
   onboarding or write onboarding state.
 
 ## 6. PAYMENT UI MODEL
 
-- Stripe MAY be embedded in Aveli UI for payment collection, including Stripe Elements or equivalent embedded collection surfaces.
-- Payment UI MUST remain fully hosted on an Aveli-controlled domain.
+- Ordinary purchase-backed membership checkout MUST use Stripe embedded
+  Checkout inside an Aveli-controlled payment surface.
+- Paid course and bundle checkout remain hosted checkout URL flows unless a
+  later explicit contract expands embedded checkout scope.
+- Payment UI MUST remain fully hosted on an Aveli-controlled domain when an
+  Aveli-hosted payment surface is used.
 - Frontend MAY collect payment details.
 - Frontend MAY confirm a payment intent with Stripe for payment collection execution.
 - Frontend MUST NOT grant app access.
@@ -185,7 +202,7 @@ Allowed sources:
 Rules:
 
 - purchase MUST create an order
-- ordinary self-signup purchase MUST include a 30-day free trial with card
+- ordinary self-signup purchase MUST include a 14-day trial/test period with card
   details required
 - trial via Stripe is still a purchase and MUST have an order
 - coupon MUST NOT create an order unless a later explicit contract says
@@ -284,6 +301,10 @@ Membership input rules:
 - Inferring a grace period from Stripe retry behavior without a separate explicit contract.
 - Treating session-status, portal, or cancellation surfaces as launch purchase entrypoints.
 - Treating embedded Stripe UI success as membership authority.
+- Returning a hosted or raw Stripe URL as the canonical ordinary membership
+  checkout response after embedded membership checkout activation.
+- Loading a raw Stripe-hosted checkout URL as the canonical ordinary
+  membership checkout renderer after embedded membership checkout activation.
 - Letting frontend mutate membership state after direct Stripe confirmation.
 - Letting course bundles grant app access or mutate `app.memberships`.
 - Using membership to infer course-level notification audience.
@@ -297,7 +318,8 @@ Membership input rules:
 - Frontend must never use `POST /api/checkout/create` for membership purchase.
 - Frontend must never use `POST /api/checkout/create` for service purchase in launch scope.
 - Frontend must treat `POST /api/stripe/webhook` as backend-only.
-- Frontend MAY embed Stripe Elements or equivalent embedded Stripe payment UI within an Aveli-hosted payment surface.
+- Frontend MUST render ordinary membership checkout through an Aveli-hosted
+  embedded Stripe Checkout surface.
 - Frontend embedded payment UI MUST remain non-authoritative.
 - Frontend payment success or payment-intent confirmation MUST NOT grant app access.
 - Frontend must not depend on polymorphic request bodies.
@@ -308,8 +330,13 @@ Membership input rules:
 - Frontend course purchase response shape:
   - `{ "url": string, "session_id": string, "order_id": string }`
 - Frontend membership purchase response shape:
-  - `{ "url": string, "session_id": string, "order_id": string }`
-- All checkout responses MUST follow the same response shape regardless of purchase type.
+  - `{ "client_secret": "string", "session_id": "string", "order_id": "string" }`
+- Course and bundle hosted checkout responses keep the hosted URL response
+  shape.
+- Membership embedded checkout responses MUST NOT include hosted or raw Stripe
+  URL transport as canonical success data.
+- Checkout response shapes are purchase-type-specific after embedded
+  membership checkout activation.
 
 ## 15. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
 

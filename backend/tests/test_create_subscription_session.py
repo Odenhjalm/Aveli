@@ -28,7 +28,7 @@ async def test_create_subscription_session(async_client, monkeypatch):
 
     def fake_session_create(**kwargs):
         captured_session.update(kwargs)
-        return {"id": "cs_test", "url": "https://checkout.stripe.com/cs_test"}
+        return {"id": "cs_test", "client_secret": "cs_test_secret"}
 
     def fake_price_retrieve(price_id):
         return {
@@ -50,14 +50,27 @@ async def test_create_subscription_session(async_client, monkeypatch):
     )
     assert resp.status_code == 201, resp.text
     payload = resp.json()
-    assert payload["url"] == "https://checkout.stripe.com/cs_test"
+    assert set(payload) == {"client_secret", "session_id", "order_id"}
+    assert payload["client_secret"] == "cs_test_secret"
     assert payload["session_id"] == "cs_test"
     assert payload["order_id"]
     assert captured_session.get("mode") == "subscription"
+    assert captured_session.get("ui_mode") == "embedded"
+    assert "success_url" not in captured_session
+    assert "cancel_url" not in captured_session
+    assert captured_session.get("return_url") == (
+        "http://localhost:3000/checkout/return?session_id={CHECKOUT_SESSION_ID}"
+    )
     assert captured_session.get("line_items")[0]["price"] == "price_month_test"
     assert captured_session.get("metadata")["checkout_type"] == "membership"
     assert captured_session.get("metadata")["source"] == "purchase"
     assert captured_session.get("metadata")["order_id"] == payload["order_id"]
+    assert captured_session.get("payment_method_collection") == "always"
+    subscription_data = captured_session.get("subscription_data")
+    assert subscription_data["trial_period_days"] == 14
+    assert subscription_data["trial_settings"] == {
+        "end_behavior": {"missing_payment_method": "cancel"}
+    }
 
     membership = await repositories.get_membership(str(user_id))
     assert membership is None

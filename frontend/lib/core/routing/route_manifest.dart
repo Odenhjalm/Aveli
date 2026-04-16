@@ -161,6 +161,16 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.authenticated,
   ),
   RouteManifestEntry(
+    name: AppRoute.checkoutReturn,
+    path: RoutePath.checkoutReturn,
+    access: RouteAccessLevel.public,
+  ),
+  RouteManifestEntry(
+    name: AppRoute.checkoutHostedCancel,
+    path: RoutePath.checkoutHostedCancel,
+    access: RouteAccessLevel.public,
+  ),
+  RouteManifestEntry(
     name: AppRoute.checkoutSuccess,
     path: RoutePath.checkoutSuccess,
     access: RouteAccessLevel.public,

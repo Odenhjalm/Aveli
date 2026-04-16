@@ -35,12 +35,46 @@ class CheckoutLaunch {
   }
 }
 
+class MembershipCheckoutLaunch {
+  MembershipCheckoutLaunch({
+    required this.clientSecret,
+    required this.sessionId,
+    required this.orderId,
+  });
+
+  final String clientSecret;
+  final String sessionId;
+  final String orderId;
+
+  factory MembershipCheckoutLaunch.fromJson(Map<String, dynamic> payload) {
+    final clientSecret = payload['client_secret'];
+    final sessionId = payload['session_id'];
+    final orderId = payload['order_id'];
+    if (clientSecret is! String || clientSecret.isEmpty) {
+      throw UnexpectedFailure(
+        message: 'Betalningssvaret saknar klienthemlighet.',
+      );
+    }
+    if (sessionId is! String || sessionId.isEmpty) {
+      throw UnexpectedFailure(message: 'Betalningssvaret saknar sessions-id.');
+    }
+    if (orderId is! String || orderId.isEmpty) {
+      throw UnexpectedFailure(message: 'Betalningssvaret saknar order-id.');
+    }
+    return MembershipCheckoutLaunch(
+      clientSecret: clientSecret,
+      sessionId: sessionId,
+      orderId: orderId,
+    );
+  }
+}
+
 class CheckoutApi {
   CheckoutApi(this._client);
 
   final ApiClient _client;
 
-  Future<CheckoutLaunch> createMembershipCheckout({
+  Future<MembershipCheckoutLaunch> createMembershipCheckout({
     required String interval,
   }) async {
     try {
@@ -48,7 +82,7 @@ class CheckoutApi {
         ApiPaths.billingCreateSubscription,
         body: {'interval': interval},
       );
-      return CheckoutLaunch.fromJson(response);
+      return MembershipCheckoutLaunch.fromJson(response);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }

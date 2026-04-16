@@ -91,8 +91,14 @@ Payment:
 * MUST NOT modify onboarding_state
 * is required before create-profile in ordinary self-signup when payment and
   onboarding are both needed
-* provides 30 days free trial for ordinary self-signup membership checkout
-* requires card details even during the free trial
+* uses embedded Stripe Checkout as the canonical ordinary self-signup
+  membership checkout implementation path
+* provides a 14-day trial/test period for ordinary self-signup membership
+  checkout
+* requires card details during the trial/test period
+* supersedes hosted or raw Stripe URL membership checkout for ordinary
+  self-signup membership checkout
+* does not change course or bundle checkout transport authority
 
 ---
 

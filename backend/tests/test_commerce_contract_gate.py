@@ -163,7 +163,7 @@ async def test_membership_checkout_is_order_backed_and_non_authoritative(
 
     def fake_session_create(**kwargs):
         captured["session_kwargs"] = kwargs
-        return {"id": "cs_test", "url": "https://checkout.stripe.com/cs_test"}
+        return {"id": "cs_test", "client_secret": "cs_test_secret"}
 
     monkeypatch.setattr(
         subscription_service,
@@ -218,7 +218,7 @@ async def test_membership_checkout_is_order_backed_and_non_authoritative(
         SubscriptionInterval.month,
     )
 
-    assert payload.url == "https://checkout.stripe.com/cs_test"
+    assert payload.client_secret == "cs_test_secret"
     assert payload.session_id == "cs_test"
     assert payload.order_id == "order_123"
     assert captured["order_kwargs"]["user_id"] == "user_123"
@@ -226,6 +226,18 @@ async def test_membership_checkout_is_order_backed_and_non_authoritative(
     assert captured["session_kwargs"]["metadata"]["checkout_type"] == "membership"
     assert captured["session_kwargs"]["metadata"]["source"] == "purchase"
     assert captured["session_kwargs"]["metadata"]["order_id"] == "order_123"
+    assert captured["session_kwargs"]["ui_mode"] == "embedded"
+    assert "success_url" not in captured["session_kwargs"]
+    assert "cancel_url" not in captured["session_kwargs"]
+    assert captured["session_kwargs"]["return_url"] == (
+        "http://localhost:3000/checkout/return?session_id={CHECKOUT_SESSION_ID}"
+    )
+    assert captured["session_kwargs"]["payment_method_collection"] == "always"
+    subscription_data = captured["session_kwargs"]["subscription_data"]
+    assert subscription_data["trial_period_days"] == 14
+    assert subscription_data["trial_settings"] == {
+        "end_behavior": {"missing_payment_method": "cancel"}
+    }
 
 
 async def test_cancel_intent_is_non_authoritative(monkeypatch) -> None:

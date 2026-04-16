@@ -78,6 +78,7 @@ void main() {
       final rawBaseUrl = EnvResolver.apiBaseUrl;
       final baseUrl = _resolveApiBaseUrl(rawBaseUrl);
       final subscriptionsEnabled = EnvResolver.subscriptionsEnabled;
+      final stripePublishableKey = EnvResolver.stripePublishableKey;
       final oauthRedirectWeb = EnvResolver.oauthRedirectWeb;
       final oauthRedirectMobile = EnvResolver.oauthRedirectMobile;
 
@@ -122,6 +123,7 @@ void main() {
                 AppConfig(
                   apiBaseUrl: baseUrl,
                   subscriptionsEnabled: subscriptionsEnabled,
+                  stripePublishableKey: stripePublishableKey,
                   imageLoggingEnabled: imageLoggingEnabled,
                 ),
               ),

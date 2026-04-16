@@ -505,7 +505,7 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
 
         events = [
             {
-                "id": "evt_checkout_refund_purchase",
+                "id": f"evt_checkout_refund_purchase_{uuid.uuid4().hex}",
                 "type": "checkout.session.completed",
                 "data": {
                     "object": {
@@ -520,7 +520,7 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
                 },
             },
             {
-                "id": "evt_checkout_refund_charge",
+                "id": f"evt_checkout_refund_charge_{uuid.uuid4().hex}",
                 "type": "charge.refunded",
                 "data": {
                     "object": {
@@ -603,7 +603,7 @@ async def test_webhook_returns_500_when_subscription_processing_fails(async_clie
     def fake_construct_event(payload, sig_header, secret):
         assert secret == "whsec_test"
         return {
-            "id": "evt_subscription_fail",
+            "id": f"evt_subscription_fail_{uuid.uuid4().hex}",
             "type": "customer.subscription.updated",
             "data": {"object": {"id": "sub_test"}},
         }

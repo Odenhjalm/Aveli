@@ -13,7 +13,7 @@ class SubscriptionSessionRequest(BaseModel):
 
 
 class SubscriptionCheckoutResponse(BaseModel):
-    url: str
+    client_secret: str
     session_id: str
     order_id: str
 
