@@ -16,6 +16,7 @@ from ..repositories import payments as payments_repo
 from ..repositories import stripe_customers as stripe_customers_repo
 from ..schemas.billing import SubscriptionCheckoutResponse, SubscriptionInterval
 from ..services.onboarding_state import sync_onboarding_state
+from ..utils import membership_status
 
 logger = logging.getLogger(__name__)
 
@@ -392,12 +393,27 @@ async def process_event(event: Mapping[str, Any]) -> None:
         logger.debug("Unhandled membership event: %s", event_type)
 
 
+async def ensure_completed_event_effect_applied(event: Mapping[str, Any]) -> bool:
+    event_type = str(event.get("type") or "")
+    data_object = event.get("data", {}).get("object", {})
+    if not isinstance(data_object, Mapping):
+        return False
+
+    if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
+        if is_membership_checkout_session(data_object):
+            await _ensure_membership_checkout_session_applied(data_object)
+            return True
+    return False
+
+
 async def _handle_membership_checkout_session(payload: Mapping[str, Any]) -> None:
+    metadata = _metadata_dict(payload)
     order = await _resolve_membership_order(
-        metadata=_metadata_dict(payload),
+        metadata=metadata,
         checkout_id=_as_string(payload.get("id")),
         payment_intent_id=_as_string(payload.get("payment_intent")),
     )
+    _validate_membership_session_user(metadata=metadata, order=order)
     await orders_repo.set_order_checkout_reference(
         order_id=order["id"],
         checkout_id=_as_string(payload.get("id")),
@@ -405,8 +421,15 @@ async def _handle_membership_checkout_session(payload: Mapping[str, Any]) -> Non
         subscription_id=_as_string(payload.get("subscription")),
         customer_id=_as_string(payload.get("customer")),
     )
-    await membership_support_repo.insert_billing_log(
-        user_id=str(order["user_id"]),
+
+    user_id = str(order["user_id"])
+    await _apply_membership_state(
+        order,
+        status="active",
+        effective_at=_to_datetime(payload.get("created")) or datetime.now(timezone.utc),
+        expires_at=None,
+        canceled_at=None,
+        ended_at=None,
         step="membership_checkout_completed",
         info={
             "order_id": str(order["id"]),
@@ -414,6 +437,38 @@ async def _handle_membership_checkout_session(payload: Mapping[str, Any]) -> Non
             "subscription_id": _as_string(payload.get("subscription")),
         },
     )
+    logger.info(
+        "membership activated for user %s from checkout session %s",
+        user_id,
+        _as_string(payload.get("id")),
+    )
+
+
+async def _ensure_membership_checkout_session_applied(
+    payload: Mapping[str, Any],
+) -> None:
+    metadata = _metadata_dict(payload)
+    order = await _resolve_membership_order(
+        metadata=metadata,
+        checkout_id=_as_string(payload.get("id")),
+        payment_intent_id=_as_string(payload.get("payment_intent")),
+    )
+    _validate_membership_session_user(metadata=metadata, order=order)
+
+    user_id = str(order["user_id"])
+    membership = await memberships_repo.get_membership(user_id)
+    if membership_status.is_membership_row_active(membership):
+        logger.info(
+            "membership already active for user %s before completed Stripe event skip",
+            user_id,
+        )
+        return
+
+    logger.warning(
+        "Completed Stripe membership checkout event had no active membership; applying membership for user %s",
+        user_id,
+    )
+    await _handle_membership_checkout_session(payload)
 
 
 async def _handle_subscription_created(payload: Mapping[str, Any]) -> None:
@@ -780,6 +835,25 @@ async def _resolve_membership_order(
             status_code=500,
         )
     return order
+
+
+def _validate_membership_session_user(
+    *,
+    metadata: Mapping[str, Any],
+    order: Mapping[str, Any],
+) -> None:
+    metadata_user_id = _as_string(metadata.get("user_id"))
+    order_user_id = _as_string(order.get("user_id"))
+    if not order_user_id:
+        raise SubscriptionError(
+            "Medlemskapsbekräftelsen saknar användarkoppling",
+            status_code=500,
+        )
+    if metadata_user_id and metadata_user_id != order_user_id:
+        raise SubscriptionError(
+            "Medlemskapsbekräftelsen matchar inte beställningens användare",
+            status_code=500,
+        )
 
 
 async def _resolve_membership_order_from_invoice(

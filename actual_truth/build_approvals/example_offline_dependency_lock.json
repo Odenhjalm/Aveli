@@ -1,0 +1,151 @@
+{
+  "artifact_type": "example_offline_dependency_lock",
+  "approval_state": "EXAMPLE_NOT_EXECUTABLE",
+  "repo_root": "c:/Users/Odenh/app/Aveli",
+  "build_id": "c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+  "linked_d01_task": "actual_truth/DETERMINED_TASKS/retrieval_index_environment_dependencies/D01_offline_dependency_preparation.md",
+  "linked_b01_result": "actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/B01_execution_result_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+  "wheelhouse_root": "actual_truth/offline_wheelhouse/c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3/",
+  "package_set": {
+    "direct_required": [
+      "chromadb",
+      "numpy",
+      "sentence-transformers",
+      "tqdm"
+    ],
+    "transitive_allowed": [
+      "chromadb",
+      "numpy",
+      "sentence-transformers",
+      "tqdm",
+      "transformers",
+      "torch",
+      "torchvision",
+      "torchaudio",
+      "scikit-learn",
+      "scipy"
+    ],
+    "closure_must_be_complete": true,
+    "runtime_resolution_allowed": false
+  },
+  "package_versions": {
+    "chromadb": "1.5.5",
+    "numpy": "2.4.3",
+    "sentence-transformers": "5.3.0",
+    "tqdm": "4.67.3",
+    "transformers": "5.4.0",
+    "torch": "2.11.0+cu128",
+    "torchvision": "0.26.0+cu128",
+    "torchaudio": "2.11.0+cu128",
+    "scikit-learn": "1.8.0",
+    "scipy": "1.17.1"
+  },
+  "wheel_filenames": {
+    "chromadb": "chromadb-1.5.5-example-placeholder-py3-none-any.whl",
+    "numpy": "numpy-2.4.3-example-placeholder-cp311-cp311-win_amd64.whl",
+    "sentence-transformers": "sentence_transformers-5.3.0-example-placeholder-py3-none-any.whl",
+    "tqdm": "tqdm-4.67.3-example-placeholder-py3-none-any.whl"
+  },
+  "wheel_hashes": {
+    "chromadb-1.5.5-example-placeholder-py3-none-any.whl": "0000000000000000000000000000000000000000000000000000000000000000",
+    "numpy-2.4.3-example-placeholder-cp311-cp311-win_amd64.whl": "0000000000000000000000000000000000000000000000000000000000000000",
+    "sentence_transformers-5.3.0-example-placeholder-py3-none-any.whl": "0000000000000000000000000000000000000000000000000000000000000000",
+    "tqdm-4.67.3-example-placeholder-py3-none-any.whl": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "wheels": [
+    {
+      "package_name": "chromadb",
+      "version": "1.5.5",
+      "filename": "chromadb-1.5.5-example-placeholder-py3-none-any.whl",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "direct_or_transitive": "direct",
+      "required_by": [
+        "D01"
+      ],
+      "source_path": "actual_truth/offline_sources/example-not-executable/chromadb-1.5.5-example-placeholder-py3-none-any.whl",
+      "wheelhouse_relative_path": "wheels/chromadb-1.5.5-example-placeholder-py3-none-any.whl"
+    },
+    {
+      "package_name": "numpy",
+      "version": "2.4.3",
+      "filename": "numpy-2.4.3-example-placeholder-cp311-cp311-win_amd64.whl",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "direct_or_transitive": "direct",
+      "required_by": [
+        "D01"
+      ],
+      "source_path": "actual_truth/offline_sources/example-not-executable/numpy-2.4.3-example-placeholder-cp311-cp311-win_amd64.whl",
+      "wheelhouse_relative_path": "wheels/numpy-2.4.3-example-placeholder-cp311-cp311-win_amd64.whl"
+    },
+    {
+      "package_name": "sentence-transformers",
+      "version": "5.3.0",
+      "filename": "sentence_transformers-5.3.0-example-placeholder-py3-none-any.whl",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "direct_or_transitive": "direct",
+      "required_by": [
+        "D01"
+      ],
+      "source_path": "actual_truth/offline_sources/example-not-executable/sentence_transformers-5.3.0-example-placeholder-py3-none-any.whl",
+      "wheelhouse_relative_path": "wheels/sentence_transformers-5.3.0-example-placeholder-py3-none-any.whl"
+    },
+    {
+      "package_name": "tqdm",
+      "version": "4.67.3",
+      "filename": "tqdm-4.67.3-example-placeholder-py3-none-any.whl",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "direct_or_transitive": "direct",
+      "required_by": [
+        "D01"
+      ],
+      "source_path": "actual_truth/offline_sources/example-not-executable/tqdm-4.67.3-example-placeholder-py3-none-any.whl",
+      "wheelhouse_relative_path": "wheels/tqdm-4.67.3-example-placeholder-py3-none-any.whl"
+    }
+  ],
+  "closure": {
+    "complete": false,
+    "example_incomplete_by_design": true,
+    "full_transitive_closure_declared": false,
+    "resolution_performed_before_w01": false,
+    "runtime_resolution_allowed": false,
+    "missing_transitive_dependencies_must_stop": true
+  },
+  "network_policy": {
+    "mode": "offline",
+    "downloads_allowed": false,
+    "dependency_download_allowed": false,
+    "package_index_allowed": false,
+    "model_download_allowed": false,
+    "telemetry_allowed": false
+  },
+  "fallback_policy": {
+    "mode": "forbidden",
+    "fallbacks_allowed": false,
+    "fallback_package_source_allowed": false,
+    "fallback_network_allowed": false,
+    "fallback_version_allowed": false,
+    "fallback_hash_allowed": false,
+    "fallback_resolution_allowed": false,
+    "system_site_packages_allowed": false
+  },
+  "forbidden_targets": {
+    "repo_index": [
+      ".repo_index/index_manifest.json",
+      ".repo_index/chunk_manifest.jsonl",
+      ".repo_index/lexical_index",
+      ".repo_index/chroma_db",
+      ".repo_index/_staging",
+      ".repo_index/models",
+      ".repo_index/model_cache",
+      ".repo_index/.search_venv/Lib/site-packages",
+      ".repo_index/.search_venv/Scripts"
+    ]
+  },
+  "execution_policy": {
+    "example_not_executable": true,
+    "must_stop_if_used": true,
+    "prohibits_dependency_installation": true,
+    "prohibits_build_execution": true,
+    "prohibits_model_loading": true
+  }
+}

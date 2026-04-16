@@ -516,6 +516,91 @@ async def test_subscription_webhook_is_idempotent(async_client, monkeypatch):
 
 
 @pytest.mark.anyio("asyncio")
+async def test_completed_membership_checkout_verifies_effect_before_skip(
+    async_client,
+    monkeypatch,
+):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_value")
+    monkeypatch.setenv("STRIPE_TEST_SECRET_KEY", "sk_test_value")
+    monkeypatch.delenv("STRIPE_LIVE_SECRET_KEY", raising=False)
+    settings.stripe_secret_key = "sk_test_value"
+    settings.stripe_test_secret_key = "sk_test_value"
+    settings.stripe_test_webhook_billing_secret = "whsec_test"
+    settings.stripe_test_webhook_secret = "whsec_test"
+
+    event = {
+        "id": "evt_completed_membership_checkout",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_completed_membership",
+                "mode": "subscription",
+                "metadata": {
+                    "checkout_type": "membership",
+                    "order_id": str(uuid.uuid4()),
+                    "user_id": str(uuid.uuid4()),
+                },
+            }
+        },
+    }
+
+    def fake_construct_event(payload, sig_header, secret):
+        assert sig_header == "sig"
+        assert secret == "whsec_test"
+        return event
+
+    call_order: list[str] = []
+
+    async def fake_claim_payment_event(event_id: str) -> _FakePaymentEventClaim:
+        assert event_id == event["id"]
+        call_order.append("claim")
+        return _FakePaymentEventClaim(event_id, "completed")
+
+    async def fake_ensure_completed_event_effect_applied(
+        event_payload: dict[str, object],
+    ) -> bool:
+        assert event_payload["id"] == event["id"]
+        call_order.append("verify_membership_effect")
+        return True
+
+    async def fail_complete_payment_event(
+        claim: _FakePaymentEventClaim,
+        payload: dict[str, object],
+    ) -> None:
+        raise AssertionError("completed event claims must not be completed again")
+
+    async def fail_handle_event(event_payload: dict[str, object]) -> None:
+        raise AssertionError("completed event claims must not enter primary handler")
+
+    monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.membership_support_repo.claim_payment_event",
+        fake_claim_payment_event,
+    )
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.membership_support_repo.complete_payment_event",
+        fail_complete_payment_event,
+    )
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.stripe_webhook_membership_service.ensure_completed_event_effect_applied",
+        fake_ensure_completed_event_effect_applied,
+    )
+    monkeypatch.setattr(
+        "app.routes.stripe_webhooks.stripe_webhook_membership_service.handle_event",
+        fail_handle_event,
+    )
+
+    response = await async_client.post(
+        "/api/stripe/webhook",
+        content=json.dumps({}),
+        headers={"stripe-signature": "sig"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert call_order == ["claim", "verify_membership_effect"]
+
+
+@pytest.mark.anyio("asyncio")
 async def test_subscription_webhook_failure_does_not_complete_and_retry_reprocesses(
     async_client,
     monkeypatch,

@@ -15,3 +15,7 @@ def is_membership_event_type(event_type: str | None) -> bool:
 
 async def handle_event(event: Mapping[str, Any]) -> None:
     await subscription_service.process_event(event)
+
+
+async def ensure_completed_event_effect_applied(event: Mapping[str, Any]) -> bool:
+    return await subscription_service.ensure_completed_event_effect_applied(event)

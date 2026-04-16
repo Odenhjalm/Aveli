@@ -138,7 +138,18 @@ async def stripe_payment_element_webhook(request: Request):
         if isinstance(event_id, str) and event_id:
             event_claim = await membership_support_repo.claim_payment_event(event_id)
             if event_claim.completed:
-                logger.info("Skipping completed Stripe event %s", event_id)
+                membership_effect_checked = (
+                    await stripe_webhook_membership_service.ensure_completed_event_effect_applied(
+                        event
+                    )
+                )
+                if membership_effect_checked:
+                    logger.info(
+                        "Skipping completed Stripe event %s after confirming completed side effects",
+                        event_id,
+                    )
+                else:
+                    logger.info("Skipping completed Stripe event %s", event_id)
                 return {"status": "ok"}
             if event_claim.processing:
                 logger.info("Stripe event %s is already being processed", event_id)

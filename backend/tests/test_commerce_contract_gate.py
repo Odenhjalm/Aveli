@@ -240,6 +240,170 @@ async def test_membership_checkout_is_order_backed_and_non_authoritative(
     }
 
 
+async def test_checkout_session_completed_activates_membership_from_order(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    order = {
+        "id": "order_123",
+        "user_id": "user_123",
+        "amount_cents": 9900,
+        "currency": "sek",
+        "status": "pending",
+    }
+
+    async def fake_get_order(order_id):
+        captured["order_lookup"] = order_id
+        return order
+
+    async def fake_set_checkout_reference(**kwargs):
+        captured["checkout_reference"] = kwargs
+
+    async def fake_get_membership(user_id):
+        captured["membership_lookup"] = user_id
+        return None
+
+    async def fake_upsert_membership_record(user_id, **kwargs):
+        captured["membership_write"] = {"user_id": user_id, **kwargs}
+        return {"membership_id": "membership_123", "user_id": user_id, **kwargs}
+
+    async def fake_insert_billing_log(**kwargs):
+        captured.setdefault("billing_logs", []).append(kwargs)
+
+    async def fake_sync_onboarding_state(user_id):
+        captured["synced_user_id"] = user_id
+
+    monkeypatch.setattr(
+        subscription_service.orders_repo,
+        "get_order",
+        fake_get_order,
+    )
+    monkeypatch.setattr(
+        subscription_service.orders_repo,
+        "set_order_checkout_reference",
+        fake_set_checkout_reference,
+    )
+    monkeypatch.setattr(
+        subscription_service.memberships_repo,
+        "get_membership",
+        fake_get_membership,
+    )
+    monkeypatch.setattr(
+        subscription_service.memberships_repo,
+        "upsert_membership_record",
+        fake_upsert_membership_record,
+    )
+    monkeypatch.setattr(
+        subscription_service.membership_support_repo,
+        "insert_billing_log",
+        fake_insert_billing_log,
+    )
+    monkeypatch.setattr(
+        subscription_service,
+        "sync_onboarding_state",
+        fake_sync_onboarding_state,
+    )
+
+    await subscription_service.process_event(
+        {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_membership_123",
+                    "mode": "subscription",
+                    "created": 1_700_000_000,
+                    "subscription": "sub_membership_123",
+                    "customer": "cus_membership_123",
+                    "metadata": {
+                        "checkout_type": "membership",
+                        "order_id": "order_123",
+                        "user_id": "user_123",
+                    },
+                }
+            },
+        }
+    )
+
+    assert captured["order_lookup"] == "order_123"
+    assert captured["checkout_reference"]["subscription_id"] == "sub_membership_123"
+    assert captured["membership_write"]["user_id"] == "user_123"
+    assert captured["membership_write"]["status"] == "active"
+    assert captured["membership_write"]["source"] == "purchase"
+    assert captured["membership_write"]["effective_at"] == datetime.fromtimestamp(
+        1_700_000_000,
+        tz=timezone.utc,
+    )
+    assert captured["synced_user_id"] == "user_123"
+    assert captured["billing_logs"] == [
+        {
+            "user_id": "user_123",
+            "step": "membership_checkout_completed",
+            "info": {
+                "order_id": "order_123",
+                "session_id": "cs_membership_123",
+                "subscription_id": "sub_membership_123",
+            },
+        }
+    ]
+
+
+async def test_checkout_session_completed_rejects_user_mismatch_before_write(
+    monkeypatch,
+) -> None:
+    order = {
+        "id": "order_123",
+        "user_id": "user_123",
+        "amount_cents": 9900,
+        "currency": "sek",
+        "status": "pending",
+    }
+
+    async def fake_get_order(order_id):
+        return order
+
+    async def fail_set_checkout_reference(**kwargs):
+        raise AssertionError("mismatched sessions must not update order references")
+
+    async def fail_upsert_membership_record(*args, **kwargs):
+        raise AssertionError("mismatched sessions must not update memberships")
+
+    monkeypatch.setattr(
+        subscription_service.orders_repo,
+        "get_order",
+        fake_get_order,
+    )
+    monkeypatch.setattr(
+        subscription_service.orders_repo,
+        "set_order_checkout_reference",
+        fail_set_checkout_reference,
+    )
+    monkeypatch.setattr(
+        subscription_service.memberships_repo,
+        "upsert_membership_record",
+        fail_upsert_membership_record,
+    )
+
+    with pytest.raises(subscription_service.SubscriptionError) as exc_info:
+        await subscription_service.process_event(
+            {
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "id": "cs_membership_123",
+                        "mode": "subscription",
+                        "metadata": {
+                            "checkout_type": "membership",
+                            "order_id": "order_123",
+                            "user_id": "other_user",
+                        },
+                    }
+                },
+            }
+        )
+
+    assert exc_info.value.status_code == 500
+
+
 async def test_cancel_intent_is_non_authoritative(monkeypatch) -> None:
     _set_stripe_test_env(monkeypatch)
     captured: dict[str, object] = {}
