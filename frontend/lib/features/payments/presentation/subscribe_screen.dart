@@ -83,9 +83,6 @@ class _MembershipCheckoutScreenState
               ),
             ),
           ),
-          Positioned.fill(
-            child: ColoredBox(color: Colors.white.withValues(alpha: 0.06)),
-          ),
           LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= 900;
@@ -843,20 +840,20 @@ class _SharedCheckoutPanel extends StatelessWidget {
         sigmaY: 20,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.12),
+            color: Colors.white.withValues(alpha: 0.05),
             borderRadius: radius,
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.15),
+              color: Colors.white.withValues(alpha: 0.12),
               width: 1.1,
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF5B6DA6).withValues(alpha: 0.16),
+                color: const Color(0xFF5B6DA6).withValues(alpha: 0.10),
                 blurRadius: 54,
                 offset: const Offset(0, 28),
               ),
               BoxShadow(
-                color: Colors.white.withValues(alpha: 0.22),
+                color: Colors.white.withValues(alpha: 0.08),
                 blurRadius: 0,
                 spreadRadius: 1,
               ),

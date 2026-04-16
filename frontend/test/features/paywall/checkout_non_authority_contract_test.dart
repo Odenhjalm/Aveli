@@ -307,8 +307,8 @@ void main() {
         expect(membershipCheckout, contains('_EmbeddedCheckoutViewport'));
         expect(membershipCheckout, contains('_EmbeddedCheckoutFrame'));
         expect(membershipCheckout, contains('BorderRadius.circular(18)'));
+        expect(membershipCheckout, contains('withValues(alpha: 0.05)'));
         expect(membershipCheckout, contains('withValues(alpha: 0.12)'));
-        expect(membershipCheckout, contains('withValues(alpha: 0.15)'));
         expect(membershipCheckout, contains('const SizedBox(width: 42)'));
         expect(membershipCheckout, contains('Expanded(flex: 11'));
         expect(membershipCheckout, contains('EdgeInsets.all(20)'));
