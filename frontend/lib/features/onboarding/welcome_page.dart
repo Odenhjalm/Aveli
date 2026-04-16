@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -37,45 +39,58 @@ class _WelcomePageState extends ConsumerState<WelcomePage> {
             padding: p16,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        name != null && name.isNotEmpty
-                            ? 'Välkommen till Aveli $name'
-                            : 'Välkommen till Aveli',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w700),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.15),
                       ),
-                      gap16,
-                      Text(
-                        'Nu vet du var du börjar. Introduktionskurser släpps en gång i månaden och varje lektion släpps en gång i veckan.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            name != null && name.isNotEmpty
+                                ? 'Välkommen till Aveli $name'
+                                : 'Välkommen till Aveli',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          gap16,
+                          Text(
+                            'Nu vet du var du börjar. Introduktionskurser släpps en gång i månaden och varje lektion släpps en gång i veckan.',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          gap16,
+                          const _WelcomeRhythm(),
+                          gap16,
+                          const _IntroCourseOffer(),
+                          gap24,
+                          GradientButton(
+                            onPressed: _isSubmitting ? null : _completeWelcome,
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Jag förstår hur Aveli fungerar'),
+                          ),
+                        ],
                       ),
-                      gap16,
-                      const _WelcomeRhythm(),
-                      gap16,
-                      const _IntroCourseOffer(),
-                      gap24,
-                      GradientButton(
-                        onPressed: _isSubmitting ? null : _completeWelcome,
-                        child: _isSubmitting
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('Jag förstår hur Aveli fungerar'),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
