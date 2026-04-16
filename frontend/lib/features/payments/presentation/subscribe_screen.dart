@@ -55,50 +55,74 @@ class _MembershipCheckoutScreenState
       useBasePage: false,
       contentPadding: EdgeInsets.zero,
       maxContentWidth: 1180,
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFEAF8FB), Color(0xFFF7F1FF)],
-          ),
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const _CheckoutLogo(),
-                    gap20,
-                    _ResponsiveCheckoutLayout(
-                      promise: const _MembershipPromise(),
-                      action: _CheckoutActionPanel(
-                        envMessage: envInfo.hasIssues ? envInfo.message : null,
-                        subscriptionsEnabled: config.subscriptionsEnabled,
-                        stripeKeyMissing: stripeKeyMissing,
-                        platformSupported: supportsEmbeddedMembershipCheckout,
-                        entryStateAvailable: entryState != null,
-                        needsPayment: entryState?.needsPayment == true,
-                        checkoutBlocked: checkoutBlocked,
-                        checkoutLaunch: _checkoutLaunch,
-                        checkoutInterval: _checkoutInterval,
-                        submittingInterval: _submittingInterval,
-                        stripePublishableKey: config.stripePublishableKey,
-                        onRequestLogin: _redirectToLogin,
-                        onStartCheckout: _startMembershipCheckout,
-                        onCheckoutRedirect: _handleCheckoutRedirect,
-                      ),
-                    ),
-                  ],
+      body: Stack(
+        children: [
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFD8F3F7), Color(0xFFE9DEFF)],
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          ),
+          Positioned.fill(
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.18)),
+          ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 900;
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  wide ? 32 : 20,
+                  wide ? 34 : 24,
+                  wide ? 32 : 20,
+                  wide ? 44 : 34,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1140),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const _CheckoutLogo(),
+                          gap24,
+                          _ResponsiveCheckoutLayout(
+                            promise: const _MembershipPromise(),
+                            action: _CheckoutActionPanel(
+                              envMessage: envInfo.hasIssues
+                                  ? envInfo.message
+                                  : null,
+                              subscriptionsEnabled: config.subscriptionsEnabled,
+                              stripeKeyMissing: stripeKeyMissing,
+                              platformSupported:
+                                  supportsEmbeddedMembershipCheckout,
+                              entryStateAvailable: entryState != null,
+                              needsPayment: entryState?.needsPayment == true,
+                              checkoutBlocked: checkoutBlocked,
+                              checkoutLaunch: _checkoutLaunch,
+                              checkoutInterval: _checkoutInterval,
+                              submittingInterval: _submittingInterval,
+                              stripePublishableKey: config.stripePublishableKey,
+                              onRequestLogin: _redirectToLogin,
+                              onStartCheckout: _startMembershipCheckout,
+                              onCheckoutRedirect: _handleCheckoutRedirect,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -225,15 +249,15 @@ class _ResponsiveCheckoutLayout extends StatelessWidget {
         if (!wide) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [promise, gap16, action],
+            children: [promise, gap24, action],
           );
         }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(flex: 5, child: promise),
-            const SizedBox(width: 18),
-            Expanded(flex: 4, child: action),
+            Expanded(flex: 9, child: promise),
+            const SizedBox(width: 42),
+            Expanded(flex: 11, child: action),
           ],
         );
       },
@@ -418,16 +442,16 @@ class _CheckoutStartState extends StatelessWidget {
             fontWeight: FontWeight.w800,
           ),
         ),
-        gap8,
+        gap12,
         Text(
           'Betalningen öppnas här i Aveli. Servern uppdaterar åtkomst först när Stripe har bekräftat betalningen.',
           style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
         ),
         if (statusMessage != null) ...[
-          gap16,
+          gap20,
           _StatusNotice(message: statusMessage),
         ],
-        gap20,
+        gap24,
         if (!entryStateAvailable)
           _LoginPrompt(onRequestLogin: onRequestLogin)
         else if (!needsPayment)
@@ -502,12 +526,12 @@ class _EmbeddedCheckoutState extends StatelessWidget {
             fontWeight: FontWeight.w800,
           ),
         ),
-        gap8,
+        gap12,
         Text(
           '$label med 14 dagar provperiod. Kortuppgifter krävs för att starta provperioden.',
           style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
         ),
-        gap16,
+        gap24,
         _EmbeddedCheckoutViewport(
           child: EmbeddedMembershipCheckoutSurface(
             stripePublishableKey: stripePublishableKey,
@@ -517,7 +541,7 @@ class _EmbeddedCheckoutState extends StatelessWidget {
             onCheckoutRedirect: onCheckoutRedirect,
           ),
         ),
-        gap12,
+        gap20,
         const _TrustLine(),
       ],
     );
@@ -543,7 +567,46 @@ class _EmbeddedCheckoutViewport extends StatelessWidget {
 
     return SizedBox(
       height: targetHeight.toDouble(),
-      child: ClipRRect(borderRadius: BorderRadius.circular(8), child: child),
+      child: _EmbeddedCheckoutFrame(child: child),
+    );
+  }
+}
+
+class _EmbeddedCheckoutFrame extends StatelessWidget {
+  const _EmbeddedCheckoutFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(16);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: radius,
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x0DFFFFFF), Color(0x00FFFFFF)],
+                  ),
+                ),
+              ),
+              child,
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -555,34 +618,34 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(8);
+    final radius = BorderRadius.circular(18);
     return ClipRRect(
       borderRadius: radius,
       child: EffectsBackdropFilter(
-        sigmaX: 14,
-        sigmaY: 14,
+        sigmaX: 18,
+        sigmaY: 18,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.68),
+            color: Colors.white.withValues(alpha: 0.12),
             borderRadius: radius,
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.56),
+              color: Colors.white.withValues(alpha: 0.15),
               width: 1.1,
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF5B6F8F).withValues(alpha: 0.12),
-                blurRadius: 28,
-                offset: const Offset(0, 16),
+                color: Colors.black.withValues(alpha: 0.14),
+                blurRadius: 46,
+                offset: const Offset(0, 24),
               ),
               BoxShadow(
-                color: Colors.white.withValues(alpha: 0.42),
+                color: Colors.white.withValues(alpha: 0.18),
                 blurRadius: 0,
                 spreadRadius: 1,
               ),
             ],
           ),
-          child: Padding(padding: const EdgeInsets.all(24), child: child),
+          child: Padding(padding: const EdgeInsets.all(30), child: child),
         ),
       ),
     );

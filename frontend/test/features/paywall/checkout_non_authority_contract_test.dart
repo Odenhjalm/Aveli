@@ -305,6 +305,13 @@ void main() {
         expect(membershipCheckout, contains('14 dagar'));
         expect(membershipCheckout, contains('Kortuppgifter krävs'));
         expect(membershipCheckout, contains('_EmbeddedCheckoutViewport'));
+        expect(membershipCheckout, contains('_EmbeddedCheckoutFrame'));
+        expect(membershipCheckout, contains('BorderRadius.circular(18)'));
+        expect(membershipCheckout, contains('withValues(alpha: 0.12)'));
+        expect(membershipCheckout, contains('withValues(alpha: 0.15)'));
+        expect(membershipCheckout, contains('const SizedBox(width: 42)'));
+        expect(membershipCheckout, contains('Expanded(flex: 11'));
+        expect(membershipCheckout, contains('EdgeInsets.all(20)'));
         expect(membershipCheckout, isNot(contains('height: 560')));
         expect(embeddedWeb, contains("style.overflowY = 'auto'"));
         expect(embeddedWeb, isNot(contains("style.overflow = 'hidden'")));
