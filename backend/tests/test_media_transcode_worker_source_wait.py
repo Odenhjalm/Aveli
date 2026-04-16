@@ -254,3 +254,137 @@ def test_worker_never_assigns_course_cover_identity() -> None:
     assert "courses_repo" not in source
     assert "update_course(" not in source
     assert "set_course_cover" not in source
+
+
+def test_profile_media_output_path_preserves_subject_scope() -> None:
+    assert (
+        worker._derive_profile_media_output_path(
+            "media/source/profile-avatar/user-1/avatar.png",
+            "jpg",
+        )
+        == "media/derived/profile-avatar/user-1/avatar.jpg"
+    )
+
+
+@pytest.mark.anyio("asyncio")
+async def test_transcode_asset_dispatches_profile_media_image(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    async def fake_transcode_profile_media_image_asset(asset, consume_attempt):
+        calls["asset"] = asset
+        calls["consume_attempt"] = consume_attempt
+
+    async def fake_consume_attempt():
+        calls["attempt_consumed"] = True
+
+    monkeypatch.setattr(
+        worker,
+        "_transcode_profile_media_image_asset",
+        fake_transcode_profile_media_image_asset,
+    )
+
+    asset = {
+        "id": "profile-media-1",
+        "media_type": "image",
+        "purpose": "profile_media",
+    }
+
+    await worker._transcode_asset(asset, fake_consume_attempt)
+
+    assert calls["asset"] == asset
+    assert calls["consume_attempt"] == fake_consume_attempt
+
+
+@pytest.mark.anyio("asyncio")
+async def test_profile_media_image_transcode_marks_ready_through_worker(
+    monkeypatch,
+) -> None:
+    calls: dict[str, object] = {}
+
+    class DummySigned:
+        url = "https://example.invalid/source"
+
+    class DummyUpload:
+        url = "https://example.invalid/upload"
+        headers = {"content-type": "image/jpeg"}
+
+    class DummyStorage:
+        def __init__(self, bucket: str):
+            self.bucket = bucket
+
+        async def get_presigned_url(self, path, **kwargs):
+            calls.setdefault("presigned_paths", []).append(path)
+            calls.setdefault("presigned_kwargs", []).append(kwargs)
+            return DummySigned()
+
+        async def create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+            calls["upload_path"] = path
+            calls["upload_content_type"] = content_type
+            calls["upload_upsert"] = upsert
+            calls["upload_cache_seconds"] = cache_seconds
+            return DummyUpload()
+
+        async def delete_object(self, path):
+            calls["deleted_path"] = path
+
+    def fake_get_storage_service(bucket):
+        return DummyStorage(bucket)
+
+    async def fake_download_to_file(url, destination):
+        calls["download_url"] = url
+        calls["download_destination"] = destination
+        destination.write_bytes(b"profile-image-bytes")
+
+    async def fake_consume_attempt():
+        calls["attempt_consumed"] = True
+
+    async def fake_run_ffmpeg_cover(input_path, output_path):
+        calls["ffmpeg_input"] = input_path
+        calls["ffmpeg_output"] = output_path
+        output_path.write_bytes(b"jpeg-bytes")
+
+    async def fake_upload_file(url, source, headers):
+        calls["uploaded_url"] = url
+        calls["uploaded_source"] = source
+        calls["uploaded_headers"] = headers
+
+    async def fake_mark_media_asset_ready_from_worker(**kwargs):
+        calls["mark_ready"] = kwargs
+        return {"id": kwargs["media_id"], "state": "ready"}
+
+    monkeypatch.setattr(
+        worker.storage_service,
+        "get_storage_service",
+        fake_get_storage_service,
+    )
+    monkeypatch.setattr(worker, "_download_to_file", fake_download_to_file)
+    monkeypatch.setattr(worker, "_run_ffmpeg_cover", fake_run_ffmpeg_cover)
+    monkeypatch.setattr(worker, "_upload_file", fake_upload_file)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "mark_media_asset_ready_from_worker",
+        fake_mark_media_asset_ready_from_worker,
+    )
+
+    await worker._transcode_profile_media_image_asset(
+        {
+            "id": "profile-media-1",
+            "media_type": "image",
+            "purpose": "profile_media",
+            "original_object_path": "media/source/profile-avatar/user-1/avatar.png",
+            "storage_bucket": "source-media",
+        },
+        fake_consume_attempt,
+    )
+
+    assert calls["attempt_consumed"] is True
+    assert calls["upload_path"] == "media/derived/profile-avatar/user-1/avatar.jpg"
+    assert calls["upload_content_type"] == "image/jpeg"
+    assert calls["uploaded_source"] == calls["ffmpeg_output"]
+    assert calls["mark_ready"] == {
+        "media_id": "profile-media-1",
+        "playback_object_path": "media/derived/profile-avatar/user-1/avatar.jpg",
+        "playback_storage_bucket": worker.settings.media_public_bucket,
+        "playback_format": "jpg",
+        "codec": "jpeg",
+    }

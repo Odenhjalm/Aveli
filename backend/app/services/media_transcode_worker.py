@@ -85,6 +85,21 @@ def _derive_cover_output_path(source_path: str, ext: str) -> str:
     return Path(normalized).with_suffix(f".{ext}").as_posix()
 
 
+def _derive_profile_media_output_path(source_path: str, ext: str) -> str:
+    normalized = source_path.lstrip("/")
+    for source_prefix, derived_prefix in (
+        ("media/source/profile-avatar/", "media/derived/profile-avatar/"),
+        ("media/source/profile-media/", "media/derived/profile-media/"),
+        ("media/source/profile/", "media/derived/profile/"),
+    ):
+        if normalized.startswith(source_prefix):
+            normalized = derived_prefix + normalized[len(source_prefix) :]
+            break
+    else:
+        normalized = "media/derived/profile-media/" + normalized
+    return Path(normalized).with_suffix(f".{ext}").as_posix()
+
+
 def _audio_source_suffix(asset: dict) -> str:
     for raw in (
         asset.get("original_filename"),
@@ -144,7 +159,9 @@ async def _verify_ready_contract(
         raise RuntimeError("Ready verification failed: kind metadata is missing")
 
     if not str(playback_content_type or "").strip():
-        raise RuntimeError("Ready verification failed: content_type metadata is missing")
+        raise RuntimeError(
+            "Ready verification failed: content_type metadata is missing"
+        )
 
     if kind in {"audio", "video"} and duration_seconds is None:
         raise RuntimeError("Ready verification failed: duration metadata is missing")
@@ -163,6 +180,7 @@ async def _verify_ready_contract(
             object_path=resolved_preview_path,
         ):
             raise RuntimeError("Ready verification failed: preview object is missing")
+
 
 async def _verification_idle_loop() -> None:
     while True:
@@ -189,7 +207,9 @@ async def start_worker(*, verification_mode: bool = False) -> None:
             extra={**enablement, "verification_mode": True, "write_suppressed": True},
         )
         return
-    queue_contract_supported = await media_assets_repo.media_processing_queue_supported()
+    queue_contract_supported = (
+        await media_assets_repo.media_processing_queue_supported()
+    )
     if not queue_contract_supported:
         logger.info(
             "Media transcode worker unavailable for current local baseline",
@@ -222,7 +242,9 @@ async def stop_worker() -> None:
 
 async def get_metrics() -> dict[str, Any]:
     enablement = _enablement_state()
-    queue_contract_supported = await media_assets_repo.media_processing_queue_supported()
+    queue_contract_supported = (
+        await media_assets_repo.media_processing_queue_supported()
+    )
     summary = await media_assets_repo.get_media_processing_worker_summary(
         stale_after_seconds=settings.media_transcode_stale_lock_seconds
     )
@@ -398,6 +420,9 @@ async def _transcode_asset(asset: dict, consume_attempt: ConsumeAttemptFn) -> No
     if media_type == "image" and purpose == "course_cover":
         await _transcode_cover_asset(asset, consume_attempt)
         return
+    if media_type == "image" and purpose == "profile_media":
+        await _transcode_profile_media_image_asset(asset, consume_attempt)
+        return
     raise RuntimeError(f"Unsupported media asset type: {media_type}/{purpose}")
 
 
@@ -547,6 +572,86 @@ async def _transcode_cover_asset(
 
     logger.info(
         "Course cover ready media_id=%s output=%s",
+        asset["id"],
+        output_path,
+    )
+
+
+async def _transcode_profile_media_image_asset(
+    asset: dict, consume_attempt: ConsumeAttemptFn
+) -> None:
+    source_path = asset.get("original_object_path")
+    if not source_path:
+        raise RuntimeError("Missing source object path")
+
+    source_bucket = asset.get("storage_bucket") or settings.media_source_bucket
+    source_storage = storage_service.get_storage_service(source_bucket)
+    try:
+        signed = await source_storage.get_presigned_url(
+            source_path,
+            ttl=settings.media_playback_url_ttl_seconds,
+            download=False,
+        )
+    except storage_service.StorageObjectNotFoundError as exc:
+        raise SourceNotReadyError(str(exc)) from exc
+    output_path = _derive_profile_media_output_path(source_path, "jpg")
+
+    with tempfile.TemporaryDirectory(prefix="aveli_profile_media_") as temp_dir:
+        temp_root = Path(temp_dir)
+        input_file = temp_root / "profile_media_source"
+        output_file = temp_root / "profile_media.jpg"
+
+        await _download_to_file(signed.url, input_file)
+        await consume_attempt()
+        await _run_ffmpeg_cover(input_file, output_file)
+
+        public_storage = storage_service.get_storage_service(
+            settings.media_public_bucket
+        )
+        upload = await public_storage.create_upload_url(
+            output_path,
+            content_type="image/jpeg",
+            upsert=True,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+        await _upload_file(upload.url, output_file, upload.headers)
+
+    await _verify_ready_contract(
+        asset=asset,
+        playback_storage=public_storage,
+        playback_object_path=output_path,
+        playback_content_type="image/jpeg",
+        duration_seconds=None,
+        preview_storage=public_storage,
+        preview_object_path=output_path,
+    )
+
+    updated = await media_assets_repo.mark_media_asset_ready_from_worker(
+        media_id=str(asset["id"]),
+        playback_object_path=output_path,
+        playback_storage_bucket=public_storage.bucket,
+        playback_format="jpg",
+        codec="jpeg",
+    )
+    if not updated:
+        try:
+            await public_storage.delete_object(output_path)
+        except storage_service.StorageServiceError as exc:
+            logger.warning(
+                "Failed to cleanup derived profile media after missing media asset %s (%s): %s",
+                asset.get("id"),
+                output_path,
+                exc,
+            )
+        logger.info(
+            "Media asset missing after profile media transcode; cleaned up derived output media_id=%s output=%s",
+            asset.get("id"),
+            output_path,
+        )
+        return
+
+    logger.info(
+        "Profile media image ready media_id=%s output=%s",
         asset["id"],
         output_path,
     )

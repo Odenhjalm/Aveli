@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -104,6 +105,33 @@ async def test_get_media_asset_access_derives_public_cover_bucket(monkeypatch):
 
     assert media_asset is not None
     assert media_asset["storage_bucket"] == settings.media_public_bucket
+
+
+async def test_get_media_asset_access_derives_public_profile_media_bucket(monkeypatch):
+    async def fake_get_media_asset(_: str):
+        return {
+            "id": str(uuid.uuid4()),
+            "media_type": "image",
+            "purpose": "profile_media",
+            "original_object_path": ("media/source/profile-avatar/user-1/avatar.png"),
+            "playback_object_path": ("media/derived/profile-avatar/user-1/avatar.jpg"),
+            "playback_format": "jpg",
+            "state": "ready",
+            "storage_bucket": None,
+        }
+
+    monkeypatch.setattr(media_assets_repo, "get_media_asset", fake_get_media_asset)
+
+    media_asset = await media_assets_repo.get_media_asset_access(str(uuid.uuid4()))
+
+    assert media_asset is not None
+    assert media_asset["storage_bucket"] == settings.media_public_bucket
+
+
+def test_media_worker_queue_includes_profile_media_images():
+    source = Path(media_assets_repo.__file__).read_text(encoding="utf-8")
+
+    assert "'profile_media'::app.media_purpose" in source
 
 
 async def test_canonical_media_asset_scope_uses_path_authority_for_lesson_audio():

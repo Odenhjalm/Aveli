@@ -11,6 +11,7 @@ This contract composes with:
 - `auth_onboarding_contract.md`
 - `onboarding_teacher_rights_contract.md`
 - `auth_onboarding_baseline_contract.md`
+- `profile_community_media_contract.md`
 
 ## 1. PRIMARY AUTHORITY STATEMENT
 
@@ -81,7 +82,12 @@ Rules:
   `PATCH /profiles/me` into media authority.
 - Backend may maintain `app.profiles` only as projection maintenance derived
   from canonical authority.
-- This contract does not authorize a dedicated avatar upload surface.
+- This contract does not itself authorize or own a dedicated avatar upload
+  surface.
+- A dedicated avatar upload or attach surface may be authorized only by the
+  media-owned profile/community media boundary.
+- Such a surface MUST NOT widen `PATCH /profiles/me` and MUST NOT move binary
+  media authority into Auth + Onboarding.
 
 ## 5. READ SURFACE
 
@@ -140,3 +146,5 @@ Rules:
 - `photo_url` is read composition only.
 - `avatar_media_id` is the only canonical persisted avatar identity field in
   `app.profiles`.
+- `avatar_media_id` may be maintained only from a validated media-owned avatar
+  binding and never as user-owned `/profiles/me` patch authority.

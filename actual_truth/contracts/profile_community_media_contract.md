@@ -100,6 +100,53 @@ The canonical profile/community media purpose value is:
 
 No separate `community_media` purpose value exists under this contract.
 
+## 7A. Profile Avatar Media Boundary
+
+Profile avatar upload and binding belong to the media-owned profile/community
+media boundary. Auth, onboarding, and profile-projection patch surfaces do not
+own avatar upload semantics.
+
+Canonical avatar media identity:
+
+- avatar image identity is a row in `app.media_assets`
+- the required purpose is `profile_media`
+- the required media type is `image`
+- storage object paths are infrastructure coordinates only and are not avatar
+  identity
+
+Canonical avatar upload lifecycle:
+
+- avatar upload lifecycle follows `media_pipeline_contract.md`
+- initial media asset creation is `pending_upload`
+- request surfaces may move an asset only to `uploaded` after backend-mediated
+  storage verification
+- only the canonical media worker may move an avatar image through
+  `uploaded -> processing -> ready`
+- direct `pending_upload -> ready` and `uploaded -> ready` request-surface
+  shortcuts are forbidden
+
+Canonical avatar binding and placement authority:
+
+- avatar binding may be introduced only through a dedicated media-owned avatar
+  attach surface or through this contract's profile/community media placement
+  authority
+- binding requires an existing `profile_media` image asset that is correctly
+  scoped to the acting subject and is in a binding-eligible lifecycle state
+- invalid, foreign, wrong-purpose, wrong-type, `pending_upload`, or `failed`
+  assets must fail closed
+
+Profile projection maintenance:
+
+- `app.profiles.avatar_media_id` may exist only as projection/storage for the
+  current profile avatar media identity
+- projection maintenance may copy a validated media-owned avatar binding into
+  `app.profiles.avatar_media_id`
+- `POST /auth/onboarding/create-profile` MUST NOT accept avatar input
+- `PATCH /profiles/me` MUST NOT accept `avatar_media_id`, `photo_url`, storage
+  paths, upload sessions, or binary media fields
+- `GET /profiles/me` may resolve avatar media only through backend read
+  composition governed by `profile_projection_contract.md` and `SYSTEM_LAWS.md`
+
 ## 8. Runtime Relation
 
 The domain-owned profile/community placement relation is:
@@ -152,6 +199,8 @@ This contract preserves one feature-source domain for profile/community media.
 It is valid only if future implementation preserves these laws:
 
 - feature source truth remains in `app.profile_media_placements`
+- profile avatar upload and binding remain media-owned, not Auth +
+  Onboarding-owned and not `/profiles/me` patch-owned
 - only `published` rows contribute canonical runtime projection for this feature
 - no second feature-source domain appears
 - no legacy source-truth fields survive as canonical profile/community media truth

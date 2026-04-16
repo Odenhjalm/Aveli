@@ -24,28 +24,47 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
   late final TextEditingController _displayNameCtrl;
   late final TextEditingController _bioCtrl;
   bool _isSubmitting = false;
+  bool _isHydratingControllers = false;
   String? _hydratedProfileId;
   String? _nameError;
+
+  bool get _isNameValid => _displayNameCtrl.text.trim().isNotEmpty;
 
   @override
   void initState() {
     super.initState();
     _displayNameCtrl = TextEditingController();
+    _displayNameCtrl.addListener(_handleDisplayNameChanged);
     _bioCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
+    _displayNameCtrl.removeListener(_handleDisplayNameChanged);
     _displayNameCtrl.dispose();
     _bioCtrl.dispose();
     super.dispose();
   }
 
+  void _handleDisplayNameChanged() {
+    if (_isHydratingControllers || !mounted) return;
+    setState(() {
+      if (_nameError != null) {
+        _nameError = null;
+      }
+    });
+  }
+
   void _hydrateControllers(Profile? profile) {
     if (profile == null || _hydratedProfileId == profile.id) return;
     _hydratedProfileId = profile.id;
-    _displayNameCtrl.text = profile.displayName ?? '';
-    _bioCtrl.text = profile.bio ?? '';
+    _isHydratingControllers = true;
+    try {
+      _displayNameCtrl.text = profile.displayName ?? '';
+      _bioCtrl.text = profile.bio ?? '';
+    } finally {
+      _isHydratingControllers = false;
+    }
   }
 
   @override
@@ -100,10 +119,6 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
                       hintText: 'Ditt namn',
                       errorText: _nameError,
                     ),
-                    onChanged: (_) {
-                      if (_nameError == null) return;
-                      setState(() => _nameError = null);
-                    },
                   ),
                   gap16,
                   TextField(
@@ -117,7 +132,9 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
                   ),
                   gap20,
                   FilledButton(
-                    onPressed: _isSubmitting ? null : _saveProfile,
+                    onPressed: (!_isNameValid || _isSubmitting)
+                        ? null
+                        : _saveProfile,
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(

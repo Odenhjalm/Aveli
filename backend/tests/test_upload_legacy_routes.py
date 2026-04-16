@@ -19,6 +19,10 @@ def test_legacy_upload_and_avatar_routes_are_not_mounted():
     inventory = _route_inventory()
 
     forbidden = {
+        ("/profile/avatar/init", "POST"),
+        ("/profile/avatar/attach", "POST"),
+        ("/api/profile/avatar/init", "POST"),
+        ("/api/profile/avatar/attach", "POST"),
         ("/profiles/me/avatar", "POST"),
         ("/api/upload/profile", "POST"),
         ("/upload/profile", "POST"),
@@ -34,6 +38,10 @@ def test_legacy_upload_and_avatar_routes_are_not_mounted():
 
 async def test_removed_upload_routes_fail_closed_as_not_found(async_client):
     forbidden_paths = (
+        "/profile/avatar/init",
+        "/profile/avatar/attach",
+        "/api/profile/avatar/init",
+        "/api/profile/avatar/attach",
         "/profiles/me/avatar",
         "/api/upload/profile",
         "/upload/profile",

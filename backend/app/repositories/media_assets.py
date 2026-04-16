@@ -74,14 +74,24 @@ def _decorate_media_asset_row(row: dict[str, Any] | None) -> dict[str, Any] | No
 
 
 def _canonical_storage_bucket_for_access(row: dict[str, Any]) -> str | None:
-    playback_object_path = str(row.get("playback_object_path") or "").strip().lstrip("/")
-    original_object_path = str(row.get("original_object_path") or "").strip().lstrip("/")
+    playback_object_path = (
+        str(row.get("playback_object_path") or "").strip().lstrip("/")
+    )
+    original_object_path = (
+        str(row.get("original_object_path") or "").strip().lstrip("/")
+    )
     purpose = str(row.get("purpose") or "").strip().lower()
     media_type = str(row.get("media_type") or "").strip().lower()
 
-    if playback_object_path and purpose == "course_cover" and media_type == "image":
+    if (
+        playback_object_path
+        and media_type == "image"
+        and purpose in {"course_cover", "profile_media"}
+    ):
         return settings.media_public_bucket
-    if playback_object_path.startswith("lessons/") or original_object_path.startswith("lessons/"):
+    if playback_object_path.startswith("lessons/") or original_object_path.startswith(
+        "lessons/"
+    ):
         return settings.media_public_bucket
     if playback_object_path or original_object_path:
         return settings.media_source_bucket
@@ -171,7 +181,11 @@ async def get_course_cover_pipeline_asset(media_asset_id: str) -> dict[str, Any]
 
 
 async def get_media_assets(media_asset_ids: Sequence[str]) -> dict[str, dict[str, Any]]:
-    ids = [str(media_asset_id).strip() for media_asset_id in media_asset_ids if str(media_asset_id).strip()]
+    ids = [
+        str(media_asset_id).strip()
+        for media_asset_id in media_asset_ids
+        if str(media_asset_id).strip()
+    ]
     if not ids:
         return {}
 
@@ -192,10 +206,7 @@ async def get_media_assets(media_asset_ids: Sequence[str]) -> dict[str, dict[str
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (ids,))
             rows = await cur.fetchall()
-    return {
-        str(row["id"]): _decorate_media_asset_row(dict(row)) or {}
-        for row in rows
-    }
+    return {str(row["id"]): _decorate_media_asset_row(dict(row)) or {} for row in rows}
 
 
 async def create_media_asset(
@@ -296,7 +307,7 @@ async def _call_canonical_worker_transition(
     target_state: str,
     playback_object_path: str | None = None,
 ) -> dict[str, Any] | None:
-    query = f"""
+    query = """
         select
             (result).id as id,
             ((result).media_type)::text as media_type,
@@ -397,7 +408,9 @@ async def mark_media_asset_ready_passthrough(
         original_content_type,
         original_size_bytes,
     )
-    raise RuntimeError("mark_media_asset_ready_passthrough is removed from canonical runtime")
+    raise RuntimeError(
+        "mark_media_asset_ready_passthrough is removed from canonical runtime"
+    )
 
 
 async def mark_media_asset_ready_from_worker(
@@ -462,7 +475,9 @@ async def media_processing_queue_supported() -> bool:
     global _media_processing_queue_supported_cache
     if _media_processing_queue_supported_cache is None:
         columns = await _table_columns("app", "media_assets")
-        _media_processing_queue_supported_cache = _QUEUE_SUPPORT_REQUIRED_COLUMNS.issubset(columns)
+        _media_processing_queue_supported_cache = (
+            _QUEUE_SUPPORT_REQUIRED_COLUMNS.issubset(columns)
+        )
     return _media_processing_queue_supported_cache
 
 
@@ -616,7 +631,10 @@ async def release_processing_media_assets(*, stale_after_seconds: int) -> int:
                     media_type = 'audio'::app.media_type
                     or (
                       media_type = 'image'::app.media_type
-                      and purpose = 'course_cover'::app.media_purpose
+                      and purpose in (
+                        'course_cover'::app.media_purpose,
+                        'profile_media'::app.media_purpose
+                      )
                     )
                   )
                 """,
@@ -650,7 +668,10 @@ async def fetch_and_lock_pending_media_assets(
                     media_type = 'audio'::app.media_type
                     or (
                         media_type = 'image'::app.media_type
-                        and purpose = 'course_cover'::app.media_purpose
+                        and purpose in (
+                            'course_cover'::app.media_purpose,
+                            'profile_media'::app.media_purpose
+                        )
                     )
                 )
                   and state in (
