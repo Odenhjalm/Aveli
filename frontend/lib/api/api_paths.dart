@@ -9,8 +9,7 @@ class ApiPaths {
   static const authRegister = '/auth/register';
   static const authSendVerification = '/auth/send-verification';
   static const authVerifyEmail = '/auth/verify-email';
-  static const authOnboardingCreateProfile =
-      '/auth/onboarding/create-profile';
+  static const authOnboardingCreateProfile = '/auth/onboarding/create-profile';
   static const authOnboardingComplete = '/auth/onboarding/complete';
   static const entryState = '/entry-state';
 
@@ -19,4 +18,15 @@ class ApiPaths {
   static const referralsRedeem = '/referrals/redeem';
 
   static const mediaPreviews = '/api/lesson-media/previews';
+  static const profileAvatarInit = '/api/media/profile-avatar/init';
+  static const profileAvatarAttach = '/api/profile/avatar/attach';
+
+  static String mediaAssetUploadBytes(String mediaAssetId) =>
+      '/api/media-assets/$mediaAssetId/upload-bytes';
+
+  static String mediaAssetUploadCompletion(String mediaAssetId) =>
+      '/api/media-assets/$mediaAssetId/upload-completion';
+
+  static String mediaAssetStatus(String mediaAssetId) =>
+      '/api/media-assets/$mediaAssetId/status';
 }

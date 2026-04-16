@@ -5,6 +5,7 @@ import 'package:aveli/core/env/app_config.dart';
 
 import '../data/media_repository.dart';
 import '../data/media_pipeline_repository.dart';
+import '../data/profile_avatar_repository.dart';
 
 final mediaRepositoryProvider = Provider<MediaRepository>((ref) {
   final client = ref.watch(apiClientProvider);
@@ -17,4 +18,12 @@ final mediaPipelineRepositoryProvider = Provider<MediaPipelineRepository>((
 ) {
   final client = ref.watch(apiClientProvider);
   return MediaPipelineRepository(client: client);
+});
+
+final profileAvatarRepositoryProvider = Provider<ProfileAvatarRepository>((
+  ref,
+) {
+  final client = ref.watch(apiClientProvider);
+  final mediaPipeline = ref.watch(mediaPipelineRepositoryProvider);
+  return ProfileAvatarRepository(client: client, mediaPipeline: mediaPipeline);
 });
