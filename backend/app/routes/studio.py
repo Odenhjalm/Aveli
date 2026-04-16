@@ -583,11 +583,7 @@ def _canonical_upload_endpoint(media_asset_id: str) -> str:
 
 
 def _canonical_upload_storage_bucket(media_asset: dict[str, Any]) -> str:
-    purpose = str(media_asset.get("purpose") or "").strip().lower()
-    media_type = str(media_asset.get("media_type") or "").strip().lower()
-    if purpose == "lesson_media" and media_type == "image":
-        return settings.media_public_bucket
-    return settings.media_source_bucket
+    return storage_service.canonical_upload_bucket_for_media_asset(media_asset)
 
 
 def _canonical_upload_content_type(media_asset: dict[str, Any]) -> str:

@@ -8,6 +8,7 @@ from psycopg.rows import dict_row
 
 from ..db import pool
 from ..config import settings
+from ..services import storage_service
 
 _FAILURE_LIMIT_MAX = 100
 _ORPHAN_LIMIT_MAX = 200
@@ -94,7 +95,7 @@ def _canonical_storage_bucket_for_access(row: dict[str, Any]) -> str | None:
     ):
         return settings.media_public_bucket
     if playback_object_path or original_object_path:
-        return settings.media_source_bucket
+        return storage_service.canonical_source_bucket_for_media_asset(row)
     return None
 
 

@@ -145,6 +145,10 @@ async def test_existing_upload_authorization_admits_scoped_profile_media(
     )
 
     assert authorized == asset
+    assert (
+        studio._canonical_upload_storage_bucket(authorized)
+        == studio.settings.media_profile_bucket
+    )
 
 
 async def test_profile_avatar_upload_completion_uses_canonical_uploaded_transition(

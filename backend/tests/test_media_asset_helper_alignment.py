@@ -128,6 +128,27 @@ async def test_get_media_asset_access_derives_public_profile_media_bucket(monkey
     assert media_asset["storage_bucket"] == settings.media_public_bucket
 
 
+async def test_get_media_asset_access_derives_profile_media_source_bucket(monkeypatch):
+    async def fake_get_media_asset(_: str):
+        return {
+            "id": str(uuid.uuid4()),
+            "media_type": "image",
+            "purpose": "profile_media",
+            "original_object_path": ("media/source/profile-avatar/user-1/avatar.png"),
+            "playback_object_path": None,
+            "playback_format": None,
+            "state": "pending_upload",
+            "storage_bucket": None,
+        }
+
+    monkeypatch.setattr(media_assets_repo, "get_media_asset", fake_get_media_asset)
+
+    media_asset = await media_assets_repo.get_media_asset_access(str(uuid.uuid4()))
+
+    assert media_asset is not None
+    assert media_asset["storage_bucket"] == settings.media_profile_bucket
+
+
 def test_media_worker_queue_includes_profile_media_images():
     source = Path(media_assets_repo.__file__).read_text(encoding="utf-8")
 

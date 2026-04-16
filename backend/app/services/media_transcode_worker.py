@@ -433,7 +433,9 @@ async def _transcode_audio_asset(
     if not source_path:
         raise RuntimeError("Missing source object path")
 
-    source_bucket = asset.get("storage_bucket") or settings.media_source_bucket
+    source_bucket = asset.get(
+        "storage_bucket"
+    ) or storage_service.canonical_source_bucket_for_media_asset(asset)
     source_storage = storage_service.get_storage_service(source_bucket)
     try:
         signed = await source_storage.get_presigned_url(
@@ -505,7 +507,9 @@ async def _transcode_cover_asset(
     if not source_path:
         raise RuntimeError("Missing source object path")
 
-    source_bucket = asset.get("storage_bucket") or settings.media_source_bucket
+    source_bucket = asset.get(
+        "storage_bucket"
+    ) or storage_service.canonical_source_bucket_for_media_asset(asset)
     source_storage = storage_service.get_storage_service(source_bucket)
     try:
         signed = await source_storage.get_presigned_url(
@@ -584,7 +588,9 @@ async def _transcode_profile_media_image_asset(
     if not source_path:
         raise RuntimeError("Missing source object path")
 
-    source_bucket = asset.get("storage_bucket") or settings.media_source_bucket
+    source_bucket = asset.get(
+        "storage_bucket"
+    ) or storage_service.canonical_source_bucket_for_media_asset(asset)
     source_storage = storage_service.get_storage_service(source_bucket)
     try:
         signed = await source_storage.get_presigned_url(

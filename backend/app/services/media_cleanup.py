@@ -91,8 +91,13 @@ def _canonical_media_asset_bucket(
 
     media_type = str(asset.get("media_type") or "").strip().lower()
     purpose = str(asset.get("purpose") or "").strip().lower()
-    if identity == "playback" and purpose == "course_cover" and media_type == "image":
+    if identity == "playback" and media_type == "image" and purpose in {
+        "course_cover",
+        "profile_media",
+    }:
         return settings.media_public_bucket
+    if identity == "original" and purpose == "profile_media":
+        return settings.media_profile_bucket
     if normalized_path.startswith("lessons/"):
         return settings.media_public_bucket
     return settings.media_source_bucket

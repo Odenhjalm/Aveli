@@ -29,7 +29,9 @@ _KNOWN_BUCKET_PREFIXES = {
     "course-media",
     "public-media",
     "lesson-media",
+    "profile-media",
     settings.media_source_bucket,
+    settings.media_profile_bucket,
     settings.media_public_bucket,
 }
 

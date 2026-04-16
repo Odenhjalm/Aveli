@@ -258,6 +258,7 @@ class Settings(BaseSettings):
     media_signing_ttl_seconds: int = 600
     media_public_cache_seconds: int = 3600
     media_source_bucket: str = "course-media"
+    media_profile_bucket: str = "profile-media"
     media_public_bucket: str = "public-media"
     media_transcode_enabled: bool = True
     media_transcode_poll_interval_seconds: int = 10

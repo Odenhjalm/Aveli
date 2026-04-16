@@ -178,3 +178,4 @@ tmp_*
 *.pid
 frontend/.env*
 backend/.env*
+actual_truth/DETERMINED_TASKS/retrieval_index_environment_dependencies/*

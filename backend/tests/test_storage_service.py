@@ -154,3 +154,36 @@ async def test_create_upload_url_returns_put_headers(monkeypatch):
 
     request = captured["request"]
     assert request["headers"]["x-upsert"] == "true"
+
+
+def test_canonical_upload_bucket_uses_profile_media_bucket_for_profile_assets():
+    assert (
+        storage_module.canonical_upload_bucket_for_media_asset(
+            {"purpose": "profile_media", "media_type": "image"}
+        )
+        == storage_module.settings.media_profile_bucket
+    )
+
+
+def test_canonical_upload_bucket_preserves_existing_course_media_fallbacks():
+    assert (
+        storage_module.canonical_upload_bucket_for_media_asset(
+            {"purpose": "course_cover", "media_type": "image"}
+        )
+        == storage_module.settings.media_source_bucket
+    )
+    assert (
+        storage_module.canonical_upload_bucket_for_media_asset(
+            {"purpose": "lesson_media", "media_type": "audio"}
+        )
+        == storage_module.settings.media_source_bucket
+    )
+
+
+def test_canonical_upload_bucket_preserves_public_lesson_image_mapping():
+    assert (
+        storage_module.canonical_upload_bucket_for_media_asset(
+            {"purpose": "lesson_media", "media_type": "image"}
+        )
+        == storage_module.settings.media_public_bucket
+    )

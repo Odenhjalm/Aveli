@@ -13,8 +13,10 @@ _SIGNED_URL_TTL_SECONDS = 60 * 60
 _KNOWN_BUCKETS = {
     "course-media",
     "lesson-media",
+    "profile-media",
     "public-media",
     settings.media_source_bucket,
+    settings.media_profile_bucket,
     settings.media_public_bucket,
 }
 _PUBLIC_PATH_PREFIXES = ("users/", "avatars/", "hero/", "logos/")

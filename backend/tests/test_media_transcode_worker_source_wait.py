@@ -328,6 +328,7 @@ async def test_profile_media_image_transcode_marks_ready_through_worker(
             calls["deleted_path"] = path
 
     def fake_get_storage_service(bucket):
+        calls.setdefault("storage_buckets", []).append(bucket)
         return DummyStorage(bucket)
 
     async def fake_download_to_file(url, destination):
@@ -372,11 +373,14 @@ async def test_profile_media_image_transcode_marks_ready_through_worker(
             "media_type": "image",
             "purpose": "profile_media",
             "original_object_path": "media/source/profile-avatar/user-1/avatar.png",
-            "storage_bucket": "source-media",
         },
         fake_consume_attempt,
     )
 
+    assert calls["storage_buckets"] == [
+        worker.settings.media_profile_bucket,
+        worker.settings.media_public_bucket,
+    ]
     assert calls["attempt_consumed"] is True
     assert calls["upload_path"] == "media/derived/profile-avatar/user-1/avatar.jpg"
     assert calls["upload_content_type"] == "image/jpeg"

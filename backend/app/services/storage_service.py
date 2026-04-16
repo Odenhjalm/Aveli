@@ -318,6 +318,23 @@ class StorageService:
 _storage_services: dict[str, StorageService] = {}
 
 
+def canonical_source_bucket_for_media_asset(media_asset: Mapping[str, Any]) -> str:
+    purpose = str(media_asset.get("purpose") or "").strip().lower()
+    if purpose == "profile_media":
+        return settings.media_profile_bucket
+    return settings.media_source_bucket
+
+
+def canonical_upload_bucket_for_media_asset(media_asset: Mapping[str, Any]) -> str:
+    purpose = str(media_asset.get("purpose") or "").strip().lower()
+    media_type = str(media_asset.get("media_type") or "").strip().lower()
+    if purpose == "profile_media":
+        return settings.media_profile_bucket
+    if purpose == "lesson_media" and media_type == "image":
+        return settings.media_public_bucket
+    return settings.media_source_bucket
+
+
 def get_storage_service(bucket: str | None) -> StorageService:
     normalized = (bucket or "").strip() or settings.media_source_bucket
     service = _storage_services.get(normalized)

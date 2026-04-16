@@ -22,5 +22,6 @@ insert into storage.buckets (id, public)
 values
   ('course-media', false),
   ('lesson-media', false),
+  ('profile-media', false),
   ('public-media', true)
 on conflict (id) do nothing;
