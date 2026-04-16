@@ -1,0 +1,162 @@
+﻿{
+    "artifact_type":  "offline_wheelhouse_result",
+    "execution_status":  "FAIL",
+    "controller_scope":  "retrieval_index_environment_wheelhouse",
+    "task_id":  "W01",
+    "mode":  "wheelhouse_materialization",
+    "status":  "STOP",
+    "build_id":  "c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+    "approval_artifact":  null,
+    "dependency_lock_artifact":  null,
+    "repo_root":  "C:\\Users\\Odenh\\app\\Aveli",
+    "wheelhouse_root":  "actual_truth/offline_wheelhouse/c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+    "started_at_utc":  "2026-04-16T18:56:13.2268250Z",
+    "completed_at_utc":  "2026-04-16T18:56:13.2268250Z",
+    "wheelhouse_materialization_attempted":  false,
+    "approval_validation":  {
+                                "status":  "STOP",
+                                "approval_artifact_valid_json":  false,
+                                "approval_artifact_executable":  false,
+                                "approval_phrase_exact":  false,
+                                "build_id_matches":  false,
+                                "wheelhouse_root_allowed":  false,
+                                "dependency_lock_artifact_matches":  false,
+                                "failure_class":  "STOP"
+                            },
+    "dependency_lock_verification":  {
+                                         "status":  "STOP",
+                                         "lock_artifact_valid_json":  false,
+                                         "lock_artifact_executable":  false,
+                                         "example_only":  false,
+                                         "package_count":  0,
+                                         "direct_package_count":  0,
+                                         "transitive_package_count":  0,
+                                         "missing_direct_packages":  [
+                                                                         "chromadb",
+                                                                         "numpy",
+                                                                         "sentence-transformers",
+                                                                         "tqdm"
+                                                                     ],
+                                         "missing_required_fields":  [
+                                                                         "dependency_lock_artifact"
+                                                                     ],
+                                         "placeholder_hashes":  [
+
+                                                                ],
+                                         "floating_versions":  [
+
+                                                               ],
+                                         "failure_class":  "STOP"
+                                     },
+    "package_source_verification":  {
+                                        "status":  "NOT_EVALUATED",
+                                        "source_type":  "preexisting_local_artifacts",
+                                        "source_artifact_count":  97,
+                                        "source_artifacts_exist":  true,
+                                        "missing_source_artifacts":  [
+
+                                                                     ],
+                                        "source_hashes_match_lock":  false,
+                                        "mismatched_source_hashes":  [
+
+                                                                     ],
+                                        "source_requires_network":  false,
+                                        "failure_class":  "STOP"
+                                    },
+    "wheelhouse_hash_verification":  {
+                                         "status":  "STOP",
+                                         "wheelhouse_root":  "actual_truth/offline_wheelhouse/c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+                                         "approved_wheel_count":  0,
+                                         "materialized_wheel_count":  0,
+                                         "missing_wheels":  [
+
+                                                            ],
+                                         "unapproved_wheels":  [
+
+                                                               ],
+                                         "mismatched_wheel_hashes":  [
+
+                                                                     ],
+                                         "manifest_sha256_written":  false,
+                                         "manifest_sha256_matches_lock":  false,
+                                         "all_hashes_lowercase_sha256":  false,
+                                         "failure_class":  "STOP"
+                                     },
+    "closure_verification":  {
+                                 "status":  "STOP",
+                                 "direct_required":  [
+                                                         "chromadb",
+                                                         "numpy",
+                                                         "sentence-transformers",
+                                                         "tqdm"
+                                                     ],
+                                 "transitive_allowed":  true,
+                                 "full_transitive_closure_declared":  false,
+                                 "closure_complete":  false,
+                                 "runtime_resolution_allowed":  false,
+                                 "missing_transitive_dependencies":  [
+                                                                         "dependency lock missing"
+                                                                     ],
+                                 "unapproved_dependency_edges":  [
+
+                                                                 ],
+                                 "failure_class":  "STOP"
+                             },
+    "network_verification":  {
+                                 "status":  "PASS",
+                                 "network_policy":  "offline",
+                                 "downloads_attempted":  false,
+                                 "dependency_download_attempted":  false,
+                                 "package_index_attempted":  false,
+                                 "model_download_attempted":  false,
+                                 "telemetry_attempted":  false,
+                                 "failure_class":  null
+                             },
+    "fallback_verification":  {
+                                  "status":  "PASS",
+                                  "fallbacks_allowed":  false,
+                                  "fallback_package_source_used":  false,
+                                  "fallback_network_used":  false,
+                                  "fallback_version_used":  false,
+                                  "fallback_hash_used":  false,
+                                  "fallback_resolution_used":  false,
+                                  "system_site_packages_used":  false,
+                                  "failure_class":  null
+                              },
+    "forbidden_side_effect_check":  {
+                                        "repo_index_mutated":  false,
+                                        "active_index_manifest_created":  false,
+                                        "active_chunk_manifest_created":  false,
+                                        "active_lexical_index_created":  false,
+                                        "active_chroma_db_created":  false,
+                                        "staging_root_created":  false,
+                                        "staging_index_manifest_created":  false,
+                                        "staging_chunk_manifest_created":  false,
+                                        "staging_lexical_index_created":  false,
+                                        "staging_chroma_db_created":  false,
+                                        "canonical_interpreter_modified":  false,
+                                        "dependency_install_executed":  false,
+                                        "index_build_executed":  false,
+                                        "retrieval_query_executed":  false,
+                                        "model_loaded":  false,
+                                        "cuda_executed":  false,
+                                        "promotion_executed":  false,
+                                        "d01_executed":  false,
+                                        "b01_executed":  false,
+                                        "t16_executed":  false,
+                                        "t17_executed":  false
+                                    },
+    "hash_verification":  "NOT_EVALUATED",
+    "network_used":  false,
+    "fallback_used":  false,
+    "failure":  {
+                    "failure_class":  "STOP",
+                    "stop_reason":  "Missing executable W01 wheelhouse approval artifact and concrete dependency lock artifact; contract requires both before wheelhouse mutation.",
+                    "authority_file":  "actual_truth/contracts/retrieval/offline_wheelhouse_contract.md",
+                    "affected_path":  "actual_truth/build_approvals/offline_wheelhouse_approval_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+                    "wheelhouse_touched":  false,
+                    "repo_index_touched":  false,
+                    "dependency_environment_touched":  false,
+                    "next_allowed_action":  "Create a concrete executable W01 wheelhouse approval artifact and concrete dependency lock artifact bound to the preexisting local wheels, then rerun W01."
+                }
+}
