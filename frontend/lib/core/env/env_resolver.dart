@@ -61,6 +61,10 @@ class EnvResolver {
   static const List<_RequiredKey> _requiredKeys = [
     _RequiredKey(displayName: 'API_BASE_URL', keys: ['API_BASE_URL']),
     _RequiredKey(
+      displayName: 'STRIPE_PUBLISHABLE_KEY',
+      keys: ['STRIPE_PUBLISHABLE_KEY'],
+    ),
+    _RequiredKey(
       displayName: 'OAUTH_REDIRECT_WEB',
       keys: ['OAUTH_REDIRECT_WEB'],
       requiredOnNonWeb: false,
@@ -69,6 +73,11 @@ class EnvResolver {
       displayName: 'OAUTH_REDIRECT_MOBILE',
       keys: ['OAUTH_REDIRECT_MOBILE'],
       requiredOnWeb: false,
+    ),
+    _RequiredKey(
+      displayName: 'SUBSCRIPTIONS_ENABLED',
+      keys: ['SUBSCRIPTIONS_ENABLED'],
+      requiredOnNonWeb: false,
     ),
   ];
 

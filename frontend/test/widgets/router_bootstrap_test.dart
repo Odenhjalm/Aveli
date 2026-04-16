@@ -126,10 +126,7 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<Profile> register({
-    required String email,
-    required String password,
-  }) {
+  Future<Profile> register({required String email, required String password}) {
     throw UnsupportedError('Not implemented in tests');
   }
 
@@ -165,10 +162,7 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<Profile> createProfile({
-    required String displayName,
-    String? bio,
-  }) =>
+  Future<Profile> createProfile({required String displayName, String? bio}) =>
       throw UnsupportedError('Not implemented in tests');
 
   @override
@@ -338,7 +332,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.byType(SubscribeScreen), findsOneWidget);
+    expect(find.byType(MembershipCheckoutScreen), findsOneWidget);
     expect(find.byType(HomeDashboardPage), findsNothing);
   });
 

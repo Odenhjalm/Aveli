@@ -8,6 +8,7 @@ void main() {
         'API_BASE_URL': 'https://example.com',
         'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
         'OAUTH_REDIRECT_WEB': 'https://app.example.com/auth/callback',
+        'SUBSCRIPTIONS_ENABLED': 'true',
       };
 
       final result = EnvResolver.validateRequiredWithReader(
@@ -25,6 +26,7 @@ void main() {
         'API_BASE_URL': 'https://example.com',
         'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
         'OAUTH_REDIRECT_MOBILE': 'aveliapp://auth/callback',
+        'SUBSCRIPTIONS_ENABLED': 'true',
       };
 
       final result = EnvResolver.validateRequiredWithReader(
@@ -42,6 +44,7 @@ void main() {
         'API_BASE_URL': 'https://example.com',
         'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
         'OAUTH_REDIRECT_MOBILE': 'aveliapp://auth/callback',
+        'SUBSCRIPTIONS_ENABLED': 'true',
       };
 
       final result = EnvResolver.validateRequiredWithReader(
@@ -58,6 +61,7 @@ void main() {
       final values = <String, String>{
         'API_BASE_URL': 'https://example.com',
         'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
+        'SUBSCRIPTIONS_ENABLED': 'true',
       };
 
       final result = EnvResolver.validateRequiredWithReader(
@@ -68,5 +72,24 @@ void main() {
 
       expect(result.missingKeys, contains('OAUTH_REDIRECT_WEB'));
     });
+
+    test(
+      'web: requires SUBSCRIPTIONS_ENABLED for compiled checkout config',
+      () {
+        final values = <String, String>{
+          'API_BASE_URL': 'https://example.com',
+          'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
+          'OAUTH_REDIRECT_WEB': 'https://app.example.com/auth/callback',
+        };
+
+        final result = EnvResolver.validateRequiredWithReader(
+          isWeb: true,
+          mode: EnvResolutionMode.compileTime,
+          read: (key) => values[key]?.trim() ?? '',
+        );
+
+        expect(result.missingKeys, contains('SUBSCRIPTIONS_ENABLED'));
+      },
+    );
   });
 }

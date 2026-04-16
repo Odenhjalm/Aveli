@@ -266,21 +266,43 @@ void main() {
         final api = _readFrontendSource(
           'lib/features/paywall/data/checkout_api.dart',
         );
-        final subscribe = _readFrontendSource(
+        final routePaths = _readFrontendSource(
+          'lib/core/routing/route_paths.dart',
+        );
+        final appRouter = _readFrontendSource(
+          'lib/core/routing/app_router.dart',
+        );
+        final membershipCheckout = _readFrontendSource(
           'lib/features/payments/presentation/subscribe_screen.dart',
         );
 
+        expect(
+          routePaths,
+          contains("checkoutMembership = '/checkout/membership'"),
+        );
+        expect(appRouter, contains('path: RoutePath.checkoutMembership'));
+        expect(
+          appRouter,
+          contains(
+            'redirect: (context, state) => RoutePath.checkoutMembership',
+          ),
+        );
         expect(api, contains('MembershipCheckoutLaunch'));
         expect(api, contains("payload['client_secret']"));
-        expect(subscribe, contains('EmbeddedMembershipCheckoutSurface'));
-        expect(subscribe, contains('launch.clientSecret'));
-        expect(subscribe, contains('14 dagar'));
-        expect(subscribe, contains('Kortuppgifter krävs'));
+        expect(membershipCheckout, contains('class MembershipCheckoutScreen'));
+        expect(membershipCheckout, isNot(contains('class SubscribeScreen')));
         expect(
-          subscribe,
+          membershipCheckout,
+          contains('EmbeddedMembershipCheckoutSurface'),
+        );
+        expect(membershipCheckout, contains('launch.clientSecret'));
+        expect(membershipCheckout, contains('14 dagar'));
+        expect(membershipCheckout, contains('Kortuppgifter krävs'));
+        expect(
+          membershipCheckout,
           isNot(contains('router.pushNamed(AppRoute.checkout')),
         );
-        expect(subscribe, isNot(contains('launch.url')));
+        expect(membershipCheckout, isNot(contains('launch.url')));
       },
     );
 

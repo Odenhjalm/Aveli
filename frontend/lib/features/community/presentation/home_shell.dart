@@ -234,8 +234,9 @@ class _ServicesTab extends ConsumerWidget {
                 gap12,
                 if (config.subscriptionsEnabled) ...[
                   GradientButton(
-                    onPressed: () => context.goNamed(AppRoute.subscribe),
-                    child: const Text('Gå till abonnemang'),
+                    onPressed: () =>
+                        context.goNamed(AppRoute.checkoutMembership),
+                    child: const Text('Gå till medlemsbetalning'),
                   ),
                   if (profile == null)
                     const Padding(

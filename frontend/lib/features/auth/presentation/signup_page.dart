@@ -12,12 +12,10 @@ import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class SignupPage extends ConsumerStatefulWidget {
-  const SignupPage({
-    super.key,
-    this.initialEmail,
-  });
+  const SignupPage({super.key, this.initialEmail, this.redirectPath});
 
   final String? initialEmail;
+  final String? redirectPath;
 
   @override
   ConsumerState<SignupPage> createState() => _SignupPageState();
@@ -151,7 +149,10 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                           TextButton(
                             onPressed: busy || envBlocked
                                 ? null
-                                : () => context.goNamed(AppRoute.login),
+                                : () => context.goNamed(
+                                    AppRoute.login,
+                                    queryParameters: _redirectQueryParameters(),
+                                  ),
                             child: const Text('Har du konto? Logga in'),
                           ),
                           gap24,
@@ -202,15 +203,18 @@ class _SignupPageState extends ConsumerState<SignupPage> {
 
     try {
       final controller = ref.read(authControllerProvider.notifier);
-      await controller.register(
-        email,
-        password,
-      );
+      await controller.register(email, password);
       if (!mounted || !context.mounted) return;
       showSnack(
         context,
         'Konto skapat. Kontrollera din e-post för att verifiera kontot.',
       );
+      final redirect = widget.redirectPath;
+      if (redirect != null && redirect.startsWith('/')) {
+        context.go(redirect);
+      } else {
+        context.goNamed(AppRoute.home);
+      }
     } catch (error) {
       if (!mounted || !context.mounted) return;
       final message = error is AppFailure
@@ -231,6 +235,13 @@ class _SignupPageState extends ConsumerState<SignupPage> {
       return 'Ogiltig e-postadress.';
     }
     return null;
+  }
+
+  Map<String, String> _redirectQueryParameters() {
+    final redirect = widget.redirectPath;
+    return {
+      if (redirect != null && redirect.startsWith('/')) 'redirect': redirect,
+    };
   }
 
   String? _validatePassword(String? value) {

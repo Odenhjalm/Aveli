@@ -67,8 +67,14 @@ final _testAppRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, _) => const SizedBox.shrink(),
       ),
       GoRoute(
+        path: RoutePath.checkoutMembership,
+        name: AppRoute.checkoutMembership,
+        builder: (context, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
         path: RoutePath.subscribe,
         name: AppRoute.subscribe,
+        redirect: (context, state) => RoutePath.checkoutMembership,
         builder: (context, _) => const SizedBox.shrink(),
       ),
       GoRoute(
@@ -223,7 +229,7 @@ void main() {
   });
 
   testWidgets(
-    'payment-needed entry state redirects private routes to subscribe',
+    'payment-needed entry state redirects private routes to membership checkout',
     (tester) async {
       final router = await _pumpHarness(tester, paymentNeeded);
 
@@ -232,13 +238,13 @@ void main() {
 
       expect(
         router.routeInformationProvider.value.uri.path,
-        RoutePath.subscribe,
+        RoutePath.checkoutMembership,
       );
     },
   );
 
   testWidgets(
-    'ordinary both payment and onboarding needed routes to subscribe',
+    'ordinary both payment and onboarding needed routes to membership checkout',
     (tester) async {
       final router = await _pumpHarness(
         tester,
@@ -249,11 +255,23 @@ void main() {
       await tester.pump();
 
       final uri = router.routeInformationProvider.value.uri;
-      expect(uri.path, RoutePath.subscribe);
+      expect(uri.path, RoutePath.checkoutMembership);
       expect(uri.path, isNot(RoutePath.createProfile));
       expect(uri.queryParameters.containsKey('referral_code'), isFalse);
     },
   );
+
+  testWidgets('/subscribe forwards to membership checkout', (tester) async {
+    final router = await _pumpHarness(tester, paymentNeeded);
+
+    router.go(RoutePath.subscribe);
+    await tester.pump();
+
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      RoutePath.checkoutMembership,
+    );
+  });
 
   testWidgets(
     'incomplete onboarding redirects private routes to create profile',
@@ -392,7 +410,7 @@ void main() {
 
       expect(
         router.routeInformationProvider.value.uri.path,
-        RoutePath.subscribe,
+        RoutePath.checkoutMembership,
       );
     },
   );

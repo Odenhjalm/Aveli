@@ -157,7 +157,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           TextButton(
                             onPressed: auth.isLoading || envBlocked
                                 ? null
-                                : () => context.goNamed(AppRoute.signup),
+                                : () => context.goNamed(
+                                    AppRoute.signup,
+                                    queryParameters: _redirectQueryParameters(),
+                                  ),
                             child: GradientText(
                               'Skapa konto',
                               style: textTheme.bodyMedium ?? const TextStyle(),
@@ -221,6 +224,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 'Inloggning misslyckades.';
       showSnack(context, message);
     }
+  }
+
+  Map<String, String> _redirectQueryParameters() {
+    final redirect = widget.redirectPath;
+    return {
+      if (redirect != null && redirect.startsWith('/')) 'redirect': redirect,
+    };
   }
 
   String? _validateEmail(String? value) {

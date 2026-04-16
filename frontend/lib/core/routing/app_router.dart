@@ -73,6 +73,10 @@ class AppRouterNotifier extends ChangeNotifier {
   RouteSessionSnapshot get session => ref.read(routeSessionSnapshotProvider);
 
   String? handleRedirect(GoRouterState state) {
+    if (state.matchedLocation == RoutePath.subscribe) {
+      return RoutePath.checkoutMembership;
+    }
+
     final meta = _resolveRouteMeta(state);
     final session = ref.read(routeSessionSnapshotProvider);
     final isBootRoute = state.matchedLocation == RoutePath.boot;
@@ -178,7 +182,7 @@ String _resolvePreEntryTarget(
     ).toString();
   }
   if (session.needsPayment) {
-    return RoutePath.subscribe;
+    return RoutePath.checkoutMembership;
   }
   if (session.needsWelcome) {
     return RoutePath.welcome;
@@ -225,7 +229,7 @@ const Set<String> _welcomePreEntryPaths = {
 };
 
 const Set<String> _paymentPreEntryPaths = {
-  RoutePath.subscribe,
+  RoutePath.checkoutMembership,
   RoutePath.profileSubscription,
   RoutePath.checkout,
   RoutePath.checkoutReturn,
@@ -288,8 +292,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.signup,
         name: AppRoute.signup,
-        builder: (context, state) =>
-            SignupPage(initialEmail: state.uri.queryParameters['email']),
+        builder: (context, state) => SignupPage(
+          initialEmail: state.uri.queryParameters['email'],
+          redirectPath: state.uri.queryParameters['redirect'],
+        ),
       ),
       GoRoute(
         path: RoutePath.verifyEmail,
@@ -409,6 +415,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           }
           return CheckoutWebViewPage(url: url);
         },
+      ),
+      GoRoute(
+        path: RoutePath.checkoutMembership,
+        name: AppRoute.checkoutMembership,
+        builder: (context, state) => const MembershipCheckoutScreen(),
       ),
       GoRoute(
         path: RoutePath.checkoutReturn,
@@ -535,7 +546,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.subscribe,
         name: AppRoute.subscribe,
-        builder: (context, state) => const SubscribeScreen(),
+        redirect: (context, state) => RoutePath.checkoutMembership,
+        builder: (context, state) => const SizedBox.shrink(),
       ),
       GoRoute(
         path: RoutePath.booking,

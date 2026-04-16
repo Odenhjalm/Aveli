@@ -47,6 +47,10 @@ void main() {
         resolveRouteAccessLevel('/profile'),
         RouteAccessLevel.authenticated,
       );
+      expect(
+        resolveRouteAccessLevel('/checkout/membership'),
+        RouteAccessLevel.authenticated,
+      );
     });
 
     test('defaults unknown routes to authenticated', () {

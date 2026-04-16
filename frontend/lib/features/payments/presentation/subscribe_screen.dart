@@ -19,14 +19,16 @@ import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
-class SubscribeScreen extends ConsumerStatefulWidget {
-  const SubscribeScreen({super.key});
+class MembershipCheckoutScreen extends ConsumerStatefulWidget {
+  const MembershipCheckoutScreen({super.key});
 
   @override
-  ConsumerState<SubscribeScreen> createState() => _SubscribeScreenState();
+  ConsumerState<MembershipCheckoutScreen> createState() =>
+      _MembershipCheckoutScreenState();
 }
 
-class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
+class _MembershipCheckoutScreenState
+    extends ConsumerState<MembershipCheckoutScreen> {
   String? _submittingInterval;
   String? _checkoutInterval;
   MembershipCheckoutLaunch? _checkoutLaunch;
@@ -190,7 +192,9 @@ class _SubscribeScreenState extends ConsumerState<SubscribeScreen> {
 
   void _redirectToLogin() {
     if (!mounted) return;
-    final redirect = GoRouter.of(context).namedLocation(AppRoute.subscribe);
+    final redirect = GoRouter.of(
+      context,
+    ).namedLocation(AppRoute.checkoutMembership);
     context.goNamed(AppRoute.login, queryParameters: {'redirect': redirect});
   }
 

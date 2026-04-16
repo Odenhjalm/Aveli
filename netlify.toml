@@ -15,9 +15,10 @@
   # - FLUTTER_API_BASE_URL
   # - FLUTTER_STRIPE_PUBLISHABLE_KEY
   # - FLUTTER_OAUTH_REDIRECT_WEB
-  # - SUBSCRIPTIONS_ENABLED
+  # - FLUTTER_SUBSCRIPTIONS_ENABLED
   #
-  # The build will fail fast if any are missing.
+  # The build maps FLUTTER_SUBSCRIPTIONS_ENABLED to the compiled
+  # SUBSCRIPTIONS_ENABLED dart-define and fails fast if any are missing.
   command = "bash scripts/netlify_build_web.sh"
   publish = "build/web"
 

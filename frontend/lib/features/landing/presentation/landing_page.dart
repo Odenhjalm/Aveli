@@ -69,6 +69,13 @@ class _LandingPageState extends ConsumerState<LandingPage>
     context.push(normalized);
   }
 
+  String _authPathWithCheckoutRedirect(String authPath) {
+    return Uri(
+      path: authPath,
+      queryParameters: const {'redirect': RoutePath.checkoutMembership},
+    ).toString();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -257,14 +264,22 @@ class _LandingPageState extends ConsumerState<LandingPage>
         ),
       ] else ...[
         TextButton(
-          onPressed: hasEnvIssues ? null : () => _openAppPath(RoutePath.login),
+          onPressed: hasEnvIssues
+              ? null
+              : () => _openAppPath(
+                  _authPathWithCheckoutRedirect(RoutePath.login),
+                ),
           style: TextButton.styleFrom(
             foregroundColor: DesignTokens.buttonForegroundColor,
           ),
           child: const Text('Logga in'),
         ),
         TextButton(
-          onPressed: hasEnvIssues ? null : () => _openAppPath(RoutePath.signup),
+          onPressed: hasEnvIssues
+              ? null
+              : () => _openAppPath(
+                  _authPathWithCheckoutRedirect(RoutePath.signup),
+                ),
           style: TextButton.styleFrom(
             foregroundColor: DesignTokens.buttonForegroundColor,
           ),
@@ -343,10 +358,24 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       alignment: WrapAlignment.center,
                       children: [
                         _GradientOutlineButton(
+                          label: 'Skapa konto',
+                          onTap: hasEnvIssues
+                              ? null
+                              : () => _openAppPath(
+                                  _authPathWithCheckoutRedirect(
+                                    RoutePath.signup,
+                                  ),
+                                ),
+                        ),
+                        _GradientOutlineButton(
                           label: 'Logga in',
                           onTap: hasEnvIssues
                               ? null
-                              : () => _openAppPath(RoutePath.login),
+                              : () => _openAppPath(
+                                  _authPathWithCheckoutRedirect(
+                                    RoutePath.login,
+                                  ),
+                                ),
                         ),
                       ],
                     ),
@@ -355,7 +384,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       items: [
                         ('Över 1000+', 'nöjda elever'),
                         ('Certifierade', 'lärare'),
-                        ('14 dagar', 'pröveperiod'),
+                        ('14 dagar', 'provperiod'),
                       ],
                     ),
                     const SizedBox(height: 28),
@@ -522,14 +551,14 @@ class _LandingPageState extends ConsumerState<LandingPage>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               SectionHeading(
-                                '14 dagar pröveperiod',
+                                '14 dagar provperiod',
                                 baseStyle: t.titleMedium,
                                 fontWeight: FontWeight.w700,
                                 maxLines: 2,
                               ),
                               const SizedBox(height: 2),
                               MetaText(
-                                'Under pröveperioden får du 14 dagar att testa alla '
+                                'Under provperioden får du 14 dagar att testa alla '
                                 'introduktionskurser. Därefter 130 kr i månaden.',
                                 baseStyle: t.bodyMedium,
                                 maxLines: 3,
