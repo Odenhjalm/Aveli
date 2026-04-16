@@ -72,17 +72,6 @@ class _MembershipCheckoutScreenState
       maxContentWidth: 1180,
       body: Stack(
         children: [
-          const Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFD8F3F7), Color(0xFFE9DEFF)],
-                ),
-              ),
-            ),
-          ),
           LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= 900;
