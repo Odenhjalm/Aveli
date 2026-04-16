@@ -31,9 +31,10 @@ async def mark_order_paid(
     checkout_id: str | None = None,
     subscription_id: str | None = None,
     customer_id: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any] | None:
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 UPDATE app.orders
@@ -52,14 +53,22 @@ async def mark_order_paid(
                 (payment_intent, checkout_id, subscription_id, customer_id, order_id),
             )
             row = await cur.fetchone()
-            await conn.commit()
-            return dict(row) if row else None
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        row = await _execute(conn)
+        await conn.commit()
+        return row
 
 
 async def get_latest_payment_for_order(
     order_id: str | UUID,
     *,
     status: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any] | None:
     clauses = ["order_id = %s"]
     params: list[Any] = [order_id]
@@ -73,11 +82,17 @@ async def get_latest_payment_for_order(
          ORDER BY created_at DESC, id DESC
          LIMIT 1
     """
+    if conn is not None:
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
             row = await cur.fetchone()
-    return dict(row) if row else None
+        return dict(row) if row else None
 
 
 async def get_payment_for_order_by_reference(
@@ -85,6 +100,7 @@ async def get_payment_for_order_by_reference(
     provider_reference: str,
     *,
     status: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any] | None:
     clauses = [
         "order_id = %s",
@@ -101,11 +117,17 @@ async def get_payment_for_order_by_reference(
          ORDER BY created_at DESC, id DESC
          LIMIT 1
     """
+    if conn is not None:
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
             row = await cur.fetchone()
-    return dict(row) if row else None
+        return dict(row) if row else None
 
 
 async def record_payment(
@@ -118,9 +140,10 @@ async def record_payment(
     currency: str,
     metadata: dict[str, Any] | None = None,
     payload: dict[str, Any] | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any]:
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+    async def _execute(active_conn: Any) -> dict[str, Any]:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 INSERT INTO app.payments (
@@ -152,5 +175,12 @@ async def record_payment(
                 ),
             )
             row = await cur.fetchone()
-            await conn.commit()
-            return dict(row)
+        return dict(row)
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        row = await _execute(conn)
+        await conn.commit()
+        return row

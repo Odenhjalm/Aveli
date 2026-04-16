@@ -203,21 +203,29 @@ async def insert_billing_log(
     user_id: str | None,
     step: str,
     info: dict[str, Any] | None = None,
+    conn: Any | None = None,
 ) -> None:
+    async def _execute(active_conn: Any) -> None:
+        async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.billing_logs (user_id, step, info, created_at)
+                VALUES (%s, %s, %s, now())
+                """,
+                (user_id, step, Jsonb(info or {})),
+            )
+
+    if conn is not None:
+        await _execute(conn)
+        return
+
     async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    """
-                    INSERT INTO app.billing_logs (user_id, step, info, created_at)
-                    VALUES (%s, %s, %s, now())
-                    """,
-                    (user_id, step, Jsonb(info or {})),
-                )
-            except errors.UndefinedTable:
-                await conn.rollback()
-                raise
-            await conn.commit()
+        try:
+            await _execute(conn)
+        except errors.UndefinedTable:
+            await conn.rollback()
+            raise
+        await conn.commit()
 
 
 __all__ = [

@@ -34,6 +34,35 @@ def _set_stripe_test_env(monkeypatch, *, secret: str = "sk_test_value") -> None:
     settings.stripe_test_membership_price_id_yearly = "price_year_test"
 
 
+class _FakeSettlementTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeSettlementConnection:
+    def transaction(self):
+        return _FakeSettlementTransaction()
+
+
+class _FakeSettlementConnectionContext:
+    def __init__(self) -> None:
+        self.conn = _FakeSettlementConnection()
+
+    async def __aenter__(self):
+        return self.conn
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeSettlementPool:
+    def connection(self):
+        return _FakeSettlementConnectionContext()
+
+
 def _route_paths() -> set[str]:
     return {
         route.path
@@ -258,9 +287,31 @@ async def test_checkout_session_completed_activates_membership_from_order(
 
     async def fake_set_checkout_reference(**kwargs):
         captured["checkout_reference"] = kwargs
+        return {
+            **order,
+            "stripe_checkout_id": kwargs.get("checkout_id"),
+            "stripe_payment_intent": kwargs.get("payment_intent"),
+            "stripe_subscription_id": kwargs.get("subscription_id"),
+            "stripe_customer_id": kwargs.get("customer_id"),
+        }
 
-    async def fake_get_membership(user_id):
-        captured["membership_lookup"] = user_id
+    async def fake_mark_order_paid(order_id, **kwargs):
+        captured["mark_order_paid"] = {"order_id": order_id, **kwargs}
+        return {**order, "status": "paid"}
+
+    async def fake_get_payment_for_order_by_reference(order_id, provider_reference, **kwargs):
+        captured["payment_lookup"] = {
+            "order_id": order_id,
+            "provider_reference": provider_reference,
+            **kwargs,
+        }
+        return None
+
+    async def fake_record_payment(**kwargs):
+        captured["payment_write"] = kwargs
+
+    async def fake_get_membership(user_id, **kwargs):
+        captured["membership_lookup"] = {"user_id": user_id, **kwargs}
         return None
 
     async def fake_upsert_membership_record(user_id, **kwargs):
@@ -268,6 +319,7 @@ async def test_checkout_session_completed_activates_membership_from_order(
         return {"membership_id": "membership_123", "user_id": user_id, **kwargs}
 
     async def fake_insert_billing_log(**kwargs):
+        kwargs.pop("conn", None)
         captured.setdefault("billing_logs", []).append(kwargs)
 
     async def fake_sync_onboarding_state(user_id):
@@ -282,6 +334,21 @@ async def test_checkout_session_completed_activates_membership_from_order(
         subscription_service.orders_repo,
         "set_order_checkout_reference",
         fake_set_checkout_reference,
+    )
+    monkeypatch.setattr(
+        subscription_service.payments_repo,
+        "mark_order_paid",
+        fake_mark_order_paid,
+    )
+    monkeypatch.setattr(
+        subscription_service.payments_repo,
+        "get_payment_for_order_by_reference",
+        fake_get_payment_for_order_by_reference,
+    )
+    monkeypatch.setattr(
+        subscription_service.payments_repo,
+        "record_payment",
+        fake_record_payment,
     )
     monkeypatch.setattr(
         subscription_service.memberships_repo,
@@ -302,6 +369,175 @@ async def test_checkout_session_completed_activates_membership_from_order(
         subscription_service,
         "sync_onboarding_state",
         fake_sync_onboarding_state,
+    )
+    monkeypatch.setattr(
+        subscription_service,
+        "pool",
+        _FakeSettlementPool(),
+    )
+
+    await subscription_service.process_event(
+        {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_membership_123",
+                    "mode": "subscription",
+                    "created": 1_700_000_000,
+                    "subscription": "sub_membership_123",
+                    "customer": "cus_membership_123",
+                    "amount_total": 9900,
+                    "currency": "sek",
+                    "metadata": {
+                        "checkout_type": "membership",
+                        "order_id": "order_123",
+                        "user_id": "user_123",
+                    },
+                }
+            },
+        }
+    )
+
+    assert captured["order_lookup"] == "order_123"
+    assert captured["checkout_reference"]["subscription_id"] == "sub_membership_123"
+    assert captured["mark_order_paid"]["order_id"] == "order_123"
+    assert captured["mark_order_paid"]["checkout_id"] == "cs_membership_123"
+    assert captured["payment_lookup"]["order_id"] == "order_123"
+    assert captured["payment_lookup"]["provider_reference"] == "cs_membership_123"
+    assert captured["payment_lookup"]["status"] == "paid"
+    assert captured["payment_write"]["order_id"] == "order_123"
+    assert captured["payment_write"]["provider"] == "stripe"
+    assert captured["payment_write"]["provider_reference"] == "cs_membership_123"
+    assert captured["payment_write"]["status"] == "paid"
+    assert captured["payment_write"]["amount_cents"] == 9900
+    assert captured["payment_write"]["currency"] == "sek"
+    assert captured["membership_write"]["user_id"] == "user_123"
+    assert captured["membership_write"]["status"] == "active"
+    assert captured["membership_write"]["source"] == "purchase"
+    assert captured["membership_write"]["effective_at"] == datetime.fromtimestamp(
+        1_700_000_000,
+        tz=timezone.utc,
+    )
+    assert captured["synced_user_id"] == "user_123"
+    assert captured["billing_logs"] == [
+        {
+            "user_id": "user_123",
+            "step": "membership_checkout_completed",
+            "info": {
+                "order_id": "order_123",
+                "session_id": "cs_membership_123",
+                "subscription_id": "sub_membership_123",
+                "order_marked_paid": True,
+                "payment_recorded": True,
+                "membership_activated": True,
+            },
+        }
+    ]
+
+
+async def test_checkout_session_completed_is_idempotent_when_settled(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    order = {
+        "id": "order_123",
+        "user_id": "user_123",
+        "amount_cents": 9900,
+        "currency": "sek",
+        "status": "paid",
+        "stripe_checkout_id": "cs_membership_123",
+        "stripe_subscription_id": "sub_membership_123",
+        "stripe_customer_id": "cus_membership_123",
+    }
+
+    async def fake_get_order(order_id):
+        captured["order_lookup"] = order_id
+        return order
+
+    async def fail_set_checkout_reference(**kwargs):
+        raise AssertionError("settled checkout must not rewrite order references")
+
+    async def fail_mark_order_paid(*args, **kwargs):
+        raise AssertionError("settled checkout must not mark order paid again")
+
+    async def fake_get_payment_for_order_by_reference(order_id, provider_reference, **kwargs):
+        captured["payment_lookup"] = {
+            "order_id": order_id,
+            "provider_reference": provider_reference,
+            **kwargs,
+        }
+        return {
+            "id": "payment_123",
+            "order_id": order_id,
+            "provider_reference": provider_reference,
+            "status": "paid",
+        }
+
+    async def fail_record_payment(*args, **kwargs):
+        raise AssertionError("settled checkout must not duplicate payment rows")
+
+    async def fake_get_membership(user_id, **kwargs):
+        captured["membership_lookup"] = {"user_id": user_id, **kwargs}
+        return {"membership_id": "membership_123", "user_id": user_id, "status": "active"}
+
+    async def fail_upsert_membership_record(*args, **kwargs):
+        raise AssertionError("active membership must not be re-activated")
+
+    async def fail_insert_billing_log(**kwargs):
+        raise AssertionError("no-op idempotent settlement must not duplicate billing logs")
+
+    async def fail_sync_onboarding_state(user_id):
+        raise AssertionError("no-op idempotent settlement must not sync onboarding state")
+
+    monkeypatch.setattr(
+        subscription_service.orders_repo,
+        "get_order",
+        fake_get_order,
+    )
+    monkeypatch.setattr(
+        subscription_service.orders_repo,
+        "set_order_checkout_reference",
+        fail_set_checkout_reference,
+    )
+    monkeypatch.setattr(
+        subscription_service.payments_repo,
+        "mark_order_paid",
+        fail_mark_order_paid,
+    )
+    monkeypatch.setattr(
+        subscription_service.payments_repo,
+        "get_payment_for_order_by_reference",
+        fake_get_payment_for_order_by_reference,
+    )
+    monkeypatch.setattr(
+        subscription_service.payments_repo,
+        "record_payment",
+        fail_record_payment,
+    )
+    monkeypatch.setattr(
+        subscription_service.memberships_repo,
+        "get_membership",
+        fake_get_membership,
+    )
+    monkeypatch.setattr(
+        subscription_service.memberships_repo,
+        "upsert_membership_record",
+        fail_upsert_membership_record,
+    )
+    monkeypatch.setattr(
+        subscription_service.membership_support_repo,
+        "insert_billing_log",
+        fail_insert_billing_log,
+    )
+    monkeypatch.setattr(
+        subscription_service,
+        "sync_onboarding_state",
+        fail_sync_onboarding_state,
+    )
+    monkeypatch.setattr(
+        subscription_service,
+        "pool",
+        _FakeSettlementPool(),
     )
 
     await subscription_service.process_event(
@@ -325,25 +561,124 @@ async def test_checkout_session_completed_activates_membership_from_order(
     )
 
     assert captured["order_lookup"] == "order_123"
-    assert captured["checkout_reference"]["subscription_id"] == "sub_membership_123"
-    assert captured["membership_write"]["user_id"] == "user_123"
-    assert captured["membership_write"]["status"] == "active"
-    assert captured["membership_write"]["source"] == "purchase"
-    assert captured["membership_write"]["effective_at"] == datetime.fromtimestamp(
-        1_700_000_000,
-        tz=timezone.utc,
+    assert captured["payment_lookup"]["provider_reference"] == "cs_membership_123"
+    assert captured["membership_lookup"]["user_id"] == "user_123"
+
+
+async def test_checkout_session_completed_stops_when_payment_write_fails(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+    order = {
+        "id": "order_123",
+        "user_id": "user_123",
+        "amount_cents": 9900,
+        "currency": "sek",
+        "status": "pending",
+    }
+
+    async def fake_get_order(order_id):
+        calls.append("get_order")
+        return order
+
+    async def fake_set_checkout_reference(**kwargs):
+        calls.append("set_order_reference")
+        return {**order, "stripe_checkout_id": kwargs.get("checkout_id")}
+
+    async def fake_mark_order_paid(order_id, **kwargs):
+        calls.append("mark_order_paid")
+        return {**order, "status": "paid"}
+
+    async def fake_get_payment_for_order_by_reference(order_id, provider_reference, **kwargs):
+        calls.append("get_payment")
+        return None
+
+    async def fail_record_payment(**kwargs):
+        calls.append("record_payment")
+        raise RuntimeError("payment write failed")
+
+    async def fail_get_membership(*args, **kwargs):
+        raise AssertionError("membership must not be read after payment write failure")
+
+    async def fail_upsert_membership_record(*args, **kwargs):
+        raise AssertionError("membership must not be activated after payment write failure")
+
+    async def fail_insert_billing_log(**kwargs):
+        raise AssertionError("billing log must not be written after payment write failure")
+
+    async def fail_sync_onboarding_state(user_id):
+        raise AssertionError("onboarding state must not sync after failed settlement")
+
+    monkeypatch.setattr(subscription_service.orders_repo, "get_order", fake_get_order)
+    monkeypatch.setattr(
+        subscription_service.orders_repo,
+        "set_order_checkout_reference",
+        fake_set_checkout_reference,
     )
-    assert captured["synced_user_id"] == "user_123"
-    assert captured["billing_logs"] == [
-        {
-            "user_id": "user_123",
-            "step": "membership_checkout_completed",
-            "info": {
-                "order_id": "order_123",
-                "session_id": "cs_membership_123",
-                "subscription_id": "sub_membership_123",
-            },
-        }
+    monkeypatch.setattr(
+        subscription_service.payments_repo,
+        "mark_order_paid",
+        fake_mark_order_paid,
+    )
+    monkeypatch.setattr(
+        subscription_service.payments_repo,
+        "get_payment_for_order_by_reference",
+        fake_get_payment_for_order_by_reference,
+    )
+    monkeypatch.setattr(
+        subscription_service.payments_repo,
+        "record_payment",
+        fail_record_payment,
+    )
+    monkeypatch.setattr(
+        subscription_service.memberships_repo,
+        "get_membership",
+        fail_get_membership,
+    )
+    monkeypatch.setattr(
+        subscription_service.memberships_repo,
+        "upsert_membership_record",
+        fail_upsert_membership_record,
+    )
+    monkeypatch.setattr(
+        subscription_service.membership_support_repo,
+        "insert_billing_log",
+        fail_insert_billing_log,
+    )
+    monkeypatch.setattr(
+        subscription_service,
+        "sync_onboarding_state",
+        fail_sync_onboarding_state,
+    )
+    monkeypatch.setattr(subscription_service, "pool", _FakeSettlementPool())
+
+    with pytest.raises(RuntimeError, match="payment write failed"):
+        await subscription_service.process_event(
+            {
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "id": "cs_membership_123",
+                        "mode": "subscription",
+                        "created": 1_700_000_000,
+                        "subscription": "sub_membership_123",
+                        "customer": "cus_membership_123",
+                        "metadata": {
+                            "checkout_type": "membership",
+                            "order_id": "order_123",
+                            "user_id": "user_123",
+                        },
+                    }
+                },
+            }
+        )
+
+    assert calls == [
+        "get_order",
+        "set_order_reference",
+        "mark_order_paid",
+        "get_payment",
+        "record_payment",
     ]
 
 

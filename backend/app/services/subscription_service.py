@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import stripe_mode
 from ..config import settings
+from ..db import pool
 from ..repositories import memberships as memberships_repo
 from ..repositories import membership_support as membership_support_repo
 from ..repositories import orders as orders_repo
@@ -414,33 +415,12 @@ async def _handle_membership_checkout_session(payload: Mapping[str, Any]) -> Non
         payment_intent_id=_as_string(payload.get("payment_intent")),
     )
     _validate_membership_session_user(metadata=metadata, order=order)
-    await orders_repo.set_order_checkout_reference(
-        order_id=order["id"],
-        checkout_id=_as_string(payload.get("id")),
-        payment_intent=_as_string(payload.get("payment_intent")),
-        subscription_id=_as_string(payload.get("subscription")),
-        customer_id=_as_string(payload.get("customer")),
-    )
-
-    user_id = str(order["user_id"])
-    await _apply_membership_state(
-        order,
-        status="active",
-        effective_at=_to_datetime(payload.get("created")) or datetime.now(timezone.utc),
-        expires_at=None,
-        canceled_at=None,
-        ended_at=None,
-        step="membership_checkout_completed",
-        info={
-            "order_id": str(order["id"]),
-            "session_id": _as_string(payload.get("id")),
-            "subscription_id": _as_string(payload.get("subscription")),
-        },
-    )
+    settlement = await _settle_membership_checkout_session(order=order, payload=payload)
     logger.info(
-        "membership activated for user %s from checkout session %s",
-        user_id,
+        "membership checkout settlement applied for user %s from checkout session %s",
+        order["user_id"],
         _as_string(payload.get("id")),
+        extra={"settlement": settlement},
     )
 
 
@@ -455,20 +435,182 @@ async def _ensure_membership_checkout_session_applied(
     )
     _validate_membership_session_user(metadata=metadata, order=order)
 
-    user_id = str(order["user_id"])
-    membership = await memberships_repo.get_membership(user_id)
-    if membership_status.is_membership_row_active(membership):
+    settlement = await _settle_membership_checkout_session(order=order, payload=payload)
+    if (
+        not settlement["order_marked_paid"]
+        and not settlement["payment_recorded"]
+        and not settlement["membership_activated"]
+    ):
         logger.info(
-            "membership already active for user %s before completed Stripe event skip",
-            user_id,
+            "membership checkout settlement already complete for user %s",
+            order["user_id"],
         )
         return
 
     logger.warning(
-        "Completed Stripe membership checkout event had no active membership; applying membership for user %s",
-        user_id,
+        "Completed Stripe membership checkout event was missing canonical side effects; "
+        "repaired settlement for user %s",
+        order["user_id"],
     )
-    await _handle_membership_checkout_session(payload)
+
+
+async def _settle_membership_checkout_session(
+    *,
+    order: Mapping[str, Any],
+    payload: Mapping[str, Any],
+) -> dict[str, bool]:
+    checkout_id = _as_string(payload.get("id"))
+    if not checkout_id:
+        raise SubscriptionError(
+            "Medlemskapsbekräftelsen saknar checkout-session",
+            status_code=500,
+        )
+
+    payment_intent_id = _as_string(payload.get("payment_intent"))
+    subscription_id = _as_string(payload.get("subscription"))
+    customer_id = _as_string(payload.get("customer"))
+    payment_reference = payment_intent_id or checkout_id
+    user_id = str(order["user_id"])
+    order_id = str(order["id"])
+    effective_at = _to_datetime(payload.get("created")) or datetime.now(timezone.utc)
+
+    order_marked_paid = False
+    payment_recorded = False
+    membership_activated = False
+
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.transaction():
+            referenced_order = dict(order)
+            if _order_checkout_reference_update_required(
+                referenced_order,
+                checkout_id=checkout_id,
+                payment_intent_id=payment_intent_id,
+                subscription_id=subscription_id,
+                customer_id=customer_id,
+            ):
+                updated_order = await orders_repo.set_order_checkout_reference(
+                    order_id=order_id,
+                    checkout_id=checkout_id,
+                    payment_intent=payment_intent_id,
+                    subscription_id=subscription_id,
+                    customer_id=customer_id,
+                    conn=conn,
+                )
+                if updated_order is None:
+                    raise SubscriptionError(
+                        "Medlemskapsbekräftelsen kunde inte uppdatera beställningen",
+                        status_code=500,
+                    )
+                referenced_order = updated_order
+
+            settled_order = referenced_order
+            if str(referenced_order.get("status") or "").lower() != "paid":
+                settled_order = await payments_repo.mark_order_paid(
+                    order_id,
+                    payment_intent=payment_intent_id,
+                    checkout_id=checkout_id,
+                    subscription_id=subscription_id,
+                    customer_id=customer_id,
+                    conn=conn,
+                )
+                if settled_order is None:
+                    raise SubscriptionError(
+                        "Medlemskapsbekräftelsen kunde inte markera beställningen som betald",
+                        status_code=500,
+                    )
+                order_marked_paid = True
+
+            existing_payment = await payments_repo.get_payment_for_order_by_reference(
+                order_id,
+                payment_reference,
+                status="paid",
+                conn=conn,
+            )
+            if existing_payment is None:
+                await payments_repo.record_payment(
+                    order_id=order_id,
+                    provider="stripe",
+                    provider_reference=payment_reference,
+                    status="paid",
+                    amount_cents=int(
+                        payload.get("amount_total")
+                        or settled_order.get("amount_cents")
+                        or 0
+                    ),
+                    currency=str(
+                        payload.get("currency")
+                        or settled_order.get("currency")
+                        or "sek"
+                    ).lower(),
+                    metadata={
+                        "event": "checkout.session.completed",
+                        "checkout_id": checkout_id,
+                    },
+                    payload=dict(payload),
+                    conn=conn,
+                )
+                payment_recorded = True
+
+            existing_membership = await memberships_repo.get_membership(
+                user_id,
+                conn=conn,
+            )
+            if not membership_status.is_membership_row_active(existing_membership):
+                await memberships_repo.upsert_membership_record(
+                    user_id,
+                    status="active",
+                    effective_at=effective_at,
+                    expires_at=None,
+                    canceled_at=None,
+                    ended_at=None,
+                    source="purchase",
+                    conn=conn,
+                )
+                membership_activated = True
+
+            if order_marked_paid or payment_recorded or membership_activated:
+                await membership_support_repo.insert_billing_log(
+                    user_id=user_id,
+                    step="membership_checkout_completed",
+                    info={
+                        "order_id": order_id,
+                        "session_id": checkout_id,
+                        "subscription_id": subscription_id,
+                        "order_marked_paid": order_marked_paid,
+                        "payment_recorded": payment_recorded,
+                        "membership_activated": membership_activated,
+                    },
+                    conn=conn,
+                )
+
+    if order_marked_paid or payment_recorded or membership_activated:
+        await sync_onboarding_state(user_id)
+
+    return {
+        "order_marked_paid": order_marked_paid,
+        "payment_recorded": payment_recorded,
+        "membership_activated": membership_activated,
+    }
+
+
+def _order_checkout_reference_update_required(
+    order: Mapping[str, Any],
+    *,
+    checkout_id: str,
+    payment_intent_id: str | None,
+    subscription_id: str | None,
+    customer_id: str | None,
+) -> bool:
+    expected = {
+        "stripe_checkout_id": checkout_id,
+        "stripe_payment_intent": payment_intent_id,
+        "stripe_subscription_id": subscription_id,
+        "stripe_customer_id": customer_id,
+    }
+    for field, value in expected.items():
+        if value is not None and _as_string(order.get(field)) != value:
+            return True
+    return False
 
 
 async def _handle_subscription_created(payload: Mapping[str, Any]) -> None:

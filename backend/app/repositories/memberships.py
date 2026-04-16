@@ -28,7 +28,23 @@ _MEMBERSHIP_SELECT = f"""
 """
 
 
-async def get_membership(user_id: str) -> MembershipRow | None:
+async def get_membership(user_id: str, *, conn: Any | None = None) -> MembershipRow | None:
+    async def _execute(active_conn: Any) -> MembershipRow | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                f"""
+                {_MEMBERSHIP_SELECT}
+                 WHERE user_id = %s
+                 LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = await cur.fetchone()
+        return _normalize_membership_row(row)
+
+    if conn is not None:
+        return await _execute(conn)
+
     async with get_conn() as cur:
         await cur.execute(
             f"""
@@ -65,8 +81,12 @@ async def upsert_membership_record(
     canceled_at: datetime | None | object = _UNSET,
     ended_at: datetime | None | object = _UNSET,
     source: str | None | object = _UNSET,
+    conn: Any | None = None,
 ) -> MembershipRow:
-    existing = await get_membership(user_id)
+    if conn is not None:
+        existing = await get_membership(user_id, conn=conn)
+    else:
+        existing = await get_membership(user_id)
     membership_id = str((existing or {}).get("membership_id") or uuid4())
 
     resolved_status = str(status or (existing or {}).get("status") or "inactive").strip().lower()
@@ -88,8 +108,8 @@ async def upsert_membership_record(
     if values["source"] == "referral" and values["expires_at"] is None:
         raise RuntimeError("referral memberships require expires_at")
 
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+    async def _execute(active_conn: Any) -> MembershipRow:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 f"""
                 INSERT INTO app.memberships (
@@ -127,8 +147,15 @@ async def upsert_membership_record(
                 ),
             )
             row = await cur.fetchone()
-            await conn.commit()
-    return _normalize_membership_row(row) or {}
+        return _normalize_membership_row(row) or {}
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        membership = await _execute(conn)
+        await conn.commit()
+        return membership
 
 
 def _resolve_explicit(explicit: Any, fallback: Any) -> Any:

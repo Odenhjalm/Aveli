@@ -235,9 +235,10 @@ async def set_order_checkout_reference(
     payment_intent: str | None,
     subscription_id: str | None = None,
     customer_id: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any] | None:
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 UPDATE app.orders
@@ -269,8 +270,15 @@ async def set_order_checkout_reference(
                 (checkout_id, payment_intent, subscription_id, customer_id, order_id),
             )
             row = await cur.fetchone()
-            await conn.commit()
-            return dict(row) if row else None
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        row = await _execute(conn)
+        await conn.commit()
+        return row
 
 
 async def mark_order_refunded(
