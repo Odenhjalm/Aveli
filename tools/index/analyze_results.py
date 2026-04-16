@@ -1,19 +1,17 @@
-#!/usr/bin/env python3
-
 import json
-import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-REPO_PYTHON = ROOT / ".venv" / "bin" / "python"
+CANONICAL_SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "Scripts" / "python.exe"
 INDEX_MANIFEST = ROOT / ".repo_index" / "index_manifest.json"
 
-if Path(sys.executable).resolve() != REPO_PYTHON.resolve():
-    if not REPO_PYTHON.exists():
-        raise SystemExit(f"Missing repo python interpreter: {REPO_PYTHON}")
-    os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
+if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
+    raise SystemExit(
+        "FEL: retrieval/indexering maste koras med kanonisk Windows-tolk: "
+        f"{CANONICAL_SEARCH_PYTHON}"
+    )
 
 if not INDEX_MANIFEST.exists():
     raise SystemExit(f"FEL: indexmanifest saknas vid {INDEX_MANIFEST}")

@@ -1,19 +1,18 @@
-#!/usr/bin/env python3
-
 import os
 import sys
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-REPO_PYTHON = ROOT / ".venv" / "bin" / "python"
+CANONICAL_SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "Scripts" / "python.exe"
 CODEX_QUERY_SCRIPT = ROOT / "tools" / "index" / "codex_query.py"
 VALIDATE_SCRIPT = ROOT / "tools" / "index" / "validate_codex.py"
 
-if Path(sys.executable).resolve() != REPO_PYTHON.resolve():
-    if not REPO_PYTHON.exists():
-        raise SystemExit(f"Missing repo python interpreter: {REPO_PYTHON}")
-    os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
+if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
+    raise SystemExit(
+        "FEL: retrieval/indexering maste koras med kanonisk Windows-tolk: "
+        f"{CANONICAL_SEARCH_PYTHON}"
+    )
 
 from openai import OpenAI
 
@@ -72,7 +71,7 @@ if not QUERY:
 # ---------------------------------------------------------
 
 prompt_proc = subprocess.run(
-    [str(REPO_PYTHON), str(CODEX_QUERY_SCRIPT), QUERY],
+    [str(CANONICAL_SEARCH_PYTHON), str(CODEX_QUERY_SCRIPT), QUERY],
     capture_output=True,
     text=True,
     cwd=str(ROOT),
@@ -115,7 +114,7 @@ for attempt in range(1, MAX_RETRIES + 1):
     # -----------------------------------------------------
 
     validation = subprocess.run(
-        [str(REPO_PYTHON), str(VALIDATE_SCRIPT)],
+        [str(CANONICAL_SEARCH_PYTHON), str(VALIDATE_SCRIPT)],
         input=output,
         capture_output=True,
         text=True,

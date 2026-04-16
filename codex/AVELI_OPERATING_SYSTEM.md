@@ -372,13 +372,14 @@ During this period:
 
 All index-related tasks MUST:
 
-- use .repo_index/.search_venv/bin/python
-- ensure tools/index/ENVIRONMENT_SETUP.sh has been executed
+- use .repo_index/.search_venv/Scripts/python.exe
+- execute retrieval/indexing only through the controller-approved Windows path
 
 Codex MUST NOT:
 
 - use system python
 - use .venv
+- use the legacy Linux search virtualenv interpreter path
 - install dependencies ad hoc
 - attempt environment discovery
 
@@ -390,12 +391,13 @@ PYTHON EXECUTION LOCK
 For index pipeline:
 
 - ONLY allowed interpreter:
-  .repo_index/.search_venv/bin/python
+  .repo_index/.search_venv/Scripts/python.exe
 
 Violation:
 
 - any use of "python" without explicit path
 - any use of wrong venv
+- any use of the legacy Linux search virtualenv interpreter path
 
 ---
 
@@ -562,7 +564,7 @@ Canonical interpreter split:
   - Linux: `./backend/.venv/bin/python`
 - semantic-search runtime / MCP search server
   - Windows: `.\.repo_index\.search_venv\Scripts\python.exe`
-  - Linux: `./.repo_index/.search_venv/bin/python`
+  - No Linux interpreter path is canonical for retrieval/indexing.
 
 Codex MUST:
 

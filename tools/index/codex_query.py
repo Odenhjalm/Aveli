@@ -1,19 +1,17 @@
-#!/usr/bin/env python3
-
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-REPO_PYTHON = ROOT / ".venv" / "bin" / "python"
+CANONICAL_SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "Scripts" / "python.exe"
 SEARCH_SCRIPT = ROOT / "tools" / "index" / "search_code.py"
 
-if Path(sys.executable).resolve() != REPO_PYTHON.resolve():
-    if not REPO_PYTHON.exists():
-        raise SystemExit(f"FEL: repo-Python saknas vid {REPO_PYTHON}")
-    os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
+if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
+    raise SystemExit(
+        "FEL: retrieval/indexering maste koras med kanonisk Windows-tolk: "
+        f"{CANONICAL_SEARCH_PYTHON}"
+    )
 
 QUERY = " ".join(sys.argv[1:]).strip()
 
@@ -26,7 +24,7 @@ if not QUERY:
 # ---------------------------------------------------------
 
 search = subprocess.run(
-    [str(REPO_PYTHON), str(SEARCH_SCRIPT), "--json", QUERY],
+    [str(CANONICAL_SEARCH_PYTHON), str(SEARCH_SCRIPT), "--json", QUERY],
     capture_output=True,
     text=True,
     cwd=str(ROOT),

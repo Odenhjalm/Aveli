@@ -1,16 +1,14 @@
-#!/usr/bin/env python3
-
-import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-REPO_PYTHON = ROOT / ".venv" / "bin" / "python"
+CANONICAL_SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "Scripts" / "python.exe"
 
-if Path(sys.executable).resolve() != REPO_PYTHON.resolve():
-    if not REPO_PYTHON.exists():
-        raise SystemExit(f"FEL: repo-Python saknas vid {REPO_PYTHON}")
-    os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
+if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
+    raise SystemExit(
+        "FEL: retrieval/indexering maste koras med kanonisk Windows-tolk: "
+        f"{CANONICAL_SEARCH_PYTHON}"
+    )
 
 text = sys.stdin.read().lower()
 

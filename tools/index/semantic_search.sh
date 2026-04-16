@@ -1,15 +1,8 @@
-#!/usr/bin/env bash
+# NON-CANONICAL LEGACY HELPER.
+# This legacy file is disabled as a controller-governed retrieval/indexing query path.
+# Canonical retrieval/indexing execution must use:
+# .repo_index/.search_venv/Scripts/python.exe
+# Do not use this file for controller-governed setup, build, query, or MCP.
 
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-SEARCH_PYTHON="${REPO_ROOT}/.repo_index/.search_venv/bin/python"
-SEARCH_SCRIPT="${REPO_ROOT}/tools/index/search_code.py"
-
-if [[ ! -x "${SEARCH_PYTHON}" ]]; then
-  echo "FEL: Python-tolk for semantisk sokning saknas vid ${SEARCH_PYTHON}" >&2
-  exit 1
-fi
-
-exec "${SEARCH_PYTHON}" "${SEARCH_SCRIPT}" "$@"
+echo "FEL: denna legacyhjalp ar icke-kanonisk och far inte anvandas som retrieval/indexing-runtime." >&2
+exit 1

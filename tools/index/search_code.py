@@ -1,25 +1,17 @@
-#!/usr/bin/env python3
-
 import hashlib
 import json
 import math
-import os
-import signal
-import socket
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-REPO_PYTHON = ROOT / ".venv" / "bin" / "python"
-SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "bin" / "python"
+CANONICAL_SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "Scripts" / "python.exe"
 
-approved_pythons = {path.resolve() for path in (REPO_PYTHON, SEARCH_PYTHON) if path.exists()}
-if Path(sys.executable).resolve() not in approved_pythons:
-    if not REPO_PYTHON.exists():
-        raise SystemExit(f"FEL: repo-Python saknas vid {REPO_PYTHON}")
-    os.execv(str(REPO_PYTHON), [str(REPO_PYTHON), __file__, *sys.argv[1:]])
+if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
+    raise SystemExit(
+        "FEL: retrieval/indexering maste koras med kanonisk Windows-tolk: "
+        f"{CANONICAL_SEARCH_PYTHON}"
+    )
 
 from chromadb import PersistentClient
 from sentence_transformers import CrossEncoder, SentenceTransformer
@@ -67,8 +59,6 @@ BM25_B = 0.75
 
 CACHE_FILE = ROOT / ".repo_index" / "query_cache.json"
 MEMORY_FILE = ROOT / ".repo_index" / "query_memory.json"
-SERVER_SOCKET = ROOT / ".repo_index" / "search_code.sock"
-SERVER_START_TIMEOUT_SECONDS = 30.0
 
 SEARCHABLE_SUFFIXES = {
     ".css",
@@ -383,86 +373,6 @@ def preflight_runtime_prerequisites() -> None:
         lexical_manifest=lexical_manifest,
         collection=collection,
     )
-
-
-def receive_socket_payload(conn: socket.socket) -> str:
-    chunks = []
-    while True:
-        chunk = conn.recv(65536)
-        if not chunk:
-            break
-        chunks.append(chunk)
-    return b"".join(chunks).decode("utf-8")
-
-
-def send_socket_payload(conn: socket.socket, payload: dict) -> None:
-    conn.sendall(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
-
-
-def is_server_available() -> bool:
-    if not SERVER_SOCKET.exists():
-        return False
-
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client_socket:
-            client_socket.connect(str(SERVER_SOCKET))
-            send_socket_payload(client_socket, {"type": "ping"})
-            client_socket.shutdown(socket.SHUT_WR)
-            response = json.loads(receive_socket_payload(client_socket) or "{}")
-            return response.get("status") == "ok" and response.get("type") == "pong"
-    except OSError:
-        return False
-
-
-def terminate_stale_server_processes() -> None:
-    result = subprocess.run(
-        ["pgrep", "-f", "tools/index/search_code.py --server"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode not in {0, 1}:
-        return
-
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if not line.isdigit():
-            continue
-        pid = int(line)
-        if pid == os.getpid():
-            continue
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            continue
-
-
-def ensure_server_running() -> None:
-    if is_server_available():
-        return
-
-    terminate_stale_server_processes()
-
-    try:
-        SERVER_SOCKET.unlink()
-    except FileNotFoundError:
-        pass
-
-    subprocess.Popen(
-        [sys.executable, __file__, "--server"],
-        cwd=str(ROOT),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    deadline = time.time() + SERVER_START_TIMEOUT_SECONDS
-    while time.time() < deadline:
-        if is_server_available():
-            return
-        time.sleep(0.1)
-
-    raise SystemExit("FEL: varm sokserver kunde inte startas")
 
 
 def lexical_search(query_text: str, lexical_records: list[dict], lexical_manifest: dict, top_n: int) -> list[str]:
@@ -912,77 +822,17 @@ def handle_query_json(raw_query: str) -> str:
     return json.dumps(output_entries, ensure_ascii=False, indent=2)
 
 
-def run_server() -> None:
-    try:
-        if SERVER_SOCKET.exists():
-            SERVER_SOCKET.unlink()
-
-        load_runtime_state()
-
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server_socket:
-            server_socket.bind(str(SERVER_SOCKET))
-            server_socket.listen()
-
-            while True:
-                conn, _ = server_socket.accept()
-                with conn:
-                    try:
-                        payload = json.loads(receive_socket_payload(conn) or "{}")
-                        request_type = payload.get("type")
-
-                        if request_type == "ping":
-                            send_socket_payload(conn, {"status": "ok", "type": "pong"})
-                            continue
-
-                        if request_type != "query":
-                            send_socket_payload(
-                                conn,
-                                {"status": "error", "code": 1, "stderr": "FEL: ogiltig sokserver-begaran"},
-                            )
-                            continue
-
-                        output_format = str(payload.get("format", "text"))
-                        if output_format == "json":
-                            stdout = handle_query_json(str(payload.get("query", "")))
-                        else:
-                            stdout = handle_query_request(str(payload.get("query", "")))
-                        send_socket_payload(conn, {"status": "ok", "stdout": stdout})
-                    except SystemExit as exc:
-                        send_socket_payload(conn, {"status": "error", "code": 1, "stderr": str(exc)})
-                    except Exception as exc:
-                        send_socket_payload(conn, {"status": "error", "code": 1, "stderr": f"FEL: {exc}"})
-    finally:
-        try:
-            SERVER_SOCKET.unlink()
-        except FileNotFoundError:
-            pass
-
-
 def dispatch_query(raw_query: str, output_format: str = "text") -> None:
-    if not is_server_available():
-        preflight_runtime_prerequisites()
-    ensure_server_running()
-
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client_socket:
-        client_socket.connect(str(SERVER_SOCKET))
-        send_socket_payload(
-            client_socket,
-            {"type": "query", "query": raw_query, "format": output_format},
-        )
-        client_socket.shutdown(socket.SHUT_WR)
-        response = json.loads(receive_socket_payload(client_socket) or "{}")
-
-    if response.get("status") != "ok":
-        sys.stderr.write(str(response.get("stderr", "FEL: okant sokserverfel")) + "\n")
-        raise SystemExit(int(response.get("code", 1)))
-
-    sys.stdout.write(str(response.get("stdout", "")))
+    preflight_runtime_prerequisites()
+    if output_format == "json":
+        sys.stdout.write(handle_query_json(raw_query))
+    else:
+        sys.stdout.write(handle_query_request(raw_query))
 
 
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--server":
-        run_server()
-        return
+        raise SystemExit("FEL: varm Unix-sokserver ar inte en kanonisk Windows-runtimeyta")
 
     output_format = "text"
     args = sys.argv[1:]

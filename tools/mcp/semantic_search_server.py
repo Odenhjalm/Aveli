@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
 """Semantic MCP server with E5 embeddings."""
 
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -12,13 +10,14 @@ from pathlib import Path
 from typing import List, Dict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SEARCH_PYTHON = REPO_ROOT / ".repo_index" / ".search_venv" / "bin" / "python"
+SEARCH_PYTHON = REPO_ROOT / ".repo_index" / ".search_venv" / "Scripts" / "python.exe"
 INDEX_TOOLS_DIR = REPO_ROOT / "tools" / "index"
 
 if Path(sys.executable).resolve() != SEARCH_PYTHON.resolve():
-    if not SEARCH_PYTHON.exists():
-        raise SystemExit(f"FEL: Python-tolk for semantisk sokning saknas vid {SEARCH_PYTHON}")
-    os.execv(str(SEARCH_PYTHON), [str(SEARCH_PYTHON), __file__, *sys.argv[1:]])
+    raise SystemExit(
+        "FEL: MCP semantic-search maste koras med kanonisk Windows-tolk: "
+        f"{SEARCH_PYTHON}"
+    )
 
 if str(INDEX_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(INDEX_TOOLS_DIR))
@@ -71,7 +70,7 @@ def embed_documents(docs: List[str]):
     return model.encode(docs, normalize_embeddings=True)
 
 # ----------------------------------------
-# RUN BASE SEARCH (ripgrep wrapper)
+# RUN BASE SEARCH WRAPPER
 # ----------------------------------------
 
 def _parse_results(stdout: str) -> List[Dict[str, str]]:
