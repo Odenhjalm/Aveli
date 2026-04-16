@@ -191,7 +191,7 @@ def normalize_corpus_text_for_hash(raw_bytes: bytes, file_path: str) -> str:
 
 
 def normalize_document_text(text: str) -> str:
-    return text.removeprefix("passage: ").strip()
+    return text.strip()
 
 
 def tokenize_for_lexical(text: str) -> list[str]:

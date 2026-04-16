@@ -1,0 +1,59 @@
+{
+  "artifact_type": "environment_preparation_result",
+  "controller_scope": "retrieval_index_build_execution",
+  "task_id": "B01_ENVIRONMENT_PREPARATION",
+  "mode": "build_environment_preparation",
+  "status": "BLOCKED",
+  "build_id": "c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+  "approval_artifact": "actual_truth/build_approvals/build_approval_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+  "manifest_candidate": "actual_truth/build_approvals/index_manifest_candidate_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+  "interpreter_path": ".repo_index/.search_venv/Scripts/python.exe",
+  "environment_created": false,
+  "environment_reused": false,
+  "verification_result": "BLOCKED",
+  "approval_validation": {
+    "status": "PASS",
+    "artifact_type": "build_approval",
+    "approval_state": "APPROVED_FOR_SINGLE_BUILD",
+    "approval_phrase_exact": true,
+    "build_id_matches": true
+  },
+  "manifest_validation": {
+    "status": "PASS",
+    "artifact_type": "index_manifest_candidate",
+    "build_id_matches": true,
+    "corpus_files_present": true,
+    "corpus_manifest_hash_present": true
+  },
+  "interpreter_validation": {
+    "status": "BLOCKED",
+    "expected": ".repo_index/.search_venv/Scripts/python.exe",
+    "actual": "MISSING",
+    "failure_class": "BLOCKED"
+  },
+  "forbidden_side_effect_check": {
+    "active_index_root_created": false,
+    "active_index_manifest_created": false,
+    "active_chunk_manifest_created": false,
+    "active_lexical_index_created": false,
+    "active_chroma_db_created": false,
+    "staging_build_artifacts_created": false,
+    "index_build_executed": false,
+    "model_loaded": false,
+    "cuda_executed": false,
+    "promotion_executed": false
+  },
+  "failure": {
+    "failure_class": "BLOCKED",
+    "stop_reason": "Canonical Windows retrieval interpreter is missing, and no authority file permits using a non-canonical bootstrap interpreter such as bare python, .venv, py launcher, Linux paths, or bash helpers.",
+    "authority_files": [
+      "codex/AVELI_OPERATING_SYSTEM.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/B01_controller_governed_index_build.md",
+      "actual_truth/contracts/retrieval/build_approval_contract.md"
+    ],
+    "affected_path": ".repo_index/.search_venv/Scripts/python.exe",
+    "active_index_touched": false,
+    "staging_invalidated": false,
+    "next_allowed_action": "Create explicit environment-bootstrap authority that names the allowed source interpreter and dependency policy, or provide the canonical interpreter at .repo_index/.search_venv/Scripts/python.exe."
+  }
+}

@@ -1,0 +1,260 @@
+{
+  "artifact_type": "index_manifest_candidate",
+  "schema_version": "index_manifest_candidate_v1",
+  "contract_version": "retrieval-v1",
+  "manifest_state": "MANIFEST_CANDIDATE",
+  "controller_version": "retrieval_indexing_controller_v1",
+  "build_id": "c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+  "repo": {
+    "repo_root": "c:/Users/Odenh/app/Aveli",
+    "path_mode": "repo_root_relative",
+    "path_separator": "/",
+    "absolute_paths_allowed": false
+  },
+  "corpus": {
+    "files": [
+      "actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/B01_controller_governed_index_build.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T01_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T02_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T03_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T04_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T05_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T06_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T07_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T08_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T09_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T10_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T11_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T12_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T13_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T14_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T15_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T16_execution_result.md",
+      "actual_truth/contracts/retrieval/build_approval_contract.md",
+      "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+      "actual_truth/contracts/retrieval/determinism_contract.md",
+      "actual_truth/contracts/retrieval/evidence_contract.md",
+      "actual_truth/contracts/retrieval/index_structure_contract.md",
+      "actual_truth/contracts/retrieval/ingestion_contract.md",
+      "actual_truth/contracts/retrieval/retrieval_contract.md",
+      "codex/AVELI_OPERATING_SYSTEM.md",
+      "tools/index/ast_extract.py",
+      "tools/index/build_vector_index.py",
+      "tools/index/search_code.py",
+      "tools/mcp/semantic_search_server.py"
+    ],
+    "path_sort": "utf8_byte_ascending",
+    "path_separator": "/",
+    "case_collision_policy": "fail_closed",
+    "membership_source": "explicit_manifest_candidate",
+    "dynamic_discovery_used": false,
+    "filesystem_traversal_used": false
+  },
+  "corpus_manifest_hash": "3967ae852269bfbdd357b0c7a6f9f166ab48711499f68a4cff22c38874378d69",
+  "normalization_policy": {
+    "text_encoding": "utf-8-strict",
+    "unicode_normalization": "NFC",
+    "line_endings": "LF",
+    "tabs": "four_spaces",
+    "trailing_ascii_space": "strip_per_line",
+    "terminal_newline": "exactly_one_for_non_empty_text",
+    "null_bytes": "forbidden",
+    "empty_normalized_text": "forbidden"
+  },
+  "chunking_policy": {
+    "chunk_size": 2000,
+    "chunk_overlap": 200,
+    "unit": "normalized_text_characters",
+    "cross_file_chunks_allowed": false
+  },
+  "chunk_manifest_hash": "",
+  "identity_policy": {
+    "content_hash": "sha256(chunk_text_utf8_bytes)",
+    "doc_id": "sha256(AVELI_DOC_ID_V1 length-delimited payload)",
+    "doc_id_inputs": [
+      "contract_version",
+      "file",
+      "chunk_index",
+      "content_hash"
+    ],
+    "runtime_generated_ids_allowed": false
+  },
+  "model_policy": {
+    "embedding": {
+      "model_id": "intfloat/e5-large-v2",
+      "model_revision": "0000000000000000000000000000000000000000",
+      "model_snapshot_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "tokenizer_id": "intfloat/e5-large-v2",
+      "tokenizer_revision": "0000000000000000000000000000000000000000",
+      "tokenizer_files_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "local_files_only": true,
+      "trust_remote_code": false
+    },
+    "rerank": {
+      "enabled": true,
+      "local_files_only": true,
+      "trust_remote_code": false
+    }
+  },
+  "embedding_policy": {
+    "embedding_dimension": 1024,
+    "dtype": "float32",
+    "normalize_embeddings": true,
+    "query_prefix": "query: ",
+    "passage_prefix": "",
+    "pooling": "model_default",
+    "truncate_policy": "model_default",
+    "embedding_value_tolerance": {
+      "absolute": 0.00001,
+      "relative": 0.00001
+    },
+    "contains_embedding_vectors": false,
+    "contains_vector_data": false
+  },
+  "device_policy": {
+    "allowed_devices": [
+      "cpu",
+      "cuda"
+    ],
+    "canonical_baseline": "cpu",
+    "cuda_required": false,
+    "device_changes_semantics": false,
+    "device_selection_source": "manifest",
+    "environment_device_override_allowed": false,
+    "implicit_device_auto_selection_allowed": false,
+    "preferred_local_build_device": "cpu"
+  },
+  "batch_policy": {
+    "dynamic_batch_sizing_allowed": false,
+    "embedding_batch_size": 64,
+    "embedding_batch_size_max": 64,
+    "embedding_batch_size_min": 32,
+    "rerank_batch_size": 16
+  },
+  "retrieval_policy": {
+    "top_k": 16,
+    "lexical_candidate_k": 30,
+    "vector_candidate_k": 30,
+    "candidate_union_limit": 60,
+    "read_only": true,
+    "query_time_rebuild_allowed": false,
+    "query_time_repo_scan_allowed": false
+  },
+  "ranking_policy": {
+    "formula": "final_score(doc_id) = rerank_score(doc_id) + boost_score(doc_id)",
+    "layer_boosts": {},
+    "path_substring_boosts": {},
+    "path_suffix_boosts": {},
+    "route_override": {
+      "enabled": false,
+      "score": 0.0
+    },
+    "use_rerank": true
+  },
+  "classification_policy": {
+    "default_layer": "OTHER",
+    "precedence": [
+      {
+        "layer": "LAW",
+        "type": "path_substring",
+        "value": "actual_truth"
+      },
+      {
+        "layer": "LAW",
+        "type": "path_substring",
+        "value": "aveli_system_decisions"
+      },
+      {
+        "layer": "LAW",
+        "type": "path_substring",
+        "value": "manifest"
+      },
+      {
+        "layer": "LAW",
+        "type": "path_substring",
+        "value": "contract"
+      },
+      {
+        "layer": "ROUTE",
+        "type": "path_substring",
+        "value": "routes"
+      },
+      {
+        "layer": "SERVICE",
+        "type": "path_substring",
+        "value": "services"
+      },
+      {
+        "layer": "DB",
+        "type": "path_substring",
+        "value": "supabase"
+      },
+      {
+        "layer": "DB",
+        "type": "path_substring",
+        "value": "migrations"
+      },
+      {
+        "layer": "POLICY",
+        "type": "path_substring",
+        "value": "policy"
+      },
+      {
+        "layer": "SCHEMA",
+        "type": "path_substring",
+        "value": "schemas"
+      },
+      {
+        "layer": "MODEL",
+        "type": "path_substring",
+        "value": "models"
+      }
+    ]
+  },
+  "artifact_policy": {
+    "index_root": ".repo_index",
+    "active_manifest": ".repo_index/index_manifest.json",
+    "chunk_manifest": ".repo_index/chunk_manifest.jsonl",
+    "lexical_index": ".repo_index/lexical_index/",
+    "chroma_db": ".repo_index/chroma_db/",
+    "staging_root": ".repo_index/_staging/<build_id>/",
+    "direct_active_writes_allowed": false
+  },
+  "artifact_hashes": {},
+  "verification_policy": {
+    "requires_staging_verification": true,
+    "requires_doc_id_parity": true,
+    "requires_artifact_hash_validation": true,
+    "requires_cpu_baseline": true
+  },
+  "windows_runtime_policy": {
+    "interpreter": ".repo_index/.search_venv/Scripts/python.exe",
+    "bare_python_allowed": false,
+    "shell_activation_allowed": false,
+    "bash_required": false,
+    "af_unix_allowed": false,
+    "pgrep_allowed": false
+  },
+  "rebuild_policy": {
+    "approval_required": true,
+    "approval_string": "APPROVE AVELI INDEX REBUILD",
+    "query_may_build": false,
+    "mcp_may_build": false,
+    "runtime_overrides_allowed": false
+  },
+  "language_policy": {
+    "user_facing_text": "sv",
+    "prompt_text": "en",
+    "prompts_must_be_copy_paste_ready": true
+  },
+  "deprecated_surfaces": {
+    "search_manifest.txt": "non_authoritative_debug_export_only",
+    "searchable_files.txt": "non_authoritative_debug_export_only"
+  },
+  "candidate_constraints": {
+    "not_active_retrieval_authority": true,
+    "not_executed": true,
+    "contains_embedding_vectors": false,
+    "contains_vector_data": false
+  }
+}
