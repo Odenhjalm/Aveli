@@ -275,6 +275,12 @@ void main() {
         final membershipCheckout = _readFrontendSource(
           'lib/features/payments/presentation/subscribe_screen.dart',
         );
+        final embeddedWeb = _readFrontendSource(
+          'lib/features/payments/presentation/embedded_membership_checkout_surface_web.dart',
+        );
+        final embeddedHtml = _readFrontendSource(
+          'lib/features/payments/presentation/embedded_checkout_html.dart',
+        );
 
         expect(
           routePaths,
@@ -298,6 +304,12 @@ void main() {
         expect(membershipCheckout, contains('launch.clientSecret'));
         expect(membershipCheckout, contains('14 dagar'));
         expect(membershipCheckout, contains('Kortuppgifter krävs'));
+        expect(membershipCheckout, contains('_EmbeddedCheckoutViewport'));
+        expect(membershipCheckout, isNot(contains('height: 560')));
+        expect(embeddedWeb, contains("style.overflowY = 'auto'"));
+        expect(embeddedWeb, isNot(contains("style.overflow = 'hidden'")));
+        expect(embeddedHtml, contains('overflow-y: auto'));
+        expect(embeddedHtml, isNot(contains('overflow: hidden')));
         expect(
           membershipCheckout,
           isNot(contains('router.pushNamed(AppRoute.checkout')),

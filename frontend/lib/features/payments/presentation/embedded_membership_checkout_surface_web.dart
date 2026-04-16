@@ -70,11 +70,15 @@ class _EmbeddedMembershipCheckoutSurfaceState
   html.DivElement _buildRoot() {
     final root = html.DivElement()
       ..style.width = '100%'
-      ..style.minHeight = '520px'
-      ..style.backgroundColor = '#ffffff'
-      ..style.border = '1px solid #dce8f7'
+      ..style.height = '100%'
+      ..style.minHeight = '680px'
+      ..style.backgroundColor = 'transparent'
+      ..style.border = '0'
       ..style.borderRadius = '8px'
-      ..style.overflow = 'hidden';
+      ..style.overflowX = 'hidden'
+      ..style.overflowY = 'auto';
+    root.style.setProperty('-webkit-overflow-scrolling', 'touch');
+    root.style.setProperty('scrollbar-gutter', 'stable');
 
     _status = html.DivElement()
       ..text = 'Betalningspanelen laddas.'
@@ -88,7 +92,7 @@ class _EmbeddedMembershipCheckoutSurfaceState
     _mount = html.DivElement()
       ..id = _mountId
       ..style.width = '100%'
-      ..style.minHeight = '520px';
+      ..style.minHeight = '680px';
 
     root.children.add(_status);
     root.children.add(_mount);

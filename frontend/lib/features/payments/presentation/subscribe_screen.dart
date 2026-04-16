@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +18,7 @@ import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class MembershipCheckoutScreen extends ConsumerStatefulWidget {
@@ -506,8 +508,7 @@ class _EmbeddedCheckoutState extends StatelessWidget {
           style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
         ),
         gap16,
-        SizedBox(
-          height: 560,
+        _EmbeddedCheckoutViewport(
           child: EmbeddedMembershipCheckoutSurface(
             stripePublishableKey: stripePublishableKey,
             clientSecret: launch.clientSecret,
@@ -523,6 +524,30 @@ class _EmbeddedCheckoutState extends StatelessWidget {
   }
 }
 
+class _EmbeddedCheckoutViewport extends StatelessWidget {
+  const _EmbeddedCheckoutViewport({required this.child});
+
+  static const double _minHeight = 680;
+  static const double _maxHeight = 920;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final visibleHeight = math.max(
+      0,
+      media.size.height - media.padding.vertical - media.viewInsets.bottom,
+    );
+    final targetHeight = (visibleHeight - 180).clamp(_minHeight, _maxHeight);
+
+    return SizedBox(
+      height: targetHeight.toDouble(),
+      child: ClipRRect(borderRadius: BorderRadius.circular(8), child: child),
+    );
+  }
+}
+
 class _Panel extends StatelessWidget {
   const _Panel({required this.child});
 
@@ -530,20 +555,36 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFDCE8F7)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
+    final radius = BorderRadius.circular(8);
+    return ClipRRect(
+      borderRadius: radius,
+      child: EffectsBackdropFilter(
+        sigmaX: 14,
+        sigmaY: 14,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.68),
+            borderRadius: radius,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.56),
+              width: 1.1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF5B6F8F).withValues(alpha: 0.12),
+                blurRadius: 28,
+                offset: const Offset(0, 16),
+              ),
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.42),
+                blurRadius: 0,
+                spreadRadius: 1,
+              ),
+            ],
           ),
-        ],
+          child: Padding(padding: const EdgeInsets.all(24), child: child),
+        ),
       ),
-      child: Padding(padding: const EdgeInsets.all(24), child: child),
     );
   }
 }

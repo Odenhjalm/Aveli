@@ -1,0 +1,87 @@
+{
+  "artifact_type": "environment_bootstrap_approval",
+  "approval_state": "APPROVED_FOR_SINGLE_BOOTSTRAP",
+  "approval_phrase": "APPROVE AVELI ENVIRONMENT BOOTSTRAP",
+  "approval_scope": {
+    "controller_scope": "retrieval_index_environment_bootstrap",
+    "task_id": "E01",
+    "mode": "environment_bootstrap",
+    "expires_after_use": true,
+    "scope_note": "Single bootstrap approval for the canonical Windows retrieval/indexing interpreter required by B01."
+  },
+  "task_id": "E01",
+  "mode": "environment_bootstrap",
+  "repo_root": "c:/Users/Odenh/app/Aveli",
+  "build_id": "c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+  "linked_build_approval_artifact": "actual_truth/build_approvals/build_approval_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+  "linked_manifest_candidate": "actual_truth/build_approvals/index_manifest_candidate_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+  "bootstrap_source_interpreter": {
+    "source_type": "windows_absolute_python_executable",
+    "path": "C:/Program Files/Python311/python.exe",
+    "version": "3.11.9",
+    "sha256": "5f7b89a612c9b8af1d6456cdfcd1dbe5ca630849e79aebced9bee9a6694952ec",
+    "bootstrap_only": true,
+    "canonical_runtime": false,
+    "py_launcher_allowed": false,
+    "path_lookup_allowed": false,
+    "shell_activation_allowed": false
+  },
+  "bootstrap_source_hash": "5f7b89a612c9b8af1d6456cdfcd1dbe5ca630849e79aebced9bee9a6694952ec",
+  "target_interpreter_path": ".repo_index/.search_venv/Scripts/python.exe",
+  "dependency_policy_mode": "offline_no_install",
+  "dependency_policy": {
+    "dependency_install_allowed": false,
+    "dependency_source": "none",
+    "offline_wheelhouse_path": null,
+    "requirements_path": null,
+    "package_hashes": {},
+    "allow_unpinned_packages": false
+  },
+  "network_policy": {
+    "mode": "offline",
+    "downloads_allowed": false,
+    "dependency_download_allowed": false,
+    "model_download_allowed": false,
+    "telemetry_allowed": false
+  },
+  "fallback_policy": {
+    "mode": "forbidden",
+    "fallbacks_allowed": false,
+    "fallback_interpreter_allowed": false,
+    "fallback_dependency_source_allowed": false,
+    "fallback_network_allowed": false,
+    "fallback_canonical_runtime_allowed": false
+  },
+  "forbidden_targets": [
+    ".repo_index/index_manifest.json",
+    ".repo_index/chunk_manifest.jsonl",
+    ".repo_index/lexical_index",
+    ".repo_index/lexical_index/",
+    ".repo_index/chroma_db",
+    ".repo_index/chroma_db/",
+    ".repo_index/_staging/<build_id>/index_manifest.json",
+    ".repo_index/_staging/<build_id>/chunk_manifest.jsonl",
+    ".repo_index/_staging/<build_id>/lexical_index",
+    ".repo_index/_staging/<build_id>/lexical_index/",
+    ".repo_index/_staging/<build_id>/chroma_db",
+    ".repo_index/_staging/<build_id>/chroma_db/",
+    ".repo_index/models/",
+    ".repo_index/model_cache/"
+  ],
+  "verification_policy": {
+    "target_interpreter_must_exist": true,
+    "target_path_must_match": ".repo_index/.search_venv/Scripts/python.exe",
+    "target_interpreter_must_be_executable": true,
+    "target_interpreter_must_report_version": true,
+    "target_interpreter_expected_version": "3.11.9",
+    "target_interpreter_must_resolve_inside": ".repo_index/.search_venv/",
+    "source_interpreter_must_match_path": "C:/Program Files/Python311/python.exe",
+    "source_interpreter_must_match_sha256": "5f7b89a612c9b8af1d6456cdfcd1dbe5ca630849e79aebced9bee9a6694952ec",
+    "dependency_set_must_match_approval": true,
+    "network_must_not_be_used": true,
+    "fallback_must_not_be_used": true,
+    "active_index_artifacts_must_not_be_created": true,
+    "staging_build_artifacts_must_not_be_created": true,
+    "models_must_not_be_loaded_or_downloaded": true
+  }
+}

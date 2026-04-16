@@ -26,24 +26,27 @@ String buildEmbeddedCheckoutHtml({
     html, body {
       min-height: 100%;
       margin: 0;
-      background: var(--surface);
+      background: transparent;
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow-x: hidden;
+      overflow-y: auto;
     }
     body {
       padding: 0;
+      -webkit-overflow-scrolling: touch;
     }
     #checkout-shell {
       width: 100%;
-      min-height: 520px;
-      border: 1px solid var(--border);
+      min-height: 680px;
+      border: 0;
       border-radius: 8px;
-      background: #ffffff;
-      overflow: hidden;
+      background: transparent;
+      overflow: visible;
     }
     #checkout {
       width: 100%;
-      min-height: 520px;
+      min-height: 680px;
     }
     #status {
       padding: 18px;

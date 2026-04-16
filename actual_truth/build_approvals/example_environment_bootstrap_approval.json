@@ -1,0 +1,84 @@
+{
+  "artifact_type": "example_environment_bootstrap_approval",
+  "approval_state": "EXAMPLE_NOT_EXECUTABLE",
+  "approval_phrase": "APPROVE AVELI ENVIRONMENT BOOTSTRAP",
+  "approval_scope": {
+    "controller_scope": "retrieval_index_environment_bootstrap",
+    "task_id": "E01",
+    "mode": "environment_bootstrap",
+    "expires_after_use": true,
+    "example_only": true,
+    "scope_note": "Replace every placeholder and change artifact_type and approval_state only in a future executable approval artifact."
+  },
+  "repo_root": "c:/Users/Odenh/app/Aveli",
+  "build_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "bootstrap_source_interpreter": {
+    "source_type": "windows_absolute_python_executable",
+    "path": "C:/Path/To/Approved/Python/python.exe",
+    "version": "3.12.x",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "bootstrap_only": true,
+    "canonical_runtime": false,
+    "py_launcher_allowed": false,
+    "path_lookup_allowed": false,
+    "shell_activation_allowed": false
+  },
+  "target_interpreter_path": ".repo_index/.search_venv/Scripts/python.exe",
+  "dependency_policy": {
+    "dependency_install_allowed": false,
+    "dependency_source": "none",
+    "offline_wheelhouse_path": null,
+    "requirements_path": null,
+    "package_hashes": {},
+    "allow_unpinned_packages": false
+  },
+  "network_policy": {
+    "mode": "offline",
+    "downloads_allowed": false,
+    "dependency_download_allowed": false,
+    "model_download_allowed": false,
+    "telemetry_allowed": false
+  },
+  "fallback_policy": {
+    "fallbacks_allowed": false,
+    "fallback_interpreter_allowed": false,
+    "fallback_dependency_source_allowed": false,
+    "fallback_network_allowed": false,
+    "fallback_canonical_runtime_allowed": false
+  },
+  "forbidden_targets": {
+    "active_index_artifacts": [
+      ".repo_index/index_manifest.json",
+      ".repo_index/chunk_manifest.jsonl",
+      ".repo_index/lexical_index/",
+      ".repo_index/chroma_db/"
+    ],
+    "staging_build_artifacts": [
+      ".repo_index/_staging/<build_id>/index_manifest.json",
+      ".repo_index/_staging/<build_id>/chunk_manifest.jsonl",
+      ".repo_index/_staging/<build_id>/lexical_index/",
+      ".repo_index/_staging/<build_id>/chroma_db/"
+    ],
+    "model_artifacts": [
+      ".repo_index/models/",
+      ".repo_index/model_cache/"
+    ]
+  },
+  "verification_policy": {
+    "target_interpreter_must_exist": true,
+    "target_path_must_match": ".repo_index/.search_venv/Scripts/python.exe",
+    "target_interpreter_must_be_executable": true,
+    "target_interpreter_must_report_version": true,
+    "target_interpreter_must_resolve_inside": ".repo_index/.search_venv/",
+    "dependency_set_must_match_approval": true,
+    "network_must_not_be_used": true,
+    "fallback_must_not_be_used": true,
+    "active_index_artifacts_must_not_be_created": true,
+    "staging_build_artifacts_must_not_be_created": true,
+    "models_must_not_be_loaded_or_downloaded": true
+  },
+  "execution_policy": {
+    "example_not_executable": true,
+    "must_stop_if_used": true
+  }
+}

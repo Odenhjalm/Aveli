@@ -57,6 +57,7 @@ class _EmbeddedMembershipCheckoutSurfaceState
     _ensureWebViewPlatform();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.transparent)
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (request) {
