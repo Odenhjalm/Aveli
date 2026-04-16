@@ -1,10 +1,10 @@
-import hashlib
 import json
 import math
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+INDEX_TOOL_ROOT = Path(__file__).resolve().parent
 CANONICAL_SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "Scripts" / "python.exe"
 
 if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
@@ -13,7 +13,27 @@ if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
         f"{CANONICAL_SEARCH_PYTHON}"
     )
 
-from chromadb import PersistentClient
+if str(INDEX_TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(INDEX_TOOL_ROOT))
+
+from model_authority import (
+    ModelAuthorityError,
+    validate_model_authority_for_manifest,
+)
+from index_artifact_integrity import (
+    IndexArtifactIntegrityError,
+    validate_index_artifact_integrity,
+)
+from retrieval_policies import (
+    RetrievalPolicyError,
+    normalize_query_with_policy,
+    tokenize_normalized_query,
+    validate_retrieval_policies,
+)
+from dependency_authority import (
+    DependencyAuthorityError,
+    require_valid_d01_pass_from_environment,
+)
 
 # ---------------------------------------------------------
 # CONFIG
@@ -39,6 +59,12 @@ INDEX_MANIFEST_REQUIRED_FIELDS = {
     "vector_candidate_k",
     "lexical_candidate_k",
     "classification_policy",
+    "normalization_policy",
+    "lexical_query_policy",
+    "embedding_query_policy",
+    "rerank_policy",
+    "scoring_policy",
+    "evidence_policy",
 }
 
 DEPRECATED_MANIFEST_CONFIG_FIELDS = {
@@ -52,59 +78,9 @@ DEPRECATED_MANIFEST_CONFIG_FIELDS = {
     "retrieval_policy",
 }
 
-MAX_CONTEXT_CHARS = 2500
-BM25_K1 = 1.5
-BM25_B = 0.75
-MODEL_INIT_FORBIDDEN_MESSAGE = "MODEL INITIALIZATION FORBIDDEN IN QUERY MODE"
-SOURCE_ACCESS_FORBIDDEN_MESSAGE = "SOURCE ACCESS FORBIDDEN IN QUERY MODE"
-
-SEARCHABLE_SUFFIXES = {
-    ".css",
-    ".csv",
-    ".dart",
-    ".go",
-    ".graphql",
-    ".html",
-    ".ini",
-    ".js",
-    ".json",
-    ".jsx",
-    ".kt",
-    ".md",
-    ".mjs",
-    ".py",
-    ".rb",
-    ".scss",
-    ".sh",
-    ".sql",
-    ".svg",
-    ".swift",
-    ".toml",
-    ".ts",
-    ".tsx",
-    ".txt",
-    ".yaml",
-    ".yml",
-}
-
-SEARCHABLE_FILENAMES = {
-    ".gitignore",
-    "dockerfile",
-    "makefile",
-    "procfile",
-}
-
-
-EXCLUDED_DIRECTORIES = {
-    ".repo_index",
-    ".venv",
-    "__pycache__",
-    "build",
-    "coverage",
-    "dist",
-    "node_modules",
-    "target",
-}
+CANONICAL_EVIDENCE_FIELDS = {"file", "layer", "snippet", "source_type", "score"}
+CANONICAL_SOURCE_TYPES = {"chunk", "ast", "context"}
+CANONICAL_LAYERS = {"LAW", "ROUTE", "SERVICE", "DB", "POLICY", "SCHEMA", "MODEL", "OTHER"}
 
 _RUNTIME_STATE = None
 
@@ -194,6 +170,24 @@ def validate_flat_manifest_fields(manifest: dict) -> None:
     require_manifest_root_int(manifest, "lexical_candidate_k")
     if not isinstance(manifest.get("classification_policy"), dict):
         raise SystemExit("FEL: classification_policy saknas i indexmanifestet")
+    try:
+        validate_retrieval_policies(manifest)
+    except RetrievalPolicyError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def validate_runtime_model_authority(manifest: dict) -> dict:
+    try:
+        return validate_model_authority_for_manifest(ROOT, manifest)
+    except ModelAuthorityError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def validate_runtime_dependency_authority() -> dict:
+    try:
+        return require_valid_d01_pass_from_environment(ROOT)
+    except DependencyAuthorityError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def load_index_manifest() -> dict:
@@ -231,100 +225,112 @@ def validate_canonical_index_health() -> None:
         raise SystemExit(f"FEL: kanonisk lexical-index saknas vid {LEXICAL_INDEX_DIR}")
 
 
-def normalize_query(raw_query: str) -> str:
-    return " ".join(raw_query.strip().lower().split())
-
-
-def require_query_model_surface() -> None:
-    raise SystemExit(MODEL_INIT_FORBIDDEN_MESSAGE)
+def normalize_query(raw_query: str, policies: dict) -> str:
+    try:
+        return normalize_query_with_policy(raw_query, policies["normalization_policy"])
+    except RetrievalPolicyError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def normalize_document_text(text: str) -> str:
-    return text.removeprefix("passage: ").strip()
+    return text
 
 
-def tokenize_for_bm25(text: str) -> list[str]:
-    return normalize_document_text(text).lower().split()
+def open_vector_collection():
+    try:
+        from chromadb import PersistentClient
 
-
-def load_lexical_index() -> tuple[dict, list[dict]]:
-    if not LEXICAL_INDEX_MANIFEST.exists():
-        raise SystemExit(f"FEL: lexical-indexmanifest saknas vid {LEXICAL_INDEX_MANIFEST}")
-    if not LEXICAL_INDEX_DOCUMENTS.exists():
-        raise SystemExit(f"FEL: lexical-indexdokument saknas vid {LEXICAL_INDEX_DOCUMENTS}")
-
-    manifest = load_json_object(LEXICAL_INDEX_MANIFEST)
-    records = [
-        json.loads(line)
-        for line in LEXICAL_INDEX_DOCUMENTS.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    return manifest, records
-
-
-def load_chunk_manifest_records() -> list[dict]:
-    if not CHUNK_MANIFEST.exists():
-        raise SystemExit(f"FEL: chunkmanifest saknas vid {CHUNK_MANIFEST}")
-
-    return [
-        json.loads(line)
-        for line in CHUNK_MANIFEST.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-
-
-def compute_chunk_manifest_hash(records: list[dict]) -> str:
-    ordered_records = sorted(
-        records,
-        key=lambda record: (
-            str(record["file"]),
-            int(record["chunk_index"]),
-            str(record["doc_id"]),
-        ),
-    )
-    serialized = "\n".join(
-        json.dumps(record, ensure_ascii=False, sort_keys=True)
-        for record in ordered_records
-    )
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-
-
-def validate_contract_version_bindings(index_manifest: dict, chunk_records: list[dict], lexical_manifest: dict, collection) -> None:
-    contract_version = str(index_manifest["contract_version"])
-    chunk_manifest_hash = str(index_manifest["chunk_manifest_hash"])
-
-    lexical_contract_version = str(lexical_manifest.get("contract_version", ""))
-    if lexical_contract_version != contract_version:
+        client = PersistentClient(path=DB_PATH)
+        return client.get_collection(COLLECTION_NAME)
+    except Exception as exc:
         raise SystemExit(
-            "FEL: lexical-indexens contract_version matchar inte indexmanifestet"
-        )
-    lexical_chunk_manifest_hash = str(lexical_manifest.get("chunk_manifest_hash", ""))
-    if lexical_chunk_manifest_hash != chunk_manifest_hash:
-        raise SystemExit(
-            "FEL: lexical-indexens chunk_manifest_hash matchar inte indexmanifestet"
-        )
+            f"FEL: vektorindexets samling saknas eller kan inte oppnas i {DB_PATH}"
+        ) from exc
 
-    chunk_contract_versions = {str(record.get("contract_version", "")) for record in chunk_records}
-    if chunk_contract_versions != {contract_version}:
-        raise SystemExit(
-            "FEL: chunkmanifestets contract_version matchar inte indexmanifestet"
-        )
-    actual_chunk_manifest_hash = compute_chunk_manifest_hash(chunk_records)
-    if actual_chunk_manifest_hash != chunk_manifest_hash:
-        raise SystemExit(
-            "FEL: chunkmanifestets chunk_manifest_hash matchar inte indexmanifestet"
-        )
 
-    collection_contract_version = str((collection.metadata or {}).get("contract_version", ""))
-    if collection_contract_version != contract_version:
-        raise SystemExit(
-            "FEL: vektorindexets contract_version matchar inte indexmanifestet"
+def validate_runtime_artifact_integrity(collection) -> dict:
+    try:
+        return validate_index_artifact_integrity(
+            root=ROOT,
+            index_root=ROOT / ".repo_index",
+            manifest_path=INDEX_MANIFEST,
+            chunk_manifest_path=CHUNK_MANIFEST,
+            chroma_db_dir=Path(DB_PATH),
+            lexical_index_dir=LEXICAL_INDEX_DIR,
+            collection=collection,
         )
-    collection_chunk_manifest_hash = str((collection.metadata or {}).get("chunk_manifest_hash", ""))
-    if collection_chunk_manifest_hash != chunk_manifest_hash:
-        raise SystemExit(
-            "FEL: vektorindexets chunk_manifest_hash matchar inte indexmanifestet"
+    except IndexArtifactIntegrityError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def load_sentence_transformer_classes():
+    try:
+        from sentence_transformers import CrossEncoder, SentenceTransformer
+    except Exception as exc:
+        raise SystemExit("FEL: sentence-transformers saknas i kanonisk retrievalmiljo") from exc
+    return SentenceTransformer, CrossEncoder
+
+
+def load_warm_model_surface(model_authority: dict) -> dict:
+    SentenceTransformer, CrossEncoder = load_sentence_transformer_classes()
+    embedding_binding = model_authority["models"].get("embedding")
+    rerank_binding = model_authority["models"].get("rerank")
+    if not isinstance(embedding_binding, dict) or not isinstance(rerank_binding, dict):
+        raise SystemExit("FEL: modellauktoritet saknar embedding- eller rerank-bindning")
+
+    try:
+        embedding_model = SentenceTransformer(
+            str(embedding_binding["local_path"]),
+            device="cpu",
+            local_files_only=True,
+            trust_remote_code=False,
         )
+    except Exception as exc:
+        raise SystemExit("FEL: embeddingmodell kunde inte varmas fran kanonisk modellauktoritet") from exc
+
+    try:
+        rerank_model = CrossEncoder(
+            str(rerank_binding["local_path"]),
+            device="cpu",
+            local_files_only=True,
+            trust_remote_code=False,
+        )
+    except Exception as exc:
+        raise SystemExit("FEL: rerankmodell kunde inte varmas fran kanonisk modellauktoritet") from exc
+
+    return {
+        "embedding": embedding_model,
+        "rerank": rerank_model,
+        "authority_path": model_authority["authority_path_text"],
+    }
+
+
+def build_lexical_runtime_index(lexical_records: list[dict], lexical_manifest: dict) -> dict:
+    postings: dict[str, list[tuple[str, int, int]]] = {}
+    doc_lengths: dict[str, int] = {}
+    for record in lexical_records:
+        doc_id = str(record.get("doc_id", ""))
+        length = int(record.get("length", 0))
+        term_freqs = record.get("term_freqs")
+        if not doc_id or not isinstance(term_freqs, dict):
+            raise SystemExit("FEL: lexical-indexet saknar lagrade termfrekvenser")
+        doc_lengths[doc_id] = length
+        for token, raw_term_freq in term_freqs.items():
+            term_freq = int(raw_term_freq)
+            if term_freq <= 0:
+                raise SystemExit("FEL: lexical-indexet innehaller ogiltig termfrekvens")
+            postings.setdefault(str(token), []).append((doc_id, term_freq, length))
+
+    for token in postings:
+        postings[token].sort(key=lambda item: item[0])
+
+    return {
+        "postings": postings,
+        "doc_lengths": doc_lengths,
+        "doc_count": int(lexical_manifest["doc_count"]),
+        "avg_doc_length": float(lexical_manifest["avg_doc_length"]),
+        "document_frequency": lexical_manifest["document_frequency"],
+    }
 
 
 def load_runtime_state() -> dict:
@@ -333,111 +339,89 @@ def load_runtime_state() -> dict:
     if _RUNTIME_STATE is not None:
         return _RUNTIME_STATE
 
+    dependency_authority = validate_runtime_dependency_authority()
     validate_canonical_index_health()
     index_manifest = load_index_manifest()
-    lexical_manifest, lexical_records = load_lexical_index()
-    chunk_records = load_chunk_manifest_records()
-    client = PersistentClient(path=DB_PATH)
-    collection = client.get_collection(COLLECTION_NAME)
-    validate_contract_version_bindings(
-        index_manifest=index_manifest,
-        chunk_records=chunk_records,
-        lexical_manifest=lexical_manifest,
-        collection=collection,
+    policies = validate_retrieval_policies(index_manifest)
+    model_authority = validate_runtime_model_authority(index_manifest)
+    collection = open_vector_collection()
+    artifact_integrity = validate_runtime_artifact_integrity(collection)
+    lexical_runtime_index = build_lexical_runtime_index(
+        artifact_integrity["lexical_records"],
+        artifact_integrity["lexical_manifest"],
     )
+    warm_models = load_warm_model_surface(model_authority)
 
     _RUNTIME_STATE = {
-        "index_manifest": index_manifest,
-        "lexical_manifest": lexical_manifest,
-        "lexical_records": lexical_records,
-        "chunk_records": chunk_records,
+        "index_manifest": artifact_integrity["manifest"],
+        "dependency_authority": dependency_authority,
+        "retrieval_policies": policies,
+        "model_authority": model_authority,
+        "warm_models": warm_models,
+        "artifact_integrity": {
+            "status": artifact_integrity["status"],
+            "artifact_set": artifact_integrity["artifact_set"],
+            "chunk_manifest": artifact_integrity["chunk_manifest"],
+            "lexical_index": artifact_integrity["lexical_index"],
+            "vector_index": artifact_integrity["vector_index"],
+        },
+        "lexical_manifest": artifact_integrity["lexical_manifest"],
+        "lexical_records": artifact_integrity["lexical_records"],
+        "lexical_runtime_index": lexical_runtime_index,
+        "chunk_records": artifact_integrity["chunk_records"],
+        "chunk_records_by_doc_id": {
+            str(record["doc_id"]): record
+            for record in artifact_integrity["chunk_records"]
+        },
         "collection": collection,
     }
     return _RUNTIME_STATE
 
 
 def preflight_runtime_prerequisites() -> None:
-    validate_canonical_index_health()
-    index_manifest = load_index_manifest()
-    lexical_manifest, _ = load_lexical_index()
-    chunk_records = load_chunk_manifest_records()
+    load_runtime_state()
 
+
+def lexical_search(normalized_query: str, runtime_state: dict, top_n: int) -> list[str]:
+    policies = runtime_state["retrieval_policies"]
+    lexical_policy = policies["lexical_query_policy"]
     try:
-        client = PersistentClient(path=DB_PATH)
-        collection = client.get_collection(COLLECTION_NAME)
-    except Exception as exc:
-        raise SystemExit(
-            f"FEL: vektorindexets samling saknas eller kan inte öppnas i {DB_PATH}"
-        ) from exc
-
-    validate_contract_version_bindings(
-        index_manifest=index_manifest,
-        chunk_records=chunk_records,
-        lexical_manifest=lexical_manifest,
-        collection=collection,
-    )
-
-
-def lexical_search(query_text: str, lexical_records: list[dict], lexical_manifest: dict, top_n: int) -> list[str]:
-    query_tokens = tokenize_for_bm25(query_text)
+        query_tokens = tokenize_normalized_query(
+            normalized_query,
+            policies["normalization_policy"],
+        )
+    except RetrievalPolicyError as exc:
+        raise SystemExit(str(exc)) from exc
     if not query_tokens:
-        return []
+        raise SystemExit("FEL: query saknar token efter kanonisk normalisering")
 
-    total_docs = int(lexical_manifest.get("doc_count", 0))
-    avg_doc_length = float(lexical_manifest.get("avg_doc_length", 0.0)) or 1.0
-    document_frequency = lexical_manifest.get("document_frequency", {})
+    lexical_index = runtime_state["lexical_runtime_index"]
+    postings = lexical_index["postings"]
+    total_docs = int(lexical_index["doc_count"])
+    avg_doc_length = float(lexical_index["avg_doc_length"])
+    document_frequency = lexical_index["document_frequency"]
+    bm25_k1 = float(lexical_policy["bm25_k1"])
+    bm25_b = float(lexical_policy["bm25_b"])
 
-    scored: list[tuple[str, float]] = []
+    scored_by_doc_id: dict[str, float] = {}
+    for token in query_tokens:
+        doc_freq = int(document_frequency.get(token, 0))
+        if doc_freq <= 0 or total_docs <= 0:
+            continue
+        idf = math.log(1.0 + ((total_docs - doc_freq + 0.5) / (doc_freq + 0.5)))
+        for doc_id, term_freq, length in postings.get(token, []):
+            normalized_length = max(1, int(length))
+            numerator = term_freq * (bm25_k1 + 1.0)
+            denominator = term_freq + bm25_k1 * (1.0 - bm25_b + bm25_b * (normalized_length / avg_doc_length))
+            scored_by_doc_id[doc_id] = scored_by_doc_id.get(doc_id, 0.0) + idf * (numerator / denominator)
 
-    for record in lexical_records:
-        doc_id = str(record.get("doc_id", ""))
-        length = max(1, int(record.get("length", 0)))
-        term_freqs = record.get("term_freqs", {})
-        score = 0.0
-
-        for token in query_tokens:
-            doc_freq = int(document_frequency.get(token, 0))
-            term_freq = int(term_freqs.get(token, 0))
-            if doc_freq <= 0 or term_freq <= 0 or total_docs <= 0:
-                continue
-
-            idf = math.log(1.0 + ((total_docs - doc_freq + 0.5) / (doc_freq + 0.5)))
-            numerator = term_freq * (BM25_K1 + 1.0)
-            denominator = term_freq + BM25_K1 * (1.0 - BM25_B + BM25_B * (length / avg_doc_length))
-            score += idf * (numerator / denominator)
-
-        if score > 0.0:
-            scored.append((doc_id, score))
-
+    scored = [
+        (doc_id, score)
+        for doc_id, score in scored_by_doc_id.items()
+        if score > 0.0 and math.isfinite(score)
+    ]
     scored.sort(key=lambda item: (-item[1], item[0]))
     return [doc_id for doc_id, _ in scored[:top_n]]
-
-
-def is_excluded_path(file_path: str) -> bool:
-    path = Path(file_path)
-
-    lowered_parts = [part.lower() for part in path.parts]
-    if any(part in EXCLUDED_DIRECTORIES for part in lowered_parts):
-        return True
-
-    name = path.name.lower()
-    if name.startswith(".env"):
-        return True
-    if name.endswith(".log"):
-        return True
-
-    return False
-
-
-def is_non_searchable_path(file_path: str) -> bool:
-    if is_excluded_path(file_path):
-        return True
-    path = Path(file_path)
-    name = path.name.lower()
-    suffix = path.suffix.lower()
-    if name in SEARCHABLE_FILENAMES:
-        return False
-    return suffix not in SEARCHABLE_SUFFIXES
 
 
 def normalize_file_for_order(file_path: str) -> str:
@@ -445,25 +429,12 @@ def normalize_file_for_order(file_path: str) -> str:
     if path.is_absolute():
         try:
             path = path.resolve().relative_to(ROOT)
-        except ValueError:
-            return path.as_posix()
-    return Path(path.as_posix()).as_posix().lstrip("./")
-
-
-def filter_excluded_entries(entries: list[dict]) -> list[dict]:
-    return [
-        entry for entry in entries
-        if isinstance(entry, dict)
-        and not is_excluded_path(str(entry.get("file", "")))
-    ]
-
-
-def find_context(file_path: str, snippet: str) -> str:
-    raise SystemExit(SOURCE_ACCESS_FORBIDDEN_MESSAGE)
-
-
-def build_rerank_document(file_path: str, fallback_doc: str, query_text: str) -> str:
-    raise SystemExit(SOURCE_ACCESS_FORBIDDEN_MESSAGE)
+        except ValueError as exc:
+            raise SystemExit("FEL: evidensfil ligger utanfor repo-root") from exc
+    normalized = Path(path.as_posix())
+    if normalized.is_absolute() or ".." in normalized.parts:
+        raise SystemExit("FEL: evidensfil ar inte repo-relativt normaliserad")
+    return normalized.as_posix().lstrip("./")
 
 
 def classify(path: str, index_manifest: dict) -> str:
@@ -485,20 +456,41 @@ def classify(path: str, index_manifest: dict) -> str:
     return str(classification_policy.get("default_layer", "OTHER")).upper()
 
 
-def build_result_content(file_path: str, doc: str) -> tuple[str, str]:
-    return "chunk", normalize_document_text(doc)[:MAX_CONTEXT_CHARS]
+def build_result_content(doc: str, source_type: str, evidence_policy: dict) -> tuple[str, str]:
+    if source_type != evidence_policy["source_type"]:
+        raise SystemExit("FEL: evidensens source_type matchar inte manifestets evidenspolicy")
+    max_snippet_chars = int(evidence_policy["max_snippet_chars"])
+    return source_type, normalize_document_text(doc)[:max_snippet_chars]
 
 
-def build_output_entry(file_path: str, doc: str, dist: float | None, final_score: float, index_manifest: dict) -> dict:
-    source_type, snippet = build_result_content(file_path, doc)
-    normalized_file = normalize_file_for_order(file_path)
-    return {
+def validate_evidence_object(entry: dict) -> None:
+    if set(entry) != CANONICAL_EVIDENCE_FIELDS:
+        raise SystemExit("FEL: evidensobjektet matchar inte kanonisk form")
+    if not isinstance(entry["file"], str) or not entry["file"]:
+        raise SystemExit("FEL: evidens.file maste vara en icke-tom strang")
+    if str(entry["layer"]) not in CANONICAL_LAYERS:
+        raise SystemExit("FEL: evidens.layer ar inte kanoniskt")
+    if not isinstance(entry["snippet"], str):
+        raise SystemExit("FEL: evidens.snippet maste vara strang")
+    if str(entry["source_type"]) not in CANONICAL_SOURCE_TYPES:
+        raise SystemExit("FEL: evidens.source_type ar inte kanoniskt")
+    if not isinstance(entry["score"], float) or not math.isfinite(entry["score"]):
+        raise SystemExit("FEL: evidens.score maste vara en finit float")
+
+
+def build_output_entry(entry: dict, final_score: float, index_manifest: dict, evidence_policy: dict) -> dict:
+    meta = entry["meta"]
+    normalized_file = normalize_file_for_order(str(meta["file"]))
+    source_type, snippet = build_result_content(str(entry["doc"]), str(meta["source_type"]), evidence_policy)
+    output_entry = {
         "file": normalized_file,
         "layer": classify(normalized_file, index_manifest),
         "snippet": snippet,
         "source_type": source_type,
         "score": float(final_score),
     }
+    validate_evidence_object(output_entry)
+    return output_entry
 
 
 def render_results_text(entries: list[dict], top_k: int) -> str:
@@ -508,17 +500,17 @@ def render_results_text(entries: list[dict], top_k: int) -> str:
     for entry in entries:
         printed = True
 
-        file_path = entry.get("file", "UNKNOWN")
+        file_path = entry.get("file", "OKAND")
         score = float(entry.get("score", 0.0))
         content = str(entry.get("snippet", ""))
 
-        lines.append(f"[SIMILARITY: 0.0000 | FINAL: {score:.4f}]")
-        lines.append(f"FILE: {file_path}")
+        lines.append(f"[SIMILARITET: 0.0000 | SLUTPOANG: {score:.4f}]")
+        lines.append(f"FIL: {file_path}")
         lines.append("-" * 60)
         lines.append(content)
         lines.append("")
 
-        if len([line for line in lines if line.startswith("FILE: ")]) >= top_k:
+        if len([line for line in lines if line.startswith("FIL: ")]) >= top_k:
             break
 
     if not printed:
@@ -531,20 +523,25 @@ def render_results(entries: list[dict], top_k: int) -> None:
     print(render_results_text(entries, top_k=top_k), end="")
 
 
-def fetch_collection_entries(collection, doc_ids: list[str]) -> dict[str, dict]:
+def fetch_collection_entries(collection, doc_ids: list[str], chunk_records_by_doc_id: dict[str, dict]) -> dict[str, dict]:
     if not doc_ids:
         return {}
 
     result = collection.get(ids=doc_ids, include=["documents", "metadatas"])
+    returned_ids = [str(doc_id) for doc_id in (result.get("ids") or [])]
+    if set(returned_ids) != set(doc_ids):
+        raise SystemExit("FEL: vektorindexet returnerade inte exakt begart kandidatset")
     entries = {}
 
-    for doc_id, doc, meta in zip(result.get("ids") or [], result.get("documents") or [], result.get("metadatas") or []):
-        if not meta:
-            continue
-
-        file_path = meta.get("file", "UNKNOWN")
-        if is_non_searchable_path(file_path):
-            continue
+    for doc_id, doc, meta in zip(returned_ids, result.get("documents") or [], result.get("metadatas") or []):
+        if doc_id not in chunk_records_by_doc_id:
+            raise SystemExit("FEL: kandidat saknas i chunkmanifestet")
+        if not isinstance(doc, str):
+            raise SystemExit("FEL: kandidatdokument saknar text")
+        if not isinstance(meta, dict):
+            raise SystemExit("FEL: kandidatdokument saknar metadata")
+        if str(meta.get("doc_id", "")) != doc_id:
+            raise SystemExit("FEL: kandidatmetadata doc_id matchar inte vektorindex")
 
         entries[doc_id] = {
             "id": doc_id,
@@ -552,13 +549,168 @@ def fetch_collection_entries(collection, doc_ids: list[str]) -> dict[str, dict]:
             "meta": meta,
         }
 
+    if set(entries) != set(doc_ids):
+        raise SystemExit("FEL: kandidatmaterialisering matchar inte kandidatunion")
     return entries
+
+
+def encode_query_embedding(normalized_query: str, runtime_state: dict) -> list[float]:
+    policy = runtime_state["retrieval_policies"]["embedding_query_policy"]
+    query_text = str(policy["query_prefix"]) + normalized_query
+    model = runtime_state["warm_models"].get("embedding")
+    if model is None:
+        raise SystemExit("FEL: varm embeddingmodell saknas i retrievalruntime")
+    try:
+        matrix = model.encode(
+            [query_text],
+            batch_size=int(policy["batch_size"]),
+            normalize_embeddings=bool(policy["normalize_embeddings"]),
+            show_progress_bar=False,
+            convert_to_numpy=True,
+        )
+    except Exception as exc:
+        raise SystemExit("FEL: query-embedding misslyckades i varm retrievalruntime") from exc
+    if len(matrix) != 1:
+        raise SystemExit("FEL: query-embedding returnerade fel antal vektorer")
+    vector = [float(value) for value in matrix[0]]
+    if not vector or not all(math.isfinite(value) for value in vector):
+        raise SystemExit("FEL: query-embedding ar inte en finit vektor")
+    expected_dimension = int(runtime_state["artifact_integrity"]["vector_index"]["embedding_dimension"])
+    if len(vector) != expected_dimension:
+        raise SystemExit("FEL: query-embeddingdimension matchar inte aktivt vektorindex")
+    return vector
+
+
+def vector_search(normalized_query: str, runtime_state: dict, top_n: int) -> list[str]:
+    query_embedding = encode_query_embedding(normalized_query, runtime_state)
+    collection = runtime_state["collection"]
+    try:
+        result = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_n,
+            include=["metadatas", "distances"],
+        )
+    except Exception as exc:
+        raise SystemExit("FEL: vektorkandidater kunde inte hamtas fran aktivt Chroma-index") from exc
+    ids_batches = result.get("ids")
+    if not isinstance(ids_batches, list) or len(ids_batches) != 1 or not isinstance(ids_batches[0], list):
+        raise SystemExit("FEL: vektorindexet returnerade ogiltig kandidatstruktur")
+    vector_doc_ids = [str(doc_id) for doc_id in ids_batches[0]]
+    if len(vector_doc_ids) > top_n:
+        raise SystemExit("FEL: vektorindexet returnerade fler kandidater an manifestgransen")
+    if len(set(vector_doc_ids)) != len(vector_doc_ids):
+        raise SystemExit("FEL: vektorindexet returnerade duplicerade kandidater")
+    valid_doc_ids = set(runtime_state["chunk_records_by_doc_id"])
+    if any(doc_id not in valid_doc_ids for doc_id in vector_doc_ids):
+        raise SystemExit("FEL: vektorindexet returnerade kandidat utan chunkmanifestpost")
+    return vector_doc_ids
+
+
+def union_candidate_doc_ids(lexical_doc_ids: list[str], vector_doc_ids: list[str], runtime_state: dict) -> list[str]:
+    chunk_records_by_doc_id = runtime_state["chunk_records_by_doc_id"]
+    candidate_ids = set(lexical_doc_ids) | set(vector_doc_ids)
+    if any(doc_id not in chunk_records_by_doc_id for doc_id in candidate_ids):
+        raise SystemExit("FEL: kandidatunion innehaller doc_id utan chunkmanifestpost")
+    return sorted(
+        candidate_ids,
+        key=lambda doc_id: (
+            normalize_file_for_order(str(chunk_records_by_doc_id[doc_id]["file"])),
+            doc_id,
+        ),
+    )
+
+
+def boost_score_for_candidate(scoring_policy: dict) -> float:
+    if scoring_policy["boosts"] != []:
+        raise SystemExit("FEL: scoring_policy.boosts maste vara tom for denna kontraktsversion")
+    return 0.0
+
+
+def rerank_candidates(normalized_query: str, candidate_entries: dict[str, dict], runtime_state: dict) -> list[tuple[str, dict, float]]:
+    rerank_policy = runtime_state["retrieval_policies"]["rerank_policy"]
+    scoring_policy = runtime_state["retrieval_policies"]["scoring_policy"]
+    if rerank_policy["enabled"] is not True:
+        raise SystemExit("FEL: rerank ar obligatorisk for denna retrievalkontraktversion")
+    rerank_model = runtime_state["warm_models"].get("rerank")
+    if rerank_model is None:
+        raise SystemExit("FEL: varm rerankmodell saknas i retrievalruntime")
+
+    ordered_items = sorted(
+        candidate_entries.items(),
+        key=lambda item: (
+            normalize_file_for_order(str(item[1]["meta"]["file"])),
+            item[0],
+        ),
+    )
+    pairs = [
+        [normalized_query, str(entry["doc"])]
+        for _, entry in ordered_items
+    ]
+    if not pairs:
+        return []
+    try:
+        raw_scores = rerank_model.predict(
+            pairs,
+            batch_size=int(rerank_policy["batch_size"]),
+            show_progress_bar=False,
+            apply_softmax=False,
+            convert_to_numpy=True,
+        )
+    except Exception as exc:
+        raise SystemExit("FEL: begransad rerank misslyckades i varm retrievalruntime") from exc
+    scores = [float(score) for score in raw_scores]
+    if len(scores) != len(ordered_items):
+        raise SystemExit("FEL: rerank returnerade fel antal scorer")
+
+    scored_entries = []
+    boost_score = boost_score_for_candidate(scoring_policy)
+    for (doc_id, entry), rerank_score in zip(ordered_items, scores):
+        if not math.isfinite(rerank_score):
+            raise SystemExit("FEL: rerank_score maste vara finit")
+        final_score = rerank_score + boost_score
+        if not math.isfinite(final_score):
+            raise SystemExit("FEL: final_score maste vara finit")
+        scored_entries.append((doc_id, entry, final_score))
+
+    scored_entries.sort(
+        key=lambda item: (
+            -item[2],
+            normalize_file_for_order(str(item[1]["meta"]["file"])),
+            item[0],
+        )
+    )
+    return scored_entries
 
 
 def execute_query(raw_query: str, runtime_state: dict) -> tuple[list[dict], int]:
     index_manifest = runtime_state["index_manifest"]
     validate_flat_manifest_fields(index_manifest)
-    require_query_model_surface()
+    if "warm_models" not in runtime_state:
+        raise SystemExit("FEL: retrievalruntime ar inte varm")
+
+    policies = runtime_state["retrieval_policies"]
+    normalized_query = normalize_query(raw_query, policies)
+    lexical_candidate_k = int(index_manifest["lexical_candidate_k"])
+    vector_candidate_k = int(index_manifest["vector_candidate_k"])
+    top_k = int(index_manifest["top_k"])
+
+    lexical_doc_ids = lexical_search(normalized_query, runtime_state, lexical_candidate_k)
+    vector_doc_ids = vector_search(normalized_query, runtime_state, vector_candidate_k)
+    candidate_doc_ids = union_candidate_doc_ids(lexical_doc_ids, vector_doc_ids, runtime_state)
+    candidate_entries = fetch_collection_entries(
+        runtime_state["collection"],
+        candidate_doc_ids,
+        runtime_state["chunk_records_by_doc_id"],
+    )
+    scored_entries = rerank_candidates(normalized_query, candidate_entries, runtime_state)
+    evidence_policy = policies["evidence_policy"]
+    output_entries = [
+        build_output_entry(entry, final_score, index_manifest, evidence_policy)
+        for _, entry, final_score in scored_entries[:top_k]
+    ]
+    for entry in output_entries:
+        validate_evidence_object(entry)
+    return output_entries, top_k
 
 
 def handle_query_request(raw_query: str) -> str:
@@ -593,7 +745,7 @@ def main() -> None:
 
     raw_query = " ".join(args).strip()
     if not raw_query:
-        print("FEL: Ingen fråga angavs")
+        print("FEL: Ingen fraga angavs")
         sys.exit(1)
 
     dispatch_query(raw_query, output_format=output_format)

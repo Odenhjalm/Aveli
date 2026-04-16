@@ -53,6 +53,44 @@
   "top_k": 16,
   "vector_candidate_k": 30,
   "lexical_candidate_k": 30,
+  "normalization_policy": {
+    "schema_version": "query_normalization_v1",
+    "unicode_normalization": "NFC",
+    "strip": true,
+    "casefold": true,
+    "collapse_whitespace": true,
+    "tokenization": "whitespace_v1"
+  },
+  "lexical_query_policy": {
+    "schema_version": "lexical_query_v1",
+    "token_source": "persistent_lexical_index",
+    "scoring": "bm25_v1",
+    "bm25_k1": 1.5,
+    "bm25_b": 0.75
+  },
+  "embedding_query_policy": {
+    "schema_version": "embedding_query_v1",
+    "query_prefix": "query: ",
+    "normalize_embeddings": true,
+    "batch_size": 1
+  },
+  "rerank_policy": {
+    "schema_version": "rerank_v1",
+    "enabled": true,
+    "batch_size": 16,
+    "input_order": "ascending_file_then_doc_id",
+    "score_output": "raw_float"
+  },
+  "scoring_policy": {
+    "schema_version": "score_fusion_v1",
+    "formula": "final_score = rerank_score + boost_score",
+    "boosts": []
+  },
+  "evidence_policy": {
+    "schema_version": "evidence_output_v1",
+    "max_snippet_chars": 2500,
+    "source_type": "chunk"
+  },
   "classification_policy": {
     "default_layer": "OTHER",
     "precedence": [

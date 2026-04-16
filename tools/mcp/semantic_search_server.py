@@ -8,14 +8,18 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+INDEX_TOOL_ROOT = REPO_ROOT / "tools" / "index"
 SEARCH_PYTHON = REPO_ROOT / ".repo_index" / ".search_venv" / "Scripts" / "python.exe"
-CANONICAL_RETRIEVAL_REQUIRED = "CANONICAL RETRIEVAL INTERFACE REQUIRED FOR MCP"
+CANONICAL_RETRIEVAL_REQUIRED = "FEL: MCP kraver kanoniskt retrieval-granssnitt"
 
 if Path(sys.executable).resolve() != SEARCH_PYTHON.resolve():
     raise SystemExit(
         "FEL: MCP semantic-search maste koras med kanonisk Windows-tolk: "
         f"{SEARCH_PYTHON}"
     )
+
+if str(INDEX_TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(INDEX_TOOL_ROOT))
 
 
 class CanonicalRetrievalUnavailable(RuntimeError):
@@ -24,8 +28,22 @@ class CanonicalRetrievalUnavailable(RuntimeError):
         self.classification = "STOP"
 
 
+class CanonicalRetrievalStopped(RuntimeError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.classification = "STOP"
+
+
 def call_canonical_retrieval(query: str) -> Any:
-    raise CanonicalRetrievalUnavailable()
+    try:
+        from search_code import handle_query_json
+    except Exception as exc:
+        raise CanonicalRetrievalUnavailable() from exc
+    try:
+        return json.loads(handle_query_json(query))
+    except SystemExit as exc:
+        message = str(exc) or CANONICAL_RETRIEVAL_REQUIRED
+        raise CanonicalRetrievalStopped(message) from exc
 
 
 def _write_json(payload: dict) -> None:
@@ -68,7 +86,7 @@ def _tools_list_response(request_id):
             "tools": [
                 {
                     "name": "semantic_search",
-                    "description": "Canonical Aveli retrieval transport.",
+                    "description": "Kanonisk Aveli-retrievaltransport.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {

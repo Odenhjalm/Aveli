@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
@@ -10,6 +12,7 @@ from pathlib import Path
 from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
+INDEX_TOOL_ROOT = Path(__file__).resolve().parent
 CANONICAL_SEARCH_PYTHON = ROOT / ".repo_index" / ".search_venv" / "Scripts" / "python.exe"
 
 if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
@@ -18,10 +21,33 @@ if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
         f"{CANONICAL_SEARCH_PYTHON}"
     )
 
-from sentence_transformers import SentenceTransformer
-import chromadb
-import numpy as np
-from tqdm import tqdm
+if str(INDEX_TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(INDEX_TOOL_ROOT))
+
+from model_authority import (
+    ModelAuthorityError,
+    serialize_model_authority_result,
+    validate_model_authority_for_manifest,
+)
+from index_artifact_integrity import (
+    IndexArtifactIntegrityError,
+    validate_index_artifact_integrity,
+)
+from retrieval_policies import (
+    RetrievalPolicyError,
+    canonical_retrieval_policies,
+    validate_retrieval_policies,
+)
+from dependency_authority import (
+    DependencyAuthorityError,
+    require_valid_d01_pass_for_build,
+)
+
+SentenceTransformer = None
+chromadb = None
+np = None
+tqdm = None
+BUILD_DEPENDENCIES_LOADED = False
 
 # ---------------------------------------------------------
 # Paths
@@ -67,6 +93,12 @@ INDEX_MANIFEST_REQUIRED_FIELDS = {
     "vector_candidate_k",
     "lexical_candidate_k",
     "classification_policy",
+    "normalization_policy",
+    "lexical_query_policy",
+    "embedding_query_policy",
+    "rerank_policy",
+    "scoring_policy",
+    "evidence_policy",
 }
 
 DEPRECATED_MANIFEST_CONFIG_FIELDS = {
@@ -109,6 +141,25 @@ EXCLUDED_DIRECTORIES = {
     "node_modules",
     "target",
 }
+
+
+def load_build_dependency_modules() -> None:
+    global BUILD_DEPENDENCIES_LOADED, SentenceTransformer, chromadb, np, tqdm
+    if BUILD_DEPENDENCIES_LOADED:
+        return
+    try:
+        from sentence_transformers import SentenceTransformer as _SentenceTransformer
+        import chromadb as _chromadb
+        import numpy as _np
+        from tqdm import tqdm as _tqdm
+    except Exception as exc:
+        raise RuntimeError("FEL: D01 PASS finns men buildberoenden kan inte importeras") from exc
+
+    SentenceTransformer = _SentenceTransformer
+    chromadb = _chromadb
+    np = _np
+    tqdm = _tqdm
+    BUILD_DEPENDENCIES_LOADED = True
 
 
 def is_excluded_path(relative_file: str) -> bool:
@@ -442,18 +493,24 @@ def validate_approval_manifest_input(
     return input_kind, manifest_path, manifest
 
 
-def validate_build_approval_policy(approval: dict, manifest: dict, build_id: str) -> None:
+def validate_build_approval_policy(approval: dict, manifest: dict, build_id: str) -> dict:
+    model_authority = resolve_manifest_model_authority(manifest)
+    embedding_binding = model_authority["models"]["embedding"]
     model_id = require_json_string(approval, "model_id", "approval")
     tokenizer_id = require_json_string(approval, "tokenizer_id", "approval")
-    if model_id != require_manifest_root_str(manifest, "embedding_model"):
+    if model_id != embedding_binding["model_id"]:
         raise RuntimeError("FEL: approval model_id matchar inte manifestets embedding_model")
-    if tokenizer_id != require_manifest_root_str(manifest, "embedding_model"):
-        raise RuntimeError("FEL: approval tokenizer_id matchar inte manifestets embedding_model")
+    if tokenizer_id != embedding_binding["tokenizer_id"]:
+        raise RuntimeError("FEL: approval tokenizer_id matchar inte modellauktoriteten")
 
     for field_name in ("model_revision", "tokenizer_revision"):
         revision = require_json_string(approval, field_name, "approval")
         if revision in {"main", "master", "latest"}:
             raise RuntimeError(f"FEL: approval {field_name} maste vara en last revision")
+    if approval["model_revision"] != embedding_binding["model_revision"]:
+        raise RuntimeError("FEL: approval model_revision matchar inte modellauktoriteten")
+    if approval["tokenizer_revision"] != embedding_binding["tokenizer_revision"]:
+        raise RuntimeError("FEL: approval tokenizer_revision matchar inte modellauktoriteten")
 
     tokenizer_hashes = require_json_object(approval, "tokenizer_hashes", "approval")
     if not tokenizer_hashes:
@@ -462,6 +519,8 @@ def validate_build_approval_policy(approval: dict, manifest: dict, build_id: str
         if not isinstance(name, str) or not name.strip():
             raise RuntimeError("FEL: tokenizer_hashes innehaller ogiltigt filnamn")
         validate_sha256_hex(digest, f"tokenizer_hashes.{name}")
+    if tokenizer_hashes != embedding_binding["tokenizer_files"]:
+        raise RuntimeError("FEL: approval tokenizer_hashes matchar inte modellauktoriteten")
 
     device_policy = require_json_object(approval, "device_policy", "approval")
     if require_json_string(device_policy, "canonical_baseline", "approval.device_policy") != "cpu":
@@ -529,6 +588,7 @@ def validate_build_approval_policy(approval: dict, manifest: dict, build_id: str
         raise RuntimeError("FEL: promotion_policy.active_manifest_state maste vara ACTIVE_VERIFIED")
     if not require_json_bool(promotion_policy, "atomic_promotion_required", "approval.promotion_policy"):
         raise RuntimeError("FEL: promotion_policy.atomic_promotion_required maste vara true")
+    return model_authority
 
 
 def prepare_manifest_for_staging(manifest: dict) -> dict:
@@ -548,6 +608,11 @@ def load_controller_build_context() -> dict:
     if mode != "build" or approval != APPROVAL_PHRASE:
         raise RuntimeError(MISSING_CONTROLLER_CONTEXT_MESSAGE)
 
+    try:
+        dependency_authority = require_valid_d01_pass_for_build(ROOT, build_id)
+    except DependencyAuthorityError as exc:
+        raise RuntimeError(str(exc)) from exc
+
     approval_artifact_path = resolve_repo_relative_path(
         require_controller_env(BUILD_APPROVAL_ARTIFACT_ENV),
         BUILD_APPROVAL_ARTIFACT_ENV,
@@ -562,7 +627,7 @@ def load_controller_build_context() -> dict:
         build_id,
         active_manifest_exists,
     )
-    validate_build_approval_policy(approval_artifact, manifest, build_id)
+    model_authority = validate_build_approval_policy(approval_artifact, manifest, build_id)
 
     staging_root = STAGING_PARENT / build_id
     staging_parent = STAGING_PARENT.resolve()
@@ -581,6 +646,8 @@ def load_controller_build_context() -> dict:
         "manifest": manifest,
         "manifest_input_kind": manifest_input_kind,
         "manifest_input_path": manifest_input_path,
+        "dependency_authority": dependency_authority,
+        "model_authority": model_authority,
         "started_at_utc": utc_now_iso(),
         "staging_root": staging_root,
         "index_manifest": staging_root / "index_manifest.json",
@@ -819,6 +886,7 @@ def build_canonical_index_manifest(
         "contract_version": CANONICAL_CONTRACT_VERSION,
         "corpus": {"files": list(corpus_files or [])},
         "corpus_manifest_hash": corpus_manifest_hash,
+        **canonical_retrieval_policies(),
         "embedding_model": str(embedding_model),
         "lexical_candidate_k": int(lexical_candidate_k),
         "rerank_model": str(rerank_model),
@@ -888,28 +956,51 @@ def get_chunking_policy(manifest: dict) -> tuple[int, int]:
     return chunk_size, chunk_overlap
 
 
-def get_embedding_model_config(manifest: dict) -> dict:
-    model_id = require_manifest_root_str(manifest, "embedding_model")
-    rerank_model = require_manifest_root_str(manifest, "rerank_model")
+def resolve_manifest_model_authority(manifest: dict) -> dict:
+    try:
+        return validate_model_authority_for_manifest(ROOT, manifest)
+    except ModelAuthorityError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+def get_embedding_model_config(manifest: dict, model_authority: dict | None = None) -> dict:
+    if model_authority is None:
+        model_authority = resolve_manifest_model_authority(manifest)
+    embedding_binding = model_authority["models"]["embedding"]
+    rerank_binding = model_authority["models"]["rerank"]
     return {
         "local_files_only": True,
-        "model_id": model_id,
-        "model_revision": None,
-        "model_snapshot_hash": "",
-        "rerank_model": rerank_model,
-        "tokenizer_files_hash": "",
+        "local_path": embedding_binding["local_path"],
+        "local_path_text": embedding_binding["local_path_text"],
+        "model_authority": model_authority,
+        "model_id": embedding_binding["model_id"],
+        "model_revision": embedding_binding["model_revision"],
+        "model_snapshot_hash": embedding_binding["model_snapshot_hash"],
+        "rerank_local_path": rerank_binding["local_path"],
+        "rerank_local_path_text": rerank_binding["local_path_text"],
+        "rerank_model": rerank_binding["model_id"],
+        "rerank_model_revision": rerank_binding["model_revision"],
+        "rerank_model_snapshot_hash": rerank_binding["model_snapshot_hash"],
+        "tokenizer_files_hash": embedding_binding["tokenizer_files_hash"],
+        "tokenizer_id": embedding_binding["tokenizer_id"],
+        "tokenizer_revision": embedding_binding["tokenizer_revision"],
         "trust_remote_code": False,
     }
 
 
 def get_embedding_policy(manifest: dict) -> dict:
     get_embedding_model_config(manifest)
+    try:
+        retrieval_policies = validate_retrieval_policies(manifest)
+    except RetrievalPolicyError as exc:
+        raise RuntimeError(str(exc)) from exc
+    embedding_query_policy = retrieval_policies["embedding_query_policy"]
     return {
         "dtype": "float32",
         "embedding_dimension": 1024,
-        "normalize_embeddings": True,
+        "normalize_embeddings": bool(embedding_query_policy["normalize_embeddings"]),
         "passage_prefix": "",
-        "query_prefix": "query: ",
+        "query_prefix": str(embedding_query_policy["query_prefix"]),
         "tolerance_absolute": 0.00001,
         "tolerance_relative": 0.00001,
     }
@@ -961,6 +1052,10 @@ def validate_flat_manifest_fields(manifest: dict) -> None:
     require_manifest_root_int(manifest, "vector_candidate_k")
     require_manifest_root_int(manifest, "lexical_candidate_k")
     get_chunking_policy(manifest)
+    try:
+        validate_retrieval_policies(manifest)
+    except RetrievalPolicyError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def validate_index_manifest(
@@ -1100,9 +1195,8 @@ def ensure_unique_doc_ids(records: list[dict]) -> None:
 
 def load_embedding_model(model_config: dict, device: str) -> SentenceTransformer:
     return SentenceTransformer(
-        model_config["model_id"],
+        str(model_config["local_path"]),
         device=device,
-        revision=model_config["model_revision"],
         local_files_only=model_config["local_files_only"],
         trust_remote_code=model_config["trust_remote_code"],
     )
@@ -1450,13 +1544,13 @@ def build_checkpoint_map(
         "lexical_index_validation": checkpoint_result(
             pass_status,
             "actual_truth/contracts/retrieval/index_structure_contract.md",
-            "Lexical doc_id-set matchar chunkmanifest",
+            "Lexikalt doc_id-set matchar chunkmanifest",
             "Verifierad" if staging_verified else "Ej natt",
         ),
         "vector_index_validation": checkpoint_result(
             pass_status,
             "actual_truth/contracts/retrieval/index_structure_contract.md",
-            "Vector doc_id-set matchar chunkmanifest",
+            "Vektorindexets doc_id-set matchar chunkmanifest",
             "Verifierad" if staging_verified else "Ej natt",
         ),
         "cpu_gpu_equivalence_validation": checkpoint_result(
@@ -1604,15 +1698,19 @@ def verify_staging_artifacts(
         "manifest_schema_valid": pass_check("Manifestschema valideras mot kanonisk flat schema"),
         "manifest_owned_corpus_valid": pass_check("Corpus kommer fran manifestagd input"),
         "corpus_manifest_hash_valid": pass_check("corpus_manifest_hash matchar corpusserialisering"),
+        "required_artifact_set_complete": pass_check("Alla obligatoriska indexartefakter finns i staging"),
         "chunk_manifest_hash_valid": pass_check("chunk_manifest_hash matchar chunk_manifest.jsonl"),
         "chunk_order_valid": pass_check("Chunkar ar kanoniskt sorterade"),
         "content_hash_valid": pass_check("content_hash beraknas fran chunktext"),
         "doc_id_formula_valid": pass_check("doc_id beraknas deterministiskt"),
         "doc_id_unique": pass_check("doc_id ar unika"),
-        "lexical_doc_id_parity": pass_check("Lexical doc_id-set matchar chunkmanifest"),
-        "vector_doc_id_parity": pass_check("Vector doc_id-set matchar chunkmanifest"),
-        "vector_metadata_parity": pass_check("Vector metadata matchar chunkmanifest"),
+        "lexical_doc_id_parity": pass_check("Lexikalt doc_id-set matchar chunkmanifest"),
+        "lexical_tokenization_valid": pass_check("Lexikal tokenisering matchar lagrade termfrekvenser"),
+        "vector_doc_id_parity": pass_check("Vektorindexets doc_id-set matchar chunkmanifest"),
+        "vector_count_valid": pass_check("Vektorantal matchar chunkmanifest"),
+        "vector_metadata_parity": pass_check("Vektormetadata matchar chunkmanifest"),
         "embedding_dimension_valid": pass_check("Embeddingdimension matchar manifest"),
+        "cross_artifact_binding_valid": pass_check("Manifest, chunkmanifest, lexikalt index och vektorindex delar hashbindningar"),
         "model_lock_valid": pass_check("Approval model_id matchar manifestets embedding_model"),
         "tokenizer_lock_valid": pass_check("Approval tokenizer_id och hashar ar validerade"),
         "artifact_hashes_valid": pass_check("Artefakthashar kan beraknas"),
@@ -1628,15 +1726,24 @@ def verify_staging_artifacts(
         require_chunk_manifest_hash=True,
     )
 
-    materialized_records = load_jsonl_records(build_context["chunk_manifest"])
-    validate_chunk_records(materialized_records, staging_manifest)
+    try:
+        integrity_report = validate_index_artifact_integrity(
+            root=ROOT,
+            index_root=build_context["staging_root"],
+            manifest_path=build_context["index_manifest"],
+            chunk_manifest_path=build_context["chunk_manifest"],
+            chroma_db_dir=build_context["vector_db_dir"],
+            lexical_index_dir=build_context["lexical_index_dir"],
+            collection=collection,
+        )
+    except IndexArtifactIntegrityError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    materialized_records = integrity_report["chunk_records"]
     if render_chunk_manifest(materialized_records) != render_chunk_manifest(versioned_chunk_records):
         raise RuntimeError("FEL: staging chunkmanifest matchar inte byggda chunkrecords")
     if compute_chunk_manifest_hash(materialized_records) != staging_manifest["chunk_manifest_hash"]:
         raise RuntimeError("FEL: chunk_manifest_hash matchar inte staging chunkmanifest")
-
-    verify_lexical_index(build_context, materialized_records, staging_manifest)
-    verify_vector_collection(collection, materialized_records, staging_manifest, embedding_policy)
     assert_active_snapshot_unchanged(active_snapshot_before)
 
     verified_manifest = deepcopy(staging_manifest)
@@ -1655,6 +1762,14 @@ def verify_staging_artifacts(
         "status": "PASS",
         "manifest_state": "STAGING_VERIFIED",
         "checks": checks,
+        "model_authority": serialize_model_authority_result(build_context["model_authority"]),
+        "artifact_integrity": {
+            "status": integrity_report["status"],
+            "artifact_set": integrity_report["artifact_set"],
+            "chunk_manifest": integrity_report["chunk_manifest"],
+            "lexical_index": integrity_report["lexical_index"],
+            "vector_index": integrity_report["vector_index"],
+        },
         "doc_id_sets": {
             "chunk_manifest_count": len(materialized_records),
             "lexical_count": len(materialized_records),
@@ -1710,6 +1825,8 @@ def build_execution_result(
         "target_path": TARGET_INDEX_RELATIVE,
         "staging_root": display_path(build_context["staging_root"]),
         "canonical_interpreter": CANONICAL_INTERPRETER_RELATIVE,
+        "dependency_authority": build_context["dependency_authority"],
+        "model_authority": serialize_model_authority_result(build_context["model_authority"]),
         "started_at_utc": build_context["started_at_utc"],
         "completed_at_utc": completed_at,
         "write_phase": write_phase,
@@ -1911,6 +2028,8 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> Iterable[str]:
 # ---------------------------------------------------------
 
 def run_build(build_context: dict) -> None:
+    load_build_dependency_modules()
+
     staging_root = build_context["staging_root"]
     staging_index_manifest = build_context["index_manifest"]
     staging_chunk_manifest = build_context["chunk_manifest"]
@@ -1979,7 +2098,7 @@ def run_build(build_context: dict) -> None:
     # Model + embedding policy
     # ---------------------------------------------------------
 
-    model_config = get_embedding_model_config(staging_manifest)
+    model_config = get_embedding_model_config(staging_manifest, build_context["model_authority"])
     embedding_policy = get_embedding_policy(staging_manifest)
     build_device = resolve_manifest_build_device(staging_manifest)
     batch_size = get_embedding_batch_size(staging_manifest)
@@ -2141,13 +2260,54 @@ def write_failed_result_surfaces(build_context: dict, exc: Exception) -> None:
     )
     manifest = build_context.get("manifest", {})
     artifact_hashes = base_artifact_hashes(manifest)
+    required_check_names = [
+        "approval_valid",
+        "manifest_schema_valid",
+        "manifest_owned_corpus_valid",
+        "corpus_manifest_hash_valid",
+        "required_artifact_set_complete",
+        "chunk_manifest_hash_valid",
+        "chunk_order_valid",
+        "content_hash_valid",
+        "doc_id_formula_valid",
+        "doc_id_unique",
+        "lexical_doc_id_parity",
+        "lexical_tokenization_valid",
+        "vector_doc_id_parity",
+        "vector_count_valid",
+        "vector_metadata_parity",
+        "embedding_dimension_valid",
+        "cross_artifact_binding_valid",
+        "model_lock_valid",
+        "tokenizer_lock_valid",
+        "artifact_hashes_valid",
+        "no_active_write_before_promotion",
+        "no_fallback_used",
+    ]
+    failed_checks = {
+        name: result_check(
+            "NOT_APPLICABLE",
+            "Kontrollen kraver full stagingverifiering",
+            "Build stoppades innan kontrollen kunde slutforas",
+            "STOP",
+        )
+        for name in required_check_names
+    }
+    failed_checks["no_active_write_before_promotion"] = result_check(
+        "PASS",
+        "Aktiva artefakter ska inte skrivas fore verifiering",
+        "Ingen promotion utfordes",
+    )
+    failed_checks["no_fallback_used"] = result_check("PASS", "Fallback ar forbjuden", "Ingen fallback anvandes")
     staging_result = {
         "artifact_type": "staging_verification_result",
         "build_id": build_context["build_id"],
         "staging_root": display_path(build_context["staging_root"]),
         "status": "STOP",
         "manifest_state": "STAGING_INVALID",
-        "checks": {},
+        "checks": failed_checks,
+        "model_authority": serialize_model_authority_result(build_context["model_authority"]),
+        "artifact_integrity": {},
         "doc_id_sets": {},
         "artifact_hashes": artifact_hashes,
         "device_check": result_check("NOT_APPLICABLE", "Ej verifierad", "Build stoppades", None),
