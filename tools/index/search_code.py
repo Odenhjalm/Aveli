@@ -14,13 +14,6 @@ if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
     )
 
 from chromadb import PersistentClient
-from sentence_transformers import CrossEncoder, SentenceTransformer
-
-from ast_extract import extract_functions
-try:
-    from device_utils import resolve_index_device
-except ModuleNotFoundError:
-    from tools.index.device_utils import resolve_index_device
 
 # ---------------------------------------------------------
 # CONFIG
@@ -47,18 +40,11 @@ INDEX_MANIFEST_REQUIRED_FIELDS = {
     "lexical_candidate_k",
 }
 
-EXPANSION = 100
 MAX_CONTEXT_CHARS = 2500
-RERANK_BATCH_SIZE_GPU = 8
-RERANK_BATCH_SIZE_CPU = 2
-RERANK_MAX_CHARS = 1600
-RERANK_CONTEXT_LINES_BEFORE = 30
-RERANK_CONTEXT_LINES_AFTER = 70
 BM25_K1 = 1.5
 BM25_B = 0.75
-
-CACHE_FILE = ROOT / ".repo_index" / "query_cache.json"
-MEMORY_FILE = ROOT / ".repo_index" / "query_memory.json"
+MODEL_INIT_FORBIDDEN_MESSAGE = "MODEL INITIALIZATION FORBIDDEN IN QUERY MODE"
+SOURCE_ACCESS_FORBIDDEN_MESSAGE = "SOURCE ACCESS FORBIDDEN IN QUERY MODE"
 
 SEARCHABLE_SUFFIXES = {
     ".css",
@@ -191,69 +177,12 @@ def validate_canonical_index_health() -> None:
         raise SystemExit(f"FEL: kanonisk lexical-index saknas vid {LEXICAL_INDEX_DIR}")
 
 
-def save_json_object(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
 def normalize_query(raw_query: str) -> str:
     return " ".join(raw_query.strip().lower().split())
 
 
-def build_cache_key(raw_query: str, index_manifest: dict) -> str:
-    return "||".join(
-        [
-            normalize_query(raw_query),
-            str(index_manifest["contract_version"]),
-            str(index_manifest["corpus_manifest_hash"]),
-            str(index_manifest["chunk_manifest_hash"]),
-        ]
-    )
-
-
-def build_safe_cache_entry(entries: list[dict]) -> dict:
-    return {
-        "result_count": len(entries),
-        "files": [entry["file"] for entry in entries],
-        "layers": [entry["layer"] for entry in entries],
-        "source_types": [entry["source_type"] for entry in entries],
-        "scores": [entry["score"] for entry in entries],
-    }
-
-
-def sanitize_query_cache(cache: dict) -> dict:
-    sanitized = {}
-    for key, value in cache.items():
-        if not isinstance(key, str):
-            continue
-        if not isinstance(value, dict):
-            continue
-        sanitized[key] = {
-            "result_count": int(value.get("result_count", 0)),
-            "files": [str(item) for item in value.get("files", []) if isinstance(item, str)],
-            "layers": [str(item) for item in value.get("layers", []) if isinstance(item, str)],
-            "source_types": [str(item) for item in value.get("source_types", []) if isinstance(item, str)],
-            "scores": [float(item) for item in value.get("scores", [])],
-        }
-    return sanitized
-
-
-def sanitize_query_memory(memory: dict) -> dict:
-    sanitized = {}
-    for key, value in memory.items():
-        if not isinstance(key, str):
-            continue
-        if key.count("||") != 3:
-            continue
-        sanitized[key] = int(value)
-    return sanitized
-
-
-def update_query_memory(cache_key: str) -> None:
-    memory = load_json_object(MEMORY_FILE)
-    memory = sanitize_query_memory(memory)
-    memory[cache_key] = int(memory.get(cache_key, 0)) + 1
-    save_json_object(MEMORY_FILE, memory)
+def require_query_model_surface() -> None:
+    raise SystemExit(MODEL_INIT_FORBIDDEN_MESSAGE)
 
 
 def normalize_document_text(text: str) -> str:
@@ -361,7 +290,6 @@ def load_runtime_state() -> dict:
     index_manifest = load_index_manifest()
     lexical_manifest, lexical_records = load_lexical_index()
     chunk_records = load_chunk_manifest_records()
-    device, device_source = resolve_index_device()
     client = PersistentClient(path=DB_PATH)
     collection = client.get_collection(COLLECTION_NAME)
     validate_contract_version_bindings(
@@ -371,19 +299,12 @@ def load_runtime_state() -> dict:
         collection=collection,
     )
 
-    embedding_model = str(index_manifest["embedding_model"])
-    rerank_model = str(index_manifest["rerank_model"])
-
     _RUNTIME_STATE = {
         "index_manifest": index_manifest,
         "lexical_manifest": lexical_manifest,
         "lexical_records": lexical_records,
         "chunk_records": chunk_records,
-        "device": device,
-        "device_source": device_source,
         "collection": collection,
-        "model": SentenceTransformer(embedding_model, device=device),
-        "reranker": CrossEncoder(rerank_model, device=device),
     }
     return _RUNTIME_STATE
 
@@ -491,78 +412,11 @@ def filter_excluded_entries(entries: list[dict]) -> list[dict]:
 
 
 def find_context(file_path: str, snippet: str) -> str:
-    path = ROOT / file_path
-
-    if not path.exists():
-        return ""
-
-    try:
-        lines = path.read_text(errors="ignore").splitlines()
-    except Exception:
-        return ""
-
-    if not lines:
-        return ""
-
-    snippet = snippet.strip().lower()
-    best_index = None
-
-    short_snippet = snippet[:80]
-    if short_snippet:
-        for i, line in enumerate(lines):
-            if short_snippet in line.lower():
-                best_index = i
-                break
-
-    if best_index is None and snippet:
-        words = [w for w in snippet.split()[:5] if len(w) > 2]
-        for i, line in enumerate(lines):
-            lowered = line.lower()
-            if words and any(word in lowered for word in words):
-                best_index = i
-                break
-
-    if best_index is None:
-        best_index = min(len(lines) // 4, max(0, len(lines) - 1))
-
-    start = max(0, best_index - EXPANSION)
-    end = min(len(lines), best_index + EXPANSION)
-
-    context = "\n".join(lines[start:end]).strip()
-
-    if not context:
-        context = "\n".join(lines[: min(200, len(lines))]).strip()
-
-    return context
+    raise SystemExit(SOURCE_ACCESS_FORBIDDEN_MESSAGE)
 
 
 def build_rerank_document(file_path: str, fallback_doc: str, query_text: str) -> str:
-    path = ROOT / file_path
-    query_terms = [term.lower() for term in query_text.split() if len(term) > 2]
-
-    try:
-        lines = path.read_text(errors="ignore").splitlines()
-    except Exception:
-        cleaned = normalize_document_text(fallback_doc)
-        return f"{file_path}\n{cleaned[:RERANK_MAX_CHARS]}"
-
-    best_index = None
-
-    for i, line in enumerate(lines):
-        lowered = line.lower()
-        if any(term in lowered for term in query_terms):
-            best_index = i
-            break
-
-    if best_index is None:
-        cleaned = normalize_document_text(fallback_doc)
-        return f"{file_path}\n{cleaned[:RERANK_MAX_CHARS]}"
-
-    start = max(0, best_index - RERANK_CONTEXT_LINES_BEFORE)
-    end = min(len(lines), best_index + RERANK_CONTEXT_LINES_AFTER)
-    excerpt = "\n".join(lines[start:end]).strip()
-
-    return f"{file_path}\n{excerpt[:RERANK_MAX_CHARS]}"
+    raise SystemExit(SOURCE_ACCESS_FORBIDDEN_MESSAGE)
 
 
 def classify(path: str, index_manifest: dict) -> str:
@@ -683,166 +537,8 @@ def fetch_collection_entries(collection, doc_ids: list[str]) -> dict[str, dict]:
 
 def execute_query(raw_query: str, runtime_state: dict) -> tuple[list[dict], int]:
     index_manifest = runtime_state["index_manifest"]
-    lexical_manifest = runtime_state["lexical_manifest"]
-    lexical_records = runtime_state["lexical_records"]
-    collection = runtime_state["collection"]
-    model = runtime_state["model"]
-    reranker = runtime_state["reranker"]
-    device = runtime_state["device"]
-    ranking_policy = load_ranking_policy(index_manifest)
-
-    top_k = int(index_manifest["top_k"])
-    vector_candidate_k = int(index_manifest["vector_candidate_k"])
-    lexical_candidate_k = int(index_manifest["lexical_candidate_k"])
-    cache_key = build_cache_key(raw_query, index_manifest)
-
-    update_query_memory(cache_key)
-
-    query_cache = load_json_object(CACHE_FILE)
-    sanitized_cache = sanitize_query_cache(query_cache)
-    if sanitized_cache != query_cache:
-        query_cache = sanitized_cache
-        save_json_object(CACHE_FILE, query_cache)
-
-    lexical_doc_ids = lexical_search(
-        query_text=raw_query,
-        lexical_records=lexical_records,
-        lexical_manifest=lexical_manifest,
-        top_n=lexical_candidate_k,
-    )
-
-    embedding = model.encode(
-        ["query: " + raw_query],
-        normalize_embeddings=True,
-        convert_to_numpy=True,
-    ).tolist()
-
-    vector_results = collection.query(
-        query_embeddings=embedding,
-        n_results=vector_candidate_k,
-        include=["distances", "documents", "metadatas"],
-    )
-
-    if "ids" not in vector_results:
-        raise RuntimeError("FEL: Chroma-query saknar dokument-id:n for hybrid fusion.")
-
-    vector_ids = vector_results["ids"][0]
-    vector_distances = vector_results["distances"][0]
-    vector_documents = vector_results.get("documents", [[]])[0]
-    vector_metadatas = vector_results.get("metadatas", [[]])[0]
-
-    candidate_entries: dict[str, dict] = {}
-    vector_distance_by_doc_id: dict[str, float] = {}
-    top_vector_ids: list[str] = []
-
-    for doc_id, dist, doc, meta in zip(vector_ids, vector_distances, vector_documents, vector_metadatas):
-        if not meta:
-            continue
-
-        file_path = meta.get("file", "UNKNOWN")
-        if is_non_searchable_path(file_path):
-            continue
-
-        top_vector_ids.append(doc_id)
-        vector_distance_by_doc_id[doc_id] = float(dist)
-        candidate_entries[doc_id] = {
-            "id": doc_id,
-            "doc": doc,
-            "meta": meta,
-        }
-
-    lexical_only_ids = [doc_id for doc_id in lexical_doc_ids if doc_id not in candidate_entries]
-    candidate_entries.update(fetch_collection_entries(collection, lexical_only_ids))
-
-    combined_ids = [
-        doc_id
-        for doc_id in dict.fromkeys(lexical_doc_ids + top_vector_ids)
-        if doc_id in candidate_entries
-    ]
-    if not combined_ids:
-        query_cache[cache_key] = build_safe_cache_entry([])
-        save_json_object(CACHE_FILE, query_cache)
-        return [], top_k
-
-    rerank_batch_size = RERANK_BATCH_SIZE_GPU if device == "cuda" else RERANK_BATCH_SIZE_CPU
-    position_by_doc_id = {doc_id: index for index, doc_id in enumerate(combined_ids)}
-    pairs = [
-        (
-            raw_query,
-            build_rerank_document(
-                candidate_entries[doc_id]["meta"].get("file", "UNKNOWN"),
-                candidate_entries[doc_id]["doc"],
-                raw_query,
-            ),
-        )
-        for doc_id in combined_ids
-    ]
-    if ranking_policy.get("use_rerank", True):
-        reranker_scores = reranker.predict(
-            pairs,
-            batch_size=rerank_batch_size,
-            show_progress_bar=False,
-        )
-    else:
-        reranker_scores = [0.0 for _ in combined_ids]
-
-    route_override_doc_id = None
-    route_override = ranking_policy.get("route_override", {})
-    if route_override.get("enabled", False):
-        has_route = any(
-            "routes" in candidate_entries[doc_id]["meta"].get("file", "").lower()
-            for doc_id in combined_ids
-        )
-        if not has_route:
-            for doc_id in top_vector_ids:
-                file_path = candidate_entries.get(doc_id, {}).get("meta", {}).get("file", "")
-                if "routes" in file_path.lower():
-                    route_override_doc_id = doc_id
-                    break
-
-    reranked = []
-
-    for reranker_score, doc_id in zip(reranker_scores, combined_ids):
-        entry = candidate_entries[doc_id]
-        file_path = entry["meta"].get("file", "UNKNOWN")
-        dist = vector_distance_by_doc_id.get(doc_id)
-        final_score = float(reranker_score) + score_result(
-            file_path,
-            dist,
-            ranking_policy,
-            index_manifest,
-        )
-        final_score += route_override_boost(doc_id, route_override_doc_id, ranking_policy)
-        reranked.append((final_score, float(reranker_score), doc_id))
-
-    reranked.sort(
-        key=lambda item: (
-            -item[0],
-            normalize_file_for_order(candidate_entries[item[2]]["meta"].get("file", "UNKNOWN")),
-            item[2],
-        )
-    )
-
-    output_entries = []
-
-    for final_score, _, doc_id in reranked[:top_k]:
-        entry = candidate_entries[doc_id]
-        file_path = entry["meta"].get("file", "UNKNOWN")
-        dist = vector_distance_by_doc_id.get(doc_id)
-        output_entries.append(
-            build_output_entry(
-                file_path=file_path,
-                doc=entry["doc"],
-                dist=dist,
-                final_score=final_score,
-                index_manifest=index_manifest,
-            )
-        )
-
-    output_entries = filter_excluded_entries(output_entries)
-    query_cache[cache_key] = build_safe_cache_entry(output_entries)
-    save_json_object(CACHE_FILE, query_cache)
-    return output_entries, top_k
+    load_ranking_policy(index_manifest)
+    require_query_model_surface()
 
 
 def handle_query_request(raw_query: str) -> str:

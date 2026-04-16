@@ -1,7 +1,7 @@
 from copy import deepcopy
 import hashlib
 import json
-import shutil
+import os
 import sys
 import unicodedata
 from pathlib import Path
@@ -18,54 +18,48 @@ if Path(sys.executable).resolve() != CANONICAL_SEARCH_PYTHON.resolve():
 
 from sentence_transformers import SentenceTransformer
 import chromadb
+import numpy as np
 from tqdm import tqdm
-
-try:
-    from device_utils import resolve_index_device
-except ModuleNotFoundError:
-    from tools.index.device_utils import resolve_index_device
 
 # ---------------------------------------------------------
 # Paths
 # ---------------------------------------------------------
 
-INDEX_DIR = ROOT / ".repo_index"
-INDEX_MANIFEST = INDEX_DIR / "index_manifest.json"
-CHUNK_MANIFEST = INDEX_DIR / "chunk_manifest.jsonl"
-LEXICAL_INDEX_DIR = INDEX_DIR / "lexical_index"
-LEXICAL_INDEX_MANIFEST = LEXICAL_INDEX_DIR / "manifest.json"
-LEXICAL_INDEX_DOCUMENTS = LEXICAL_INDEX_DIR / "documents.jsonl"
-VECTOR_DB_DIR = INDEX_DIR / "chroma_db"
+ACTIVE_INDEX_ROOT = ROOT / ".repo_index"
+STAGING_PARENT = ACTIVE_INDEX_ROOT / "_staging"
+INDEX_MANIFEST = ACTIVE_INDEX_ROOT / "index_manifest.json"
 
 # ---------------------------------------------------------
 # Config
 # ---------------------------------------------------------
 
 COLLECTION_NAME = "aveli_repo"
+APPROVAL_PHRASE = "APPROVE AVELI INDEX REBUILD"
+CONTROLLER_MODE_ENV = "AVELI_RETRIEVAL_CONTROLLER_MODE"
+APPROVAL_ENV = "AVELI_INDEX_REBUILD_APPROVAL"
+BUILD_ID_ENV = "AVELI_INDEX_BUILD_ID"
+PROMOTION_STOP_MESSAGE = "PROMOTION REQUIRES VERIFIED CONTROLLER PHASE"
+MISSING_CONTROLLER_CONTEXT_MESSAGE = "BUILD REQUIRES CONTROLLER MODE + T14 APPROVAL"
 
-BATCH_SIZE_GPU = 16
-BATCH_SIZE_CPU = 32
 INDEX_MANIFEST_REQUIRED_FIELDS = {
     "contract_version",
     "corpus",
     "corpus_manifest_hash",
+    "chunking_policy",
     "chunk_manifest_hash",
-    "chunk_size",
-    "chunk_overlap",
-    "embedding_model",
-    "rerank_model",
-    "top_k",
-    "vector_candidate_k",
-    "lexical_candidate_k",
+    "identity_policy",
+    "model_policy",
+    "embedding_policy",
+    "device_policy",
+    "batch_policy",
     "ranking_policy",
-    "classification_rules",
+    "classification_policy",
+    "artifact_hashes",
 }
 
 CANONICAL_CONTRACT_VERSION = "retrieval-v1"
 CANONICAL_CHUNK_SIZE = 2000
 CANONICAL_CHUNK_OVERLAP = 200
-CANONICAL_EMBEDDING_MODEL = "BAAI/bge-m3"
-CANONICAL_RERANK_MODEL = "BAAI/bge-reranker-large"
 CANONICAL_TOP_K = 16
 CANONICAL_VECTOR_CANDIDATE_K = 30
 CANONICAL_LEXICAL_CANDIDATE_K = 30
@@ -98,16 +92,6 @@ CANONICAL_RANKING_POLICY = {
     },
     "use_rerank": True,
 }
-
-# 🔥 IMPORTANT: set manually when needed
-REBUILD = True   # True = wipe index, False = reuse
-
-# ---------------------------------------------------------
-# Device selection (canonical)
-# ---------------------------------------------------------
-
-DEVICE, DEVICE_SOURCE = resolve_index_device()
-print(f"[INFO] Enhet: {DEVICE} ({DEVICE_SOURCE})")
 
 EXCLUDED_DIRECTORIES = {
     ".repo_index",
@@ -160,7 +144,9 @@ def normalize_repo_relative_path(file_path: str) -> str:
 
 def classify(path: str, manifest: dict) -> str:
     lowered = path.lower()
-    classification_rules = manifest.get("classification_rules", {})
+    classification_rules = manifest.get("classification_policy")
+    if not isinstance(classification_rules, dict):
+        raise RuntimeError("FEL: classification_policy saknas i index_manifest.json")
 
     for rule in classification_rules.get("precedence", []):
         rule_type = rule.get("type")
@@ -220,6 +206,76 @@ def compute_sha256_text(content: str) -> str:
     return compute_sha256_bytes(content.encode("utf-8"))
 
 
+def canonical_json_dumps(data: object) -> str:
+    return json.dumps(
+        data,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def validate_sha256_hex(value: object, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise RuntimeError(f"FEL: {field_name} maste vara sha256-hex")
+    digest = value.strip()
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise RuntimeError(f"FEL: {field_name} maste vara 64 tecken lowercase sha256-hex")
+    return digest
+
+
+def is_relative_to_path(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def validate_build_id(raw_build_id: str) -> str:
+    build_id = raw_build_id.strip()
+    if len(build_id) != 64:
+        raise RuntimeError(MISSING_CONTROLLER_CONTEXT_MESSAGE)
+    if any(char not in "0123456789abcdef" for char in build_id):
+        raise RuntimeError(MISSING_CONTROLLER_CONTEXT_MESSAGE)
+    return build_id
+
+
+def load_controller_build_context() -> dict:
+    mode = os.environ.get(CONTROLLER_MODE_ENV, "").strip().lower()
+    approval = os.environ.get(APPROVAL_ENV, "")
+    build_id = validate_build_id(os.environ.get(BUILD_ID_ENV, ""))
+
+    if mode != "build" or approval != APPROVAL_PHRASE:
+        raise RuntimeError(MISSING_CONTROLLER_CONTEXT_MESSAGE)
+
+    staging_root = STAGING_PARENT / build_id
+    staging_parent = STAGING_PARENT.resolve()
+    resolved_staging_root = staging_root.resolve()
+    if not is_relative_to_path(resolved_staging_root, staging_parent):
+        raise RuntimeError(MISSING_CONTROLLER_CONTEXT_MESSAGE)
+    if staging_root.exists():
+        raise RuntimeError("FEL: staging path finns redan och kraver explicit controller-cleanup")
+
+    return {
+        "build_id": build_id,
+        "staging_root": staging_root,
+        "index_manifest": staging_root / "index_manifest.json",
+        "chunk_manifest": staging_root / "chunk_manifest.jsonl",
+        "lexical_index_dir": staging_root / "lexical_index",
+        "lexical_index_manifest": staging_root / "lexical_index" / "manifest.json",
+        "lexical_index_documents": staging_root / "lexical_index" / "documents.jsonl",
+        "vector_db_dir": staging_root / "chroma_db",
+    }
+
+
+def assert_staging_write_path(path: Path) -> None:
+    resolved_path = path.resolve()
+    resolved_parent = STAGING_PARENT.resolve()
+    if not is_relative_to_path(resolved_path, resolved_parent):
+        raise RuntimeError("FEL: aktiv .repo_index-mutation nekas; build skriver endast till staging")
+
+
 def load_json_object(path: Path) -> dict:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -228,6 +284,7 @@ def load_json_object(path: Path) -> dict:
 
 
 def save_json_object(path: Path, data: dict) -> None:
+    assert_staging_write_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -236,13 +293,43 @@ def save_json_object(path: Path, data: dict) -> None:
 
 
 def serialize_chunk_record(record: dict) -> str:
-    return json.dumps(record, ensure_ascii=False, sort_keys=True)
+    return canonical_json_dumps(record)
 
 
-def build_canonical_doc_id(file_path: str, chunk_index: int, content_hash: str) -> str:
+def build_doc_id_payload(
+    contract_version: str,
+    file_path: str,
+    chunk_index: int,
+    content_hash: str,
+) -> bytes:
     normalized_file = normalize_repo_relative_path(file_path)
-    identity = f"{normalized_file}\n{int(chunk_index)}\n{content_hash}"
-    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    validated_content_hash = validate_sha256_hex(content_hash, "content_hash")
+    contract_version_bytes = str(contract_version).encode("utf-8")
+    file_bytes = normalized_file.encode("utf-8")
+    return b"".join(
+        [
+            b"AVELI_DOC_ID_V1\n",
+            f"CONTRACT_VERSION_LEN {len(contract_version_bytes)}\n".encode("ascii"),
+            contract_version_bytes,
+            b"\n",
+            f"FILE_LEN {len(file_bytes)}\n".encode("ascii"),
+            file_bytes,
+            b"\n",
+            f"CHUNK_INDEX {int(chunk_index)}\n".encode("ascii"),
+            f"CONTENT_HASH {validated_content_hash}\n".encode("ascii"),
+        ]
+    )
+
+
+def build_canonical_doc_id(
+    contract_version: str,
+    file_path: str,
+    chunk_index: int,
+    content_hash: str,
+) -> str:
+    return compute_sha256_bytes(
+        build_doc_id_payload(contract_version, file_path, chunk_index, content_hash)
+    )
 
 
 def validate_manifest_corpus_files(corpus_files: object) -> list[str]:
@@ -316,38 +403,235 @@ def order_chunk_records(records: list[dict]) -> list[dict]:
     return sorted(
         records,
         key=lambda record: (
-            str(record["file"]),
+            str(record["file"]).encode("utf-8"),
             int(record["chunk_index"]),
-            str(record["doc_id"]),
         ),
     )
 
 
 def render_chunk_manifest(records: list[dict]) -> str:
     ordered_records = order_chunk_records(records)
-    return "\n".join(serialize_chunk_record(record) for record in ordered_records)
+    if not ordered_records:
+        raise RuntimeError("FEL: chunk_manifest far inte vara tom")
+    return "".join(serialize_chunk_record(record) + "\n" for record in ordered_records)
 
 
 def build_canonical_index_manifest(
     corpus_manifest_hash: str,
     chunk_manifest_hash: str = "",
     corpus_files: list[str] | None = None,
+    model_policy: dict | None = None,
+    embedding_policy: dict | None = None,
+    device_policy: dict | None = None,
+    batch_policy: dict | None = None,
 ) -> dict:
+    if model_policy is None or embedding_policy is None:
+        raise RuntimeError("FEL: model_policy och embedding_policy maste komma fran manifestauktoritet")
     return {
+        "artifact_hashes": {},
+        "batch_policy": deepcopy(batch_policy or {
+            "dynamic_batch_sizing_allowed": False,
+            "embedding_batch_size": 64,
+            "embedding_batch_size_max": 64,
+            "embedding_batch_size_min": 32,
+            "rerank_batch_size": 16,
+        }),
         "chunk_manifest_hash": str(chunk_manifest_hash),
-        "chunk_overlap": CANONICAL_CHUNK_OVERLAP,
-        "chunk_size": CANONICAL_CHUNK_SIZE,
-        "classification_rules": deepcopy(CANONICAL_CLASSIFICATION_RULES),
+        "chunking_policy": {
+            "chunk_overlap": CANONICAL_CHUNK_OVERLAP,
+            "chunk_size": CANONICAL_CHUNK_SIZE,
+        },
+        "classification_policy": deepcopy(CANONICAL_CLASSIFICATION_RULES),
         "contract_version": CANONICAL_CONTRACT_VERSION,
         "corpus": {"files": list(corpus_files or [])},
         "corpus_manifest_hash": corpus_manifest_hash,
-        "embedding_model": CANONICAL_EMBEDDING_MODEL,
-        "lexical_candidate_k": CANONICAL_LEXICAL_CANDIDATE_K,
+        "device_policy": deepcopy(device_policy or {
+            "allowed_devices": ["cpu", "cuda"],
+            "canonical_baseline": "cpu",
+            "cuda_required": False,
+            "device_changes_semantics": False,
+            "device_selection_source": "manifest",
+            "environment_device_override_allowed": False,
+            "implicit_device_auto_selection_allowed": False,
+            "preferred_local_build_device": "cpu",
+        }),
+        "embedding_policy": deepcopy(embedding_policy),
+        "identity_policy": {
+            "content_hash": "sha256(chunk_text_utf8_bytes)",
+            "doc_id": "sha256(AVELI_DOC_ID_V1 length-delimited payload)",
+        },
+        "model_policy": deepcopy(model_policy),
         "ranking_policy": deepcopy(CANONICAL_RANKING_POLICY),
-        "rerank_model": CANONICAL_RERANK_MODEL,
-        "top_k": CANONICAL_TOP_K,
-        "vector_candidate_k": CANONICAL_VECTOR_CANDIDATE_K,
     }
+
+
+def require_manifest_object(manifest: dict, field_name: str) -> dict:
+    value = manifest.get(field_name)
+    if not isinstance(value, dict):
+        raise RuntimeError(f"FEL: index_manifest.json {field_name} maste vara ett JSON-objekt")
+    return value
+
+
+def require_manifest_bool(container: dict, field_name: str, owner: str) -> bool:
+    value = container.get(field_name)
+    if not isinstance(value, bool):
+        raise RuntimeError(f"FEL: {owner}.{field_name} maste vara boolean")
+    return value
+
+
+def require_manifest_int(container: dict, field_name: str, owner: str) -> int:
+    value = container.get(field_name)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise RuntimeError(f"FEL: {owner}.{field_name} maste vara heltal")
+    return value
+
+
+def require_manifest_str(container: dict, field_name: str, owner: str) -> str:
+    value = container.get(field_name)
+    if not isinstance(value, str):
+        raise RuntimeError(f"FEL: {owner}.{field_name} maste vara strang")
+    return value
+
+
+def get_chunking_policy(manifest: dict) -> tuple[int, int]:
+    chunking_policy = require_manifest_object(manifest, "chunking_policy")
+    chunk_size = require_manifest_int(chunking_policy, "chunk_size", "chunking_policy")
+    chunk_overlap = require_manifest_int(chunking_policy, "chunk_overlap", "chunking_policy")
+    if chunk_size != CANONICAL_CHUNK_SIZE:
+        raise RuntimeError("FEL: chunking_policy.chunk_size matchar inte kanoniskt varde")
+    if chunk_overlap != CANONICAL_CHUNK_OVERLAP:
+        raise RuntimeError("FEL: chunking_policy.chunk_overlap matchar inte kanoniskt varde")
+    return chunk_size, chunk_overlap
+
+
+def get_embedding_model_config(manifest: dict) -> dict:
+    model_policy = require_manifest_object(manifest, "model_policy")
+    embedding = model_policy.get("embedding")
+    if not isinstance(embedding, dict):
+        raise RuntimeError("FEL: model_policy.embedding saknas")
+
+    model_id = require_manifest_str(embedding, "model_id", "model_policy.embedding")
+    model_revision = require_manifest_str(embedding, "model_revision", "model_policy.embedding")
+    tokenizer_id = require_manifest_str(embedding, "tokenizer_id", "model_policy.embedding")
+    tokenizer_revision = require_manifest_str(embedding, "tokenizer_revision", "model_policy.embedding")
+    model_snapshot_hash = validate_sha256_hex(
+        embedding.get("model_snapshot_hash"),
+        "model_policy.embedding.model_snapshot_hash",
+    )
+    tokenizer_files_hash = validate_sha256_hex(
+        embedding.get("tokenizer_files_hash"),
+        "model_policy.embedding.tokenizer_files_hash",
+    )
+    local_files_only = require_manifest_bool(
+        embedding,
+        "local_files_only",
+        "model_policy.embedding",
+    )
+    trust_remote_code = require_manifest_bool(
+        embedding,
+        "trust_remote_code",
+        "model_policy.embedding",
+    )
+    if not model_id.strip() or not tokenizer_id.strip():
+        raise RuntimeError("FEL: model_policy.embedding maste ange model_id och tokenizer_id")
+    if model_revision in {"", "main", "master", "latest"}:
+        raise RuntimeError("FEL: model_policy.embedding.model_revision maste vara last")
+    if tokenizer_revision in {"", "main", "master", "latest"}:
+        raise RuntimeError("FEL: model_policy.embedding.tokenizer_revision maste vara last")
+    if not local_files_only:
+        raise RuntimeError("FEL: model_policy.embedding.local_files_only maste vara true")
+    if trust_remote_code:
+        raise RuntimeError("FEL: model_policy.embedding.trust_remote_code maste vara false")
+
+    return {
+        "local_files_only": local_files_only,
+        "model_id": model_id,
+        "model_revision": model_revision,
+        "model_snapshot_hash": model_snapshot_hash,
+        "tokenizer_files_hash": tokenizer_files_hash,
+        "tokenizer_id": tokenizer_id,
+        "tokenizer_revision": tokenizer_revision,
+        "trust_remote_code": trust_remote_code,
+    }
+
+
+def get_embedding_policy(manifest: dict) -> dict:
+    embedding_policy = require_manifest_object(manifest, "embedding_policy")
+    embedding_dimension = require_manifest_int(
+        embedding_policy,
+        "embedding_dimension",
+        "embedding_policy",
+    )
+    dtype = require_manifest_str(embedding_policy, "dtype", "embedding_policy")
+    normalize_embeddings = require_manifest_bool(
+        embedding_policy,
+        "normalize_embeddings",
+        "embedding_policy",
+    )
+    query_prefix = require_manifest_str(embedding_policy, "query_prefix", "embedding_policy")
+    passage_prefix = require_manifest_str(embedding_policy, "passage_prefix", "embedding_policy")
+    require_manifest_str(embedding_policy, "pooling", "embedding_policy")
+    require_manifest_str(embedding_policy, "truncate_policy", "embedding_policy")
+    tolerance = embedding_policy.get("embedding_value_tolerance")
+    if not isinstance(tolerance, dict):
+        raise RuntimeError("FEL: embedding_policy.embedding_value_tolerance saknas")
+    absolute = tolerance.get("absolute")
+    relative = tolerance.get("relative")
+    if not isinstance(absolute, (int, float)) or not isinstance(relative, (int, float)):
+        raise RuntimeError("FEL: embedding_value_tolerance maste ange absolute och relative")
+    if absolute < 0 or relative < 0:
+        raise RuntimeError("FEL: embedding_value_tolerance far inte vara negativ")
+    if embedding_dimension <= 0:
+        raise RuntimeError("FEL: embedding_policy.embedding_dimension maste vara positiv")
+    if dtype != "float32":
+        raise RuntimeError("FEL: embedding_policy.dtype maste vara float32")
+
+    return {
+        "dtype": dtype,
+        "embedding_dimension": embedding_dimension,
+        "normalize_embeddings": normalize_embeddings,
+        "passage_prefix": passage_prefix,
+        "query_prefix": query_prefix,
+        "tolerance_absolute": float(absolute),
+        "tolerance_relative": float(relative),
+    }
+
+
+def resolve_manifest_build_device(manifest: dict) -> str:
+    device_policy = require_manifest_object(manifest, "device_policy")
+    allowed_devices = device_policy.get("allowed_devices")
+    if not isinstance(allowed_devices, list) or not all(
+        isinstance(device, str) for device in allowed_devices
+    ):
+        raise RuntimeError("FEL: device_policy.allowed_devices maste vara lista av str")
+    preferred_device = require_manifest_str(
+        device_policy,
+        "preferred_local_build_device",
+        "device_policy",
+    )
+    if require_manifest_str(device_policy, "canonical_baseline", "device_policy") != "cpu":
+        raise RuntimeError("FEL: device_policy.canonical_baseline maste vara cpu")
+    if require_manifest_bool(device_policy, "cuda_required", "device_policy"):
+        raise RuntimeError("FEL: device_policy.cuda_required maste vara false")
+    if require_manifest_bool(device_policy, "device_changes_semantics", "device_policy"):
+        raise RuntimeError("FEL: device_policy.device_changes_semantics maste vara false")
+    if require_manifest_str(device_policy, "device_selection_source", "device_policy") != "manifest":
+        raise RuntimeError("FEL: device_policy.device_selection_source maste vara manifest")
+    if preferred_device not in {"cpu", "cuda"} or preferred_device not in allowed_devices:
+        raise RuntimeError("FEL: device_policy.preferred_local_build_device ar ogiltig")
+    return preferred_device
+
+
+def get_embedding_batch_size(manifest: dict) -> int:
+    batch_policy = require_manifest_object(manifest, "batch_policy")
+    batch_size = require_manifest_int(batch_policy, "embedding_batch_size", "batch_policy")
+    batch_min = require_manifest_int(batch_policy, "embedding_batch_size_min", "batch_policy")
+    batch_max = require_manifest_int(batch_policy, "embedding_batch_size_max", "batch_policy")
+    if require_manifest_bool(batch_policy, "dynamic_batch_sizing_allowed", "batch_policy"):
+        raise RuntimeError("FEL: batch_policy.dynamic_batch_sizing_allowed maste vara false")
+    if batch_min > batch_max or not (batch_min <= batch_size <= batch_max):
+        raise RuntimeError("FEL: batch_policy.embedding_batch_size ligger utanfor last intervall")
+    return batch_size
 
 
 def validate_classification_rules(classification_rules: object) -> None:
@@ -402,20 +686,11 @@ def validate_index_manifest(
         raise RuntimeError("FEL: contract_version matchar inte kanoniskt värde")
     if str(manifest["corpus_manifest_hash"]) != corpus_manifest_hash:
         raise RuntimeError("FEL: corpus_manifest_hash matchar inte kanonisk corpusserialisering")
-    if int(manifest["chunk_size"]) != CANONICAL_CHUNK_SIZE:
-        raise RuntimeError("FEL: chunk_size matchar inte kanoniskt värde")
-    if int(manifest["chunk_overlap"]) != CANONICAL_CHUNK_OVERLAP:
-        raise RuntimeError("FEL: chunk_overlap matchar inte kanoniskt värde")
-    if str(manifest["embedding_model"]) != CANONICAL_EMBEDDING_MODEL:
-        raise RuntimeError("FEL: embedding_model matchar inte kanoniskt värde")
-    if str(manifest["rerank_model"]) != CANONICAL_RERANK_MODEL:
-        raise RuntimeError("FEL: rerank_model matchar inte kanoniskt värde")
-    if int(manifest["top_k"]) != CANONICAL_TOP_K:
-        raise RuntimeError("FEL: top_k matchar inte kanoniskt värde")
-    if int(manifest["vector_candidate_k"]) != CANONICAL_VECTOR_CANDIDATE_K:
-        raise RuntimeError("FEL: vector_candidate_k matchar inte kanoniskt värde")
-    if int(manifest["lexical_candidate_k"]) != CANONICAL_LEXICAL_CANDIDATE_K:
-        raise RuntimeError("FEL: lexical_candidate_k matchar inte kanoniskt värde")
+    get_chunking_policy(manifest)
+    get_embedding_model_config(manifest)
+    get_embedding_policy(manifest)
+    resolve_manifest_build_device(manifest)
+    get_embedding_batch_size(manifest)
 
     chunk_manifest_hash = manifest.get("chunk_manifest_hash")
     if not isinstance(chunk_manifest_hash, str):
@@ -423,14 +698,17 @@ def validate_index_manifest(
     if require_chunk_manifest_hash and not chunk_manifest_hash.strip():
         raise RuntimeError("FEL: chunk_manifest_hash saknas i index_manifest.json")
 
-    validate_classification_rules(manifest.get("classification_rules"))
+    if not isinstance(manifest.get("artifact_hashes"), dict):
+        raise RuntimeError("FEL: artifact_hashes maste vara ett JSON-objekt")
+
+    validate_classification_rules(manifest.get("classification_policy"))
     validate_ranking_policy(manifest.get("ranking_policy"))
 
 
 def finalize_index_manifest(
     manifest: dict,
     chunk_manifest_hash: str,
-    path: Path = INDEX_MANIFEST,
+    path: Path,
 ) -> dict:
     finalized_manifest = deepcopy(manifest)
     finalized_manifest["chunk_manifest_hash"] = chunk_manifest_hash
@@ -449,9 +727,10 @@ def compute_chunk_manifest_hash(records: list[dict]) -> str:
     return compute_sha256_text(serialized)
 
 
-def write_chunk_manifest(records: list[dict], contract_version: str) -> None:
+def write_chunk_manifest(records: list[dict], contract_version: str, path: Path) -> None:
+    assert_staging_write_path(path)
     versioned_records = bind_contract_version(records, contract_version)
-    CHUNK_MANIFEST.write_text(render_chunk_manifest(versioned_records), encoding="utf-8")
+    path.write_text(render_chunk_manifest(versioned_records), encoding="utf-8")
 
 
 def bind_contract_version(records: list[dict], contract_version: str) -> list[dict]:
@@ -463,7 +742,17 @@ def bind_contract_version(records: list[dict], contract_version: str) -> list[di
     return versioned_records
 
 
-def write_lexical_index(documents: list[str], ids: list[str], manifest: dict) -> None:
+def write_lexical_index(
+    documents: list[str],
+    ids: list[str],
+    manifest: dict,
+    lexical_index_dir: Path,
+    lexical_index_manifest: Path,
+    lexical_index_documents: Path,
+) -> None:
+    assert_staging_write_path(lexical_index_dir)
+    assert_staging_write_path(lexical_index_manifest)
+    assert_staging_write_path(lexical_index_documents)
     lexical_records = []
     document_frequency: dict[str, int] = {}
     total_length = 0
@@ -486,8 +775,8 @@ def write_lexical_index(documents: list[str], ids: list[str], manifest: dict) ->
             "length": len(tokens),
         })
 
-    LEXICAL_INDEX_DIR.mkdir(parents=True, exist_ok=True)
-    LEXICAL_INDEX_DOCUMENTS.write_text(
+    lexical_index_dir.mkdir(parents=True, exist_ok=True)
+    lexical_index_documents.write_text(
         "\n".join(
             json.dumps(record, ensure_ascii=False, sort_keys=True)
             for record in lexical_records
@@ -504,7 +793,217 @@ def write_lexical_index(documents: list[str], ids: list[str], manifest: dict) ->
         "document_frequency": document_frequency,
         "doc_ids": [record["doc_id"] for record in lexical_records],
     }
-    save_json_object(LEXICAL_INDEX_MANIFEST, lexical_manifest)
+    save_json_object(lexical_index_manifest, lexical_manifest)
+
+
+def ensure_unique_doc_ids(records: list[dict]) -> None:
+    seen: set[str] = set()
+    for record in records:
+        doc_id = str(record.get("doc_id", ""))
+        validate_sha256_hex(doc_id, "doc_id")
+        if doc_id in seen:
+            raise RuntimeError(f"FEL: duplicerat doc_id i chunk manifest: {doc_id}")
+        seen.add(doc_id)
+
+
+def load_embedding_model(model_config: dict, device: str) -> SentenceTransformer:
+    return SentenceTransformer(
+        model_config["model_id"],
+        device=device,
+        revision=model_config["model_revision"],
+        local_files_only=model_config["local_files_only"],
+        trust_remote_code=model_config["trust_remote_code"],
+    )
+
+
+def build_embedding_inputs(documents: list[str], embedding_policy: dict) -> list[str]:
+    passage_prefix = str(embedding_policy["passage_prefix"])
+    return [passage_prefix + document for document in documents]
+
+
+def encode_embeddings(
+    model: SentenceTransformer,
+    texts: list[str],
+    embedding_policy: dict,
+    batch_size: int,
+) -> np.ndarray:
+    encoded = model.encode(
+        texts,
+        show_progress_bar=True,
+        batch_size=batch_size,
+        normalize_embeddings=bool(embedding_policy["normalize_embeddings"]),
+        convert_to_numpy=True,
+    )
+    return np.asarray(encoded, dtype=np.float32)
+
+
+def validate_embedding_matrix(
+    embeddings: np.ndarray,
+    *,
+    expected_rows: int,
+    embedding_policy: dict,
+) -> np.ndarray:
+    matrix = np.asarray(embeddings, dtype=np.float32)
+    if matrix.ndim != 2:
+        raise RuntimeError("FEL: embeddingmatris maste vara tva-dimensionell")
+    if matrix.shape[0] != expected_rows:
+        raise RuntimeError("FEL: embeddingradantal matchar inte chunkantal")
+    if matrix.shape[1] != int(embedding_policy["embedding_dimension"]):
+        raise RuntimeError("FEL: embeddingdimension matchar inte manifest")
+    if not np.isfinite(matrix).all():
+        raise RuntimeError("FEL: embeddingmatris innehaller NaN eller infinity")
+    return np.ascontiguousarray(matrix, dtype=np.float32)
+
+
+def assert_embedding_equivalence(
+    cpu_embeddings: np.ndarray,
+    accelerated_embeddings: np.ndarray,
+    embedding_policy: dict,
+) -> None:
+    if cpu_embeddings.shape != accelerated_embeddings.shape:
+        raise RuntimeError("DEVICE_DRIFT: CPU/GPU embeddingform skiljer sig")
+    if not np.allclose(
+        cpu_embeddings,
+        accelerated_embeddings,
+        atol=float(embedding_policy["tolerance_absolute"]),
+        rtol=float(embedding_policy["tolerance_relative"]),
+    ):
+        max_delta = float(np.max(np.abs(cpu_embeddings - accelerated_embeddings)))
+        raise RuntimeError(f"DEVICE_DRIFT: CPU/GPU embeddingdrift overskrider tolerans: {max_delta}")
+
+
+def canonical_embedding_bytes(embedding: np.ndarray) -> bytes:
+    vector = np.asarray(embedding, dtype=np.dtype("<f4")).reshape(-1)
+    if not np.isfinite(vector).all():
+        raise RuntimeError("FEL: embeddingvektor innehaller NaN eller infinity")
+    return np.ascontiguousarray(vector, dtype=np.dtype("<f4")).tobytes(order="C")
+
+
+def compute_embedding_vector_hash(embedding: np.ndarray) -> str:
+    return compute_sha256_bytes(canonical_embedding_bytes(embedding))
+
+
+def compute_doc_id_set_hash(doc_ids: list[str]) -> str:
+    for doc_id in doc_ids:
+        validate_sha256_hex(doc_id, "doc_id")
+    canonical_bytes = "".join(doc_id + "\n" for doc_id in sorted(doc_ids)).encode("ascii")
+    return compute_sha256_bytes(canonical_bytes)
+
+
+def build_vector_export_records(
+    chunk_records: list[dict],
+    embeddings: np.ndarray,
+    manifest: dict,
+    model_config: dict,
+    embedding_policy: dict,
+) -> list[dict]:
+    ordered_records = order_chunk_records(chunk_records)
+    if chunk_records != ordered_records:
+        raise RuntimeError("FEL: embeddingordning matchar inte kanonisk chunkordning")
+    if len(ordered_records) != len(embeddings):
+        raise RuntimeError("FEL: vector export antal matchar inte chunkantal")
+
+    export_records = []
+    for record, embedding in zip(ordered_records, embeddings):
+        export_records.append({
+            "chunk_index": int(record["chunk_index"]),
+            "chunk_manifest_hash": str(manifest["chunk_manifest_hash"]),
+            "content_hash": validate_sha256_hex(record["content_hash"], "content_hash"),
+            "contract_version": str(manifest["contract_version"]),
+            "corpus_manifest_hash": str(manifest["corpus_manifest_hash"]),
+            "doc_id": validate_sha256_hex(record["doc_id"], "doc_id"),
+            "embedding_dimension": int(embedding_policy["embedding_dimension"]),
+            "embedding_dtype": str(embedding_policy["dtype"]),
+            "embedding_model_snapshot_hash": model_config["model_snapshot_hash"],
+            "embedding_normalized": bool(embedding_policy["normalize_embeddings"]),
+            "embedding_vector_hash": compute_embedding_vector_hash(embedding),
+            "file": str(record["file"]),
+            "layer": str(record["layer"]),
+            "source_type": str(record["source_type"]),
+            "tokenizer_files_hash": model_config["tokenizer_files_hash"],
+        })
+    return export_records
+
+
+def render_vector_export(records: list[dict]) -> str:
+    ordered_records = order_chunk_records(records)
+    if not ordered_records:
+        raise RuntimeError("FEL: vector export far inte vara tom")
+    return "".join(canonical_json_dumps(record) + "\n" for record in ordered_records)
+
+
+def compute_vector_export_hash(records: list[dict]) -> str:
+    return compute_sha256_text(render_vector_export(records))
+
+
+def build_vector_metadatas(
+    vector_export_records: list[dict],
+    manifest: dict,
+) -> list[dict]:
+    chunk_manifest_hash = str(manifest["chunk_manifest_hash"])
+    return [
+        {
+            "chunk_index": int(record["chunk_index"]),
+            "content_hash": record["content_hash"],
+            "contract_version": record["contract_version"],
+            "corpus_manifest_hash": record["corpus_manifest_hash"],
+            "doc_id": record["doc_id"],
+            "embedding_dimension": int(record["embedding_dimension"]),
+            "embedding_dtype": record["embedding_dtype"],
+            "embedding_model_snapshot_hash": record["embedding_model_snapshot_hash"],
+            "embedding_normalized": bool(record["embedding_normalized"]),
+            "embedding_vector_hash": record["embedding_vector_hash"],
+            "file": record["file"],
+            "layer": record["layer"],
+            "source_type": record["source_type"],
+            "tokenizer_files_hash": record["tokenizer_files_hash"],
+            "chunk_manifest_hash": chunk_manifest_hash,
+        }
+        for record in vector_export_records
+    ]
+
+
+def build_collection_metadata(
+    manifest: dict,
+    vector_export_hash: str,
+    vector_export_records: list[dict],
+    model_config: dict,
+    embedding_policy: dict,
+) -> dict:
+    doc_ids = [str(record["doc_id"]) for record in vector_export_records]
+    return {
+        "artifact_type": "chroma_vector_index",
+        "chunk_manifest_hash": str(manifest["chunk_manifest_hash"]),
+        "collection_name": COLLECTION_NAME,
+        "contract_version": str(manifest["contract_version"]),
+        "corpus_manifest_hash": str(manifest["corpus_manifest_hash"]),
+        "doc_count": len(doc_ids),
+        "doc_id_set_hash": compute_doc_id_set_hash(doc_ids),
+        "embedding_dimension": int(embedding_policy["embedding_dimension"]),
+        "embedding_dtype": str(embedding_policy["dtype"]),
+        "embedding_model_snapshot_hash": model_config["model_snapshot_hash"],
+        "normalize_embeddings": bool(embedding_policy["normalize_embeddings"]),
+        "passage_prefix": str(embedding_policy["passage_prefix"]),
+        "query_prefix": str(embedding_policy["query_prefix"]),
+        "source_artifact": ".repo_index/chunk_manifest.jsonl",
+        "tokenizer_files_hash": model_config["tokenizer_files_hash"],
+        "vector_contract_version": "T10",
+        "vector_export_hash": vector_export_hash,
+    }
+
+
+def bind_vector_artifact_hash(
+    manifest: dict,
+    vector_export_hash: str,
+    path: Path,
+) -> dict:
+    finalized_manifest = deepcopy(manifest)
+    artifact_hashes = deepcopy(finalized_manifest.get("artifact_hashes", {}))
+    artifact_hashes["chroma_db"] = validate_sha256_hex(vector_export_hash, "vector_export_hash")
+    finalized_manifest["artifact_hashes"] = artifact_hashes
+    save_json_object(path, finalized_manifest)
+    return load_json_object(path)
+
 
 def build_chunk_artifacts(files: list[str], manifest: dict) -> tuple[list[str], list[dict], list[str], list[dict]]:
     documents = []
@@ -512,8 +1011,9 @@ def build_chunk_artifacts(files: list[str], manifest: dict) -> tuple[list[str], 
     ids = []
     chunk_records = []
 
-    chunk_size = int(manifest["chunk_size"])
-    chunk_overlap = int(manifest["chunk_overlap"])
+    chunk_size, chunk_overlap = get_chunking_policy(manifest)
+    contract_version = str(manifest["contract_version"])
+    corpus_manifest_hash = str(manifest["corpus_manifest_hash"])
 
     print("[STEG] Indexerar filer...")
 
@@ -524,28 +1024,39 @@ def build_chunk_artifacts(files: list[str], manifest: dict) -> tuple[list[str], 
             raise RuntimeError(f"FEL: fil i index_manifest.json corpus.files saknas: {file}")
 
         try:
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            raise RuntimeError(f"FEL: kunde inte läsa textinnehåll för {file}") from exc
-
-        content = normalize_ingested_text(content)
+            content = normalize_corpus_text_for_hash(path.read_bytes(), file)
+        except OSError as exc:
+            raise RuntimeError(f"FEL: kunde inte lasa textinnehall for {file}") from exc
 
         if not content.strip():
             continue
 
         chunk_index = 0
 
-        for chunk in chunk_text(content, chunk_size=chunk_size, overlap=chunk_overlap):
+        for chunk, start_char, end_char in iter_chunk_spans(
+            content,
+            chunk_size=chunk_size,
+            overlap=chunk_overlap,
+        ):
             if not chunk.strip():
                 continue
 
             document = chunk
-            content_hash = compute_sha256_text("passage: " + chunk)
-            doc_id = build_canonical_doc_id(file, chunk_index, content_hash)
+            content_hash = compute_sha256_text(chunk)
+            doc_id = build_canonical_doc_id(
+                contract_version,
+                file,
+                chunk_index,
+                content_hash,
+            )
 
             documents.append(document)
 
             metadata = {
+                "content_hash": content_hash,
+                "contract_version": contract_version,
+                "corpus_manifest_hash": corpus_manifest_hash,
+                "doc_id": doc_id,
                 "file": file,
                 "chunk_index": chunk_index,
                 "type": file.split('.')[-1],
@@ -555,12 +1066,17 @@ def build_chunk_artifacts(files: list[str], manifest: dict) -> tuple[list[str], 
             metadatas.append(metadata)
             ids.append(doc_id)
             chunk_records.append({
+                "contract_version": contract_version,
+                "corpus_manifest_hash": corpus_manifest_hash,
                 "doc_id": doc_id,
                 "file": file,
                 "chunk_index": chunk_index,
+                "start_char": start_char,
+                "end_char": end_char,
                 "layer": metadata["layer"],
                 "source_type": "chunk",
                 "content_hash": content_hash,
+                "text": document,
             })
 
             chunk_index += 1
@@ -571,7 +1087,7 @@ def build_chunk_artifacts(files: list[str], manifest: dict) -> tuple[list[str], 
 # Chunking
 # ---------------------------------------------------------
 
-def chunk_text(text: str, chunk_size: int, overlap: int) -> Iterable[str]:
+def iter_chunk_spans(text: str, chunk_size: int, overlap: int) -> Iterable[tuple[str, int, int]]:
 
     if not text:
         return
@@ -583,18 +1099,31 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> Iterable[str]:
 
         end = min(start + chunk_size, text_len)
 
-        yield text[start:end]
+        yield text[start:end], start, end
 
         if end == text_len:
             break
 
         start = max(end - overlap, 0)
 
+
+def chunk_text(text: str, chunk_size: int, overlap: int) -> Iterable[str]:
+    for chunk, _start, _end in iter_chunk_spans(text, chunk_size, overlap):
+        yield chunk
+
 # ---------------------------------------------------------
 # Main
 # ---------------------------------------------------------
 
 def main():
+    build_context = load_controller_build_context()
+    staging_root = build_context["staging_root"]
+    staging_index_manifest = build_context["index_manifest"]
+    staging_chunk_manifest = build_context["chunk_manifest"]
+    staging_lexical_index_dir = build_context["lexical_index_dir"]
+    staging_lexical_index_manifest = build_context["lexical_index_manifest"]
+    staging_lexical_index_documents = build_context["lexical_index_documents"]
+    staging_vector_db_dir = build_context["vector_db_dir"]
 
     if not INDEX_MANIFEST.exists():
         raise RuntimeError(
@@ -617,7 +1146,7 @@ def main():
 
     corpus_manifest_hash = compute_corpus_manifest_hash(files)
 
-    INDEX_DIR.mkdir(parents=True, exist_ok=True)
+    staging_root.mkdir(parents=True, exist_ok=False)
 
     validate_index_manifest(
         manifest,
@@ -625,88 +1154,114 @@ def main():
         require_chunk_manifest_hash=False,
     )
 
-    documents, metadatas, ids, chunk_records = build_chunk_artifacts(files, manifest)
+    staging_manifest = deepcopy(manifest)
+    staging_manifest["manifest_state"] = "STAGING_INCOMPLETE"
+    save_json_object(staging_index_manifest, staging_manifest)
+
+    documents, _chunk_metadatas, ids, chunk_records = build_chunk_artifacts(files, staging_manifest)
+    ensure_unique_doc_ids(chunk_records)
 
     print(f"[INFO] {len(documents)} textblock skapades")
 
-    contract_version = str(manifest["contract_version"])
+    contract_version = str(staging_manifest["contract_version"])
     versioned_chunk_records = bind_contract_version(chunk_records, contract_version)
     chunk_manifest_hash = compute_chunk_manifest_hash(versioned_chunk_records)
-    manifest = finalize_index_manifest(
-        manifest=manifest,
+    staging_manifest = finalize_index_manifest(
+        manifest=staging_manifest,
         chunk_manifest_hash=chunk_manifest_hash,
+        path=staging_index_manifest,
     )
-    embedding_model = str(manifest["embedding_model"])
-    write_chunk_manifest(chunk_records, contract_version=str(manifest["contract_version"]))
-    write_lexical_index(documents, ids, manifest)
+    write_chunk_manifest(
+        chunk_records,
+        contract_version=str(staging_manifest["contract_version"]),
+        path=staging_chunk_manifest,
+    )
+    write_lexical_index(
+        documents,
+        ids,
+        staging_manifest,
+        lexical_index_dir=staging_lexical_index_dir,
+        lexical_index_manifest=staging_lexical_index_manifest,
+        lexical_index_documents=staging_lexical_index_documents,
+    )
 
     # ---------------------------------------------------------
-    # Optional rebuild
+    # Model + embedding policy
     # ---------------------------------------------------------
 
-    if REBUILD and VECTOR_DB_DIR.exists():
-        print("[INFO] Tar bort befintlig vektor-DB...")
-        shutil.rmtree(VECTOR_DB_DIR)
+    model_config = get_embedding_model_config(staging_manifest)
+    embedding_policy = get_embedding_policy(staging_manifest)
+    build_device = resolve_manifest_build_device(staging_manifest)
+    batch_size = get_embedding_batch_size(staging_manifest)
+    embedding_inputs = build_embedding_inputs(documents, embedding_policy)
 
-    VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        print("[STEG] Laddar CPU-baslinje for embedding-modell...")
+        cpu_model = load_embedding_model(model_config, "cpu")
+        cpu_embeddings = validate_embedding_matrix(
+            encode_embeddings(cpu_model, embedding_inputs, embedding_policy, batch_size),
+            expected_rows=len(documents),
+            embedding_policy=embedding_policy,
+        )
+    except RuntimeError as e:
+        raise RuntimeError("FEL: CPU-baslinje for embedding-modellen misslyckades") from e
+
+    print(f"[INFO] Manifeststyrd build-enhet: {build_device}")
+    print(f"[INFO] Manifestlast batchstorlek: {batch_size}")
+    embeddings = cpu_embeddings
+
+    if build_device != "cpu":
+        try:
+            print("[STEG] Verifierar accelererad embedding mot CPU-baslinje...")
+            accelerated_model = load_embedding_model(model_config, build_device)
+            accelerated_embeddings = validate_embedding_matrix(
+                encode_embeddings(accelerated_model, embedding_inputs, embedding_policy, batch_size),
+                expected_rows=len(documents),
+                embedding_policy=embedding_policy,
+            )
+            assert_embedding_equivalence(cpu_embeddings, accelerated_embeddings, embedding_policy)
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"DEVICE_DRIFT: accelererad embedding pa {build_device} matchar inte CPU-baslinje"
+            ) from e
+
+    vector_export_records = build_vector_export_records(
+        versioned_chunk_records,
+        embeddings,
+        staging_manifest,
+        model_config,
+        embedding_policy,
+    )
+    vector_export_hash = compute_vector_export_hash(vector_export_records)
+    staging_manifest = bind_vector_artifact_hash(
+        staging_manifest,
+        vector_export_hash,
+        staging_index_manifest,
+    )
+    vector_metadatas = build_vector_metadatas(vector_export_records, staging_manifest)
+
+    staging_vector_db_dir.mkdir(parents=True, exist_ok=False)
 
     # ---------------------------------------------------------
     # Chroma
     # ---------------------------------------------------------
 
-    print("[STEG] Öppnar Chroma DB...")
+    print("[STEG] Oppnar Chroma DB...")
 
     client = chromadb.PersistentClient(
-        path=str(VECTOR_DB_DIR)
+        path=str(staging_vector_db_dir)
     )
 
-    collection = client.get_or_create_collection(name=COLLECTION_NAME)
-    collection.modify(
-        metadata={
-            "contract_version": str(manifest["contract_version"]),
-            "chunk_manifest_hash": str(manifest["chunk_manifest_hash"]),
-        }
+    collection = client.create_collection(
+        name=COLLECTION_NAME,
+        metadata=build_collection_metadata(
+            staging_manifest,
+            vector_export_hash,
+            vector_export_records,
+            model_config,
+            embedding_policy,
+        ),
     )
-
-    # ---------------------------------------------------------
-    # Model load
-    # ---------------------------------------------------------
-
-    print("[STEG] Laddar embedding-modell...")
-
-    try:
-        model = SentenceTransformer(
-            embedding_model,
-            device=DEVICE
-        )
-    except RuntimeError as e:
-        raise RuntimeError(
-            f"FEL: embedding-modellen kunde inte laddas på enhet {DEVICE}"
-        ) from e
-
-    # ---------------------------------------------------------
-    # Embedding (GPU optimized)
-    # ---------------------------------------------------------
-
-    print("[STEG] Genererar embeddings...")
-
-    batch_size = BATCH_SIZE_GPU if DEVICE == "cuda" else BATCH_SIZE_CPU
-
-    print(f"[INFO] Batchstorlek: {batch_size}")
-
-    try:
-        embeddings = model.encode(
-            documents,
-            show_progress_bar=True,
-            batch_size=batch_size,
-            normalize_embeddings=True,
-            convert_to_numpy=True
-        )
-
-    except RuntimeError as e:
-        raise RuntimeError(
-            f"FEL: embedding-generering misslyckades på enhet {DEVICE}"
-        ) from e
 
     # ---------------------------------------------------------
     # Store
@@ -721,13 +1276,15 @@ def main():
         collection.add(
             documents=documents[i:j],
             embeddings=embeddings[i:j].tolist(),
-            metadatas=metadatas[i:j],
+            metadatas=vector_metadatas[i:j],
             ids=ids[i:j]
         )
 
-    print("\n[KLAR] Vektorindex byggt.")
-    print(f"[INFO] Plats: {VECTOR_DB_DIR}")
+    print("\n[KLAR] Staging-vektorindex byggt.")
+    print(f"[INFO] Plats: {staging_vector_db_dir}")
     print(f"[INFO] Indexerade textblock: {len(documents)}")
+    print(f"[INFO] vector_export_hash: {vector_export_hash}")
+    raise RuntimeError(PROMOTION_STOP_MESSAGE)
 
 # ---------------------------------------------------------
 
