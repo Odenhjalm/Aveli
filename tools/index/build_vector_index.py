@@ -45,25 +45,29 @@ INDEX_MANIFEST_REQUIRED_FIELDS = {
     "contract_version",
     "corpus",
     "corpus_manifest_hash",
-    "chunking_policy",
     "chunk_manifest_hash",
-    "identity_policy",
-    "model_policy",
-    "embedding_policy",
-    "device_policy",
-    "batch_policy",
-    "ranking_policy",
+    "chunk_size",
+    "chunk_overlap",
+    "embedding_model",
+    "rerank_model",
+    "top_k",
+    "vector_candidate_k",
+    "lexical_candidate_k",
     "classification_policy",
-    "artifact_hashes",
+}
+
+DEPRECATED_MANIFEST_CONFIG_FIELDS = {
+    "batch_policy",
+    "chunking_policy",
+    "classification_rules",
+    "device_policy",
+    "embedding_policy",
+    "model_policy",
+    "ranking_policy",
+    "retrieval_policy",
 }
 
 CANONICAL_CONTRACT_VERSION = "retrieval-v1"
-CANONICAL_CHUNK_SIZE = 2000
-CANONICAL_CHUNK_OVERLAP = 200
-CANONICAL_TOP_K = 16
-CANONICAL_VECTOR_CANDIDATE_K = 30
-CANONICAL_LEXICAL_CANDIDATE_K = 30
-CANONICAL_RANKING_FORMULA = "final_score(doc_id) = rerank_score(doc_id) + boost_score(doc_id)"
 CANONICAL_LAYERS = {"LAW", "ROUTE", "SERVICE", "DB", "POLICY", "SCHEMA", "MODEL", "OTHER"}
 CANONICAL_CLASSIFICATION_RULES = {
     "default_layer": "OTHER",
@@ -80,17 +84,6 @@ CANONICAL_CLASSIFICATION_RULES = {
         {"layer": "SCHEMA", "type": "path_substring", "value": "schemas"},
         {"layer": "MODEL", "type": "path_substring", "value": "models"},
     ],
-}
-CANONICAL_RANKING_POLICY = {
-    "formula": CANONICAL_RANKING_FORMULA,
-    "layer_boosts": {},
-    "path_substring_boosts": {},
-    "path_suffix_boosts": {},
-    "route_override": {
-        "enabled": False,
-        "score": 0.0,
-    },
-    "use_rerank": True,
 }
 
 EXCLUDED_DIRECTORIES = {
@@ -144,11 +137,11 @@ def normalize_repo_relative_path(file_path: str) -> str:
 
 def classify(path: str, manifest: dict) -> str:
     lowered = path.lower()
-    classification_rules = manifest.get("classification_policy")
-    if not isinstance(classification_rules, dict):
+    classification_policy = manifest.get("classification_policy")
+    if not isinstance(classification_policy, dict):
         raise RuntimeError("FEL: classification_policy saknas i index_manifest.json")
 
-    for rule in classification_rules.get("precedence", []):
+    for rule in classification_policy.get("precedence", []):
         rule_type = rule.get("type")
         value = str(rule.get("value", "")).lower()
         layer = str(rule.get("layer", "")).upper()
@@ -158,7 +151,7 @@ def classify(path: str, manifest: dict) -> str:
         if rule_type == "path_suffix" and lowered.endswith(value):
             return layer
 
-    return str(classification_rules.get("default_layer", "OTHER")).upper()
+    return str(classification_policy.get("default_layer", "OTHER")).upper()
 
 
 def normalize_ingested_text(text: str) -> str:
@@ -420,48 +413,27 @@ def build_canonical_index_manifest(
     corpus_manifest_hash: str,
     chunk_manifest_hash: str = "",
     corpus_files: list[str] | None = None,
-    model_policy: dict | None = None,
-    embedding_policy: dict | None = None,
-    device_policy: dict | None = None,
-    batch_policy: dict | None = None,
+    embedding_model: str = "",
+    rerank_model: str = "",
+    chunk_size: int = 2000,
+    chunk_overlap: int = 200,
+    top_k: int = 16,
+    vector_candidate_k: int = 30,
+    lexical_candidate_k: int = 30,
 ) -> dict:
-    if model_policy is None or embedding_policy is None:
-        raise RuntimeError("FEL: model_policy och embedding_policy maste komma fran manifestauktoritet")
     return {
-        "artifact_hashes": {},
-        "batch_policy": deepcopy(batch_policy or {
-            "dynamic_batch_sizing_allowed": False,
-            "embedding_batch_size": 64,
-            "embedding_batch_size_max": 64,
-            "embedding_batch_size_min": 32,
-            "rerank_batch_size": 16,
-        }),
         "chunk_manifest_hash": str(chunk_manifest_hash),
-        "chunking_policy": {
-            "chunk_overlap": CANONICAL_CHUNK_OVERLAP,
-            "chunk_size": CANONICAL_CHUNK_SIZE,
-        },
+        "chunk_overlap": int(chunk_overlap),
+        "chunk_size": int(chunk_size),
         "classification_policy": deepcopy(CANONICAL_CLASSIFICATION_RULES),
         "contract_version": CANONICAL_CONTRACT_VERSION,
         "corpus": {"files": list(corpus_files or [])},
         "corpus_manifest_hash": corpus_manifest_hash,
-        "device_policy": deepcopy(device_policy or {
-            "allowed_devices": ["cpu", "cuda"],
-            "canonical_baseline": "cpu",
-            "cuda_required": False,
-            "device_changes_semantics": False,
-            "device_selection_source": "manifest",
-            "environment_device_override_allowed": False,
-            "implicit_device_auto_selection_allowed": False,
-            "preferred_local_build_device": "cpu",
-        }),
-        "embedding_policy": deepcopy(embedding_policy),
-        "identity_policy": {
-            "content_hash": "sha256(chunk_text_utf8_bytes)",
-            "doc_id": "sha256(AVELI_DOC_ID_V1 length-delimited payload)",
-        },
-        "model_policy": deepcopy(model_policy),
-        "ranking_policy": deepcopy(CANONICAL_RANKING_POLICY),
+        "embedding_model": str(embedding_model),
+        "lexical_candidate_k": int(lexical_candidate_k),
+        "rerank_model": str(rerank_model),
+        "top_k": int(top_k),
+        "vector_candidate_k": int(vector_candidate_k),
     }
 
 
@@ -493,179 +465,112 @@ def require_manifest_str(container: dict, field_name: str, owner: str) -> str:
     return value
 
 
+def require_manifest_root_str(manifest: dict, field_name: str) -> str:
+    value = manifest.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeError(f"FEL: index_manifest.json {field_name} maste vara en icke-tom strang")
+    return value
+
+
+def require_manifest_root_int(manifest: dict, field_name: str) -> int:
+    value = manifest.get(field_name)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise RuntimeError(f"FEL: index_manifest.json {field_name} maste vara heltal")
+    if value <= 0:
+        raise RuntimeError(f"FEL: index_manifest.json {field_name} maste vara positivt")
+    return value
+
+
+def reject_deprecated_manifest_config(manifest: dict) -> None:
+    present = sorted(DEPRECATED_MANIFEST_CONFIG_FIELDS & set(manifest))
+    if present:
+        raise RuntimeError(
+            "FEL: index_manifest.json innehaller foraldrade config-falt: "
+            + ", ".join(present)
+        )
+
+
 def get_chunking_policy(manifest: dict) -> tuple[int, int]:
-    chunking_policy = require_manifest_object(manifest, "chunking_policy")
-    chunk_size = require_manifest_int(chunking_policy, "chunk_size", "chunking_policy")
-    chunk_overlap = require_manifest_int(chunking_policy, "chunk_overlap", "chunking_policy")
-    if chunk_size != CANONICAL_CHUNK_SIZE:
-        raise RuntimeError("FEL: chunking_policy.chunk_size matchar inte kanoniskt varde")
-    if chunk_overlap != CANONICAL_CHUNK_OVERLAP:
-        raise RuntimeError("FEL: chunking_policy.chunk_overlap matchar inte kanoniskt varde")
+    chunk_size = require_manifest_root_int(manifest, "chunk_size")
+    chunk_overlap = require_manifest_root_int(manifest, "chunk_overlap")
+    if chunk_overlap >= chunk_size:
+        raise RuntimeError("FEL: index_manifest.json chunk_overlap maste vara mindre an chunk_size")
     return chunk_size, chunk_overlap
 
 
 def get_embedding_model_config(manifest: dict) -> dict:
-    model_policy = require_manifest_object(manifest, "model_policy")
-    embedding = model_policy.get("embedding")
-    if not isinstance(embedding, dict):
-        raise RuntimeError("FEL: model_policy.embedding saknas")
-
-    model_id = require_manifest_str(embedding, "model_id", "model_policy.embedding")
-    model_revision = require_manifest_str(embedding, "model_revision", "model_policy.embedding")
-    tokenizer_id = require_manifest_str(embedding, "tokenizer_id", "model_policy.embedding")
-    tokenizer_revision = require_manifest_str(embedding, "tokenizer_revision", "model_policy.embedding")
-    model_snapshot_hash = validate_sha256_hex(
-        embedding.get("model_snapshot_hash"),
-        "model_policy.embedding.model_snapshot_hash",
-    )
-    tokenizer_files_hash = validate_sha256_hex(
-        embedding.get("tokenizer_files_hash"),
-        "model_policy.embedding.tokenizer_files_hash",
-    )
-    local_files_only = require_manifest_bool(
-        embedding,
-        "local_files_only",
-        "model_policy.embedding",
-    )
-    trust_remote_code = require_manifest_bool(
-        embedding,
-        "trust_remote_code",
-        "model_policy.embedding",
-    )
-    if not model_id.strip() or not tokenizer_id.strip():
-        raise RuntimeError("FEL: model_policy.embedding maste ange model_id och tokenizer_id")
-    if model_revision in {"", "main", "master", "latest"}:
-        raise RuntimeError("FEL: model_policy.embedding.model_revision maste vara last")
-    if tokenizer_revision in {"", "main", "master", "latest"}:
-        raise RuntimeError("FEL: model_policy.embedding.tokenizer_revision maste vara last")
-    if not local_files_only:
-        raise RuntimeError("FEL: model_policy.embedding.local_files_only maste vara true")
-    if trust_remote_code:
-        raise RuntimeError("FEL: model_policy.embedding.trust_remote_code maste vara false")
-
+    model_id = require_manifest_root_str(manifest, "embedding_model")
+    rerank_model = require_manifest_root_str(manifest, "rerank_model")
     return {
-        "local_files_only": local_files_only,
+        "local_files_only": True,
         "model_id": model_id,
-        "model_revision": model_revision,
-        "model_snapshot_hash": model_snapshot_hash,
-        "tokenizer_files_hash": tokenizer_files_hash,
-        "tokenizer_id": tokenizer_id,
-        "tokenizer_revision": tokenizer_revision,
-        "trust_remote_code": trust_remote_code,
+        "model_revision": None,
+        "model_snapshot_hash": "",
+        "rerank_model": rerank_model,
+        "tokenizer_files_hash": "",
+        "trust_remote_code": False,
     }
 
 
 def get_embedding_policy(manifest: dict) -> dict:
-    embedding_policy = require_manifest_object(manifest, "embedding_policy")
-    embedding_dimension = require_manifest_int(
-        embedding_policy,
-        "embedding_dimension",
-        "embedding_policy",
-    )
-    dtype = require_manifest_str(embedding_policy, "dtype", "embedding_policy")
-    normalize_embeddings = require_manifest_bool(
-        embedding_policy,
-        "normalize_embeddings",
-        "embedding_policy",
-    )
-    query_prefix = require_manifest_str(embedding_policy, "query_prefix", "embedding_policy")
-    passage_prefix = require_manifest_str(embedding_policy, "passage_prefix", "embedding_policy")
-    require_manifest_str(embedding_policy, "pooling", "embedding_policy")
-    require_manifest_str(embedding_policy, "truncate_policy", "embedding_policy")
-    tolerance = embedding_policy.get("embedding_value_tolerance")
-    if not isinstance(tolerance, dict):
-        raise RuntimeError("FEL: embedding_policy.embedding_value_tolerance saknas")
-    absolute = tolerance.get("absolute")
-    relative = tolerance.get("relative")
-    if not isinstance(absolute, (int, float)) or not isinstance(relative, (int, float)):
-        raise RuntimeError("FEL: embedding_value_tolerance maste ange absolute och relative")
-    if absolute < 0 or relative < 0:
-        raise RuntimeError("FEL: embedding_value_tolerance far inte vara negativ")
-    if embedding_dimension <= 0:
-        raise RuntimeError("FEL: embedding_policy.embedding_dimension maste vara positiv")
-    if dtype != "float32":
-        raise RuntimeError("FEL: embedding_policy.dtype maste vara float32")
-
+    get_embedding_model_config(manifest)
     return {
-        "dtype": dtype,
-        "embedding_dimension": embedding_dimension,
-        "normalize_embeddings": normalize_embeddings,
-        "passage_prefix": passage_prefix,
-        "query_prefix": query_prefix,
-        "tolerance_absolute": float(absolute),
-        "tolerance_relative": float(relative),
+        "dtype": "float32",
+        "embedding_dimension": 1024,
+        "normalize_embeddings": True,
+        "passage_prefix": "",
+        "query_prefix": "query: ",
+        "tolerance_absolute": 0.00001,
+        "tolerance_relative": 0.00001,
     }
 
 
 def resolve_manifest_build_device(manifest: dict) -> str:
-    device_policy = require_manifest_object(manifest, "device_policy")
-    allowed_devices = device_policy.get("allowed_devices")
-    if not isinstance(allowed_devices, list) or not all(
-        isinstance(device, str) for device in allowed_devices
-    ):
-        raise RuntimeError("FEL: device_policy.allowed_devices maste vara lista av str")
-    preferred_device = require_manifest_str(
-        device_policy,
-        "preferred_local_build_device",
-        "device_policy",
-    )
-    if require_manifest_str(device_policy, "canonical_baseline", "device_policy") != "cpu":
-        raise RuntimeError("FEL: device_policy.canonical_baseline maste vara cpu")
-    if require_manifest_bool(device_policy, "cuda_required", "device_policy"):
-        raise RuntimeError("FEL: device_policy.cuda_required maste vara false")
-    if require_manifest_bool(device_policy, "device_changes_semantics", "device_policy"):
-        raise RuntimeError("FEL: device_policy.device_changes_semantics maste vara false")
-    if require_manifest_str(device_policy, "device_selection_source", "device_policy") != "manifest":
-        raise RuntimeError("FEL: device_policy.device_selection_source maste vara manifest")
-    if preferred_device not in {"cpu", "cuda"} or preferred_device not in allowed_devices:
-        raise RuntimeError("FEL: device_policy.preferred_local_build_device ar ogiltig")
-    return preferred_device
+    get_embedding_model_config(manifest)
+    return "cpu"
 
 
 def get_embedding_batch_size(manifest: dict) -> int:
-    batch_policy = require_manifest_object(manifest, "batch_policy")
-    batch_size = require_manifest_int(batch_policy, "embedding_batch_size", "batch_policy")
-    batch_min = require_manifest_int(batch_policy, "embedding_batch_size_min", "batch_policy")
-    batch_max = require_manifest_int(batch_policy, "embedding_batch_size_max", "batch_policy")
-    if require_manifest_bool(batch_policy, "dynamic_batch_sizing_allowed", "batch_policy"):
-        raise RuntimeError("FEL: batch_policy.dynamic_batch_sizing_allowed maste vara false")
-    if batch_min > batch_max or not (batch_min <= batch_size <= batch_max):
-        raise RuntimeError("FEL: batch_policy.embedding_batch_size ligger utanfor last intervall")
-    return batch_size
+    get_embedding_model_config(manifest)
+    return 64
 
 
-def validate_classification_rules(classification_rules: object) -> None:
-    if not isinstance(classification_rules, dict):
-        raise RuntimeError("FEL: classification_rules måste vara ett JSON-objekt")
-    if classification_rules != CANONICAL_CLASSIFICATION_RULES:
-        raise RuntimeError("FEL: classification_rules matchar inte kanonisk klassificering")
+def validate_classification_policy(classification_policy: object) -> None:
+    if not isinstance(classification_policy, dict):
+        raise RuntimeError("FEL: classification_policy maste vara ett JSON-objekt")
+    if classification_policy != CANONICAL_CLASSIFICATION_RULES:
+        raise RuntimeError("FEL: classification_policy matchar inte kanonisk klassificering")
 
-    default_layer = classification_rules.get("default_layer")
+    default_layer = classification_policy.get("default_layer")
     if default_layer not in CANONICAL_LAYERS:
-        raise RuntimeError("FEL: classification_rules.default_layer är ogiltig")
+        raise RuntimeError("FEL: classification_policy.default_layer ar ogiltig")
 
-    precedence = classification_rules.get("precedence")
+    precedence = classification_policy.get("precedence")
     if not isinstance(precedence, list) or not precedence:
-        raise RuntimeError("FEL: classification_rules.precedence saknas eller är tom")
+        raise RuntimeError("FEL: classification_policy.precedence saknas eller ar tom")
 
     for rule in precedence:
         if not isinstance(rule, dict):
-            raise RuntimeError("FEL: classification_rules.precedence innehåller ogiltig regel")
+            raise RuntimeError("FEL: classification_policy.precedence innehaller ogiltig regel")
         if str(rule.get("type", "")) not in {"path_substring", "path_suffix"}:
-            raise RuntimeError("FEL: classification_rules innehåller ogiltig regeltyp")
+            raise RuntimeError("FEL: classification_policy innehaller ogiltig regeltyp")
         if not str(rule.get("value", "")).strip():
-            raise RuntimeError("FEL: classification_rules innehåller tomt regelvärde")
+            raise RuntimeError("FEL: classification_policy innehaller tomt regelvarde")
         if str(rule.get("layer", "")).upper() not in CANONICAL_LAYERS:
-            raise RuntimeError("FEL: classification_rules innehåller ogiltigt lager")
+            raise RuntimeError("FEL: classification_policy innehaller ogiltigt lager")
 
 
-def validate_ranking_policy(ranking_policy: object) -> None:
-    if not isinstance(ranking_policy, dict):
-        raise RuntimeError("FEL: ranking_policy måste vara ett JSON-objekt")
-    if ranking_policy != CANONICAL_RANKING_POLICY:
-        raise RuntimeError("FEL: ranking_policy matchar inte kanonisk rankingpolicy")
-    if str(ranking_policy.get("formula", "")) != CANONICAL_RANKING_FORMULA:
-        raise RuntimeError("FEL: ranking_policy.formula matchar inte kanonisk formel")
+def validate_flat_manifest_fields(manifest: dict) -> None:
+    require_manifest_root_str(manifest, "contract_version")
+    require_manifest_root_str(manifest, "corpus_manifest_hash")
+    require_manifest_root_str(manifest, "embedding_model")
+    require_manifest_root_str(manifest, "rerank_model")
+    require_manifest_root_int(manifest, "chunk_size")
+    require_manifest_root_int(manifest, "chunk_overlap")
+    require_manifest_root_int(manifest, "top_k")
+    require_manifest_root_int(manifest, "vector_candidate_k")
+    require_manifest_root_int(manifest, "lexical_candidate_k")
+    get_chunking_policy(manifest)
 
 
 def validate_index_manifest(
@@ -680,13 +585,14 @@ def validate_index_manifest(
             "FEL: index_manifest.json saknar fält: " + ", ".join(missing)
         )
 
+    reject_deprecated_manifest_config(manifest)
     load_manifest_corpus_files(manifest)
 
     if str(manifest["contract_version"]) != CANONICAL_CONTRACT_VERSION:
         raise RuntimeError("FEL: contract_version matchar inte kanoniskt värde")
     if str(manifest["corpus_manifest_hash"]) != corpus_manifest_hash:
         raise RuntimeError("FEL: corpus_manifest_hash matchar inte kanonisk corpusserialisering")
-    get_chunking_policy(manifest)
+    validate_flat_manifest_fields(manifest)
     get_embedding_model_config(manifest)
     get_embedding_policy(manifest)
     resolve_manifest_build_device(manifest)
@@ -698,11 +604,7 @@ def validate_index_manifest(
     if require_chunk_manifest_hash and not chunk_manifest_hash.strip():
         raise RuntimeError("FEL: chunk_manifest_hash saknas i index_manifest.json")
 
-    if not isinstance(manifest.get("artifact_hashes"), dict):
-        raise RuntimeError("FEL: artifact_hashes maste vara ett JSON-objekt")
-
-    validate_classification_rules(manifest.get("classification_policy"))
-    validate_ranking_policy(manifest.get("ranking_policy"))
+    validate_classification_policy(manifest.get("classification_policy"))
 
 
 def finalize_index_manifest(

@@ -38,6 +38,18 @@ INDEX_MANIFEST_REQUIRED_FIELDS = {
     "top_k",
     "vector_candidate_k",
     "lexical_candidate_k",
+    "classification_policy",
+}
+
+DEPRECATED_MANIFEST_CONFIG_FIELDS = {
+    "batch_policy",
+    "chunking_policy",
+    "classification_rules",
+    "device_policy",
+    "embedding_policy",
+    "model_policy",
+    "ranking_policy",
+    "retrieval_policy",
 }
 
 MAX_CONTEXT_CHARS = 2500
@@ -142,6 +154,48 @@ def validate_manifest_corpus_files(manifest: dict) -> None:
         raise SystemExit("FEL: corpus.files maste vara sorterad enligt UTF-8 byteordning")
 
 
+def reject_deprecated_manifest_config(manifest: dict) -> None:
+    present = sorted(DEPRECATED_MANIFEST_CONFIG_FIELDS & set(manifest))
+    if present:
+        raise SystemExit(
+            "FEL: indexmanifest innehaller foraldrade config-falt: "
+            + ", ".join(present)
+        )
+
+
+def require_manifest_root_str(manifest: dict, field_name: str) -> str:
+    value = manifest.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise SystemExit(f"FEL: indexmanifest {field_name} maste vara en icke-tom strang")
+    return value
+
+
+def require_manifest_root_int(manifest: dict, field_name: str) -> int:
+    value = manifest.get(field_name)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise SystemExit(f"FEL: indexmanifest {field_name} maste vara heltal")
+    if value <= 0:
+        raise SystemExit(f"FEL: indexmanifest {field_name} maste vara positivt")
+    return value
+
+
+def validate_flat_manifest_fields(manifest: dict) -> None:
+    require_manifest_root_str(manifest, "contract_version")
+    require_manifest_root_str(manifest, "corpus_manifest_hash")
+    require_manifest_root_str(manifest, "chunk_manifest_hash")
+    require_manifest_root_str(manifest, "embedding_model")
+    require_manifest_root_str(manifest, "rerank_model")
+    chunk_size = require_manifest_root_int(manifest, "chunk_size")
+    chunk_overlap = require_manifest_root_int(manifest, "chunk_overlap")
+    if chunk_overlap >= chunk_size:
+        raise SystemExit("FEL: indexmanifest chunk_overlap maste vara mindre an chunk_size")
+    require_manifest_root_int(manifest, "top_k")
+    require_manifest_root_int(manifest, "vector_candidate_k")
+    require_manifest_root_int(manifest, "lexical_candidate_k")
+    if not isinstance(manifest.get("classification_policy"), dict):
+        raise SystemExit("FEL: classification_policy saknas i indexmanifestet")
+
+
 def load_index_manifest() -> dict:
     if not INDEX_MANIFEST.exists():
         raise SystemExit(f"FEL: indexmanifest saknas vid {INDEX_MANIFEST}")
@@ -152,8 +206,8 @@ def load_index_manifest() -> dict:
         raise SystemExit(
             "FEL: indexmanifest saknar falt: " + ", ".join(missing)
         )
-    if "classification_rules" not in manifest:
-        raise SystemExit("FEL: classification_rules saknas i indexmanifestet")
+    reject_deprecated_manifest_config(manifest)
+    validate_flat_manifest_fields(manifest)
     validate_manifest_corpus_files(manifest)
     return manifest
 
@@ -271,13 +325,6 @@ def validate_contract_version_bindings(index_manifest: dict, chunk_records: list
         raise SystemExit(
             "FEL: vektorindexets chunk_manifest_hash matchar inte indexmanifestet"
         )
-
-
-def load_ranking_policy(index_manifest: dict) -> dict:
-    ranking_policy = index_manifest.get("ranking_policy")
-    if not isinstance(ranking_policy, dict):
-        raise SystemExit("FEL: ranking_policy saknas i indexmanifestet")
-    return ranking_policy
 
 
 def load_runtime_state() -> dict:
@@ -421,9 +468,11 @@ def build_rerank_document(file_path: str, fallback_doc: str, query_text: str) ->
 
 def classify(path: str, index_manifest: dict) -> str:
     lowered = path.lower()
-    classification_rules = index_manifest.get("classification_rules", {})
+    classification_policy = index_manifest.get("classification_policy")
+    if not isinstance(classification_policy, dict):
+        raise SystemExit("FEL: classification_policy saknas i indexmanifestet")
 
-    for rule in classification_rules.get("precedence", []):
+    for rule in classification_policy.get("precedence", []):
         rule_type = rule.get("type")
         value = str(rule.get("value", "")).lower()
         layer = str(rule.get("layer", "")).upper()
@@ -433,36 +482,7 @@ def classify(path: str, index_manifest: dict) -> str:
         if rule_type == "path_suffix" and lowered.endswith(value):
             return layer
 
-    return str(classification_rules.get("default_layer", "OTHER")).upper()
-
-
-def score_result(file_path: str, dist: float | None, ranking_policy: dict, index_manifest: dict) -> float:
-    similarity = 0.0 if dist is None else - float(dist)
-    lowered = file_path.lower()
-    layer = classify(file_path, index_manifest)
-
-    for substring, boost in ranking_policy.get("path_substring_boosts", {}).items():
-        if substring in lowered:
-            similarity += float(boost)
-
-    for suffix, boost in ranking_policy.get("path_suffix_boosts", {}).items():
-        if lowered.endswith(str(suffix)):
-            similarity += float(boost)
-
-    similarity += float(ranking_policy.get("layer_boosts", {}).get(layer, 0.0))
-
-    return similarity
-
-
-def route_override_boost(doc_id: str, route_override_doc_id: str | None, ranking_policy: dict) -> float:
-    route_override = ranking_policy.get("route_override", {})
-    if not route_override.get("enabled", False):
-        return 0.0
-    if route_override_doc_id is None:
-        return 0.0
-    if doc_id != route_override_doc_id:
-        return 0.0
-    return float(route_override.get("score", 0.0))
+    return str(classification_policy.get("default_layer", "OTHER")).upper()
 
 
 def build_result_content(file_path: str, doc: str) -> tuple[str, str]:
@@ -537,7 +557,7 @@ def fetch_collection_entries(collection, doc_ids: list[str]) -> dict[str, dict]:
 
 def execute_query(raw_query: str, runtime_state: dict) -> tuple[list[dict], int]:
     index_manifest = runtime_state["index_manifest"]
-    load_ranking_policy(index_manifest)
+    validate_flat_manifest_fields(index_manifest)
     require_query_model_surface()
 
 
