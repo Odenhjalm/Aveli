@@ -1,0 +1,125 @@
+{
+  "artifact_type": "example_environment_dependency_approval",
+  "approval_state": "EXAMPLE_NOT_EXECUTABLE",
+  "approval_phrase": "APPROVE AVELI OFFLINE DEPENDENCY PREPARATION",
+  "approval_scope": {
+    "controller_scope": "retrieval_index_environment_dependencies",
+    "task_id": "D01",
+    "mode": "environment_dependencies",
+    "expires_after_use": true,
+    "example_only": true,
+    "scope_note": "Replace every placeholder and change artifact_type and approval_state only in a future executable approval artifact."
+  },
+  "repo_root": "c:/Users/Odenh/app/Aveli",
+  "build_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "target_interpreter_path": ".repo_index/.search_venv/Scripts/python.exe",
+  "e01_result": "actual_truth/DETERMINED_TASKS/retrieval_index_environment_bootstrap/E01_environment_bootstrap_result_<build_id>.json",
+  "b01_blocked_result": "actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/B01_execution_result_<build_id>.json",
+  "package_set": {
+    "direct_required": [
+      "chromadb",
+      "numpy",
+      "sentence-transformers",
+      "tqdm"
+    ],
+    "transitive_allowed": [
+      "chromadb",
+      "numpy",
+      "sentence-transformers",
+      "tqdm",
+      "transformers",
+      "torch",
+      "torchvision",
+      "torchaudio",
+      "scikit-learn",
+      "scipy"
+    ]
+  },
+  "package_versions": {
+    "chromadb": "1.5.5",
+    "numpy": "2.4.3",
+    "sentence-transformers": "5.3.0",
+    "tqdm": "4.67.3",
+    "transformers": "5.4.0",
+    "torch": "2.11.0+cu128",
+    "torchvision": "0.26.0+cu128",
+    "torchaudio": "2.11.0+cu128",
+    "scikit-learn": "1.8.0",
+    "scipy": "1.17.1"
+  },
+  "package_hashes": {
+    "chromadb-1.5.5-placeholder.whl": "0000000000000000000000000000000000000000000000000000000000000000",
+    "numpy-2.4.3-placeholder.whl": "0000000000000000000000000000000000000000000000000000000000000000",
+    "sentence_transformers-5.3.0-placeholder.whl": "0000000000000000000000000000000000000000000000000000000000000000",
+    "tqdm-4.67.3-placeholder.whl": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "package_source_policy": {
+    "source_type": "offline_wheelhouse",
+    "offline_wheelhouse_path": "actual_truth/offline_wheelhouse/example-not-executable/",
+    "requirements_lock_path": "actual_truth/build_approvals/example_environment_dependency_requirements.lock",
+    "index_urls_allowed": false,
+    "find_links_only": true,
+    "require_hashes": true,
+    "allow_source_builds": false,
+    "allow_editable_installs": false
+  },
+  "network_policy": {
+    "mode": "offline",
+    "downloads_allowed": false,
+    "dependency_download_allowed": false,
+    "model_download_allowed": false,
+    "telemetry_allowed": false,
+    "package_index_allowed": false
+  },
+  "fallback_policy": {
+    "mode": "forbidden",
+    "fallbacks_allowed": false,
+    "fallback_package_source_allowed": false,
+    "fallback_interpreter_allowed": false,
+    "fallback_network_allowed": false,
+    "fallback_version_allowed": false,
+    "fallback_hash_allowed": false,
+    "system_site_packages_allowed": false
+  },
+  "verification_policy": {
+    "target_interpreter_must_exist": true,
+    "target_path_must_match": ".repo_index/.search_venv/Scripts/python.exe",
+    "e01_result_must_be_pass": true,
+    "b01_result_must_be_dependency_blocked": true,
+    "all_package_artifact_hashes_must_match": true,
+    "installed_versions_must_match": true,
+    "direct_imports_must_succeed": [
+      "chromadb",
+      "numpy",
+      "sentence_transformers",
+      "tqdm"
+    ],
+    "network_must_not_be_used": true,
+    "fallback_must_not_be_used": true,
+    "active_index_artifacts_must_not_be_created": true,
+    "staging_build_artifacts_must_not_be_created": true,
+    "models_must_not_be_loaded_or_downloaded": true
+  },
+  "forbidden_targets": {
+    "active_index_artifacts": [
+      ".repo_index/index_manifest.json",
+      ".repo_index/chunk_manifest.jsonl",
+      ".repo_index/lexical_index/",
+      ".repo_index/chroma_db/"
+    ],
+    "staging_build_artifacts": [
+      ".repo_index/_staging/<build_id>/index_manifest.json",
+      ".repo_index/_staging/<build_id>/chunk_manifest.jsonl",
+      ".repo_index/_staging/<build_id>/lexical_index/",
+      ".repo_index/_staging/<build_id>/chroma_db/"
+    ],
+    "model_artifacts": [
+      ".repo_index/models/",
+      ".repo_index/model_cache/"
+    ]
+  },
+  "execution_policy": {
+    "example_not_executable": true,
+    "must_stop_if_used": true
+  }
+}
