@@ -41,7 +41,7 @@ create index media_assets_purpose_state_idx
   on app.media_assets (purpose, state);
 
 create index media_assets_worker_scan_idx
-  on app.media_assets (state, next_retry_at, processing_locked_at);
+  on app.media_assets (state, next_retry_at, processing_locked_at, created_at, id);
 
 comment on table app.media_assets is
   'Canonical media identity and lifecycle table only. Media ownership comes from source relations, not from app.media_assets.';
