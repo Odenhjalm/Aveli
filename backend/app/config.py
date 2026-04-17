@@ -315,6 +315,9 @@ class Settings(BaseSettings):
     netlify_observability_mcp_enabled: bool = Field(
         default_factory=lambda: not _is_cloud_runtime()
     )
+    dev_operator_observability_mcp_enabled: bool = Field(
+        default_factory=lambda: not _is_cloud_runtime()
+    )
 
     @field_validator("mcp_mode", mode="before")
     @classmethod

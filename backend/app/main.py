@@ -52,6 +52,7 @@ from .routes import (
     playback,
     course_bundles,
     courses,
+    dev_operator_observability_mcp,
     domain_observability_mcp,
     email_verification,
     entry_state,
@@ -248,6 +249,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(supabase_observability_mcp.router)
     app.include_router(stripe_observability_mcp.router)
     app.include_router(netlify_observability_mcp.router)
+    app.include_router(dev_operator_observability_mcp.router)
 
 
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)
