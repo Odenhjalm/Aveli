@@ -58,11 +58,14 @@ from .routes import (
     home,
     logs_mcp,
     media_control_plane_mcp,
+    netlify_observability_mcp,
     profiles,
     profile_avatar,
     referrals,
+    stripe_observability_mcp,
     stripe_webhooks,
     studio,
+    supabase_observability_mcp,
     verification_mcp,
 )
 from .db import get_conn
@@ -242,6 +245,9 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(media_control_plane_mcp.router)
     app.include_router(domain_observability_mcp.router)
     app.include_router(verification_mcp.router)
+    app.include_router(supabase_observability_mcp.router)
+    app.include_router(stripe_observability_mcp.router)
+    app.include_router(netlify_observability_mcp.router)
 
 
 app = FastAPI(title="Aveli Local Backend", version="0.1.0", lifespan=lifespan)

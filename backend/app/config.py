@@ -156,6 +156,15 @@ class Settings(BaseSettings):
     jwt_refresh_expires_minutes: int = 60 * 24
     media_root: str = "media"
     frontend_base_url: str | None = "http://localhost:3000"
+    netlify_auth_token: str | None = Field(default=None, validation_alias="NETLIFY_AUTH_TOKEN")
+    netlify_site_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("NETLIFY_SITE_ID", "SITE_ID"),
+    )
+    netlify_api_base_url: str = Field(
+        default="https://api.netlify.com/api/v1",
+        validation_alias="NETLIFY_API_BASE_URL",
+    )
     stripe_checkout_base: str | None = None
     stripe_checkout_ui_mode: str | None = "custom"
     checkout_success_url: str | None = Field(
@@ -295,6 +304,15 @@ class Settings(BaseSettings):
         default_factory=lambda: not _is_cloud_runtime()
     )
     domain_observability_mcp_enabled: bool = Field(
+        default_factory=lambda: not _is_cloud_runtime()
+    )
+    supabase_observability_mcp_enabled: bool = Field(
+        default_factory=lambda: not _is_cloud_runtime()
+    )
+    stripe_observability_mcp_enabled: bool = Field(
+        default_factory=lambda: not _is_cloud_runtime()
+    )
+    netlify_observability_mcp_enabled: bool = Field(
         default_factory=lambda: not _is_cloud_runtime()
     )
 
