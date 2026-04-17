@@ -3,7 +3,7 @@ import mimetypes
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, NoReturn
 from uuid import UUID, uuid4
 from fastapi import (
     APIRouter,
@@ -30,13 +30,11 @@ from ..services import (
     courses_service,
     email_service,
     lesson_playback_service,
-    livekit as livekit_service,
     referral_service,
     storage_service,
     studio_authority,
 )
 from ..services import media_cleanup
-from ..services.livekit_tokens import LiveKitTokenConfigError, build_token
 from ..utils import media_signer
 from ..utils.media_urls import absolutize_media_url_items, absolutize_media_urls
 from ..utils.profile_media import profile_media_item_from_row
@@ -53,6 +51,13 @@ _LESSON_EDITOR_TRACE = os.getenv("LESSON_EDITOR_TRACE", "").lower() in {
     "true",
     "yes",
 }
+
+
+def _raise_livekit_paused() -> NoReturn:
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="LiveKit är pausat.",
+    )
 _STUDIO_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
 )
@@ -1866,94 +1871,7 @@ async def studio_start_seminar_session(
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
     _ensure_host_access(seminar, str(current["id"]))
-
-    session = None
-    if payload.session_id:
-        session = await repositories.get_seminar_session(str(payload.session_id))
-        if not session or str(session["seminar_id"]) != str(seminar["id"]):
-            raise HTTPException(status_code=404, detail="Seminar session not found")
-        if session["status"] == "live":
-            raise HTTPException(status_code=409, detail="Session already live")
-    if session is None:
-        metadata = {"created_by": str(current["id"])}
-        session = await repositories.create_seminar_session(
-            seminar_id=str(seminar_id),
-            status="scheduled",
-            scheduled_at=seminar.get("scheduled_at"),
-            livekit_room=seminar.get("livekit_room"),
-            livekit_sid=None,
-            metadata=metadata,
-        )
-
-    livekit_room = (
-        session.get("livekit_room")
-        or seminar.get("livekit_room")
-        or f"seminar-{seminar['id']}"
-    )
-    metadata = dict(session.get("metadata") or {})
-    metadata.update(
-        {
-            "started_by": str(current["id"]),
-            "started_at": datetime.now(timezone.utc).isoformat(),
-        }
-    )
-    if payload.metadata:
-        metadata.update(payload.metadata)
-
-    try:
-        await livekit_service.create_room(
-            livekit_room,
-            metadata={
-                "seminar_id": str(seminar_id),
-                "session_id": str(session["id"]),
-                **(payload.metadata or {}),
-            },
-            max_participants=payload.max_participants,
-        )
-    except livekit_service.LiveKitRESTError as exc:
-        logger.warning("LiveKit create_room failed: %s", exc)
-
-    now = datetime.now(timezone.utc)
-    updated_session = await repositories.update_seminar_session(
-        session_id=str(session["id"]),
-        fields={
-            "status": "live",
-            "started_at": now,
-            "livekit_room": livekit_room,
-            "metadata": metadata,
-        },
-    )
-
-    if seminar.get("livekit_room") != livekit_room:
-        await repositories.update_seminar(
-            seminar_id=str(seminar_id),
-            host_id=str(current["id"]),
-            fields={"livekit_room": livekit_room},
-        )
-
-    if not settings.livekit_ws_url:
-        raise HTTPException(status_code=503, detail="LiveKit configuration missing")
-
-    try:
-        token = build_token(
-            seminar_id=seminar["id"],
-            session_id=updated_session["id"],
-            user_id=current["id"],
-            identity=f"{current['id']}-host",
-            display_name=current.get("display_name") or current.get("email"),
-            avatar_url=current.get("photo_url"),
-            role="host",
-            room_name=livekit_room,
-            can_create_room=True,
-        )
-    except LiveKitTokenConfigError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    return schemas.SeminarSessionStartResponse(
-        session=_session_from_row(updated_session),
-        ws_url=settings.livekit_ws_url,
-        token=token,
-    )
+    _raise_livekit_paused()
 
 
 @router.post(
@@ -1974,34 +1892,7 @@ async def studio_end_seminar_session(
     session = await repositories.get_seminar_session(str(session_id))
     if not session or str(session["seminar_id"]) != str(seminar["id"]):
         raise HTTPException(status_code=404, detail="Seminar session not found")
-
-    livekit_room = session.get("livekit_room") or seminar.get("livekit_room")
-    if livekit_room:
-        try:
-            await livekit_service.end_room(
-                livekit_room,
-                reason=payload.reason if payload else None,
-            )
-        except livekit_service.LiveKitRESTError as exc:
-            logger.warning("LiveKit end_room failed: %s", exc)
-
-    now = datetime.now(timezone.utc)
-    metadata = dict(session.get("metadata") or {})
-    metadata.update(
-        {
-            "ended_by": str(current["id"]),
-            "ended_at": now.isoformat(),
-        }
-    )
-    updated_session = await repositories.update_seminar_session(
-        session_id=str(session_id),
-        fields={
-            "status": "ended",
-            "ended_at": now,
-            "metadata": metadata,
-        },
-    )
-    return _session_from_row(updated_session)
+    _raise_livekit_paused()
 
 
 @router.post(

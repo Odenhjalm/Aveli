@@ -1,29 +1,21 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Iterable
 
 from psycopg import errors
-from psycopg.types.json import Jsonb
 
 from ..db import get_conn
 
 
+def _livekit_paused_error() -> RuntimeError:
+    return RuntimeError("LiveKit runtime is paused; queue mutation is forbidden")
+
+
 async def release_processing_webhook_jobs() -> None:
     """
-    Reset jobs that were marked as processing (e.g., server crashed mid-run).
+    Paused LiveKit runtime forbids resetting or mutating webhook jobs.
     """
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            update app.livekit_webhook_jobs
-            set status = 'pending',
-                locked_at = null,
-                updated_at = now(),
-                next_run_at = least(next_run_at, now())
-            where status = 'processing'
-            """
-        )
+    raise _livekit_paused_error()
 
 
 async def get_webhook_job_counts() -> dict[str, int]:
@@ -103,100 +95,34 @@ async def list_recent_failed_webhook_jobs(limit: int = 20) -> list[dict[str, Any
 
 
 async def create_webhook_job(payload: dict[str, Any]) -> dict[str, Any]:
-    event_type = payload.get("event")
-    if not event_type:
-        raise ValueError("LiveKit webhook payload missing event")
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            insert into app.livekit_webhook_jobs (event, payload)
-            values (%s, %s)
-            returning id, payload, attempt, next_run_at
-            """,
-            (event_type, Jsonb(payload)),
-        )
-        row = await cur.fetchone()
-    return dict(row)
+    del payload
+    raise _livekit_paused_error()
 
 
 async def lock_webhook_job(job_id: str) -> dict[str, Any] | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            update app.livekit_webhook_jobs
-            set status = 'processing',
-                locked_at = now(),
-                last_attempt_at = now(),
-                updated_at = now()
-            where id = %s
-              and (locked_at is null or locked_at < now() - interval '5 minutes')
-              and status in ('pending', 'processing')
-            returning id, payload, attempt
-            """,
-            (job_id,),
-        )
-        row = await cur.fetchone()
-    return dict(row) if row else None
+    del job_id
+    raise _livekit_paused_error()
 
 
 async def fetch_and_lock_due_webhook_jobs(limit: int = 20) -> Iterable[dict[str, Any]]:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            with candidates as (
-                select id
-                from app.livekit_webhook_jobs
-                where status = 'pending'
-                  and locked_at is null
-                  and next_run_at <= now()
-                order by next_run_at asc
-                limit %s
-                for update skip locked
-            )
-            update app.livekit_webhook_jobs as j
-            set status = 'processing',
-                locked_at = now(),
-                last_attempt_at = now(),
-                updated_at = now()
-            from candidates
-            where j.id = candidates.id
-            returning j.id, j.payload, j.attempt
-            """,
-            (limit,),
-        )
-        rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    del limit
+    raise _livekit_paused_error()
 
 
 async def delete_webhook_job(job_id: str) -> None:
-    async with get_conn() as cur:
-        await cur.execute(
-            "delete from app.livekit_webhook_jobs where id = %s",
-            (job_id,),
-        )
+    del job_id
+    raise _livekit_paused_error()
 
 
 async def schedule_webhook_retry(
     job_id: str,
     *,
     attempt: int,
-    next_run_at: datetime,
+    next_run_at: object,
     last_error: str,
 ) -> None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            update app.livekit_webhook_jobs
-            set attempt = %s,
-                status = 'pending',
-                locked_at = null,
-                next_run_at = %s,
-                last_error = %s,
-                updated_at = now()
-            where id = %s
-            """,
-            (attempt, next_run_at, last_error, job_id),
-        )
+    del job_id, attempt, next_run_at, last_error
+    raise _livekit_paused_error()
 
 
 async def mark_webhook_job_failed(
@@ -205,17 +131,5 @@ async def mark_webhook_job_failed(
     attempt: int,
     last_error: str,
 ) -> None:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            update app.livekit_webhook_jobs
-            set attempt = %s,
-                status = 'failed',
-                locked_at = null,
-                next_run_at = null,
-                last_error = %s,
-                updated_at = now()
-            where id = %s
-            """,
-            (attempt, last_error, job_id),
-        )
+    del job_id, attempt, last_error
+    raise _livekit_paused_error()

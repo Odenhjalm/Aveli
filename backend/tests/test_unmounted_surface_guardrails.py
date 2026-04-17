@@ -27,7 +27,6 @@ def test_legacy_non_mounted_surfaces_remain_unmounted() -> None:
         "/feed",
         "/community",
         "/sfu",
-        "/api/media",
         "/services",
         "/studio/sessions",
     ):

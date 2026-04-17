@@ -71,7 +71,6 @@ from .routes import (
 )
 from .db import get_conn
 from .services import (
-    livekit_events,
     media_transcode_worker,
     membership_expiry_warnings,
 )
@@ -90,7 +89,6 @@ _WorkerStart = Callable[..., Awaitable[None]]
 
 def _local_background_workers() -> tuple[tuple[str, _WorkerStart, _WorkerStop], ...]:
     return (
-        ("livekit_webhooks", livekit_events.start_worker, livekit_events.stop_worker),
         (
             "media_transcode",
             media_transcode_worker.start_worker,

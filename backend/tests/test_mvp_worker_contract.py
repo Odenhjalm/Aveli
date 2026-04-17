@@ -75,3 +75,10 @@ def test_mvp_worker_process_excludes_non_mvp_workers() -> None:
     assert "python -m app.services.mvp_worker" in fly_config
     assert "RUN_MEDIA_WORKER=true" in fly_config
     assert "RUN_COURSE_DRIP_WORKER=true" in fly_config
+
+
+def test_backend_lifespan_excludes_paused_livekit_worker() -> None:
+    source = Path("backend/app/main.py").read_text(encoding="utf-8")
+
+    assert '"livekit_webhooks"' not in source
+    assert "livekit_events.start_worker" not in source

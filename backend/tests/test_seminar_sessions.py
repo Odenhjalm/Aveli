@@ -1,13 +1,10 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
 
 import pytest
 from psycopg.types.json import Jsonb
 
 from app import db, repositories
-from app.config import settings
-from app.services import livekit as livekit_service
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -61,12 +58,6 @@ async def cleanup_user(user_id: str):
             await conn.commit()
 
 
-def configure_livekit_settings():
-    settings.livekit_api_key = "test_key"
-    settings.livekit_api_secret = "test_secret"
-    settings.livekit_ws_url = "wss://test.example.com"
-
-
 def patch_session_metadata_handling(monkeypatch: pytest.MonkeyPatch):
     original_create_session = repositories.create_seminar_session
     original_update_session = repositories.update_seminar_session
@@ -85,7 +76,7 @@ def patch_session_metadata_handling(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(repositories, "update_seminar_session", _patched_update_session)
 
 
-async def test_seminar_session_lifecycle(async_client, monkeypatch):
+async def test_seminar_session_livekit_start_is_paused(async_client, monkeypatch):
     teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@wisdom.dev"
     password = "Passw0rd!"
     teacher_token, teacher_id = await register_user(async_client, teacher_email, password, "Teacher")
@@ -94,17 +85,9 @@ async def test_seminar_session_lifecycle(async_client, monkeypatch):
     student_email = f"student_{uuid.uuid4().hex[:6]}@wisdom.dev"
     student_token, student_id = await register_user(async_client, student_email, password, "Student")
 
-    # Mock LiveKit REST calls so tests do not rely on external service
-    monkeypatch.setattr(livekit_service, "create_room", AsyncMock(return_value=None))
-    monkeypatch.setattr(livekit_service, "end_room", AsyncMock(return_value=None))
-
     patch_session_metadata_handling(monkeypatch)
 
-    # Ensure LiveKit token generation succeeds in the test environment
-    configure_livekit_settings()
-
     seminar_id = None
-    session_id = None
 
     try:
         scheduled_at = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -139,35 +122,23 @@ async def test_seminar_session_lifecycle(async_client, monkeypatch):
         )
         assert resp.status_code == 403
 
-        # Teacher starts a session
+        # Teacher start is fail-closed while LiveKit is paused.
         start_resp = await async_client.post(
             f"/studio/seminars/{seminar_id}/sessions/start",
             json={},
             headers=auth_header(teacher_token),
         )
-        assert start_resp.status_code == 200, start_resp.text
-        payload = start_resp.json()
-        session = payload["session"]
-        session_id = session["id"]
-        assert session["status"] == "live"
-        assert session["started_at"] is not None
+        assert start_resp.status_code == 503, start_resp.text
+        assert start_resp.json()["detail"] == "LiveKit är pausat."
 
-        # Fetch seminar detail to confirm session is live
+        # Fetch seminar detail to confirm no LiveKit session was started.
         detail_resp = await async_client.get(
             f"/studio/seminars/{seminar_id}",
             headers=auth_header(teacher_token),
         )
         assert detail_resp.status_code == 200
         detail = detail_resp.json()
-        assert any(item["id"] == session_id and item["status"] == "live" for item in detail["sessions"])
-
-        # Starting same session again should yield conflict
-        conflict_resp = await async_client.post(
-            f"/studio/seminars/{seminar_id}/sessions/start",
-            json={"session_id": session_id},
-            headers=auth_header(teacher_token),
-        )
-        assert conflict_resp.status_code == 409
+        assert not any(item["status"] == "live" for item in detail["sessions"])
 
         # Student joins via register endpoint
         register_resp = await async_client.post(
@@ -175,32 +146,15 @@ async def test_seminar_session_lifecycle(async_client, monkeypatch):
             headers=auth_header(student_token),
         )
         assert register_resp.status_code == 201
-
-        # End the session
-        end_resp = await async_client.post(
-            f"/studio/seminars/{seminar_id}/sessions/{session_id}/end",
-            headers=auth_header(teacher_token),
-            json={"reason": "Testing complete"},
-        )
-        assert end_resp.status_code == 200, end_resp.text
-        ended_session = end_resp.json()
-        assert ended_session["status"] == "ended"
-        assert ended_session["ended_at"] is not None
-
-        # Public seminar detail should reflect ended session
-        public_detail_resp = await async_client.get(
-            f"/seminars/{seminar_id}",
-            headers=auth_header(student_token),
-        )
-        assert public_detail_resp.status_code == 200
-        public_detail = public_detail_resp.json()
-        assert any(item["id"] == session_id and item["status"] == "ended" for item in public_detail["sessions"])
     finally:
         await cleanup_user(teacher_id)
         await cleanup_user(student_id)
 
 
-async def test_start_session_merges_metadata_and_uses_existing_room(async_client, monkeypatch):
+async def test_start_session_does_not_mutate_existing_room_while_livekit_paused(
+    async_client,
+    monkeypatch,
+):
     teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@wisdom.dev"
     password = "Passw0rd!"
     teacher_token, teacher_id = await register_user(
@@ -208,10 +162,7 @@ async def test_start_session_merges_metadata_and_uses_existing_room(async_client
     )
     await promote_to_teacher(teacher_id)
 
-    monkeypatch.setattr(livekit_service, "create_room", AsyncMock(return_value=None))
-    monkeypatch.setattr(livekit_service, "end_room", AsyncMock(return_value=None))
     patch_session_metadata_handling(monkeypatch)
-    configure_livekit_settings()
 
     try:
         scheduled_at = datetime.now(timezone.utc) + timedelta(hours=2)
@@ -244,30 +195,22 @@ async def test_start_session_merges_metadata_and_uses_existing_room(async_client
             json={"session_id": session_id, "metadata": payload_metadata, "max_participants": 32},
             headers=auth_header(teacher_token),
         )
-        assert start_resp.status_code == 200, start_resp.text
-        data = start_resp.json()
-        session = data["session"]
-        assert session["id"] == session_id
-        assert session["status"] == "live"
-        assert session["livekit_room"] == "pre-existing-room"
-        assert session["metadata"]["source"] == "precreate"
-        assert session["metadata"]["custom_note"] == "host provided"
-        assert session["metadata"]["started_by"] == teacher_id
-        assert session["metadata"]["started_at"] is not None
-        assert session["started_at"] is not None
+        assert start_resp.status_code == 503, start_resp.text
+        assert start_resp.json()["detail"] == "LiveKit är pausat."
 
-        create_room_mock: AsyncMock = livekit_service.create_room  # type: ignore[assignment]
-        await_args = create_room_mock.await_args
-        assert await_args.args[0] == "pre-existing-room"
-        assert await_args.kwargs["metadata"]["session_id"] == session_id
-        assert await_args.kwargs["metadata"]["seminar_id"] == seminar_id
-        assert await_args.kwargs["metadata"]["custom_note"] == "host provided"
-        assert await_args.kwargs["max_participants"] == 32
+        session = await repositories.get_seminar_session(session_id)
+        assert session is not None
+        assert session["status"] == "scheduled"
+        assert session["livekit_room"] == "pre-existing-room"
+        assert session["metadata"] == {"source": "precreate"}
     finally:
         await cleanup_user(teacher_id)
 
 
-async def test_end_session_updates_metadata_and_calls_livekit(async_client, monkeypatch):
+async def test_end_session_does_not_mutate_while_livekit_paused(
+    async_client,
+    monkeypatch,
+):
     teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@wisdom.dev"
     password = "Passw0rd!"
     teacher_token, teacher_id = await register_user(
@@ -275,12 +218,7 @@ async def test_end_session_updates_metadata_and_calls_livekit(async_client, monk
     )
     await promote_to_teacher(teacher_id)
 
-    create_room_mock = AsyncMock(return_value=None)
-    end_room_mock = AsyncMock(return_value=None)
-    monkeypatch.setattr(livekit_service, "create_room", create_room_mock)
-    monkeypatch.setattr(livekit_service, "end_room", end_room_mock)
     patch_session_metadata_handling(monkeypatch)
-    configure_livekit_settings()
 
     try:
         scheduled_at = datetime.now(timezone.utc) + timedelta(minutes=45)
@@ -297,13 +235,15 @@ async def test_end_session_updates_metadata_and_calls_livekit(async_client, monk
         assert create_resp.status_code == 200, create_resp.text
         seminar_id = str(create_resp.json()["id"])
 
-        start_resp = await async_client.post(
-            f"/studio/seminars/{seminar_id}/sessions/start",
-            json={},
-            headers=auth_header(teacher_token),
+        session_row = await repositories.create_seminar_session(
+            seminar_id=seminar_id,
+            status="live",
+            scheduled_at=scheduled_at,
+            livekit_room="paused-room",
+            livekit_sid=None,
+            metadata={"source": "precreate"},
         )
-        assert start_resp.status_code == 200, start_resp.text
-        session_id = start_resp.json()["session"]["id"]
+        session_id = str(session_row["id"])
 
         reason = "Wrap up for QA"
         end_resp = await async_client.post(
@@ -311,24 +251,61 @@ async def test_end_session_updates_metadata_and_calls_livekit(async_client, monk
             json={"reason": reason},
             headers=auth_header(teacher_token),
         )
-        assert end_resp.status_code == 200, end_resp.text
-        session = end_resp.json()
-        assert session["status"] == "ended"
-        assert session["ended_at"] is not None
-        assert session["metadata"]["ended_by"] == teacher_id
-        assert session["metadata"]["ended_at"] is not None
+        assert end_resp.status_code == 503, end_resp.text
+        assert end_resp.json()["detail"] == "LiveKit är pausat."
 
-        await_args = end_room_mock.await_args
-        assert await_args.args[0] == session["livekit_room"]
-        assert await_args.kwargs["reason"] == reason
+        session = await repositories.get_seminar_session(session_id)
+        assert session is not None
+        assert session["status"] == "live"
+        assert session["metadata"] == {"source": "precreate"}
+        assert session["ended_at"] is None
+        assert session["livekit_room"] == "paused-room"
 
-        # Fetch studio detail to ensure session is marked ended
+        # Fetch studio detail to ensure session was not marked ended.
         detail_resp = await async_client.get(
             f"/studio/seminars/{seminar_id}",
             headers=auth_header(teacher_token),
         )
         assert detail_resp.status_code == 200
         detail = detail_resp.json()
-        assert any(item["id"] == session_id and item["status"] == "ended" for item in detail["sessions"])
+        assert any(item["id"] == session_id and item["status"] == "live" for item in detail["sessions"])
+    finally:
+        await cleanup_user(teacher_id)
+
+
+async def test_end_session_rejects_missing_session_before_livekit_pause(
+    async_client,
+    monkeypatch,
+):
+    teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@wisdom.dev"
+    password = "Passw0rd!"
+    teacher_token, teacher_id = await register_user(
+        async_client, teacher_email, password, "Teacher Missing Session"
+    )
+    await promote_to_teacher(teacher_id)
+
+    patch_session_metadata_handling(monkeypatch)
+
+    try:
+        scheduled_at = datetime.now(timezone.utc) + timedelta(minutes=45)
+        create_resp = await async_client.post(
+            "/studio/seminars",
+            json={
+                "title": "Missing Session Seminar",
+                "description": "Ensure lookup still fails first",
+                "scheduled_at": scheduled_at.isoformat(),
+                "duration_minutes": 60,
+            },
+            headers=auth_header(teacher_token),
+        )
+        assert create_resp.status_code == 200, create_resp.text
+        seminar_id = str(create_resp.json()["id"])
+
+        end_resp = await async_client.post(
+            f"/studio/seminars/{seminar_id}/sessions/{uuid.uuid4()}/end",
+            json={"reason": "No session"},
+            headers=auth_header(teacher_token),
+        )
+        assert end_resp.status_code == 404, end_resp.text
     finally:
         await cleanup_user(teacher_id)

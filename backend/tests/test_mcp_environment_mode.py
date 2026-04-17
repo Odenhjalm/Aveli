@@ -137,6 +137,7 @@ async def test_media_transcode_worker_enablement_follows_mcp_mode(monkeypatch):
         return None
 
     release_locks = AsyncMock(return_value=0)
+    queue_supported = AsyncMock(return_value=True)
 
     monkeypatch.delenv("RUN_MEDIA_WORKER", raising=False)
     monkeypatch.setattr(worker.settings, "mcp_mode", "local", raising=False)
@@ -146,6 +147,12 @@ async def test_media_transcode_worker_enablement_follows_mcp_mode(monkeypatch):
         worker.media_assets_repo,
         "release_processing_media_assets",
         release_locks,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "media_processing_queue_supported",
+        queue_supported,
         raising=True,
     )
 
@@ -160,11 +167,13 @@ async def test_media_transcode_worker_enablement_follows_mcp_mode(monkeypatch):
     }
     assert worker._worker_task is not None
     release_locks.assert_awaited_once()
+    queue_supported.assert_awaited_once()
 
     worker._worker_task = None
 
     monkeypatch.setattr(worker.settings, "mcp_mode", "production", raising=False)
     release_locks.reset_mock()
+    queue_supported.reset_mock()
 
     await worker.start_worker()
 
@@ -176,6 +185,7 @@ async def test_media_transcode_worker_enablement_follows_mcp_mode(monkeypatch):
     }
     assert worker._worker_task is None
     release_locks.assert_not_awaited()
+    queue_supported.assert_not_awaited()
 
 
 @pytest.mark.anyio("asyncio")
@@ -186,6 +196,7 @@ async def test_media_transcode_worker_env_override_can_force_enable(monkeypatch)
         return None
 
     release_locks = AsyncMock(return_value=0)
+    queue_supported = AsyncMock(return_value=True)
 
     monkeypatch.setenv("RUN_MEDIA_WORKER", "1")
     monkeypatch.setattr(worker.settings, "mcp_mode", "production", raising=False)
@@ -195,6 +206,12 @@ async def test_media_transcode_worker_env_override_can_force_enable(monkeypatch)
         worker.media_assets_repo,
         "release_processing_media_assets",
         release_locks,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "media_processing_queue_supported",
+        queue_supported,
         raising=True,
     )
 
@@ -209,55 +226,25 @@ async def test_media_transcode_worker_env_override_can_force_enable(monkeypatch)
     }
     assert worker._worker_task is not None
     release_locks.assert_awaited_once()
+    queue_supported.assert_awaited_once()
 
     worker._worker_task = None
 
 
 @pytest.mark.anyio("asyncio")
-async def test_livekit_worker_verification_mode_skips_write_paths(monkeypatch):
+async def test_livekit_worker_start_remains_paused_in_verification_mode():
     from app.services import livekit_events
-
-    release_jobs = AsyncMock()
-    get_counts = AsyncMock(return_value={"pending": 2, "failed": 1})
-    fetch_due = AsyncMock(return_value=[])
-
-    monkeypatch.setattr(
-        livekit_events.repositories,
-        "release_processing_webhook_jobs",
-        release_jobs,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        livekit_events.repositories,
-        "get_webhook_job_counts",
-        get_counts,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        livekit_events.repositories,
-        "fetch_and_lock_due_webhook_jobs",
-        fetch_due,
-        raising=True,
-    )
-    monkeypatch.setattr(livekit_events, "_queue", None, raising=False)
-    monkeypatch.setattr(livekit_events, "_worker_task", None, raising=False)
-    monkeypatch.setattr(livekit_events, "_poller_task", None, raising=False)
-    monkeypatch.setattr(livekit_events, "_verification_mode", False, raising=False)
 
     await livekit_events.start_worker(verification_mode=True)
     await asyncio.sleep(0)
 
     metrics = livekit_events.get_metrics()
-    assert metrics["worker_running"] is True
-    assert metrics["verification_mode"] is True
+    assert metrics["worker_running"] is False
+    assert metrics["verification_mode"] is False
     assert metrics["write_suppressed"] is True
-    assert metrics["pending_jobs"] == 2
-    assert metrics["failed_jobs"] == 1
-    release_jobs.assert_not_awaited()
-    fetch_due.assert_not_awaited()
-    get_counts.assert_awaited_once()
-
-    await livekit_events.stop_worker()
+    assert metrics["pending_jobs"] == 0
+    assert metrics["failed_jobs"] == 0
+    assert not hasattr(livekit_events, "repositories")
 
 
 @pytest.mark.anyio("asyncio")
@@ -415,8 +402,6 @@ async def test_lifespan_skips_background_workers_in_mcp_production_mode(
 
     pool_open = AsyncMock()
     pool_close = AsyncMock()
-    livekit_start = AsyncMock()
-    livekit_stop = AsyncMock()
     transcode_start = AsyncMock()
     transcode_stop = AsyncMock()
     membership_start = AsyncMock()
@@ -424,8 +409,6 @@ async def test_lifespan_skips_background_workers_in_mcp_production_mode(
 
     monkeypatch.setattr(main.pool, "open", pool_open)
     monkeypatch.setattr(main.pool, "close", pool_close)
-    monkeypatch.setattr(main.livekit_events, "start_worker", livekit_start)
-    monkeypatch.setattr(main.livekit_events, "stop_worker", livekit_stop)
     monkeypatch.setattr(main.media_transcode_worker, "start_worker", transcode_start)
     monkeypatch.setattr(main.media_transcode_worker, "stop_worker", transcode_stop)
     monkeypatch.setattr(
@@ -447,10 +430,8 @@ async def test_lifespan_skips_background_workers_in_mcp_production_mode(
 
     pool_open.assert_awaited_once()
     pool_close.assert_awaited_once()
-    livekit_start.assert_not_awaited()
     transcode_start.assert_not_awaited()
     membership_start.assert_not_awaited()
-    livekit_stop.assert_not_awaited()
     transcode_stop.assert_not_awaited()
     membership_stop.assert_not_awaited()
 
@@ -470,12 +451,6 @@ async def test_lifespan_starts_and_stops_background_workers_in_local_mode(
     async def pool_close(*args, **kwargs):
         call_order.append("pool_close")
 
-    async def livekit_start(*, verification_mode=False):
-        call_order.append(f"livekit_start:{verification_mode}")
-
-    async def livekit_stop():
-        call_order.append("livekit_stop")
-
     async def transcode_start(*, verification_mode=False):
         call_order.append(f"transcode_start:{verification_mode}")
 
@@ -491,8 +466,6 @@ async def test_lifespan_starts_and_stops_background_workers_in_local_mode(
     _clear_cloud_runtime_env(monkeypatch)
     monkeypatch.setattr(main.pool, "open", pool_open)
     monkeypatch.setattr(main.pool, "close", pool_close)
-    monkeypatch.setattr(main.livekit_events, "start_worker", livekit_start)
-    monkeypatch.setattr(main.livekit_events, "stop_worker", livekit_stop)
     monkeypatch.setattr(main.media_transcode_worker, "start_worker", transcode_start)
     monkeypatch.setattr(main.media_transcode_worker, "stop_worker", transcode_stop)
     monkeypatch.setattr(
@@ -512,19 +485,16 @@ async def test_lifespan_starts_and_stops_background_workers_in_local_mode(
     async with main.lifespan(main.app):
         assert call_order == [
             "pool_open",
-            "livekit_start:False",
             "transcode_start:False",
             "membership_start:False",
         ]
 
     assert call_order == [
         "pool_open",
-        "livekit_start:False",
         "transcode_start:False",
         "membership_start:False",
         "membership_stop",
         "transcode_stop",
-        "livekit_stop",
         "pool_close",
     ]
 
@@ -538,8 +508,6 @@ async def test_lifespan_skips_background_workers_in_cloud_runtime(
 
     pool_open = AsyncMock()
     pool_close = AsyncMock()
-    livekit_start = AsyncMock()
-    livekit_stop = AsyncMock()
     transcode_start = AsyncMock()
     transcode_stop = AsyncMock()
     membership_start = AsyncMock()
@@ -548,8 +516,6 @@ async def test_lifespan_skips_background_workers_in_cloud_runtime(
     monkeypatch.setenv("FLY_APP_NAME", "aveli")
     monkeypatch.setattr(main.pool, "open", pool_open)
     monkeypatch.setattr(main.pool, "close", pool_close)
-    monkeypatch.setattr(main.livekit_events, "start_worker", livekit_start)
-    monkeypatch.setattr(main.livekit_events, "stop_worker", livekit_stop)
     monkeypatch.setattr(main.media_transcode_worker, "start_worker", transcode_start)
     monkeypatch.setattr(main.media_transcode_worker, "stop_worker", transcode_stop)
     monkeypatch.setattr(
@@ -571,10 +537,8 @@ async def test_lifespan_skips_background_workers_in_cloud_runtime(
 
     pool_open.assert_awaited_once()
     pool_close.assert_awaited_once()
-    livekit_start.assert_not_awaited()
     transcode_start.assert_not_awaited()
     membership_start.assert_not_awaited()
-    livekit_stop.assert_not_awaited()
     transcode_stop.assert_not_awaited()
     membership_stop.assert_not_awaited()
 
@@ -588,8 +552,6 @@ async def test_lifespan_starts_background_workers_in_no_write_verification_mode(
 
     pool_open = AsyncMock()
     pool_close = AsyncMock()
-    livekit_start = AsyncMock()
-    livekit_stop = AsyncMock()
     transcode_start = AsyncMock()
     transcode_stop = AsyncMock()
     membership_start = AsyncMock()
@@ -598,8 +560,6 @@ async def test_lifespan_starts_background_workers_in_no_write_verification_mode(
     _clear_cloud_runtime_env(monkeypatch)
     monkeypatch.setattr(main.pool, "open", pool_open)
     monkeypatch.setattr(main.pool, "close", pool_close)
-    monkeypatch.setattr(main.livekit_events, "start_worker", livekit_start)
-    monkeypatch.setattr(main.livekit_events, "stop_worker", livekit_stop)
     monkeypatch.setattr(main.media_transcode_worker, "start_worker", transcode_start)
     monkeypatch.setattr(main.media_transcode_worker, "stop_worker", transcode_stop)
     monkeypatch.setattr(
@@ -621,16 +581,14 @@ async def test_lifespan_starts_background_workers_in_no_write_verification_mode(
 
     pool_open.assert_awaited_once()
     pool_close.assert_awaited_once()
-    livekit_start.assert_awaited_once_with(verification_mode=True)
     transcode_start.assert_awaited_once_with(verification_mode=True)
     membership_start.assert_awaited_once_with(verification_mode=True)
     membership_stop.assert_awaited_once()
     transcode_stop.assert_awaited_once()
-    livekit_stop.assert_awaited_once()
 
 
 @pytest.mark.anyio("asyncio")
-async def test_logs_worker_health_reports_ok_in_no_write_verification_mode(monkeypatch):
+async def test_logs_worker_health_reports_livekit_paused_in_verification_mode(monkeypatch):
     from app.services import logs_observability
 
     async def fake_transcode_metrics():
@@ -659,12 +617,12 @@ async def test_logs_worker_health_reports_ok_in_no_write_verification_mode(monke
 
     def fake_webhook_metrics():
         return {
-            "worker_running": True,
+            "worker_running": False,
             "queue_size": 0,
             "pending_jobs": 0,
-            "failed_jobs": 3,
+            "failed_jobs": 0,
             "last_failure": None,
-            "verification_mode": True,
+            "verification_mode": False,
             "write_suppressed": True,
         }
 
@@ -672,7 +630,7 @@ async def test_logs_worker_health_reports_ok_in_no_write_verification_mode(monke
         return {
             "pending": 0,
             "processing": 0,
-            "failed": 3,
+            "failed": 0,
             "next_due_at": None,
             "last_failed_at": None,
         }
@@ -714,8 +672,9 @@ async def test_logs_worker_health_reports_ok_in_no_write_verification_mode(monke
     result = await logs_observability.get_worker_health()
 
     assert result["worker_health"]["media_transcode"]["status"] == "ok"
-    assert result["worker_health"]["livekit_webhooks"]["status"] == "ok"
+    assert result["worker_health"]["livekit_webhooks"]["status"] == "stopped"
     assert result["worker_health"]["membership_expiry_warnings"]["status"] == "ok"
     assert result["worker_health"]["media_transcode"]["verification_mode"] is True
+    assert result["worker_health"]["livekit_webhooks"]["worker_running"] is False
     assert result["worker_health"]["livekit_webhooks"]["write_suppressed"] is True
     assert result["worker_health"]["membership_expiry_warnings"]["verification_mode"] is True
