@@ -55,7 +55,7 @@
 ## Feature Contract Expansion Rules
 
 - Non-core features must define explicit canonical contracts before they are treated as stable runtime truth.
-- Profile media is a separate feature domain and must use an explicit structured contract.
+- Profile/community media is canonical Baseline V2 scope and must use an explicit structured contract.
 - Profile media must not use metadata blobs, map-based identity, or fallback fields as runtime truth.
 - Studio sessions are a separate feature domain and must use a single canonical contract.
 - Studio sessions must not use fallback/default values to hide missing data.
@@ -111,11 +111,29 @@
 
 - `Aveli_System_Decisions.md` is the semantic truth layer.
 - `aveli_system_manifest.json` is the execution-rule layer.
+- `actual_truth/contracts/baseline_v2_authority_freeze_contract.md` is the controlling Baseline V2 planning authority after acceptance.
 - If the two documents must be interpreted together:
   - semantic meaning is governed by decisions
   - execution and enforcement policy is governed by manifest
 - API audit artifacts describe observed runtime reality and are used for verification and mismatch tracking.
 - Observed runtime reality does NOT automatically become canonical truth.
+
+## Baseline V2 Authority Freeze
+
+- Baseline V2 is a clean conceptual rebaseline.
+- Baseline V2 targets full cutover, not append-only extension of stale authority.
+- `welcome_pending` is canonical onboarding state.
+- `home_player_course_links` is canonical source truth for course-linked home audio inclusion.
+- Backend composition is read authority for course-linked home audio output.
+- `runtime_media` remains read-only projection authority where in scope, but it is not the source table for `home_player_course_links`.
+- Profile/community media is canonical Baseline V2 scope.
+- `profile_media_placements` owns profile/community authored-placement truth.
+- `profiles` remains projection-only.
+- `subscription` may remain a provider/order modality, but it is not Aveli domain authority.
+- Service/session/Connect-like order fields are inert unless later activated by explicit accepted authority.
+- LiveKit runtime is paused/inert under `actual_truth/contracts/livekit_runtime_contract.md`.
+- User-facing product text must be Swedish.
+- Generated operator prompts must be copy-paste-ready English.
 
 ## Baseline Truth Rule
 
@@ -144,8 +162,8 @@
 - Studio authoring may manage `lesson_media` as authored placement, but it must not introduce a second media-resolution or frontend-representation authority.
 - `media_assets` never defines access.
 - No rule referring to visibility may be interpreted as permission for raw table access.
-- `subscription` is NOT a canonical Aveli runtime term.
-  - It may appear only in legacy, migration, audit, or historical references.
+- `subscription` is NOT a canonical Aveli domain-authority term.
+  - It may appear as provider/order modality, or in legacy, migration, audit, or historical references.
 - `module` is NOT a valid Aveli system term.
   - It is forbidden in runtime/domain language and may appear only in historical or legacy references.
 - Terms that imply duplicate authority for app access or `canonical_protected_course_content_access` must not be introduced.
@@ -196,11 +214,13 @@
 
 - `app.media_assets` is media identity.
 - `app.lesson_media` is authored placement.
-- `app.runtime_media` is the runtime truth layer for media state and resolution eligibility.
+- Source tables own governed media inclusion and placement truth.
+- `app.runtime_media` is read-only projection authority where in scope.
 - `runtime_media` is NOT the final frontend representation.
 - The backend read composition layer constructs the frontend-facing media object only as `media = { media_id, state, resolved_url } | null`.
+- `home_player_course_links` is source truth for course-linked home audio inclusion.
 
-runtime_media provides canonical runtime truth.
+runtime_media provides read-only projection truth where in scope.
 The backend read composition layer is the sole authority for media representation to frontend.
 Frontend must render only and must not resolve or construct media.
 
@@ -228,8 +248,8 @@ Frontend must render only and must not resolve or construct media.
 - Worker is the only execution authority.
 - Worker owns media transformations and canonical state transitions only through the canonical worker function.
 - Worker does NOT define media intent, runtime truth, or frontend representation rules.
-- `runtime_media` is the only runtime truth layer for governed media surfaces.
-- Runtime owns media state and resolution eligibility only and may reject invalid runtime state.
+- `runtime_media` is read-only projection authority where in scope for governed media surfaces.
+- Runtime read projection owns media state and resolution eligibility only where in scope and may reject invalid runtime state.
 - Runtime does NOT define frontend representation, validate pipeline rules outside canonical state, access ingest identity as public truth, or perform transformation.
 - Database is the only shape authority.
 - Database enforces schema shape and invariants only.
@@ -385,9 +405,11 @@ Frontend must render only and must not resolve or construct media.
   - its own frontend management surface
   - teacher-controlled active/inactive curation
 - Home player curation is controlled by `control_plane`.
-- Home-player runtime truth is still owned by `runtime_media`.
+- `home_player_course_links` is canonical source truth for course-linked home audio inclusion.
+- Home-player course-linked read output is owned by backend composition.
+- `runtime_media` remains read-only projection authority where in scope, but it is not the source table for `home_player_course_links`.
 - Home player does not create a separate media authority, alternate resolver, or separate media domain.
-- Home player must not introduce special-case frontend representation, direct storage delivery, or bypass paths around `runtime_media` and backend read composition.
+- Home player must not introduce special-case frontend representation, direct storage delivery, or client-side authority.
 
 ## External Dependencies
 
@@ -433,22 +455,24 @@ Frontend must render only and must not resolve or construct media.
 - Resolution chain:
   - canonical media identity and attachment pointers
   - `control_plane`
-  - `runtime_media`
+  - source inclusion or placement table
+  - `runtime_media` where in scope
   - backend read composition layer
   - API response
   - frontend render
 - `app.media_assets` defines media identity.
 - `app.lesson_media` defines authored placement.
-- `app.runtime_media` defines runtime truth for state and resolution eligibility.
+- `app.runtime_media` defines read-only projection truth for state and resolution eligibility where in scope.
 - `runtime_media` is not the final frontend representation.
 
-runtime_media provides canonical runtime truth.
+runtime_media provides read-only projection truth where in scope.
 The backend read composition layer is the sole authority for media representation to frontend.
 Frontend must render only and must not resolve or construct media.
 - `storage.objects` is an external physical-storage dependency and is never a valid media authority or delivery source.
 - `control_plane` defines media intent and lifecycle interpretation, not execution, runtime truth, or frontend representation.
-- No layer may bypass `runtime_media`.
+- No layer may write directly to `runtime_media`.
 - No layer may bypass backend read composition when constructing frontend-facing media.
+- Baseline V2 exception: `home_player_course_links` is source truth for course-linked home audio inclusion, and backend composition is read authority.
 - All lesson/content media references must use `lesson_media_id` only.
 - Fallback is forbidden.
   - If canonical media resolution fails, the system must fail explicitly rather than route through legacy or storage shortcuts.
@@ -494,7 +518,7 @@ Frontend must render only and must not resolve or construct media.
 
 - API definitions: observed via audit, verified separately from legitimacy
 - Media control plane: planned, preserved, intent-authoritative
-- Media runtime truth: runtime-active via `runtime_media`
+- Media runtime read projection: runtime-active via `runtime_media` where in scope
 - Media representation to frontend: runtime-active via backend read composition
 - Auth flow: planned constraints + runtime-audited behavior
 - Home player ingest/curation: runtime-active within the same media domain
@@ -529,7 +553,7 @@ Frontend must render only and must not resolve or construct media.
 - inferred drip behavior from course type
 - implicit `lesson_content_surface` access by inferred tags or hidden rules
 - direct media delivery from `storage.objects`
-- alternate media authorities outside `runtime_media`
+- alternate media source/read authorities outside the Baseline V2 source-to-read authority model
 - alternate frontend-representation authorities outside backend read composition
 - cover-specific resolver ownership
 - frontend media construction or resolution

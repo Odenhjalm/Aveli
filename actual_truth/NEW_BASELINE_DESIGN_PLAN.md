@@ -1,3 +1,13 @@
+# SUPERSEDED FOR BASELINE V2
+
+This file is historical comparison input only for Baseline V2.
+
+It is superseded for Baseline V2 planning by
+`actual_truth/contracts/baseline_v2_authority_freeze_contract.md`.
+
+Its rule that profile/community media is non-core is stale for Baseline V2.
+Its slot strategy must not drive V2 implementation.
+
 # NEW BASELINE DESIGN PLAN
 
 This document defines a clean-room baseline design for Aveli.

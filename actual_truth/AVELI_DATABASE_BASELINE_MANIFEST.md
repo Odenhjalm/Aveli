@@ -57,6 +57,39 @@ If observed DB state and this manifest disagree:
 - classification: `OBSERVED_DB_DRIFT`
 - result: `SYSTEM BLOCKED`
 
+## 2A. Baseline V2 Authority Freeze Overlay
+
+Baseline V2 planning is controlled by
+`actual_truth/contracts/baseline_v2_authority_freeze_contract.md`.
+
+Baseline V2 is a clean conceptual rebaseline with full cutover as the
+implementation target. The current accepted baseline slot evidence remains
+`backend/supabase/baseline_slots/` plus
+`backend/supabase/baseline_slots.lock.json`, currently accepted through slot
+`0038`, unless later accepted V2 slot authority replaces that scope.
+
+This overlay does not edit accepted slots in place and does not authorize SQL,
+baseline slot generation, lockfile edits, runtime code edits, DB mutation, or
+runtime mutation.
+
+Baseline V2 authority interpretation:
+
+- `welcome_pending` is accepted baseline onboarding truth.
+- `home_player_course_links` is source truth for course-linked home audio
+  inclusion; backend composition is read authority.
+- `runtime_media` is read-only projection authority where in scope, not the
+  source table for `home_player_course_links`.
+- Profile/community media is canonical Baseline V2 scope.
+- `profile_media_placements` owns profile/community authored-placement truth.
+- `profiles` remains projection-only.
+- `orders`, `payments`, and `memberships` are the canonical commerce trail.
+- `subscription` may remain provider/order modality, but not Aveli domain
+  authority.
+- Service/session/Connect-like order fields are inert unless later activated by
+  explicit accepted authority.
+- LiveKit remains paused/inert under
+  `actual_truth/contracts/livekit_runtime_contract.md`.
+
 ## 3. Domain Classification
 
 Every relation is classified into exactly one baseline authority class:
@@ -115,9 +148,10 @@ become business authority.
 | `app.livekit_webhook_jobs` | inert LiveKit webhook queue structure                        | PAUSED         | no worker execution allowed; no canonical mutation allowed; queue exists only as inert structure |
 
 `app.livekit_webhook_jobs` is intentionally retained as runtime structure but
-has no active contract authority. It must remain paused until an active contract
-assigns its domain owner, mutation surface, worker behavior, and replay
-requirements.
+is governed by the accepted paused/inert authority in
+`actual_truth/contracts/livekit_runtime_contract.md`. It must remain paused
+until a later active contract assigns its domain owner, mutation surface, worker
+behavior, and replay requirements.
 
 `app.livekit_webhook_jobs`
 
@@ -251,6 +285,9 @@ Allowed values:
 - `one_off`
 - `subscription`
 - `bundle`
+
+`subscription` is an order/provider modality value only. It is not Aveli
+domain authority.
 
 ### 4.8 Physical Enum: `app.order_status`
 
@@ -390,6 +427,14 @@ Rules:
 - `app.orders` owns purchase identity and purchase lifecycle.
 - `app.payments` owns payment settlement tied to orders.
 - `app.memberships` owns resulting current membership state only.
+- Canonical order fields own purchase identity, user binding, applicable
+  course/bundle binding, amount, currency, lifecycle status, purchase modality,
+  and provider settlement correlation.
+- `service_id`, `session_id`, `session_slot_id`, `connected_account_id`, and
+  other service/session/Connect-like order fields are inert unless later
+  activated by explicit accepted authority.
+- Stripe checkout, payment, customer, and subscription identifiers are provider
+  correlation only.
 - Course/bundle purchases must create order-backed and payment-backed truth
   before course access fulfillment.
 - Stripe is payment infrastructure only.
@@ -483,7 +528,8 @@ while a blocking drift is unresolved.
 
 ### V001: `app.auth_subjects.onboarding_state` Missing `welcome_pending`
 
-STATE: ACTIVE VIOLATION
+STATE: ACCEPTED BASELINE REPAIR IN SLOT `0038`; RUNTIME CONFIRMATION REMAINS
+SEPARATE
 
 Expected manifest truth:
 
@@ -491,26 +537,20 @@ Expected manifest truth:
 - `welcome_pending`
 - `completed`
 
-Observed DB audit evidence:
+Accepted baseline evidence:
 
-- current observed DB constraint allowed `incomplete`
-- current observed DB constraint allowed `completed`
-- current observed DB constraint did not allow `welcome_pending`
+- slot `0038_auth_subjects_welcome_pending_onboarding_state.sql` repairs the
+  accepted baseline constraint to include `welcome_pending`
+- `backend/supabase/baseline_slots.lock.json` includes slot `0038`
 
-Impact:
+Runtime interpretation:
 
-- onboarding create-profile cannot deterministically persist the canonical
-  intermediate state
-- canonical onboarding flow cannot be replayed safely from observed DB state
-- any insert or update requiring `welcome_pending` must fail closed
+- clean replay through the accepted slot set is required before downstream
+  implementation planning
+- observed DB state remains separate evidence and must not override accepted
+  baseline authority
 
-Required outcome:
-
-- DB constraint must match `app.onboarding_state` exactly
-- missing `welcome_pending` remains blocking until repaired through baseline
-  slot plus lock update
-
-### V002: `app.livekit_webhook_jobs` Has No Active Contract
+### V002: `app.livekit_webhook_jobs` Is Paused/Inert Runtime Structure
 
 STATE: PAUSED RUNTIME CLASSIFICATION
 
@@ -520,16 +560,17 @@ Expected manifest truth:
 - no worker execution allowed
 - no canonical mutation allowed
 - queue exists only as inert structure
+- accepted authority is `actual_truth/contracts/livekit_runtime_contract.md`
 
 Observed audit evidence:
 
 - table exists in current DB
 - table exists in baseline slot `0021`
-- no active contract authority was identified for this table
+- accepted paused/inert contract authority is tracked
 
 Impact:
 
-- queue execution would create runtime authority without contract ownership
+- queue execution would violate paused/inert runtime authority
 - queue mutation would be non-canonical
 
 Required outcome:

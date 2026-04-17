@@ -37,18 +37,22 @@ This document is the canonical contract-layer home for cross-domain system laws 
 
 - Governed media must operate under one shared cross-domain media doctrine.
 - `app.media_assets` is the only canonical media identity authority.
-- `app.runtime_media` is the only canonical runtime media truth layer.
-- `runtime_media` is not the final frontend representation.
+- Source tables own governed media inclusion and placement truth.
+- `app.runtime_media` is read-only projection authority where in scope.
+- `runtime_media` is not source truth and is not the final frontend representation.
 - Backend read composition is the sole authority for frontend-facing governed media representation.
 - The only canonical frontend-facing governed media representation is `media = { media_id, state, resolved_url } | null`.
-- Governed media must follow one authority chain only:
+- Governed media must follow one source-to-read authority chain only:
   - `media_id`
-  - `runtime_media`
+  - source inclusion or placement table
+  - `runtime_media` where in scope
   - backend read composition
   - API
   - frontend
-- No second resolver path exists.
-- No surface-specific media doctrine exists.
+- `home_player_course_links` is source truth for course-linked home audio inclusion.
+- Backend composition is read authority for course-linked home audio output.
+- No direct write path may target `runtime_media`.
+- No client-side media authority exists.
 - Frontend is render-only for governed media and must not resolve, construct, infer, or normalize media truth.
 - Storage-native paths, raw blob references, signed URLs, download URLs, preview URLs, playback URLs, and compatibility fallback payloads are not canonical media truth.
 - Cross-domain media doctrine must not be redefined in domain or execution contracts.

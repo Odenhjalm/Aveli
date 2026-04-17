@@ -21,6 +21,47 @@
         "execution_rules": "aveli_system_manifest.json",
         "api_audit_role": "runtime_observation_for_verification_not_automatic_legitimacy"
     },
+    "baseline_v2_authority_freeze": {
+        "controlling_planning_authority": "actual_truth/contracts/baseline_v2_authority_freeze_contract.md",
+        "interpretation": "clean_conceptual_rebaseline",
+        "implementation_target": "full_cutover",
+        "accepted_baseline_scope": "backend/supabase/baseline_slots through 0038 unless later V2 slot authority replaces it",
+        "onboarding_state": {
+            "canonical_intermediate_state": "welcome_pending"
+        },
+        "media_authority": {
+            "source_tables_own_inclusion_and_placement_truth": true,
+            "runtime_media_role": "read_only_projection_where_in_scope",
+            "backend_composition_role": "final_read_representation",
+            "home_player_course_links": "source_truth_for_course_linked_home_audio_inclusion"
+        },
+        "profile_community_media": {
+            "baseline_v2_scope": "canonical",
+            "authored_placement_truth": "profile_media_placements",
+            "profiles_role": "projection_only"
+        },
+        "commerce": {
+            "canonical_trail": [
+                "orders",
+                "payments",
+                "memberships"
+            ],
+            "subscription": "provider_or_order_modality_only_not_aveli_domain_authority",
+            "inert_order_fields": [
+                "service_id",
+                "session_id",
+                "session_slot_id",
+                "connected_account_id"
+            ]
+        },
+        "runtime_integrations": {
+            "livekit": "paused_inert_under_actual_truth/contracts/livekit_runtime_contract.md"
+        },
+        "language_rules": {
+            "user_facing_product_text": "Swedish",
+            "generated_operator_prompts": "copy_paste_ready_English"
+        }
+    },
     "components": {
         "api_layer": {
             "source_of_truth": [
@@ -45,14 +86,16 @@
             "state": "runtime_active",
             "role": "implementation_layer",
             "mutation_policy": "alignment_only",
-            "playback_authority": "runtime_media",
+            "playback_authority": "runtime_media_where_in_scope_and_backend_composition",
             "home_player_runtime_model": {
                 "same_media_domain": true,
                 "has_separate_upload_pipeline": true,
                 "has_separate_frontend_management_surface": true,
                 "teacher_curated_active_state": true,
                 "curation_authority": "control_plane",
-                "playback_projection": "runtime_media_only",
+                "course_link_source_truth": "home_player_course_links",
+                "playback_projection": "runtime_media_where_in_scope",
+                "read_authority": "backend_composition",
                 "alternative_playback_paths": "forbidden",
                 "direct_storage_playback": "forbidden"
             }
@@ -242,8 +285,12 @@
         "media_authority_model": "split_intent_and_playback",
         "app_access_authority": "memberships",
         "canonical_protected_course_content_access_authority": "course_enrollments",
-        "playback_authority": "runtime_media",
-        "media_intent_authority": "control_plane"
+        "playback_authority": "runtime_media_where_in_scope_and_backend_composition",
+        "media_intent_authority": "control_plane",
+        "runtime_media_role": "read_only_projection_where_in_scope",
+        "source_table_authority": "source_tables_own_inclusion_and_placement_truth",
+        "home_player_course_links_authority": "source_truth_for_course_linked_home_audio_inclusion",
+        "backend_composition_authority": "final_read_representation"
     },
     "external_dependencies": [
         "auth.users",
@@ -297,10 +344,12 @@
             "client"
         ],
         "laws": {
-            "runtime_media_only_playback_authority": true,
+            "runtime_media_only_playback_authority": false,
+            "runtime_media_role": "read_only_projection_where_in_scope",
+            "source_tables_own_inclusion_and_placement_truth": true,
             "storage_objects_never_valid_playback_source": true,
             "control_plane_intent_not_playback": true,
-            "runtime_media_bypass_forbidden": true,
+            "direct_runtime_media_write_forbidden": true,
             "lesson_content_media_references_use_lesson_media_id_only": true,
             "fallback_forbidden": true
         },
@@ -309,7 +358,9 @@
             "separate_upload_pipeline_allowed": true,
             "separate_frontend_management_surface_allowed": true,
             "curation_controlled_by": "control_plane",
-            "playback_must_resolve_through_runtime_media": true,
+            "course_link_source_truth": "home_player_course_links",
+            "read_authority": "backend_composition",
+            "playback_must_resolve_through_runtime_media": false,
             "alternative_playback_paths_forbidden": true,
             "direct_storage_playback_forbidden": true
         }
@@ -376,7 +427,7 @@
         "media_assets_rule": "media_assets_never_defines_access",
         "LessonSummary": "canonical_lesson_structure_surface_shape",
         "LessonContent": "canonical_lesson_content_surface_shape",
-        "subscription": "legacy_or_migration_only",
+        "subscription": "provider_or_order_modality_only_not_aveli_domain_authority",
         "module": "forbidden_runtime_domain_term"
     },
     "api_read_contract": {
@@ -479,6 +530,9 @@
             ]
         },
         "profile_media_contract": {
+            "baseline_v2_scope": "canonical",
+            "authored_placement_truth": "profile_media_placements",
+            "profiles_role": "projection_only",
             "explicit_structured_contract_required": true,
             "metadata_blobs_as_truth": false,
             "map_based_identity": false,
@@ -575,9 +629,16 @@
         "drip_same_cron_window_same_result": true,
         "drip_update_only_when_computed_gt_stored": true,
         "drip_never_decrease_current_unlock_position": true,
-        "playback_authority": "runtime_media",
+        "playback_authority": "runtime_media_where_in_scope_and_backend_composition",
         "media_intent_authority": "control_plane",
-        "media_authority_enforcement": "all_playback_must_resolve_through_runtime_media",
+        "media_authority_enforcement": "source_tables_own_inclusion_and_placement_truth_runtime_media_read_projection_where_in_scope_backend_composition_final_read_representation",
+        "home_player_course_links_source_truth": true,
+        "profile_community_media_baseline_v2_scope": "canonical",
+        "subscription_authority": "provider_or_order_modality_only_not_aveli_domain_authority",
+        "service_session_connect_order_fields": "inert_unless_later_activated",
+        "livekit_runtime": "paused_inert",
+        "user_facing_product_text": "Swedish",
+        "generated_operator_prompts": "copy_paste_ready_English",
         "all_audio_must_pass_worker_pipeline": true,
         "media_readiness_mutation_authority": "canonical_worker_function",
         "canonical_worker_function_boundary": "single_security_definer_function",
@@ -590,7 +651,7 @@
         "direct_media_assets_ready_update": "forbidden",
         "alternate_media_readiness_mutation_paths": "forbidden",
         "storage_objects_playback_source": "forbidden",
-        "runtime_media_bypass": "forbidden",
+        "direct_runtime_media_write": "forbidden",
         "lesson_content_media_reference": "lesson_media_id_only",
         "content_format": "canonical_markdown",
         "auth_behavior": "trust_boundary",
@@ -624,7 +685,7 @@
     },
     "forbidden_surfaces": {
         "terms": [
-            "subscription",
+            "subscription_as_aveli_domain_authority",
             "module"
         ],
         "authorities": [
@@ -649,8 +710,8 @@
         ],
         "media_patterns": [
             "direct_storage_playback",
-            "alternate_playback_authority",
-            "runtime_media_bypass",
+            "alternate_playback_authority_outside_source_to_read_model",
+            "direct_runtime_media_write",
             "legacy_playback_fallback"
         ],
         "api_patterns": [
