@@ -2,40 +2,17 @@ from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from app import db, models
+from app.auth import create_access_token
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
-from app.services import courses_service
-from app.services import storage_service as storage_module
+from app.services import home_audio_service
 
 
 def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
-
-
-class _FakePlaybackStorageClient:
-    def __init__(self, url: str):
-        self._url = url
-
-    async def get_presigned_url(
-        self,
-        path,
-        ttl,
-        filename=None,
-        *,
-        download=False,
-    ):
-        assert path
-        assert ttl > 0
-        assert filename
-        assert download is False
-        return storage_module.PresignedUrl(
-            url=self._url,
-            expires_in=300,
-            headers={},
-        )
 
 
 async def _register_user(
@@ -45,21 +22,63 @@ async def _register_user(
     password: str,
     display_name: str,
 ) -> tuple[dict[str, str], str]:
-    register_resp = await async_client.post(
-        "/auth/register",
-        json={
-            "email": email,
-            "password": password,
-            "display_name": display_name,
-        },
-    )
-    assert register_resp.status_code == 201, register_resp.text
-    tokens = register_resp.json()
-    headers = _auth_header(tokens["access_token"])
+    del async_client, password
+    user_id = str(uuid.uuid4())
+    membership_id = str(uuid.uuid4())
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO auth.users (id, email, encrypted_password, created_at, updated_at)
+                VALUES (%s::uuid, %s, %s, now(), now())
+                """,
+                (user_id, email.strip().lower(), "test-hash"),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.auth_subjects (
+                  user_id,
+                  onboarding_state,
+                  role_v2,
+                  role,
+                  is_admin
+                )
+                VALUES (%s::uuid, 'completed', 'learner', 'learner', false)
+                """,
+                (user_id,),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.profiles (
+                  user_id,
+                  display_name,
+                  bio,
+                  avatar_media_id,
+                  created_at,
+                  updated_at
+                )
+                VALUES (%s::uuid, %s, null, null, now(), now())
+                """,
+                (user_id, display_name),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.memberships (
+                  membership_id,
+                  user_id,
+                  status,
+                  effective_at,
+                  source,
+                  created_at,
+                  updated_at
+                )
+                VALUES (%s::uuid, %s::uuid, 'active', now(), 'purchase', now(), now())
+                """,
+                (membership_id, user_id),
+            )
+            await conn.commit()
 
-    me_resp = await async_client.get("/profiles/me", headers=headers)
-    assert me_resp.status_code == 200, me_resp.text
-    return headers, me_resp.json()["user_id"]
+    return _auth_header(create_access_token(user_id)), user_id
 
 
 async def _promote_to_teacher(user_id: str) -> None:
@@ -402,50 +421,32 @@ async def test_home_audio_returns_items_with_canonical_nested_media(async_client
             "can_access": user_id in accessible_users,
         }
 
-    async def fake_get_lesson_runtime_media(*, lesson_id: str, media_asset_id: str):
+    async def fake_resolve_media_asset_playback(*, media_asset_id: str):
         assert media_asset_id == course_link_rows[0]["media_asset_id"]
-        media_state = str(course_link_rows[0]["media_state"])
-        return {
-            "lesson_id": lesson_id,
-            "media_asset_id": media_asset_id,
-            "media_type": "audio",
-            "playback_object_path": (
-                "media/derived/audio/home/home-track.mp3"
-                if media_state == "ready"
-                else None
-            ),
-            "playback_format": "mp3" if media_state == "ready" else None,
-            "state": media_state,
-        }
+        return {"resolved_url": "https://stream.local/home-track.mp3"}
 
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service,
+        home_audio_service.courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_lesson_runtime_media",
-        fake_get_lesson_runtime_media,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.storage_service,
-        "get_storage_service",
-        lambda bucket: _FakePlaybackStorageClient("https://stream.local/home-track.mp3"),
+        home_audio_service.lesson_playback_service,
+        "resolve_media_asset_playback",
+        fake_resolve_media_asset_playback,
         raising=True,
     )
 
@@ -543,38 +544,26 @@ async def test_home_audio_direct_upload_uses_media_asset_identity_only(async_cli
     async def fake_list_course_links(*, limit: int = 100):
         return []
 
-    async def fake_get_home_player_runtime_media(*, media_asset_id: str):
+    async def fake_resolve_media_asset_playback(*, media_asset_id: str):
         assert media_asset_id == direct_rows[0]["media_asset_id"]
-        return {
-            "media_asset_id": media_asset_id,
-            "media_type": "audio",
-            "playback_object_path": "media/derived/audio/home/direct-track.mp3",
-            "playback_format": "mp3",
-            "state": "ready",
-        }
+        return {"resolved_url": "https://stream.local/direct-track.mp3"}
 
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_home_player_runtime_media",
-        fake_get_home_player_runtime_media,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.storage_service,
-        "get_storage_service",
-        lambda bucket: _FakePlaybackStorageClient("https://stream.local/direct-track.mp3"),
+        home_audio_service.lesson_playback_service,
+        "resolve_media_asset_playback",
+        fake_resolve_media_asset_playback,
         raising=True,
     )
 
@@ -652,19 +641,19 @@ async def test_home_audio_course_link_disappears_when_source_deleted(async_clien
         return {"lesson": {"id": lesson_id}, "can_access": user_id == teacher_id}
 
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service,
+        home_audio_service.courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
         raising=True,
@@ -726,38 +715,31 @@ async def test_home_audio_non_ready_items_return_resolved_url_null(async_client,
         assert candidate_lesson_id == lesson_id
         return {"lesson": {"id": lesson_id}, "can_access": user_id == teacher_id}
 
-    async def fake_get_lesson_runtime_media(*, lesson_id: str, media_asset_id: str):
-        return {
-            "lesson_id": lesson_id,
-            "media_asset_id": media_asset_id,
-            "media_type": "audio",
-            "playback_object_path": None,
-            "playback_format": None,
-            "state": "uploaded",
-        }
+    async def fail_playback_resolution(**kwargs):
+        raise AssertionError(f"non-ready media must not resolve playback: {kwargs}")
 
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service,
+        home_audio_service.courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_lesson_runtime_media",
-        fake_get_lesson_runtime_media,
+        home_audio_service.lesson_playback_service,
+        "resolve_media_asset_playback",
+        fail_playback_resolution,
         raising=True,
     )
 
@@ -827,53 +809,37 @@ async def test_home_audio_invalid_ready_items_are_excluded(async_client, monkeyp
         return {"lesson": {"id": lesson_id}, "can_access": user_id == teacher_id}
 
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service,
+        home_audio_service.courses_service,
         "read_canonical_lesson_access",
         fake_read_access,
         raising=True,
     )
 
-    async def fake_get_lesson_runtime_media(*, lesson_id: str, media_asset_id: str):
+    async def fake_resolve_media_asset_playback(*, media_asset_id: str):
         if media_asset_id == good_media_asset_id:
-            return {
-                "lesson_id": lesson_id,
-                "media_asset_id": media_asset_id,
-                "media_type": "audio",
-                "playback_object_path": "media/derived/audio/home/good-track.mp3",
-                "playback_format": "mp3",
-                "state": "ready",
-            }
-        return {
-            "lesson_id": lesson_id,
-            "media_asset_id": media_asset_id,
-            "media_type": "audio",
-            "playback_object_path": "",
-            "playback_format": "mp3",
-            "state": "ready",
-        }
+            return {"resolved_url": "https://stream.local/good-track.mp3"}
+        assert media_asset_id == bad_media_asset_id
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Strömningen är inte tillgänglig.",
+        )
 
     monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_lesson_runtime_media",
-        fake_get_lesson_runtime_media,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.storage_service,
-        "get_storage_service",
-        lambda bucket: _FakePlaybackStorageClient("https://stream.local/good-track.mp3"),
+        home_audio_service.lesson_playback_service,
+        "resolve_media_asset_playback",
+        fake_resolve_media_asset_playback,
         raising=True,
     )
 

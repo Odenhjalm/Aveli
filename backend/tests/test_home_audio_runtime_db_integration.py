@@ -11,6 +11,7 @@ import uuid
 import pytest
 
 from app import db
+from app.auth import create_access_token
 from app.config import settings
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
@@ -95,20 +96,63 @@ async def _register_user(
     password: str,
     display_name: str,
 ) -> tuple[dict[str, str], str]:
-    register_resp = await async_client.post(
-        "/auth/register",
-        json={
-            "email": email,
-            "password": password,
-            "display_name": display_name,
-        },
-    )
-    assert register_resp.status_code == 201, register_resp.text
-    tokens = register_resp.json()
-    headers = _auth_header(tokens["access_token"])
-    me_resp = await async_client.get("/profiles/me", headers=headers)
-    assert me_resp.status_code == 200, me_resp.text
-    return headers, me_resp.json()["user_id"]
+    del async_client, password
+    user_id = str(uuid.uuid4())
+    membership_id = str(uuid.uuid4())
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO auth.users (id, email, encrypted_password, created_at, updated_at)
+                VALUES (%s::uuid, %s, %s, now(), now())
+                """,
+                (user_id, email.strip().lower(), "test-hash"),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.auth_subjects (
+                  user_id,
+                  onboarding_state,
+                  role_v2,
+                  role,
+                  is_admin
+                )
+                VALUES (%s::uuid, 'completed', 'learner', 'learner', false)
+                """,
+                (user_id,),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.profiles (
+                  user_id,
+                  display_name,
+                  bio,
+                  avatar_media_id,
+                  created_at,
+                  updated_at
+                )
+                VALUES (%s::uuid, %s, null, null, now(), now())
+                """,
+                (user_id, display_name),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.memberships (
+                  membership_id,
+                  user_id,
+                  status,
+                  effective_at,
+                  source,
+                  created_at,
+                  updated_at
+                )
+                VALUES (%s::uuid, %s::uuid, 'active', now(), 'purchase', now(), now())
+                """,
+                (membership_id, user_id),
+            )
+            await conn.commit()
+
+    return _auth_header(create_access_token(user_id)), user_id
 
 
 async def _promote_to_teacher(user_id: str) -> None:
@@ -190,6 +234,10 @@ async def _cleanup_state(
                 )
             for user_id in user_ids:
                 await cur.execute(
+                    "delete from app.memberships where user_id = %s::uuid",
+                    (user_id,),
+                )
+                await cur.execute(
                     "delete from app.refresh_tokens where user_id = %s::uuid",
                     (user_id,),
                 )
@@ -222,8 +270,7 @@ async def _insert_course(
                   drip_enabled,
                   drip_interval_days,
                   cover_media_id,
-                  created_by,
-                  is_published
+                  teacher_id
                 )
                 values (
                   %s::uuid,
@@ -235,12 +282,23 @@ async def _insert_course(
                   false,
                   null,
                   null,
-                  %s::uuid,
-                  %s
+                  %s::uuid
                 )
                 """,
-                (course_id, title, slug, str(uuid.uuid4()), owner_id, is_published),
+                (course_id, title, slug, str(uuid.uuid4()), owner_id),
             )
+            if is_published:
+                await cur.execute(
+                    """
+                    insert into app.course_public_content (
+                      course_id,
+                      short_description
+                    )
+                    values (%s::uuid, %s)
+                    on conflict (course_id) do nothing
+                    """,
+                    (course_id, "Public course"),
+                )
             await conn.commit()
 
 
@@ -280,6 +338,7 @@ async def _insert_media_asset(
     state: str,
     ready_path: str | None = None,
 ) -> None:
+    del owner_id, course_id, lesson_id
     insert_state = "uploaded" if state == "ready" else state
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -287,25 +346,15 @@ async def _insert_media_asset(
                 """
                 insert into app.media_assets (
                   id,
-                  owner_id,
-                  course_id,
-                  lesson_id,
                   media_type,
                   purpose,
                   original_object_path,
                   ingest_format,
                   playback_object_path,
                   playback_format,
-                  state,
-                  original_content_type,
-                  original_filename,
-                  original_size_bytes,
-                  storage_bucket
+                  state
                 )
                 values (
-                  %s::uuid,
-                  %s::uuid,
-                  %s::uuid,
                   %s::uuid,
                   'audio'::app.media_type,
                   %s::app.media_purpose,
@@ -313,18 +362,11 @@ async def _insert_media_asset(
                   'wav',
                   %s,
                   %s,
-                  %s::app.media_state,
-                  'audio/wav',
-                  'demo.wav',
-                  512,
-                  'course-media'
+                  %s::app.media_state
                 )
                 """,
                 (
                     media_asset_id,
-                    owner_id,
-                    course_id,
-                    lesson_id,
                     purpose,
                     f"media/source/audio/{uuid.uuid4().hex}.wav",
                     None,
@@ -374,6 +416,7 @@ async def _insert_home_player_upload(
     title: str,
     active: bool,
 ) -> None:
+    del title
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -381,15 +424,12 @@ async def _insert_home_player_upload(
                 insert into app.home_player_uploads (
                   id,
                   teacher_id,
-                  media_id,
                   media_asset_id,
-                  title,
-                  kind,
                   active
                 )
-                values (%s::uuid, %s::uuid, null, %s::uuid, %s, 'audio', %s)
+                values (%s::uuid, %s::uuid, %s::uuid, %s)
                 """,
-                (upload_id, teacher_id, media_asset_id, title, active),
+                (upload_id, teacher_id, media_asset_id, active),
             )
             await conn.commit()
 
@@ -506,7 +546,7 @@ async def test_home_audio_db_direct_upload_respects_active_owner_and_media_asset
         visible = _find_item(items, active_asset_id)
         assert visible is not None
         assert visible["source_type"] == "direct_upload"
-        assert visible["title"] == "Active direct upload"
+        assert visible["title"] == "Hemljud"
         assert visible["teacher_id"] == teacher_id
         assert visible["media"]["media_id"] == active_asset_id
         assert visible["media"]["state"] == "ready"

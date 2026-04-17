@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.repositories import home_audio_runtime as runtime_repo
 from app.repositories import home_audio_sources as repo
 
 
@@ -21,6 +22,11 @@ class _FakeCursor:
             return None
         return self._rows.pop(0)
 
+    async def fetchall(self):
+        rows = list(self._rows)
+        self._rows.clear()
+        return rows
+
 
 class _FakeConn:
     def __init__(self, cursor: _FakeCursor):
@@ -35,6 +41,30 @@ class _FakeConn:
 
 def _install_fake_conn(monkeypatch, cursor: _FakeCursor) -> None:
     monkeypatch.setattr(repo, "get_conn", lambda: _FakeConn(cursor))
+
+
+def _install_runtime_fake_conn(monkeypatch, cursor: _FakeCursor) -> None:
+    monkeypatch.setattr(runtime_repo, "get_conn", lambda: _FakeConn(cursor))
+
+
+async def test_home_audio_course_link_feed_query_uses_source_without_runtime_media(
+    monkeypatch,
+):
+    cursor = _FakeCursor()
+    _install_runtime_fake_conn(monkeypatch, cursor)
+
+    rows = await runtime_repo.list_home_audio_course_link_sources(limit=12)
+
+    assert rows == []
+    query, params = cursor.executed[0]
+    normalized_query = query.lower()
+    assert params == (12,)
+    assert "from app.home_player_course_links hpcl" in normalized_query
+    assert "join app.lesson_media lm on lm.id = hpcl.lesson_media_id" in normalized_query
+    assert "join app.media_assets ma on ma.id = lm.media_asset_id" in normalized_query
+    assert "join app.course_public_content cpc on cpc.course_id = c.id" in normalized_query
+    assert "runtime_media" not in normalized_query
+    assert "is_published" not in normalized_query
 
 
 async def test_resolve_lesson_media_course_owner_uses_canonical_course_teacher_id(

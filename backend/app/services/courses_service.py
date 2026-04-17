@@ -540,59 +540,48 @@ def _normalized_home_audio_state(value: Any) -> str:
     if normalized not in _HOME_AUDIO_MEDIA_STATES:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Canonical home audio media state is unavailable",
+            detail="Kanoniskt ljudläge för hemspelaren saknas.",
         )
     return normalized
 
 
 async def _compose_home_audio_media(
     *,
-    source_type: str,
-    lesson_id: str | None,
     media_asset_id: str,
+    media_state: str,
     playback_cache: dict[str, dict[str, Any]],
 ) -> dict[str, Any] | None:
     cached = playback_cache.get(media_asset_id)
     if cached is not None:
         return cached
 
-    runtime_row = (
-        await runtime_media_repo.get_home_player_runtime_media(
-            media_asset_id=media_asset_id,
-        )
-        if source_type == "direct_upload"
-        else await runtime_media_repo.get_lesson_runtime_media(
-            lesson_id=str(lesson_id or "").strip(),
-            media_asset_id=media_asset_id,
-        )
-    )
-    if runtime_row is None:
-        return None
-
-    media_state = _normalized_home_audio_state(runtime_row.get("state"))
+    normalized_state = _normalized_home_audio_state(media_state)
     resolved_url: str | None = None
-    if media_state == "ready":
-        playback_object_path = str(runtime_row.get("playback_object_path") or "").strip()
-        playback_format = str(runtime_row.get("playback_format") or "").strip().lower()
-        media_type = str(runtime_row.get("media_type") or "").strip().lower()
-        if not playback_object_path or playback_format != "mp3" or media_type != "audio":
-            return None
+    if normalized_state == "ready":
         try:
-            presigned = await storage_service.get_storage_service(
-                settings.media_source_bucket
-            ).get_presigned_url(
-                playback_object_path,
-                ttl=settings.media_playback_url_ttl_seconds,
-                filename=playback_object_path.rsplit("/", 1)[-1] or "media.mp3",
-                download=False,
+            playback = await lesson_playback_service.resolve_media_asset_playback(
+                media_asset_id=media_asset_id
             )
-        except storage_service.StorageServiceError:
+        except HTTPException as exc:
+            logger.warning(
+                "HOME_AUDIO_READY_PLAYBACK_UNAVAILABLE",
+                extra={
+                    "media_asset_id": media_asset_id,
+                    "status_code": exc.status_code,
+                },
+            )
             return None
-        resolved_url = str(presigned.url or "").strip() or None
+        resolved_url = str(playback.get("resolved_url") or "").strip() or None
+        if resolved_url is None:
+            logger.warning(
+                "HOME_AUDIO_READY_PLAYBACK_URL_MISSING",
+                extra={"media_asset_id": media_asset_id},
+            )
+            return None
 
     media = {
         "media_id": media_asset_id,
-        "state": media_state,
+        "state": normalized_state,
         "resolved_url": resolved_url,
     }
     playback_cache[media_asset_id] = media
@@ -641,6 +630,10 @@ async def list_home_audio_media(
         teacher_id = str(row.get("teacher_id") or "").strip()
         media_asset_id = str(row.get("media_asset_id") or "").strip()
         if not teacher_id or not media_asset_id:
+            logger.warning(
+                "HOME_AUDIO_SOURCE_ROW_INVALID",
+                extra={"source_type": source_type},
+            )
             continue
 
         if source_type == "direct_upload":
@@ -649,6 +642,10 @@ async def list_home_audio_media(
         elif source_type == "course_link":
             lesson_id = str(row.get("lesson_id") or "").strip()
             if not lesson_id:
+                logger.warning(
+                    "HOME_AUDIO_COURSE_LINK_ROW_INVALID",
+                    extra={"media_asset_id": media_asset_id},
+                )
                 continue
             can_access = lesson_access_cache.get(lesson_id)
             if can_access is None:
@@ -661,12 +658,15 @@ async def list_home_audio_media(
             if not can_access:
                 continue
         else:
+            logger.warning(
+                "HOME_AUDIO_SOURCE_TYPE_INVALID",
+                extra={"source_type": source_type},
+            )
             continue
 
         media = await _compose_home_audio_media(
-            source_type=source_type,
-            lesson_id=row.get("lesson_id"),
             media_asset_id=media_asset_id,
+            media_state=row.get("media_state"),
             playback_cache=playback_cache,
         )
         if media is None:

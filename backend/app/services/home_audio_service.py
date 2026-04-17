@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Sequence
 
 from fastapi import HTTPException, status
 
 from ..repositories import home_audio_runtime as home_audio_runtime_repo
 from . import courses_service, lesson_playback_service
+
+logger = logging.getLogger(__name__)
 
 _HOME_AUDIO_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
@@ -17,7 +20,7 @@ def _normalized_home_audio_state(value: Any) -> str:
     if normalized not in _HOME_AUDIO_MEDIA_STATES:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Canonical home audio media state is unavailable",
+            detail="Kanoniskt ljudläge för hemspelaren saknas.",
         )
     return normalized
 
@@ -38,9 +41,22 @@ async def _compose_home_audio_media(
             playback = await lesson_playback_service.resolve_media_asset_playback(
                 media_asset_id=media_asset_id
             )
-        except HTTPException:
+        except HTTPException as exc:
+            logger.warning(
+                "HOME_AUDIO_READY_PLAYBACK_UNAVAILABLE",
+                extra={
+                    "media_asset_id": media_asset_id,
+                    "status_code": exc.status_code,
+                },
+            )
             return None
         resolved_url = str(playback.get("resolved_url") or "").strip() or None
+        if resolved_url is None:
+            logger.warning(
+                "HOME_AUDIO_READY_PLAYBACK_URL_MISSING",
+                extra={"media_asset_id": media_asset_id},
+            )
+            return None
 
     media = {
         "media_id": media_asset_id,
@@ -89,6 +105,10 @@ async def list_home_audio_media(user_id: str, *, limit: int = 12) -> Sequence[di
         teacher_id = str(row.get("teacher_id") or "").strip()
         media_asset_id = str(row.get("media_asset_id") or "").strip()
         if not teacher_id or not media_asset_id:
+            logger.warning(
+                "HOME_AUDIO_SOURCE_ROW_INVALID",
+                extra={"source_type": source_type},
+            )
             continue
 
         if source_type == "direct_upload":
@@ -97,6 +117,10 @@ async def list_home_audio_media(user_id: str, *, limit: int = 12) -> Sequence[di
         elif source_type == "course_link":
             lesson_id = str(row.get("lesson_id") or "").strip()
             if not lesson_id:
+                logger.warning(
+                    "HOME_AUDIO_COURSE_LINK_ROW_INVALID",
+                    extra={"media_asset_id": media_asset_id},
+                )
                 continue
             can_access = lesson_access_cache.get(lesson_id)
             if can_access is None:
@@ -108,6 +132,10 @@ async def list_home_audio_media(user_id: str, *, limit: int = 12) -> Sequence[di
             if not can_access:
                 continue
         else:
+            logger.warning(
+                "HOME_AUDIO_SOURCE_TYPE_INVALID",
+                extra={"source_type": source_type},
+            )
             continue
 
         media_state = _normalized_home_audio_state(row.get("media_state"))
