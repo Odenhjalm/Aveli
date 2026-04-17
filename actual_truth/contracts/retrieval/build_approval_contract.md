@@ -114,6 +114,9 @@ build input only and is not query authority.
 - `allowed_devices`
 - `selected_build_device`
 - `preferred_local_build_device`
+- `cpu_baseline_required`
+- `bounded_equivalence_verification_required`
+- `equivalence_sample_size`
 - `cuda_required`
 - `device_changes_semantics`
 - `cpu_gpu_tolerance`
@@ -123,8 +126,19 @@ Required values:
 - `canonical_baseline`: `cpu`
 - `allowed_devices`: array containing `cpu` and optionally `cuda`
 - `selected_build_device`: `cpu` or manifest-permitted `cuda`
+- `cpu_baseline_required`: explicit boolean
+- `bounded_equivalence_verification_required`: explicit boolean
+- `equivalence_sample_size`: positive integer
 - `cuda_required`: `false`
 - `device_changes_semantics`: `false`
+
+For an approved local GPU-first build, `selected_build_device` may be `cuda`
+only when `cuda` is present in `allowed_devices`. Such a build must not require
+an unconditional full-corpus CPU baseline unless `cpu_baseline_required` is
+explicitly `true`. If `cpu_baseline_required` is `false`, the approval must
+require bounded CPU/GPU equivalence verification with
+`bounded_equivalence_verification_required=true` and a positive
+`equivalence_sample_size`.
 
 `batch_size` must be an integer and must match the manifest-owned embedding
 batch size.
@@ -199,6 +213,7 @@ The controller must verify:
 - model and tokenizer fields match manifest-owned policy
 - tokenizer hashes are SHA-256 values
 - device policy matches manifest-owned policy
+- CPU baseline and bounded equivalence policy are explicit
 - batch size matches manifest-owned policy
 - interpreter path is the Windows canonical interpreter
 - all network permissions are false
@@ -230,6 +245,7 @@ Any mismatch requires STOP before build mutation:
 - tokenizer revision mismatch
 - tokenizer hash mismatch
 - device policy mismatch
+- CPU baseline or bounded equivalence policy missing or inconsistent
 - batch size mismatch
 - wrong interpreter path
 - network download allowed

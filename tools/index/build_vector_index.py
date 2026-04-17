@@ -388,6 +388,60 @@ def validate_false_policy_fields(policy: dict, owner: str, field_names: list[str
             raise RuntimeError(f"FEL: {owner}.{field_name} maste vara false")
 
 
+def validate_device_policy(device_policy: dict) -> dict:
+    if require_json_string(device_policy, "canonical_baseline", "approval.device_policy") != "cpu":
+        raise RuntimeError("FEL: device_policy.canonical_baseline maste vara cpu")
+    allowed_devices = device_policy.get("allowed_devices")
+    if not isinstance(allowed_devices, list) or "cpu" not in allowed_devices:
+        raise RuntimeError("FEL: device_policy.allowed_devices maste innehalla cpu")
+    if any(device not in {"cpu", "cuda"} for device in allowed_devices):
+        raise RuntimeError("FEL: device_policy.allowed_devices innehaller ogiltig enhet")
+    selected_device = require_json_string(device_policy, "selected_build_device", "approval.device_policy")
+    preferred_device = require_json_string(device_policy, "preferred_local_build_device", "approval.device_policy")
+    if selected_device not in allowed_devices or selected_device not in {"cpu", "cuda"}:
+        raise RuntimeError("FEL: device_policy.selected_build_device ar ogiltig")
+    if preferred_device not in allowed_devices or preferred_device not in {"cpu", "cuda"}:
+        raise RuntimeError("FEL: device_policy.preferred_local_build_device ar ogiltig")
+    if selected_device == "cuda" and "cuda" not in allowed_devices:
+        raise RuntimeError("FEL: cuda-build kraver att cuda finns i allowed_devices")
+    if require_json_bool(device_policy, "cuda_required", "approval.device_policy"):
+        raise RuntimeError("FEL: device_policy.cuda_required maste vara false")
+    if require_json_bool(device_policy, "device_changes_semantics", "approval.device_policy"):
+        raise RuntimeError("FEL: device_policy.device_changes_semantics maste vara false")
+    tolerance = require_json_object(device_policy, "cpu_gpu_tolerance", "approval.device_policy")
+    cpu_baseline_required = require_json_bool(
+        device_policy,
+        "cpu_baseline_required",
+        "approval.device_policy",
+    )
+    bounded_equivalence_required = require_json_bool(
+        device_policy,
+        "bounded_equivalence_verification_required",
+        "approval.device_policy",
+    )
+    sample_size = require_json_int(
+        device_policy,
+        "equivalence_sample_size",
+        "approval.device_policy",
+    )
+    if sample_size <= 0:
+        raise RuntimeError("FEL: device_policy.equivalence_sample_size maste vara positivt")
+    if selected_device == "cuda" and not bounded_equivalence_required and not cpu_baseline_required:
+        raise RuntimeError("FEL: cuda-build kraver explicit bounded equivalence eller CPU-baslinje")
+    return {
+        "allowed_devices": list(allowed_devices),
+        "bounded_equivalence_verification_required": bounded_equivalence_required,
+        "canonical_baseline": "cpu",
+        "cpu_baseline_required": cpu_baseline_required,
+        "cpu_gpu_tolerance": tolerance,
+        "cuda_required": False,
+        "device_changes_semantics": False,
+        "equivalence_sample_size": sample_size,
+        "preferred_local_build_device": preferred_device,
+        "selected_build_device": selected_device,
+    }
+
+
 def validate_build_approval_shape(approval: dict, build_id: str) -> None:
     required_fields = {
         "artifact_type",
@@ -522,23 +576,7 @@ def validate_build_approval_policy(approval: dict, manifest: dict, build_id: str
     if tokenizer_hashes != embedding_binding["tokenizer_files"]:
         raise RuntimeError("FEL: approval tokenizer_hashes matchar inte modellauktoriteten")
 
-    device_policy = require_json_object(approval, "device_policy", "approval")
-    if require_json_string(device_policy, "canonical_baseline", "approval.device_policy") != "cpu":
-        raise RuntimeError("FEL: device_policy.canonical_baseline maste vara cpu")
-    allowed_devices = device_policy.get("allowed_devices")
-    if not isinstance(allowed_devices, list) or "cpu" not in allowed_devices:
-        raise RuntimeError("FEL: device_policy.allowed_devices maste innehalla cpu")
-    selected_device = require_json_string(device_policy, "selected_build_device", "approval.device_policy")
-    preferred_device = require_json_string(device_policy, "preferred_local_build_device", "approval.device_policy")
-    if selected_device not in allowed_devices or selected_device not in {"cpu", "cuda"}:
-        raise RuntimeError("FEL: device_policy.selected_build_device ar ogiltig")
-    if preferred_device not in allowed_devices or preferred_device not in {"cpu", "cuda"}:
-        raise RuntimeError("FEL: device_policy.preferred_local_build_device ar ogiltig")
-    if require_json_bool(device_policy, "cuda_required", "approval.device_policy"):
-        raise RuntimeError("FEL: device_policy.cuda_required maste vara false")
-    if require_json_bool(device_policy, "device_changes_semantics", "approval.device_policy"):
-        raise RuntimeError("FEL: device_policy.device_changes_semantics maste vara false")
-    require_json_object(device_policy, "cpu_gpu_tolerance", "approval.device_policy")
+    validate_device_policy(require_json_object(approval, "device_policy", "approval"))
 
     if require_json_int(approval, "batch_size", "approval") != get_embedding_batch_size(manifest):
         raise RuntimeError("FEL: approval batch_size matchar inte manifeststyrd batchstorlek")
@@ -619,6 +657,9 @@ def load_controller_build_context() -> dict:
     )
     approval_artifact = load_json_object(approval_artifact_path)
     validate_build_approval_shape(approval_artifact, build_id)
+    device_policy = validate_device_policy(
+        require_json_object(approval_artifact, "device_policy", "approval")
+    )
 
     active_manifest_exists = INDEX_MANIFEST.exists()
     build_mode = REBUILD_MODE if active_manifest_exists else INITIAL_BUILD_MODE
@@ -647,6 +688,16 @@ def load_controller_build_context() -> dict:
         "manifest_input_kind": manifest_input_kind,
         "manifest_input_path": manifest_input_path,
         "dependency_authority": dependency_authority,
+        "device_policy": device_policy,
+        "embedding_execution": {
+            "status": "NOT_STARTED",
+            "selected_build_device": device_policy["selected_build_device"],
+            "full_corpus_cpu_baseline_required": device_policy["cpu_baseline_required"],
+            "bounded_equivalence_verification_required": device_policy[
+                "bounded_equivalence_verification_required"
+            ],
+            "equivalence_sample_size": device_policy["equivalence_sample_size"],
+        },
         "model_authority": model_authority,
         "started_at_utc": utc_now_iso(),
         "staging_root": staging_root,
@@ -1011,6 +1062,55 @@ def resolve_manifest_build_device(manifest: dict) -> str:
     return "cpu"
 
 
+def resolve_approved_build_device(build_context: dict) -> str:
+    device = str(build_context["device_policy"]["selected_build_device"])
+    if device not in {"cpu", "cuda"}:
+        raise RuntimeError("FEL: approval device_policy.selected_build_device ar ogiltig")
+    return device
+
+
+def validate_build_device_runtime(device: str) -> dict:
+    if device == "cpu":
+        return {
+            "status": "PASS",
+            "selected_build_device": "cpu",
+            "cuda_available": None,
+            "cuda_device_count": None,
+            "cuda_device_name": None,
+        }
+    if device != "cuda":
+        raise RuntimeError("FEL: okand build-enhet")
+    try:
+        import torch
+    except Exception as exc:
+        raise RuntimeError("FEL: cuda-build kraver torch runtime") from exc
+    cuda_available = bool(torch.cuda.is_available())
+    cuda_device_count = int(torch.cuda.device_count())
+    if not cuda_available or cuda_device_count < 1:
+        raise RuntimeError("FEL: approval valde cuda men lokal CUDA-runtime ar inte tillganglig")
+    return {
+        "status": "PASS",
+        "selected_build_device": "cuda",
+        "cuda_available": cuda_available,
+        "cuda_device_count": cuda_device_count,
+        "cuda_device_name": torch.cuda.get_device_name(0),
+    }
+
+
+def select_equivalence_sample_indices(total_rows: int, sample_size: int) -> list[int]:
+    if total_rows <= 0:
+        raise RuntimeError("FEL: equivalence sample kraver minst en embeddingrad")
+    bounded_size = min(total_rows, sample_size)
+    if bounded_size == 1:
+        return [0]
+    last = total_rows - 1
+    indices = {
+        int(round(index * last / (bounded_size - 1)))
+        for index in range(bounded_size)
+    }
+    return sorted(indices)
+
+
 def get_embedding_batch_size(manifest: dict) -> int:
     get_embedding_model_config(manifest)
     return 64
@@ -1063,7 +1163,10 @@ def validate_index_manifest(
     corpus_manifest_hash: str,
     *,
     require_chunk_manifest_hash: bool,
+    build_mode: str = REBUILD_MODE,
 ) -> None:
+    if build_mode not in {INITIAL_BUILD_MODE, REBUILD_MODE}:
+        raise RuntimeError("FEL: okant build-lage for indexmanifestvalidering")
     missing = sorted(INDEX_MANIFEST_REQUIRED_FIELDS - set(manifest))
     if missing:
         raise RuntimeError(
@@ -1075,8 +1178,12 @@ def validate_index_manifest(
 
     if str(manifest["contract_version"]) != CANONICAL_CONTRACT_VERSION:
         raise RuntimeError("FEL: contract_version matchar inte kanoniskt värde")
-    if str(manifest["corpus_manifest_hash"]) != corpus_manifest_hash:
-        raise RuntimeError("FEL: corpus_manifest_hash matchar inte kanonisk corpusserialisering")
+    stored_corpus_manifest_hash = require_manifest_root_str(manifest, "corpus_manifest_hash")
+    if stored_corpus_manifest_hash != corpus_manifest_hash:
+        if build_mode == INITIAL_BUILD_MODE:
+            manifest["corpus_manifest_hash"] = corpus_manifest_hash
+        else:
+            raise RuntimeError("FEL: corpus_manifest_hash matchar inte kanonisk corpusserialisering")
     validate_flat_manifest_fields(manifest)
     get_embedding_model_config(manifest)
     get_embedding_policy(manifest)
@@ -1507,9 +1614,17 @@ def build_checkpoint_map(
     *,
     staging_verified: bool,
     promotion_occurred: bool,
+    embedding_execution: dict | None = None,
 ) -> dict:
     pass_status = "PASS" if staging_verified else "NOT_APPLICABLE"
     promotion_status = "PASS" if promotion_occurred else "NOT_APPLICABLE"
+    device_actual = "Verifierad" if staging_verified else "Ej natt"
+    if isinstance(embedding_execution, dict) and staging_verified:
+        device_actual = (
+            f"{embedding_execution.get('full_corpus_embedding_device')} full-corpus encode; "
+            f"CPU-baslinje rader={embedding_execution.get('full_corpus_cpu_baseline_rows')}; "
+            f"bounded equivalence rader={embedding_execution.get('bounded_equivalence_rows')}"
+        )
     return {
         "approval_validation": checkpoint_result(
             "PASS",
@@ -1556,8 +1671,8 @@ def build_checkpoint_map(
         "cpu_gpu_equivalence_validation": checkpoint_result(
             pass_status,
             "actual_truth/contracts/retrieval/determinism_contract.md",
-            "Builden utgar fran CPU-baslinje och godkand devicepolicy",
-            "Verifierad" if staging_verified else "Ej natt",
+            "Builden foljer godkand devicepolicy och explicit equivalence-lage",
+            device_actual,
         ),
         "artifact_hash_validation": checkpoint_result(
             pass_status,
@@ -1762,6 +1877,8 @@ def verify_staging_artifacts(
         "status": "PASS",
         "manifest_state": "STAGING_VERIFIED",
         "checks": checks,
+        "device_policy": build_context["device_policy"],
+        "embedding_execution": build_context["embedding_execution"],
         "model_authority": serialize_model_authority_result(build_context["model_authority"]),
         "artifact_integrity": {
             "status": integrity_report["status"],
@@ -1826,6 +1943,8 @@ def build_execution_result(
         "staging_root": display_path(build_context["staging_root"]),
         "canonical_interpreter": CANONICAL_INTERPRETER_RELATIVE,
         "dependency_authority": build_context["dependency_authority"],
+        "device_policy": build_context["device_policy"],
+        "embedding_execution": build_context["embedding_execution"],
         "model_authority": serialize_model_authority_result(build_context["model_authority"]),
         "started_at_utc": build_context["started_at_utc"],
         "completed_at_utc": completed_at,
@@ -1835,6 +1954,7 @@ def build_execution_result(
         "verification_checkpoints": build_checkpoint_map(
             staging_verified=staging_verified,
             promotion_occurred=promotion_occurred,
+            embedding_execution=build_context["embedding_execution"],
         ),
         "promotion_occurred": promotion_occurred,
         "final_active_status": final_active_status,
@@ -2029,6 +2149,14 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> Iterable[str]:
 
 def run_build(build_context: dict) -> None:
     load_build_dependency_modules()
+    build_device = resolve_approved_build_device(build_context)
+    build_context["embedding_execution"].update(
+        {
+            "device_runtime": validate_build_device_runtime(build_device),
+            "full_corpus_embedding_device": build_device,
+            "status": "DEVICE_VALIDATED",
+        }
+    )
 
     staging_root = build_context["staging_root"]
     staging_index_manifest = build_context["index_manifest"]
@@ -2062,6 +2190,7 @@ def run_build(build_context: dict) -> None:
         manifest,
         corpus_manifest_hash,
         require_chunk_manifest_hash=build_context["build_mode"] == REBUILD_MODE,
+        build_mode=build_context["build_mode"],
     )
 
     staging_manifest = prepare_manifest_for_staging(manifest)
@@ -2100,38 +2229,105 @@ def run_build(build_context: dict) -> None:
 
     model_config = get_embedding_model_config(staging_manifest, build_context["model_authority"])
     embedding_policy = get_embedding_policy(staging_manifest)
-    build_device = resolve_manifest_build_device(staging_manifest)
     batch_size = get_embedding_batch_size(staging_manifest)
     embedding_inputs = build_embedding_inputs(documents, embedding_policy)
 
-    try:
-        print("[STEG] Laddar CPU-baslinje for embedding-modell...")
-        cpu_model = load_embedding_model(model_config, "cpu")
-        cpu_embeddings = validate_embedding_matrix(
-            encode_embeddings(cpu_model, embedding_inputs, embedding_policy, batch_size),
-            expected_rows=len(documents),
-            embedding_policy=embedding_policy,
-        )
-    except RuntimeError as e:
-        raise RuntimeError("FEL: CPU-baslinje for embedding-modellen misslyckades") from e
-
     print(f"[INFO] Manifeststyrd build-enhet: {build_device}")
     print(f"[INFO] Manifestlast batchstorlek: {batch_size}")
-    embeddings = cpu_embeddings
+    device_policy = build_context["device_policy"]
+    embeddings = None
 
-    if build_device != "cpu":
+    if build_device == "cpu":
         try:
-            print("[STEG] Verifierar accelererad embedding mot CPU-baslinje...")
-            accelerated_model = load_embedding_model(model_config, build_device)
-            accelerated_embeddings = validate_embedding_matrix(
-                encode_embeddings(accelerated_model, embedding_inputs, embedding_policy, batch_size),
+            print("[STEG] Kodar embeddingar pa CPU...")
+            cpu_model = load_embedding_model(model_config, "cpu")
+            embeddings = validate_embedding_matrix(
+                encode_embeddings(cpu_model, embedding_inputs, embedding_policy, batch_size),
                 expected_rows=len(documents),
                 embedding_policy=embedding_policy,
             )
-            assert_embedding_equivalence(cpu_embeddings, accelerated_embeddings, embedding_policy)
+            build_context["embedding_execution"].update(
+                {
+                    "bounded_equivalence_indices": [],
+                    "bounded_equivalence_rows": 0,
+                    "equivalence_verification": "NOT_REQUIRED",
+                    "full_corpus_cpu_baseline_rows": len(documents),
+                    "status": "PASS",
+                }
+            )
+        except RuntimeError as e:
+            raise RuntimeError("FEL: CPU-embedding for modellen misslyckades") from e
+    else:
+        try:
+            print(f"[STEG] Laddar godkand embeddingmodell pa {build_device}...")
+            accelerated_model = load_embedding_model(model_config, build_device)
+            if bool(device_policy["bounded_equivalence_verification_required"]):
+                sample_indices = select_equivalence_sample_indices(
+                    len(embedding_inputs),
+                    int(device_policy["equivalence_sample_size"]),
+                )
+                sample_inputs = [embedding_inputs[index] for index in sample_indices]
+                print("[STEG] Kor bounded CPU/GPU-equivalence enligt approval...")
+                cpu_model = load_embedding_model(model_config, "cpu")
+                cpu_sample_embeddings = validate_embedding_matrix(
+                    encode_embeddings(cpu_model, sample_inputs, embedding_policy, batch_size),
+                    expected_rows=len(sample_inputs),
+                    embedding_policy=embedding_policy,
+                )
+                accelerated_sample_embeddings = validate_embedding_matrix(
+                    encode_embeddings(accelerated_model, sample_inputs, embedding_policy, batch_size),
+                    expected_rows=len(sample_inputs),
+                    embedding_policy=embedding_policy,
+                )
+                assert_embedding_equivalence(
+                    cpu_sample_embeddings,
+                    accelerated_sample_embeddings,
+                    embedding_policy,
+                )
+                build_context["embedding_execution"].update(
+                    {
+                        "bounded_equivalence_indices": sample_indices,
+                        "bounded_equivalence_rows": len(sample_indices),
+                        "equivalence_verification": "PASS",
+                    }
+                )
+            else:
+                build_context["embedding_execution"].update(
+                    {
+                        "bounded_equivalence_indices": [],
+                        "bounded_equivalence_rows": 0,
+                        "equivalence_verification": "NOT_REQUIRED",
+                    }
+                )
+
+            if bool(device_policy["cpu_baseline_required"]):
+                print("[STEG] Kor full CPU-baslinje enligt approval...")
+                cpu_model = load_embedding_model(model_config, "cpu")
+                cpu_embeddings = validate_embedding_matrix(
+                    encode_embeddings(cpu_model, embedding_inputs, embedding_policy, batch_size),
+                    expected_rows=len(documents),
+                    embedding_policy=embedding_policy,
+                )
+                accelerated_embeddings = validate_embedding_matrix(
+                    encode_embeddings(accelerated_model, embedding_inputs, embedding_policy, batch_size),
+                    expected_rows=len(documents),
+                    embedding_policy=embedding_policy,
+                )
+                assert_embedding_equivalence(cpu_embeddings, accelerated_embeddings, embedding_policy)
+                embeddings = accelerated_embeddings
+                build_context["embedding_execution"]["full_corpus_cpu_baseline_rows"] = len(documents)
+            else:
+                print(f"[STEG] Kodar full corpus pa godkand build-enhet: {build_device}...")
+                embeddings = validate_embedding_matrix(
+                    encode_embeddings(accelerated_model, embedding_inputs, embedding_policy, batch_size),
+                    expected_rows=len(documents),
+                    embedding_policy=embedding_policy,
+                )
+                build_context["embedding_execution"]["full_corpus_cpu_baseline_rows"] = 0
+            build_context["embedding_execution"]["status"] = "PASS"
         except RuntimeError as e:
             raise RuntimeError(
-                f"DEVICE_DRIFT: accelererad embedding pa {build_device} matchar inte CPU-baslinje"
+                f"DEVICE_DRIFT: embedding pa {build_device} matchar inte godkand devicepolicy"
             ) from e
 
     vector_export_records = build_vector_export_records(

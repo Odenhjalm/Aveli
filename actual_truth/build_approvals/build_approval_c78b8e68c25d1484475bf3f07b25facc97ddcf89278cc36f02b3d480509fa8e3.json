@@ -1,77 +1,76 @@
 {
-  "artifact_type": "build_approval",
-  "approval_state": "APPROVED_FOR_SINGLE_BUILD",
-  "approval_phrase": "APPROVE AVELI INDEX REBUILD",
-  "approval_scope": {
-    "controller_scope": "retrieval_index_build_execution",
-    "task_id": "B01",
-    "mode": "build",
-    "expires_after_use": true
-  },
-  "repo_root": "c:/Users/Odenh/app/Aveli",
-  "target_path": ".repo_index",
-  "build_id": "c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
-  "manifest_input": {
-    "kind": "manifest_candidate",
-    "path": "actual_truth/build_approvals/index_manifest_candidate_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
-    "corpus_field": "corpus.files",
-    "active_authority_before_promotion": false
-  },
-  "model_id": "intfloat/e5-large-v2",
-  "model_revision": "0000000000000000000000000000000000000000",
-  "tokenizer_id": "intfloat/e5-large-v2",
-  "tokenizer_revision": "0000000000000000000000000000000000000000",
-  "tokenizer_hashes": {
-    "tokenizer.json": "0000000000000000000000000000000000000000000000000000000000000000",
-    "tokenizer_config.json": "0000000000000000000000000000000000000000000000000000000000000000",
-    "special_tokens_map.json": "0000000000000000000000000000000000000000000000000000000000000000"
-  },
-  "device_policy": {
-    "canonical": "cpu",
-    "acceleration": [
-      "cuda"
-    ],
-    "canonical_baseline": "cpu",
-    "allowed_devices": [
-      "cpu",
-      "cuda"
-    ],
-    "selected_build_device": "cpu",
-    "preferred_local_build_device": "cuda",
-    "cuda_required": false,
-    "device_changes_semantics": false,
-    "cpu_gpu_tolerance": {
-      "metric": "max_abs_difference",
-      "value": 0.00001
-    }
-  },
-  "batch_size": 64,
-  "interpreter_path": ".repo_index/.search_venv/Scripts/python.exe",
-  "network_policy": {
-    "mode": "offline",
-    "downloads_allowed": false,
-    "model_download_allowed": false,
-    "dependency_install_allowed": false
-  },
-  "fallback_policy": {
-    "mode": "forbidden",
-    "fallbacks_allowed": false,
-    "fallback_interpreter_allowed": false,
-    "fallback_model_allowed": false,
-    "fallback_device_allowed": false,
-    "fallback_corpus_allowed": false,
-    "fallback_retrieval_allowed": false
-  },
-  "staging_policy": {
-    "mode": "required",
-    "staging_required": true,
-    "staging_root": ".repo_index/_staging/<build_id>",
-    "direct_active_write_allowed": false
-  },
-  "promotion_policy": {
-    "mode": "atomic_verified_only",
-    "promotion_requires_staging_verification": true,
-    "active_manifest_state": "ACTIVE_VERIFIED",
-    "atomic_promotion_required": true
-  }
+"artifact_type": "build_approval",
+"approval_state": "APPROVED_FOR_SINGLE_BUILD",
+"approval_phrase": "APPROVE AVELI INDEX REBUILD",
+"approval_scope": {
+"controller_scope": "retrieval_index_build_execution",
+"task_id": "B01",
+"mode": "build",
+"expires_after_use": true
+},
+"repo_root": "c:/Users/Odenh/app/Aveli",
+"target_path": ".repo_index",
+"build_id": "c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3",
+"manifest_input": {
+"kind": "manifest_candidate",
+"path": "actual_truth/build_approvals/index_manifest_candidate_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json",
+"corpus_field": "corpus.files",
+"active_authority_before_promotion": false
+},
+"model_id": "intfloat/e5-large-v2",
+"model_revision": "f169b11e22de13617baa190a028a32f3493550b6",
+"tokenizer_id": "intfloat/e5-large-v2",
+"tokenizer_revision": "f169b11e22de13617baa190a028a32f3493550b6",
+"tokenizer_hashes": {
+"special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+"tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+"tokenizer_config.json": "ae83fa6ca0333117ff12606020af925d648667ef70d92ff7f27d781ba0ca4544",
+"vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+},
+"device_policy": {
+"canonical": "cpu",
+"acceleration": ["cuda"],
+"canonical_baseline": "cpu",
+"allowed_devices": ["cpu", "cuda"],
+"selected_build_device": "cuda",
+"preferred_local_build_device": "cuda",
+"cpu_baseline_required": false,
+"bounded_equivalence_verification_required": true,
+"equivalence_sample_size": 8,
+"cuda_required": false,
+"device_changes_semantics": false,
+"cpu_gpu_tolerance": {
+"metric": "max_abs_difference",
+"value": 0.00001
+}
+},
+"batch_size": 64,
+"interpreter_path": ".repo_index/.search_venv/Scripts/python.exe",
+"network_policy": {
+"mode": "offline",
+"downloads_allowed": false,
+"model_download_allowed": false,
+"dependency_install_allowed": false
+},
+"fallback_policy": {
+"mode": "forbidden",
+"fallbacks_allowed": false,
+"fallback_interpreter_allowed": false,
+"fallback_model_allowed": false,
+"fallback_device_allowed": false,
+"fallback_corpus_allowed": false,
+"fallback_retrieval_allowed": false
+},
+"staging_policy": {
+"mode": "required",
+"staging_required": true,
+"staging_root": ".repo_index/_staging/<build_id>",
+"direct_active_write_allowed": false
+},
+"promotion_policy": {
+"mode": "atomic_verified_only",
+"promotion_requires_staging_verification": true,
+"active_manifest_state": "ACTIVE_VERIFIED",
+"atomic_promotion_required": true
+}
 }

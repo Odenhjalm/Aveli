@@ -247,6 +247,12 @@ A build result must not be `PASS` if:
 - query-time behavior was invoked
 - T16 was used as build authority
 
+CPU/GPU equivalence may be full-corpus or bounded, but the result surface must
+make the approved mode explicit. A GPU-first build may report PASS without a
+full-corpus CPU baseline only when the executable build approval explicitly
+sets `cpu_baseline_required=false`, requires bounded equivalence verification,
+and records the bounded sample size used before full-corpus GPU encoding.
+
 ## T16 Boundary
 
 T16 may consume B01 result files and active `.repo_index` artifacts as
