@@ -5,10 +5,13 @@
 ACTIVE
 
 This contract defines the canonical production deployment authority for Aveli.
-It operates under `SYSTEM_LAWS.md`, `supabase_integration_boundary_contract.md`,
+It operates under `baseline_v2_authority_freeze_contract.md`,
+`SYSTEM_LAWS.md`, `supabase_integration_boundary_contract.md`,
 `auth_onboarding_contract.md`, `commerce_membership_contract.md`,
-`course_access_contract.md`, `course_public_surface_contract.md`, and
-`media_pipeline_contract.md`.
+`course_access_contract.md`, `course_public_surface_contract.md`,
+`media_unified_authority_contract.md`, `home_audio_aggregation_contract.md`,
+`profile_community_media_contract.md`, `media_pipeline_contract.md`, and
+`livekit_runtime_contract.md`.
 
 This contract owns production deployment authority only. It does not redefine
 Supabase substrate law, baseline schema law, auth/onboarding law, commerce law,
@@ -20,9 +23,12 @@ course-access law, or media law.
 - Production runtime means the Fly app `aveli` with `APP_ENV=production`.
 - Production runtime database selection is owned by backend runtime environment,
   not by local developer defaults, legacy migration state, or ad hoc scripts.
+- Production deployment planning is invalid while this contract conflicts with
+  `actual_truth/contracts/baseline_v2_authority_freeze_contract.md`.
 - Production launch is blocked unless the canonical baseline slot chain
-  `0001` through `0033` has been applied to the intended production Supabase
-  database target and verified against the contract set.
+  accepted through `0038`, or a later accepted V2 slot authority that replaces
+  that chain, has been applied to the intended production Supabase database
+  target and verified against the contract set.
 - Production launch is blocked unless backend runtime, worker runtime, public
   courses, auth/onboarding, membership, course access, media, and payment
   surfaces pass their launch gates.
@@ -128,17 +134,20 @@ Backend runtime database authority:
 
 - The canonical baseline source is `backend/supabase/baseline_slots/`.
 - The canonical baseline lock is `backend/supabase/baseline_slots.lock.json`.
-- Public launch requires the baseline slot chain `0001` through `0033` to be
-  applied and verified against the intended production Supabase database target.
+- Public launch requires the accepted baseline slot chain through `0038` to be
+  applied and verified against the intended production Supabase database target,
+  unless and until a later accepted V2 slot authority replaces that chain.
 - Public launch requires verification that the production schema matches the
-  accepted `0001` through `0033` baseline authority for every launch-critical
-  runtime surface.
+  accepted baseline authority through `0038`, or the later accepted V2
+  replacement authority, for every launch-critical runtime surface.
 - Legacy migration paths are not launch authority when baseline slots are the
   canonical truth.
 - `backend/supabase/migrations/` is legacy-only in this repository and must not
   redefine production launch authority.
 - Archive migration paths and historical launch reports are reference evidence
   only and cannot override the baseline slot chain.
+- Accepted baseline slots and `backend/supabase/baseline_slots.lock.json` are
+  evidence for launch authority; this contract does not authorize editing them.
 
 ## 6. RUNTIME LAUNCH GATES
 
@@ -168,6 +177,8 @@ Protected access gates:
 
 - Auth registration, login, token refresh, email verification, and onboarding
   completion pass through `auth_onboarding_contract.md`.
+- `welcome_pending` is canonical onboarding state and must be represented in
+  the deployed baseline authority.
 - App entry requires completed onboarding and active membership under
   `onboarding_entry_authority_contract.md`.
 - Membership app-entry state passes through `app.memberships` under
@@ -177,9 +188,19 @@ Protected access gates:
 
 Media gates:
 
-- Media identity, placement, runtime state, and frontend representation follow
-  the canonical chain:
-  `app.media_assets -> app.lesson_media -> app.runtime_media -> backend read composition -> API -> frontend`.
+- Media identity is owned by `app.media_assets`.
+- Source tables own governed media inclusion and placement truth.
+- `app.runtime_media` remains read-only projection authority where in scope.
+- Backend read composition owns final frontend-facing media representation.
+- Profile/community media is canonical Baseline V2 scope.
+- `app.profile_media_placements` owns profile/community authored-placement
+  truth.
+- `app.profiles` remains projection-only.
+- `app.home_player_course_links` is source truth for course-linked home-audio
+  inclusion.
+- Course-linked home-audio output is owned by backend composition as read
+  authority, not by treating `runtime_media` as the mandatory direct source
+  table for `app.home_player_course_links`.
 - No media launch path may resolve directly through Supabase Storage as business
   truth.
 - Worker-owned media processing required for MVP launch must be verified in the
@@ -192,7 +213,30 @@ Payment gates:
   `commerce_membership_contract.md`, `course_monetization_contract.md`, and
   `course_access_contract.md`.
 - Stripe remains payment processor and event emitter only.
+- Provider checkout/session/subscription/payment state is provider correlation
+  only and is not Aveli domain authority.
+- `subscription` may remain provider/order modality, but not Aveli domain
+  authority.
+- Service/session/Connect-like order fields remain inert unless later activated
+  by explicit accepted authority.
 - Frontend payment success must not become membership or course-access authority.
+
+LiveKit gates:
+
+- LiveKit is paused/inert under `livekit_runtime_contract.md`.
+- Public launch must not require active LiveKit runtime behavior unless a later
+  accepted LiveKit activation authority explicitly promotes it into launch
+  scope.
+- Production launch is blocked if LiveKit webhook ingestion, enqueueing, worker
+  processing, retry, deletion, or domain mutation is active without later
+  accepted activation authority.
+
+Language and prompt gates:
+
+- User-facing product text must be Swedish.
+- Generated operator prompts must be copy-paste-ready English.
+- Stale docs, missing docs, README text, historical launch reports, or local
+  operator notes must not become production deployment authority.
 
 ## 7. CREDENTIAL SAFETY
 
@@ -225,10 +269,21 @@ The production deployment contract is satisfied only when all are true:
 - `SUPABASE_PROJECT_REF`, `SUPABASE_URL`, production `DATABASE_URL`, and any
   production verification `SUPABASE_DB_URL` resolve to the same Supabase project.
 - Production runtime cannot fall back to local database configuration.
-- Baseline slots `0001` through `0033` are applied and verified against the
-  intended production Supabase project.
+- Baseline slots through `0038` are applied and verified against the intended
+  production Supabase project, unless a later accepted V2 slot authority
+  replaces that chain.
 - Legacy migration paths do not define launch authority.
-- Minimum public, protected, media, and payment surfaces pass under their
-  existing canonical contracts.
+- Minimum public, protected, media, payment, home-audio, profile/community
+  media, and onboarding surfaces pass under the Baseline V2 freeze contract and
+  updated domain contracts.
+- LiveKit remains paused/inert unless a later accepted activation authority
+  explicitly changes its production launch status.
+- Provider checkout/session/subscription/payment state is not treated as Aveli
+  domain authority.
+- User-facing product text is Swedish.
+- Generated operator prompts are copy-paste-ready English.
 - Exposed or stale production database credentials have been rotated and old
   connection strings are not runtime authority.
+- Deployment fails closed on any mismatch with the Baseline V2 freeze contract,
+  accepted baseline authority, production database authority, domain contracts,
+  or credential safety rules.

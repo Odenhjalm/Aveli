@@ -1,125 +1,217 @@
 # Aveli Monorepo
 
-Flutter client, FastAPI backend, Supabase schema, and a Next.js landing page in one place. Production migrations live under `supabase/migrations`. For local MCP audit, testing, and verification, the authoritative local DB baseline is `backend/supabase/baseline_slots`, materialized with `backend/scripts/replay_baseline.sh` on local Postgres.
+Aveli contains the Flutter client, FastAPI backend, Supabase baseline artifacts,
+and Next.js landing page. This README is operator orientation only. It is
+subordinate to the accepted authority files under `actual_truth/`, especially
+`actual_truth/contracts/baseline_v2_authority_freeze_contract.md` and
+`actual_truth/contracts/production_deployment_contract.md`.
 
-```
+Authority summary:
+
+- Baseline V2 is a clean conceptual rebaseline with full cutover as the
+  implementation target.
+- Canonical local baseline evidence is `backend/supabase/baseline_slots/` and
+  `backend/supabase/baseline_slots.lock.json`.
+- Accepted current baseline scope is through `0038` unless later accepted V2
+  slot authority replaces that chain.
+- Legacy migrations, historical launch reports, stale docs, local notes, and
+  README text do not override accepted contracts.
+- LiveKit surfaces may exist in the repository, but LiveKit runtime is
+  paused/inert unless later accepted authority explicitly activates it.
+- Stripe checkout/session/subscription values are provider correlation only.
+  Aveli commerce authority remains in `orders`, `payments`, and `memberships`.
+- User-facing product text must be Swedish.
+- Generated operator prompts must be copy-paste-ready English.
+
+## Repository Layout
+
+```text
 .
-├── backend/            # FastAPI app, Stripe/LiveKit, scripts, Dockerfile
-├── frontend/           # Flutter app (lib/android/ios/web) + landing (Next.js)
-│   └── landing/        # Marketing/landing site (Next.js)
-├── supabase/           # Production SQL migrations
-├── docs/               # Architecture, security, deployment, env docs
-├── .env.example*       # Safe templates for backend + Flutter
-├── docker-compose.yml  # Backend + landing for local dev
-└── fly.toml            # Fly.io deployment config (backend)
+|-- actual_truth/       # Canonical authority docs and contracts
+|-- backend/            # FastAPI app, baseline replay scripts, Dockerfile
+|-- frontend/           # Flutter app and Next.js landing site
+|   `-- landing/        # Marketing/landing site
+|-- supabase/           # Legacy/root migration history and tooling input
+|-- .env.example*       # Safe templates for backend and Flutter
+|-- docker-compose.yml  # Optional local compose path
+`-- fly.toml            # Fly.io backend deployment config
 ```
 
 ## Prerequisites
+
 - Python 3.11+
-- Flutter 3.24+ (run inside `frontend/`)
-- Node 18+ for the Next.js landing (`frontend/landing`)
+- Flutter 3.24+ for `frontend/`
+- Node 18+ for `frontend/landing`
 - `psql` client
-- Docker (optional for compose)
-- Supabase project (URL, anon key, service role, DB URL), Stripe keys, LiveKit keys
+- Docker, optional for compose
+- Supabase and Stripe credentials for the runtime surfaces under test
+- LiveKit credentials only when an accepted authority explicitly activates or
+  verifies that surface; current Baseline V2 authority treats LiveKit as
+  paused/inert
+
+## Authority References
+
+- Baseline V2 freeze:
+  `actual_truth/contracts/baseline_v2_authority_freeze_contract.md`
+- Production deployment:
+  `actual_truth/contracts/production_deployment_contract.md`
+- System decisions:
+  `actual_truth/Aveli_System_Decisions.md`
+- Structured manifest:
+  `actual_truth/aveli_system_manifest.json`
+- Baseline manifest:
+  `actual_truth/AVELI_DATABASE_BASELINE_MANIFEST.md`
+- System laws:
+  `actual_truth/contracts/SYSTEM_LAWS.md`
+
+This README may explain how to orient locally. It does not define launch,
+schema, media, commerce, LiveKit, onboarding, or production authority.
 
 ## Environment
-- Copy `.env.example` → `.env` (root), `.env.example.backend` → `.env.backend`.
-- Flutter: copy `.env.example.flutter` → `frontend/.env.local` for local defines (or provide `--dart-define` flags directly). Use a separate `frontend/.env.web` for local web runs only, and run `frontend/scripts/guard_web_defines.sh` to block secrets. Production web deploys must use Netlify env vars plus `netlify.toml`, not a checked-in `.env` file.
-- Do **not** commit real keys (.env files are ignored).
-- Backend listens on port `8080` by default; update `API_BASE_URL`/`NEXT_PUBLIC_API_BASE_URL` accordingly.
 
-## Backend (FastAPI)
+- Copy `.env.example` to `.env` and `.env.example.backend` to `.env.backend`
+  when those templates are needed for local development.
+- Flutter local runs may use `frontend/.env.local` or explicit
+  `--dart-define` flags.
+- Web runs may use `frontend/.env.web` for local development only.
+- Production web deploys must use Netlify environment variables plus
+  `netlify.toml`, not a checked-in `.env` file.
+- Do not commit real keys. Environment files with secrets must remain ignored.
+- Backend listens on port `8080` by default.
+
+## Backend Startup
+
+The only valid backend startup entrypoint is `backend.bootstrap.run_server`.
+
 ```bash
 # Windows
 .\.venv\Scripts\python.exe -m backend.bootstrap.run_server
 
-# Linux
+# Linux/macOS
 ./.venv/bin/python -m backend.bootstrap.run_server
 ```
-- Health: `/healthz`, Ready: `/readyz`.
-- Supabase Storage/Stripe/LiveKit features require the corresponding env vars.
-- The only valid backend startup entrypoint is `backend.bootstrap.run_server`.
-- Do not use shell activation, `poetry run`, bare `python`, or direct `uvicorn` for backend startup.
 
-### Supabase migrations
+- Health: `/healthz`.
+- Readiness: `/readyz`.
+- Do not use shell activation, `poetry run`, bare `python`, or direct `uvicorn`
+  as backend startup authority.
+
+## Baseline And Local DB Authority
+
+- Authoritative local DB source:
+  `backend/supabase/baseline_slots/`.
+- Canonical baseline lock:
+  `backend/supabase/baseline_slots.lock.json`.
+- Canonical native local target:
+  `postgresql://postgres:postgres@127.0.0.1:5432/aveli_local`.
+- Ensure the native local database exists with
+  `backend/scripts/ensure_db.sh`.
+- Materialize the accepted local baseline on native local Postgres with
+  `backend/scripts/replay_baseline.sh`.
+- Root `supabase/migrations/`, archived migrations, cloned cloud DB state, and
+  historical reports are reference or tooling inputs only. They do not override
+  baseline slots, the lockfile, or accepted contracts.
+- Production database and deployment authority lives in
+  `actual_truth/contracts/production_deployment_contract.md`.
+
+## Backend Tests And Lint
+
 ```bash
-SUPABASE_DB_URL=postgres://... \
-SUPABASE_DB_PASSWORD=... \
-backend/scripts/apply_supabase_migrations.sh
-```
-Production migration source: `supabase/migrations/*.sql` only.
-
-### Local DB authority for MCP and verification
-- Authoritative local DB source: `backend/supabase/baseline_slots`.
-- Canonical native local target: `postgresql://postgres:postgres@127.0.0.1:5432/aveli_local`.
-- Ensure the native local database exists with `backend/scripts/ensure_db.sh`.
-- Materialize that source on native local Postgres with `backend/scripts/replay_baseline.sh`.
-- `supabase/migrations/*.sql` remains the production migration source only.
-- Cloud clones and legacy DB state are reference inputs only and must not redefine local verification truth.
-
-### Backend tests & lint
-```bash
-make backend.test     # pytest
-make backend.lint     # ruff
-make qa.teacher       # smoke against a running backend (port 8080)
+make backend.test
+make backend.lint
+make qa.teacher
 ```
 
-## Flutter app
+`make qa.teacher` expects a running backend on port `8080` and the required
+local secrets for the surface being tested.
+
+## Flutter App
+
 ```bash
 cd frontend
 flutter pub get
 flutter test
 flutter run --dart-define-from-file=.env.local
 ```
-Android emulator uses `http://10.0.2.2:8080` automatically via the env resolver.
-For web builds, use a web-specific defines file:
+
+Android emulator runs use `http://10.0.2.2:8080` through the environment
+resolver. For web builds, use a web-specific defines file:
+
 ```bash
 flutter run -d chrome --dart-define-from-file=.env.web
 ```
-Ensure `.env.local`/`.env.web` include `API_BASE_URL` and `OAUTH_REDIRECT_WEB`/`OAUTH_REDIRECT_MOBILE` as needed.
 
-## Landing (Next.js)
+Ensure local define files include `API_BASE_URL` and the relevant OAuth redirect
+values for the target runtime.
+
+## Landing Site
+
 ```bash
 cd frontend/landing
 npm install
-npm run dev   # http://localhost:3000
+npm run dev
 ```
-Environment: `NEXT_PUBLIC_API_BASE_URL` (default `http://backend:8080` in compose).
 
-## Docker (backend + landing)
+Default local URL: `http://localhost:3000`.
+
+## Docker
+
 ```bash
 docker compose --env-file .env.docker up --build
-# Backend: http://localhost:8080, Landing: http://localhost:3000
 ```
 
-Docker is optional and reference-only for the local DB path; the canonical baseline replay target is the native Postgres instance on `127.0.0.1:5432/aveli_local`.
+- Backend: `http://localhost:8080`.
+- Landing: `http://localhost:3000`.
+- Docker is optional and reference-only for the local DB path.
+- The canonical baseline replay target remains the native Postgres instance on
+  `127.0.0.1:5432/aveli_local`.
 
 ## Deployment
-- Canonical production release is manual and exact-SHA based; see `docs/DEPLOYMENT.md`.
-- Database: apply migrations from root `supabase/migrations/*.sql` only. Do not use `backend/supabase/` or `cd backend && supabase db push` for production.
-- Backend: deploy Fly from a clean worktree at the exact commit on `main` using `fly.toml` and `backend/Dockerfile`.
-- Frontend: deploy the same commit via Netlify source build using `netlify.toml`. Do not upload a local `frontend/build/web` artifact to production.
-- Post-deploy: verify `/healthz`, `/readyz`, and one authenticated runtime-media playback path.
+
+Production deployment authority lives in
+`actual_truth/contracts/production_deployment_contract.md`.
+
+README deployment notes are not launch authority. Before production deployment
+planning is valid, operators must satisfy the accepted contracts for:
+
+- exact production Supabase project targeting;
+- baseline scope through `0038`, unless later accepted V2 slot authority
+  replaces that chain;
+- separate Fly `app` and `worker` process groups;
+- `/healthz` and `/readyz`;
+- onboarding and membership app-entry authority;
+- profile/community media as canonical Baseline V2 scope;
+- `home_player_course_links` as source truth with backend read composition;
+- `runtime_media` as read-only projection where in scope;
+- LiveKit paused/inert status;
+- provider checkout/session/subscription values as correlation only;
+- Swedish user-facing product text;
+- copy-paste-ready English generated operator prompts.
+
+Do not use README text, missing docs, stale docs, legacy migration paths, or
+local operator notes as production deployment authority.
 
 ## Tooling
-- Scripts live in `backend/scripts` (and via root symlink `scripts/` for compatibility).
-- MCP Supabase helper: `backend/scripts/mcp_supabase.py` (uses `.vscode/mcp.json`).
-- Course import/QA utilities: see `docs/BACKEND_STRUCTURE.md` and `docs/DEPLOYMENT.md`.
+
+- Scripts live in `backend/scripts`.
+- Root `scripts/` may exist for compatibility.
+- MCP Supabase helper: `backend/scripts/mcp_supabase.py`.
+- `.vscode/mcp.json` and `backend/supabase/.temp/*` are repo-local targeting
+  evidence only. They are not production database authority.
 
 ## Task Branch Guardrail
+
 Install once per clone:
+
 ```bash
 make guardrails.install
 ```
+
 Start every new task on a fresh branch:
+
 ```bash
 make task.branch TASK="short task name"
 ```
-The repo hooks block commit/push on protected branches (`main`, `master`, `develop`, `dev`, `production`, `release`).
 
-## Documentation
-- Security/rotation: `docs/SECURITY.md`
-- Deployment (Fly.io + compose): `docs/DEPLOYMENT.md`
-- Backend layout/services: `docs/BACKEND_STRUCTURE.md`
-- Env reference: `docs/ENV_VARS.md`
-- Media behavior is governed by Media Contract v1: `docs/MEDIA_CONTRACT_v1.md`
+The repo hooks block commit and push on protected branches such as `main`,
+`master`, `develop`, `dev`, `production`, and `release`.
