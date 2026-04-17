@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import contextlib
 import io
 import json
@@ -20,6 +21,7 @@ CHROMA_DB_RELATIVE = ".repo_index/chroma_db"
 LEXICAL_INDEX_RELATIVE = ".repo_index/lexical_index"
 D01_BUILD_ID_ENV = "AVELI_ENVIRONMENT_DEPENDENCY_BUILD_ID"
 D01_RESULT_ARTIFACT_ENV = "AVELI_ENVIRONMENT_DEPENDENCY_RESULT_ARTIFACT"
+UTF8_PROBE = "\u2192 \u00e5 \u00e4 \u00f6 \u2192"
 
 
 class BootstrapBlocked(RuntimeError):
@@ -56,6 +58,88 @@ def ensure_canonical_interpreter() -> None:
             f"non-canonical interpreter: {Path(sys.executable).resolve()}",
             CANONICAL_INTERPRETER_RELATIVE,
             f"Run this check with {CANONICAL_INTERPRETER_RELATIVE}.",
+        )
+
+
+def canonical_codec_name(encoding: str | None, stream_name: str) -> str:
+    if not encoding:
+        raise BootstrapBlocked(
+            "UTF-8 readiness",
+            f"{stream_name}.encoding is missing",
+            "stdout/stderr UTF-8 execution boundary",
+            "Set PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 before running the bootstrap check.",
+        )
+    lowered = encoding.strip().lower()
+    if lowered == "cp1252":
+        raise BootstrapBlocked(
+            "UTF-8 readiness",
+            f"{stream_name}.encoding is cp1252",
+            "stdout/stderr UTF-8 execution boundary",
+            "Set PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 before running the bootstrap check.",
+        )
+    try:
+        codec_name = codecs.lookup(encoding).name
+    except LookupError as exc:
+        raise BootstrapBlocked(
+            "UTF-8 readiness",
+            f"{stream_name}.encoding is unknown: {encoding}",
+            "stdout/stderr UTF-8 execution boundary",
+            "Set PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 before running the bootstrap check.",
+        ) from exc
+    if codec_name != "utf-8":
+        raise BootstrapBlocked(
+            "UTF-8 readiness",
+            f"{stream_name}.encoding is not UTF-8: {encoding}",
+            "stdout/stderr UTF-8 execution boundary",
+            "Set PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 before running the bootstrap check.",
+        )
+    return codec_name
+
+
+def ensure_utf8_readiness() -> None:
+    stdout_codec = canonical_codec_name(sys.stdout.encoding, "stdout")
+    stderr_codec = canonical_codec_name(sys.stderr.encoding, "stderr")
+    if stdout_codec != stderr_codec:
+        raise BootstrapBlocked(
+            "UTF-8 readiness",
+            f"encoding mismatch: stdout={sys.stdout.encoding}, stderr={sys.stderr.encoding}",
+            "stdout/stderr UTF-8 execution boundary",
+            "Set PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 before running the bootstrap check.",
+        )
+
+    payload = {"probe": UTF8_PROBE}
+    try:
+        serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        stdout_roundtrip = json.loads(serialized.encode(sys.stdout.encoding).decode(sys.stdout.encoding))
+        stderr_roundtrip = json.loads(serialized.encode(sys.stderr.encoding).decode(sys.stderr.encoding))
+    except UnicodeEncodeError as exc:
+        raise BootstrapBlocked(
+            "UTF-8 readiness",
+            "UnicodeEncodeError during UTF-8 JSON probe",
+            "stdout/stderr UTF-8 execution boundary",
+            "Set PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 before running the bootstrap check.",
+        ) from exc
+    except UnicodeDecodeError as exc:
+        raise BootstrapBlocked(
+            "UTF-8 readiness",
+            "UnicodeDecodeError during UTF-8 JSON probe",
+            "stdout/stderr UTF-8 execution boundary",
+            "Set PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 before running the bootstrap check.",
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise BootstrapBlocked(
+            "UTF-8 readiness",
+            "JSON roundtrip failed during UTF-8 probe",
+            "stdout/stderr UTF-8 execution boundary",
+            "Set PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 before running the bootstrap check.",
+        ) from exc
+
+    if stdout_roundtrip != payload or stderr_roundtrip != payload:
+        raise BootstrapBlocked(
+            "UTF-8 readiness",
+            "UTF-8 JSON serialization roundtrip mismatch",
+            "stdout/stderr UTF-8 execution boundary",
+            "Set PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 before running the bootstrap check.",
         )
 
 
@@ -196,6 +280,7 @@ def step_5_retrieval_runtime_readiness() -> None:
 
 def run_check() -> dict:
     ensure_canonical_interpreter()
+    ensure_utf8_readiness()
     if str(INDEX_TOOL_ROOT) not in sys.path:
         sys.path.insert(0, str(INDEX_TOOL_ROOT))
     step_1_d01_dependency_authority()

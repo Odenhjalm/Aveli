@@ -1,6 +1,9 @@
+import hashlib
 import json
 import math
+import os
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +36,13 @@ from retrieval_policies import (
 from dependency_authority import (
     DependencyAuthorityError,
     require_valid_d01_pass_from_environment,
+)
+from retrieval_observability import (
+    RETRIEVAL_QUERY_TRACE_PATH,
+    RetrievalObservabilityError,
+    append_jsonl,
+    base_surface,
+    utc_now_iso,
 )
 
 # ---------------------------------------------------------
@@ -81,8 +91,55 @@ DEPRECATED_MANIFEST_CONFIG_FIELDS = {
 CANONICAL_EVIDENCE_FIELDS = {"file", "layer", "snippet", "source_type", "score"}
 CANONICAL_SOURCE_TYPES = {"chunk", "ast", "context"}
 CANONICAL_LAYERS = {"LAW", "ROUTE", "SERVICE", "DB", "POLICY", "SCHEMA", "MODEL", "OTHER"}
+REQUEST_ID_ENV_VARS = (
+    "AVELI_RETRIEVAL_REQUEST_ID",
+    "AVELI_REQUEST_ID",
+    "MCP_REQUEST_ID",
+)
 
 _RUNTIME_STATE = None
+
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def resolve_request_id(trace_id: str) -> str:
+    for env_var in REQUEST_ID_ENV_VARS:
+        value = os.environ.get(env_var, "").strip()
+        if value:
+            return value
+    return trace_id
+
+
+def model_trace_bindings(runtime_state: dict) -> dict:
+    models = runtime_state.get("model_authority", {}).get("models", {})
+    trace_models = {}
+    for role in ("embedding", "rerank"):
+        binding = models.get(role, {})
+        if not isinstance(binding, dict):
+            trace_models[role] = {"model_id": None, "model_revision": None}
+            continue
+        trace_models[role] = {
+            "model_id": binding.get("model_id"),
+            "model_revision": binding.get("model_revision"),
+        }
+    return trace_models
+
+
+def timed_stage(stage_timings: dict, stage_name: str, callable_):
+    stage_started = time.perf_counter()
+    try:
+        return callable_()
+    finally:
+        stage_timings[stage_name] = round((time.perf_counter() - stage_started) * 1000.0, 3)
+
+
+def emit_query_trace(trace_record: dict) -> None:
+    try:
+        append_jsonl(RETRIEVAL_QUERY_TRACE_PATH, trace_record)
+    except RetrievalObservabilityError as exc:
+        raise SystemExit("FEL: querytrace kunde inte skrivas till kanonisk observability-yta") from exc
 
 
 def load_json_object(path: Path) -> dict:
@@ -581,8 +638,7 @@ def encode_query_embedding(normalized_query: str, runtime_state: dict) -> list[f
     return vector
 
 
-def vector_search(normalized_query: str, runtime_state: dict, top_n: int) -> list[str]:
-    query_embedding = encode_query_embedding(normalized_query, runtime_state)
+def query_vector_index(query_embedding: list[float], runtime_state: dict, top_n: int) -> list[str]:
     collection = runtime_state["collection"]
     try:
         result = collection.query(
@@ -604,6 +660,11 @@ def vector_search(normalized_query: str, runtime_state: dict, top_n: int) -> lis
     if any(doc_id not in valid_doc_ids for doc_id in vector_doc_ids):
         raise SystemExit("FEL: vektorindexet returnerade kandidat utan chunkmanifestpost")
     return vector_doc_ids
+
+
+def vector_search(normalized_query: str, runtime_state: dict, top_n: int) -> list[str]:
+    query_embedding = encode_query_embedding(normalized_query, runtime_state)
+    return query_vector_index(query_embedding, runtime_state, top_n)
 
 
 def union_candidate_doc_ids(lexical_doc_ids: list[str], vector_doc_ids: list[str], runtime_state: dict) -> list[str]:
@@ -683,34 +744,141 @@ def rerank_candidates(normalized_query: str, candidate_entries: dict[str, dict],
 
 
 def execute_query(raw_query: str, runtime_state: dict) -> tuple[list[dict], int]:
+    query_hash = sha256_text(raw_query)
+    started_at_utc = utc_now_iso()
+    started_perf = time.perf_counter()
+    trace_id = sha256_text(f"retrieval_query_trace_v1:{started_at_utc}:{query_hash}")
+    request_id = resolve_request_id(trace_id)
+    normalized_query_hash = None
+    stage_timings: dict[str, float] = {}
+    candidate_counts = {
+        "lexical": 0,
+        "vector": 0,
+        "union": 0,
+        "rerank_input": 0,
+        "rerank_output": 0,
+    }
+    evidence_count = 0
+    trace_status = "FAIL"
+    failure_code = "preflight_failed"
+    current_stage = "preflight"
+
     index_manifest = runtime_state["index_manifest"]
-    validate_flat_manifest_fields(index_manifest)
-    if "warm_models" not in runtime_state:
-        raise SystemExit("FEL: retrievalruntime ar inte varm")
+    top_k = 0
 
-    policies = runtime_state["retrieval_policies"]
-    normalized_query = normalize_query(raw_query, policies)
-    lexical_candidate_k = int(index_manifest["lexical_candidate_k"])
-    vector_candidate_k = int(index_manifest["vector_candidate_k"])
-    top_k = int(index_manifest["top_k"])
+    try:
+        validate_flat_manifest_fields(index_manifest)
+        if "warm_models" not in runtime_state:
+            raise SystemExit("FEL: retrievalruntime ar inte varm")
 
-    lexical_doc_ids = lexical_search(normalized_query, runtime_state, lexical_candidate_k)
-    vector_doc_ids = vector_search(normalized_query, runtime_state, vector_candidate_k)
-    candidate_doc_ids = union_candidate_doc_ids(lexical_doc_ids, vector_doc_ids, runtime_state)
-    candidate_entries = fetch_collection_entries(
-        runtime_state["collection"],
-        candidate_doc_ids,
-        runtime_state["chunk_records_by_doc_id"],
-    )
-    scored_entries = rerank_candidates(normalized_query, candidate_entries, runtime_state)
-    evidence_policy = policies["evidence_policy"]
-    output_entries = [
-        build_output_entry(entry, final_score, index_manifest, evidence_policy)
-        for _, entry, final_score in scored_entries[:top_k]
-    ]
-    for entry in output_entries:
-        validate_evidence_object(entry)
-    return output_entries, top_k
+        policies = runtime_state["retrieval_policies"]
+        current_stage = "normalization"
+        normalized_query = timed_stage(
+            stage_timings,
+            "normalization_ms",
+            lambda: normalize_query(raw_query, policies),
+        )
+        normalized_query_hash = sha256_text(normalized_query)
+        lexical_candidate_k = int(index_manifest["lexical_candidate_k"])
+        vector_candidate_k = int(index_manifest["vector_candidate_k"])
+        top_k = int(index_manifest["top_k"])
+
+        current_stage = "lexical_search"
+        lexical_doc_ids = timed_stage(
+            stage_timings,
+            "lexical_search_ms",
+            lambda: lexical_search(normalized_query, runtime_state, lexical_candidate_k),
+        )
+        candidate_counts["lexical"] = len(lexical_doc_ids)
+
+        current_stage = "vector_embedding"
+        query_embedding = timed_stage(
+            stage_timings,
+            "vector_embedding_ms",
+            lambda: encode_query_embedding(normalized_query, runtime_state),
+        )
+
+        current_stage = "vector_retrieval"
+        vector_doc_ids = timed_stage(
+            stage_timings,
+            "vector_retrieval_ms",
+            lambda: query_vector_index(query_embedding, runtime_state, vector_candidate_k),
+        )
+        candidate_counts["vector"] = len(vector_doc_ids)
+
+        current_stage = "candidate_union"
+        candidate_doc_ids = timed_stage(
+            stage_timings,
+            "candidate_union_ms",
+            lambda: union_candidate_doc_ids(lexical_doc_ids, vector_doc_ids, runtime_state),
+        )
+        candidate_counts["union"] = len(candidate_doc_ids)
+
+        candidate_entries = fetch_collection_entries(
+            runtime_state["collection"],
+            candidate_doc_ids,
+            runtime_state["chunk_records_by_doc_id"],
+        )
+        candidate_counts["rerank_input"] = len(candidate_entries)
+
+        current_stage = "rerank"
+        scored_entries = timed_stage(
+            stage_timings,
+            "rerank_ms",
+            lambda: rerank_candidates(normalized_query, candidate_entries, runtime_state),
+        )
+        candidate_counts["rerank_output"] = len(scored_entries)
+
+        current_stage = "evidence_emission"
+        evidence_policy = policies["evidence_policy"]
+
+        def build_evidence_entries() -> list[dict]:
+            output = [
+                build_output_entry(entry, final_score, index_manifest, evidence_policy)
+                for _, entry, final_score in scored_entries[:top_k]
+            ]
+            for entry in output:
+                validate_evidence_object(entry)
+            return output
+
+        output_entries = timed_stage(
+            stage_timings,
+            "evidence_emission_ms",
+            build_evidence_entries,
+        )
+        evidence_count = len(output_entries)
+        trace_status = "PASS"
+        failure_code = None
+        return output_entries, top_k
+    except SystemExit:
+        failure_code = f"{current_stage}_failed"
+        raise
+    except Exception:
+        failure_code = f"{current_stage}_failed"
+        raise
+    finally:
+        finished_at_utc = utc_now_iso()
+        trace_record = base_surface(
+            "retrieval_query_trace",
+            trace_status,
+            generated_at_utc=finished_at_utc,
+        )
+        trace_record.update(
+            {
+                "trace_id": trace_id,
+                "request_id": request_id,
+                "started_at_utc": started_at_utc,
+                "duration_ms": round((time.perf_counter() - started_perf) * 1000.0, 3),
+                "failure_code": failure_code,
+                "query_hash": query_hash,
+                "normalized_query_hash": normalized_query_hash,
+                "models": model_trace_bindings(runtime_state),
+                "stage_timings": stage_timings,
+                "candidate_counts": candidate_counts,
+                "evidence_count": evidence_count,
+            }
+        )
+        emit_query_trace(trace_record)
 
 
 def handle_query_request(raw_query: str) -> str:
