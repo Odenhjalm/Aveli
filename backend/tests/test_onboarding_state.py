@@ -11,6 +11,21 @@ from .utils import auth_header, fetch_auth_subject, register_auth_user
 pytestmark = pytest.mark.anyio("asyncio")
 
 
+@pytest.fixture(autouse=True)
+def _stable_password_hashing_for_onboarding_tests(monkeypatch):
+    from app import models
+    from app.routes import auth as auth_routes
+
+    def _hash_password(password: str) -> str:
+        return f"test-hash:{password}"
+
+    def _verify_password(password: str, hashed: str) -> bool:
+        return hashed == _hash_password(password)
+
+    monkeypatch.setattr(models, "hash_password", _hash_password)
+    monkeypatch.setattr(auth_routes, "verify_password", _verify_password)
+
+
 async def _event_types_for(user_id: str) -> list[str]:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -50,6 +65,15 @@ async def _delete_profile_projection(user_id: str) -> None:
                 (user_id,),
             )
             await conn.commit()
+
+
+async def _create_profile_step(async_client, user: dict[str, str]) -> None:
+    create_resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(user["access_token"]),
+        json={"display_name": "Welcome Pending User", "bio": "Kort bio"},
+    )
+    assert create_resp.status_code == 200, create_resp.text
 
 
 async def test_register_initializes_subject_and_projection_without_required_name(
@@ -111,7 +135,7 @@ async def test_create_profile_persists_required_name_and_optional_bio(
     assert me_resp.json()["bio"] == "Kort bio"
 
     assert await fetch_auth_subject(user["user_id"]) == {
-        "onboarding_state": "incomplete",
+        "onboarding_state": "welcome_pending",
         "role_v2": "learner",
         "role": "learner",
         "is_admin": False,
@@ -204,6 +228,71 @@ async def test_auth_subject_repository_cannot_complete_onboarding_directly():
         )
 
 
+async def test_onboarding_complete_rejects_incomplete_state(async_client):
+    user = await register_auth_user(
+        async_client,
+        email=f"complete_incomplete_{uuid.uuid4().hex[:8]}@example.com",
+        password="Passw0rd!",
+        display_name="Incomplete User",
+    )
+
+    complete_resp = await async_client.post(
+        "/auth/onboarding/complete",
+        headers=auth_header(user["access_token"]),
+    )
+
+    assert complete_resp.status_code == 409, complete_resp.text
+    assert complete_resp.json()["detail"] == "Välkomststeget måste bekräftas först."
+    assert await fetch_auth_subject(user["user_id"]) == {
+        "onboarding_state": "incomplete",
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
+    }
+    assert await _event_types_for(user["user_id"]) == []
+
+
+async def test_create_profile_rejects_completed_state_without_profile_mutation(
+    async_client,
+):
+    user = await register_auth_user(
+        async_client,
+        email=f"create_completed_{uuid.uuid4().hex[:8]}@example.com",
+        password="Passw0rd!",
+        display_name="Completed User",
+    )
+    await _create_profile_step(async_client, user)
+    complete_resp = await async_client.post(
+        "/auth/onboarding/complete",
+        headers=auth_header(user["access_token"]),
+    )
+    assert complete_resp.status_code == 200, complete_resp.text
+
+    create_resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(user["access_token"]),
+        json={"display_name": "Mutated Name", "bio": "Mutated bio"},
+    )
+
+    assert create_resp.status_code == 409, create_resp.text
+    assert create_resp.json()["detail"] == (
+        "Profilsteget kan bara slutföras från ofullständig onboarding."
+    )
+    me_resp = await async_client.get(
+        "/profiles/me",
+        headers=auth_header(user["access_token"]),
+    )
+    assert me_resp.status_code == 200, me_resp.text
+    assert me_resp.json()["display_name"] == "Welcome Pending User"
+    assert me_resp.json()["bio"] == "Kort bio"
+    assert await fetch_auth_subject(user["user_id"]) == {
+        "onboarding_state": "completed",
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
+    }
+
+
 async def test_onboarding_complete_requires_explicit_refresh_boundary(async_client):
     user = await register_auth_user(
         async_client,
@@ -218,6 +307,7 @@ async def test_onboarding_complete_requires_explicit_refresh_boundary(async_clie
     assert me_resp.status_code == 200, me_resp.text
     assert me_resp.json()["display_name"] is None
     assert me_resp.json()["bio"] is None
+    await _create_profile_step(async_client, user)
 
     complete_resp = await async_client.post(
         "/auth/onboarding/complete",
@@ -260,6 +350,7 @@ async def test_onboarding_complete_does_not_derive_completion_from_profile_name(
         password="Passw0rd!",
         display_name="Temporary Name",
     )
+    await _create_profile_step(async_client, user)
     await _set_profile_display_name(user["user_id"], display_name)
 
     complete_resp = await async_client.post(
@@ -291,6 +382,7 @@ async def test_onboarding_complete_does_not_require_profile_projection_before_mu
         password="Passw0rd!",
         display_name="Temporary Name",
     )
+    await _create_profile_step(async_client, user)
     await _delete_profile_projection(user["user_id"])
 
     complete_resp = await async_client.post(
@@ -342,13 +434,14 @@ async def test_login_and_refresh_do_not_complete_onboarding(async_client):
     }
 
 
-async def test_onboarding_complete_is_idempotent(async_client):
+async def test_onboarding_complete_rejects_completed_state(async_client):
     user = await register_auth_user(
         async_client,
-        email=f"idempotent_{uuid.uuid4().hex[:8]}@example.com",
+        email=f"already_completed_{uuid.uuid4().hex[:8]}@example.com",
         password="Passw0rd!",
-        display_name="Idempotent User",
+        display_name="Already Completed User",
     )
+    await _create_profile_step(async_client, user)
 
     first_resp = await async_client.post(
         "/auth/onboarding/complete",
@@ -360,12 +453,9 @@ async def test_onboarding_complete_is_idempotent(async_client):
     )
 
     assert first_resp.status_code == 200, first_resp.text
-    assert second_resp.status_code == 200, second_resp.text
-    assert second_resp.json() == {
-        "status": "completed",
-        "onboarding_state": "completed",
-        "token_refresh_required": True,
-    }
+    assert second_resp.status_code == 409, second_resp.text
+    assert second_resp.json()["detail"] == "Välkomststeget måste bekräftas först."
+    assert await _event_types_for(user["user_id"]) == ["onboarding_completed"]
 
 
 async def test_verify_email_does_not_complete_onboarding(async_client):

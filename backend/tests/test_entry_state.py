@@ -78,6 +78,46 @@ async def test_entry_state_denies_incomplete_onboarding(async_client, monkeypatc
     }
 
 
+async def test_entry_state_denies_welcome_pending_onboarding(
+    async_client,
+    monkeypatch,
+):
+    response = await _get_entry_state(
+        async_client,
+        monkeypatch,
+        current_user=_current_user(onboarding_state="welcome_pending"),
+        membership={"status": "active", "source": "purchase", "expires_at": None},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "can_enter_app": False,
+        "onboarding_state": "welcome_pending",
+        "onboarding_completed": False,
+        "membership_active": True,
+        "needs_onboarding": True,
+        "needs_payment": False,
+        "role_v2": "learner",
+        "role": "learner",
+        "is_admin": False,
+    }
+
+
+async def test_entry_state_rejects_noncanonical_onboarding_state(
+    async_client,
+    monkeypatch,
+):
+    response = await _get_entry_state(
+        async_client,
+        monkeypatch,
+        current_user=_current_user(onboarding_state="profile_created"),
+        membership={"status": "active", "source": "purchase", "expires_at": None},
+    )
+
+    assert response.status_code == 500, response.text
+    assert response.json()["detail"] == "internal_error"
+
+
 @pytest.mark.parametrize(
     ("membership", "expected_needs_payment"),
     [

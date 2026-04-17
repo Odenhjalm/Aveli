@@ -20,9 +20,10 @@ class RouteSessionSnapshot {
   String? get onboardingState => entryState?.onboardingState;
   bool get needsPayment => entryState?.needsPayment ?? false;
   bool get needsOnboarding => entryState?.needsOnboarding ?? false;
-  bool get needsWelcome => onboardingState == 'welcome_pending';
+  bool get needsWelcome =>
+      onboardingState == EntryOnboardingState.welcomePending;
   bool get needsCreateProfile =>
-      needsOnboarding && onboardingState != 'welcome_pending';
+      needsOnboarding && onboardingState == EntryOnboardingState.incomplete;
 }
 
 final routeSessionSnapshotProvider = Provider<RouteSessionSnapshot>((ref) {

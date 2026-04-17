@@ -9,6 +9,7 @@ enum UserRole { learner, teacher }
 
 abstract final class OnboardingStateValue {
   static const incomplete = 'incomplete';
+  static const welcomePending = 'welcome_pending';
   static const completed = 'completed';
 }
 

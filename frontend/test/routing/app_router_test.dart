@@ -127,7 +127,7 @@ void main() {
   const completedEntry = RouteSessionSnapshot(
     entryState: EntryState(
       canEnterApp: true,
-      onboardingState: 'completed',
+      onboardingState: EntryOnboardingState.completed,
       onboardingCompleted: true,
       membershipActive: true,
       needsOnboarding: false,
@@ -142,7 +142,7 @@ void main() {
   const paymentNeeded = RouteSessionSnapshot(
     entryState: EntryState(
       canEnterApp: false,
-      onboardingState: 'completed',
+      onboardingState: EntryOnboardingState.completed,
       onboardingCompleted: true,
       membershipActive: false,
       needsOnboarding: false,
@@ -157,7 +157,7 @@ void main() {
   const ordinaryPaymentAndOnboardingNeeded = RouteSessionSnapshot(
     entryState: EntryState(
       canEnterApp: false,
-      onboardingState: 'incomplete',
+      onboardingState: EntryOnboardingState.incomplete,
       onboardingCompleted: false,
       membershipActive: false,
       needsOnboarding: true,
@@ -172,7 +172,7 @@ void main() {
   const onboardingNeeded = RouteSessionSnapshot(
     entryState: EntryState(
       canEnterApp: false,
-      onboardingState: 'incomplete',
+      onboardingState: EntryOnboardingState.incomplete,
       onboardingCompleted: false,
       membershipActive: true,
       needsOnboarding: true,
@@ -187,7 +187,7 @@ void main() {
   const welcomePending = RouteSessionSnapshot(
     entryState: EntryState(
       canEnterApp: false,
-      onboardingState: 'welcome_pending',
+      onboardingState: EntryOnboardingState.welcomePending,
       onboardingCompleted: false,
       membershipActive: true,
       needsOnboarding: true,
@@ -203,6 +203,36 @@ void main() {
     entryState: null,
     isEntryStateLoading: true,
   );
+
+  test('entry state model accepts only canonical onboarding states', () {
+    final state = EntryState.fromJson({
+      'can_enter_app': false,
+      'onboarding_state': EntryOnboardingState.welcomePending,
+      'onboarding_completed': false,
+      'membership_active': true,
+      'needs_onboarding': true,
+      'needs_payment': false,
+      'role_v2': 'learner',
+      'role': 'learner',
+      'is_admin': false,
+    });
+
+    expect(state.onboardingState, EntryOnboardingState.welcomePending);
+    expect(
+      () => EntryState.fromJson({
+        'can_enter_app': false,
+        'onboarding_state': 'profile_created',
+        'onboarding_completed': false,
+        'membership_active': true,
+        'needs_onboarding': true,
+        'needs_payment': false,
+        'role_v2': 'learner',
+        'role': 'learner',
+        'is_admin': false,
+      }),
+      throwsFormatException,
+    );
+  });
 
   testWidgets('unauthenticated users redirect private routes to login', (
     tester,
@@ -306,6 +336,17 @@ void main() {
     final router = await _pumpHarness(tester, welcomePending);
 
     router.go(RoutePath.welcome);
+    await tester.pump();
+
+    expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);
+  });
+
+  testWidgets('welcome-pending onboarding blocks create-profile fallback', (
+    tester,
+  ) async {
+    final router = await _pumpHarness(tester, welcomePending);
+
+    router.go(RoutePath.createProfile);
     await tester.pump();
 
     expect(router.routeInformationProvider.value.uri.path, RoutePath.welcome);

@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from jose import JWTError
 from psycopg.rows import dict_row
 
@@ -25,7 +27,47 @@ from ..services.email_verification import (
     reset_password_with_token,
 )
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+_ONBOARDING_CONFLICT_PATHS = frozenset(
+    {
+        "/auth/onboarding/create-profile",
+        "/auth/onboarding/complete",
+    }
+)
+_ONBOARDING_CONFLICT_FALLBACK_DETAIL = "Onboarding kunde inte fortsätta."
+
+
+class _OnboardingConflictDetailRoute(APIRoute):
+    def get_route_handler(self):
+        original_route_handler = super().get_route_handler()
+
+        async def route_handler(request: Request):
+            try:
+                return await original_route_handler(request)
+            except HTTPException as exc:
+                if (
+                    exc.status_code == status.HTTP_409_CONFLICT
+                    and request.url.path in _ONBOARDING_CONFLICT_PATHS
+                ):
+                    detail = (
+                        exc.detail
+                        if isinstance(exc.detail, str) and exc.detail.strip()
+                        else _ONBOARDING_CONFLICT_FALLBACK_DETAIL
+                    )
+                    return JSONResponse(
+                        status_code=exc.status_code,
+                        content={"detail": detail},
+                        headers=exc.headers,
+                    )
+                raise
+
+        return route_handler
+
+
+router = APIRouter(
+    prefix="/auth",
+    tags=["auth"],
+    route_class=_OnboardingConflictDetailRoute,
+)
 
 _RATE_LIMIT_WINDOW_SECONDS = 60
 _RATE_LIMIT_MAX_ATTEMPTS = 5
@@ -138,7 +180,7 @@ async def _complete_onboarding_at_canonical_route(user_id: str) -> dict[str, Any
                 UPDATE app.auth_subjects
                    SET onboarding_state = 'completed'
                  WHERE user_id = %s
-                   AND onboarding_state IN ('welcome_pending', 'completed')
+                   AND onboarding_state = 'welcome_pending'
                  RETURNING user_id, onboarding_state, role_v2, role, is_admin
                 """,
                 (user_id,),
@@ -340,8 +382,22 @@ async def create_onboarding_profile(
     payload: schemas.OnboardingCreateProfileRequest,
     current_user: CurrentUser,
 ):
+    user_id = str(current_user["id"])
+    auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
+    if not auth_subject:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="subject_not_found",
+        )
+    previous_state = _validated_onboarding_state(auth_subject.get("onboarding_state"))
+    if previous_state != "incomplete":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profilsteget kan bara slutföras från ofullständig onboarding.",
+        )
+
     profile = await models.update_profile(
-        current_user["id"],
+        user_id,
         display_name=payload.display_name,
         bio=payload.bio,
     )
@@ -351,12 +407,12 @@ async def create_onboarding_profile(
             detail="profile_not_found",
         )
     updated_subject = await auth_subjects_repo.mark_create_profile_step_complete(
-        current_user["id"]
+        user_id
     )
     if not updated_subject:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="subject_not_found",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profilsteget kan bara slutföras från ofullständig onboarding.",
         )
     return schemas.Profile(**profile)
 
@@ -380,10 +436,10 @@ async def complete_onboarding(request: Request, current_user: CurrentUser):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="internal_error",
         )
-    if previous_state not in {"welcome_pending", "completed"}:
+    if previous_state != "welcome_pending":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="welcome_confirmation_required",
+            detail="Välkomststeget måste bekräftas först.",
         )
 
     updated_subject = await _complete_onboarding_at_canonical_route(user_id)

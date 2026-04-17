@@ -1,5 +1,28 @@
 import 'package:flutter/foundation.dart';
 
+abstract final class EntryOnboardingState {
+  static const incomplete = 'incomplete';
+  static const welcomePending = 'welcome_pending';
+  static const completed = 'completed';
+
+  static const allowed = {incomplete, welcomePending, completed};
+
+  static String parse(Object? value) {
+    if (value is! String) {
+      throw const FormatException(
+        'entry_state.onboarding_state must be a string',
+      );
+    }
+    final normalized = value.trim();
+    if (!allowed.contains(normalized)) {
+      throw const FormatException(
+        'entry_state.onboarding_state must be canonical',
+      );
+    }
+    return normalized;
+  }
+}
+
 @immutable
 class EntryState {
   const EntryState({
@@ -17,7 +40,7 @@ class EntryState {
   factory EntryState.fromJson(Map<String, dynamic> json) {
     return EntryState(
       canEnterApp: _readBool(json, 'can_enter_app'),
-      onboardingState: _readString(json, 'onboarding_state'),
+      onboardingState: EntryOnboardingState.parse(json['onboarding_state']),
       onboardingCompleted: _readBool(json, 'onboarding_completed'),
       membershipActive: _readBool(json, 'membership_active'),
       needsOnboarding: _readBool(json, 'needs_onboarding'),

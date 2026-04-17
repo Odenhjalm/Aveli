@@ -141,12 +141,9 @@ async def mark_create_profile_step_complete(
             await cur.execute(
                 """
                 UPDATE app.auth_subjects
-                   SET onboarding_state = CASE
-                         WHEN onboarding_state = 'incomplete' THEN 'welcome_pending'
-                         ELSE onboarding_state
-                       END
+                   SET onboarding_state = 'welcome_pending'
                  WHERE user_id = %s
-                   AND onboarding_state IN ('incomplete', 'welcome_pending', 'completed')
+                   AND onboarding_state = 'incomplete'
                  RETURNING user_id, onboarding_state, role_v2, role, is_admin
                 """,
                 (user_id,),
