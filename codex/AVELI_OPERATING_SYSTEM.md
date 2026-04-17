@@ -80,6 +80,80 @@ Rules:
 
 ---
 
+## Canonical Mutation and Observability Boundary
+
+OBSERVABILITY IS NOT A WRITE CONSTRAINT.
+
+Codex MUST distinguish canonical system mutations from non-canonical
+observability writes before deciding whether a task violates read-only,
+no-code, audit, generate, or confirm constraints.
+
+### Canonical system mutations
+
+Canonical system mutations are authoritative writes that can change system
+truth, runtime truth, accepted baseline, contracts, source code, index
+authority, accepted task artifacts, or persisted domain state.
+
+Canonical system mutations include writes to:
+
+- source code
+- accepted baseline slots or baseline manifests
+- authoritative contracts
+- SYSTEM_LAWS or manifest authority
+- active index authority artifacts
+- database, storage, or runtime domain truth
+- task artifacts that become authoritative execution input
+
+Canonical system mutations are forbidden in read-only, no-code audit, generate,
+and confirm scopes unless an explicit later rule requires a specific
+materialized artifact for that mode.
+
+### Non-canonical observability writes
+
+Non-canonical observability writes are logging, tracing, debug artifacts,
+telemetry, and local cache writes that do not define authority.
+
+Non-canonical observability writes:
+
+- are non-authoritative
+- MUST NOT create or redefine system truth
+- MUST NOT define corpus membership, ranking, prompt content, contract truth,
+  runtime truth, baseline truth, or domain state
+- MUST NOT be used as the only proof of a canonical invariant
+- MUST NOT block execution merely because they are filesystem writes
+- MUST remain isolated from canonical authority paths
+
+If a tool performs side-effect logging, tracing, telemetry, debug output, or
+local cache writes, Codex MUST still execute the tool when the tool is otherwise
+required by the task.
+
+If an observability write fails, Codex MUST classify the observability surface
+as `PARTIAL` or `BLOCKED` and continue when canonical retrieval output or other
+required canonical evidence remains available. Observability write failure MUST
+NOT be treated as a canonical mutation violation.
+
+### Retrieval in no-code audit
+
+Retrieval tools MUST always be executable in NO-CODE AUDIT or policy-only audit
+scopes.
+
+Retrieval MUST NOT be skipped because the retrieval tool writes logs, traces,
+debug artifacts, telemetry, or local cache files as non-canonical side effects.
+
+If retrieval is skipped due to observability side effects:
+
+STOP: RETRIEVAL INCORRECTLY BLOCKED BY NON-CANONICAL OBSERVABILITY
+
+### Read-only interpretation
+
+When this OS says read-only, no-code, no mutation, or no system state mutation,
+the prohibition applies to canonical system mutations only.
+
+Non-canonical observability writes are not canonical system mutations and are
+not a write constraint.
+
+---
+
 ## Execution Modes
 
 Codex MUST determine which mode applies before starting work.
@@ -341,6 +415,11 @@ If index exists:
 
 - USE it
 - DO NOT touch it
+
+`DO NOT touch it` means Codex MUST NOT mutate authoritative index artifacts or
+use a query path that rebuilds, repairs, promotes, or redefines index authority.
+Isolated non-canonical observability writes, such as retrieval traces or health
+telemetry, do not touch index authority and MUST NOT block retrieval execution.
 
 If index missing:
 
@@ -1055,6 +1134,11 @@ Rules:
 ## Logging (Execute Mode Only)
 
 Every mutation MUST be logged.
+
+This section governs logging for canonical execute-mode mutations. It does not
+classify non-canonical logging, tracing, debug artifacts, telemetry, or local
+cache writes as canonical mutations, and it does not prohibit observability in
+read-only, no-code audit, generate, or confirm scopes.
 
 Each log MUST include:
 
