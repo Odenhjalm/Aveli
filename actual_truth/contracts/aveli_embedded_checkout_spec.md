@@ -4,15 +4,24 @@
 
 ACTIVE TARGET SPECIFICATION.
 
+This specification is subordinate to
+`actual_truth/contracts/baseline_v2_authority_freeze_contract.md`,
+`actual_truth/contracts/commerce_membership_contract.md`, and
+`actual_truth/contracts/embedded_checkout_activation_decision.md`.
+
 ACTIVATED FOR ORDINARY MEMBERSHIP CHECKOUT BY
 `actual_truth/contracts/embedded_checkout_activation_decision.md`.
 
 TRIAL DURATION RATIFIED BY
 `actual_truth/contracts/ratifications/T14_membership_trial_duration_decision.md`.
 
-This file is the active implementation specification for ordinary
-purchase-backed membership checkout. It does not implement code, mutate
-baseline, or expand embedded checkout scope to course or bundle checkout.
+This file is the active target specification for ordinary purchase-backed
+membership checkout at the contract layer. It does not implement code, mutate
+baseline, or expand embedded checkout scope to course, bundle, service,
+session, or Connect checkout.
+
+Implementation-plan and prompt sections that predate Baseline V2 freeze are
+historical until regenerated after the authority-freeze batches are accepted.
 
 ## 1. Current-State Audit Summary
 
@@ -98,7 +107,7 @@ Flow:
 2. Router reads `GET /entry-state`.
 3. If `needs_payment = true`, route user to the checkout-start surface.
 4. Checkout-start surface calls `POST /api/billing/create-subscription`.
-5. Backend creates a pending subscription order in `app.orders`.
+5. Backend creates a pending membership purchase order in `app.orders`.
 6. Backend creates a Stripe subscription Checkout Session configured for
    embedded payment collection and the ratified 14-day trial/test period.
 7. Backend returns
@@ -309,10 +318,14 @@ After checkout:
 
 Checkout/payment authority:
 
-- Owned by `app.orders`, `app.payments`, Stripe Checkout Session creation, and
-  `POST /api/stripe/webhook`.
+- Owned by `app.orders`, `app.payments`, Stripe provider checkout-session
+  creation, and `POST /api/stripe/webhook`.
 - Checkout may create purchase/payment truth.
 - Checkout must not write onboarding state.
+- `session_id` is provider checkout-session correlation only and is not Aveli
+  service/session domain authority.
+- `client_secret`, `session_id`, and `order_id` do not grant membership,
+  onboarding completion, routing, or app entry.
 
 Membership authority:
 
@@ -346,7 +359,7 @@ Current active contract truth:
 - Trial-backed checkout creates an order.
 - Trial membership is `source = "purchase"`.
 - Membership becomes active only after backend webhook confirms Stripe
-  subscription state and writes `app.memberships`.
+  provider state and writes `app.memberships`.
 
 Superseded rule:
 
@@ -368,12 +381,21 @@ Decisions:
 - Hosted or raw Stripe URL membership checkout is superseded and is not a
   canonical fallback.
 - Course and bundle checkout remain on their current hosted checkout path.
+- Service/session/Connect-like scope remains excluded from Baseline V2 launch
+  authority unless later explicitly activated.
 
 Stop implementation if an active contract still preserves 30 days, hosted/raw
 Stripe URL membership checkout, or the legacy membership response shape as
 canonical ordinary membership checkout truth.
 
+Stop implementation if `session_id` is treated as Aveli service/session domain
+authority or if provider session state is treated as Aveli domain authority.
+
 ## 14. Concrete Implementation Plan
+
+This section is historical implementation-planning context until regenerated
+after Baseline V2 authority freeze and production deployment authority
+alignment are accepted.
 
 1. Align backend membership checkout response to embedded Checkout:
    `client_secret`, `session_id`, `order_id`.
@@ -398,6 +420,10 @@ Referral flow to preserve:
 `register -> create-profile -> redeem -> welcome -> onboarding-complete -> app`
 
 ## 15. English Copy-Paste Implementation Prompts
+
+This section is historical prompt context until regenerated after Baseline V2
+authority freeze and production deployment authority alignment are accepted.
+Generated operator prompts must be copy-paste-ready English.
 
 Backend prompt:
 
@@ -430,8 +456,10 @@ implementation time.
 
 ## 17. Final Assertion
 
-This spec is concrete and implementation-ready for ordinary purchase-backed
-membership checkout at the contract layer.
+This spec is concrete for ordinary purchase-backed membership checkout at the
+contract layer. Implementation planning remains blocked until the Baseline V2
+authority-freeze batches and production deployment authority alignment are
+accepted.
 
 It preserves checkout/payment authority, membership authority, onboarding
 authority, profile projection boundaries, backend webhook authority, and
@@ -441,3 +469,6 @@ It does not authorize moving authority into `/profiles/me`, frontend
 membership mutation, checkout-derived onboarding completion, app entry from
 Stripe success alone, hosted/raw Stripe URL membership fallback, or moving
 course and bundle checkout into embedded scope.
+
+It does not authorize service/session/Connect-like scope. User-facing checkout
+errors and product copy must be Swedish.

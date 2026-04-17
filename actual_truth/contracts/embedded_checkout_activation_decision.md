@@ -17,6 +17,7 @@ doctrine.
 
 Authority used:
 
+- `actual_truth/contracts/baseline_v2_authority_freeze_contract.md`
 - `actual_truth/contracts/commerce_membership_contract.md`
 - `actual_truth/contracts/onboarding_entry_authority_contract.md`
 - `actual_truth/contracts/onboarding_contract.md`
@@ -92,8 +93,11 @@ ordinary membership checkout after this activation decision.
 
 Decision:
 
-Embedded Stripe checkout is active for ordinary purchase-backed membership
-checkout.
+Embedded Stripe checkout is the provider flow for ordinary purchase-backed
+membership checkout.
+
+Embedded checkout does not own Aveli domain authority. Backend
+order/payment/membership settlement owns Aveli commerce authority.
 
 The activated target flow is:
 
@@ -137,6 +141,12 @@ Backend remains canonical for:
 - membership state
 - entry-state routing truth
 
+Stripe checkout success, frontend return state, and provider session state are
+not domain authority.
+
+Service/session/Connect-like scope remains excluded from Baseline V2 launch
+authority unless later activated by explicit accepted authority.
+
 ## 5. CANONICAL RESPONSE SHAPE DECISION
 
 Chosen canonical ordinary membership checkout response shape:
@@ -163,8 +173,9 @@ Rules:
 
 - `client_secret` is the short-lived Stripe embedded Checkout Session secret
   returned only by the authenticated membership checkout initiation response.
-- `session_id` remains required for Stripe/session correlation and frontend
-  return-state tracking.
+- `session_id` remains required for Stripe provider checkout-session
+  correlation and frontend return-state tracking.
+- `session_id` is not Aveli service/session domain authority.
 - `order_id` remains required for backend purchase identity correlation and
   observability.
 - `url` is not part of the canonical ordinary membership checkout success
@@ -239,11 +250,18 @@ Course and bundle checkout must not be pulled into the embedded membership
 implementation unless a later explicit course/bundle embedded checkout decision
 exists.
 
+Service/session/Connect-like commerce remains outside this activation decision
+and outside Baseline V2 launch authority.
+
 ## 8. CONTRACTS THAT MUST BE UPDATED
 
-Before implementation begins, update the active contract stack so no active
-contract still presents the superseded ordinary membership checkout model as
-canonical.
+This section is historical activation-planning context. Batch 3 authority
+freeze alignment now makes this decision subordinate to
+`baseline_v2_authority_freeze_contract.md`,
+`commerce_membership_contract.md`, and `aveli_embedded_checkout_spec.md`.
+
+Before implementation begins, the active contract stack must not present the
+superseded ordinary membership checkout model as canonical.
 
 Required contract updates:
 
@@ -269,15 +287,16 @@ Required contract updates:
     membership checkout
   - keep course/bundle checkout out of scope unless a later decision expands it
 
-Required derived-task updates after contract alignment:
+Historical derived-task context after contract alignment:
 
 - `actual_truth/DETERMINED_TASKS/onboarding_domain_alignment/T13_lock_and_implement_ordinary_checkout_welcome_flow.md`
 - `actual_truth/DETERMINED_TASKS/onboarding_domain_alignment/task_manifest.json`
 - checkout/onboarding payment task surfaces that still require 30 days, hosted
   membership URL response, or missing embedded response-shape coverage
 
-These derived-task updates must follow the updated active contracts. They must
-not redefine the decision.
+These derived-task references do not authorize tasktree edits in Batch 3. Any
+future derived-task update must follow the updated active contracts and must not
+redefine this decision.
 
 ## 9. STOP CONDITIONS
 
@@ -294,6 +313,9 @@ STOP before implementation if any of the following is true:
 - any implementation uses a 30-day ordinary membership checkout trial
 - frontend checkout success, Stripe success, return URL state, `client_secret`,
   `session_id`, or `order_id` is treated as membership authority
+- provider session state is treated as Aveli domain authority
+- service/session/Connect-like scope is activated without later accepted
+  authority
 - checkout writes onboarding state
 - checkout completes onboarding
 - `/profiles/me` becomes routing, checkout, payment, onboarding, or membership
@@ -308,10 +330,11 @@ STOP before implementation if any of the following is true:
 
 Next step:
 
-Update the active contracts listed in section 8, then implement the embedded
-Stripe membership checkout flow.
+After Batch 3 domain alignment, proceed to production deployment authority
+alignment before any implementation planning.
 
-Implementation must start only after the active contract stack is aligned with:
+Implementation planning must start only after the active contract stack is
+aligned with:
 
 - embedded membership checkout active
 - one membership checkout initiation endpoint
@@ -321,3 +344,4 @@ Implementation must start only after the active contract stack is aligned with:
 - hosted/raw Stripe URL membership checkout superseded
 - course and bundle checkout remaining on current hosted path
 - webhook-owned settlement and membership mutation preserved
+- service/session/Connect-like scope excluded unless later activated

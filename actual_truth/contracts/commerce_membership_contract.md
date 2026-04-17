@@ -47,6 +47,48 @@ Full post-auth entry composition, routing, and the `GET /entry-state`
 `membership_active` projection are owned by
 `onboarding_entry_authority_contract.md`.
 
+## 2A. ORDERS FIELD AUTHORITY CLASSIFICATION
+
+Canonical commerce trail:
+
+- `app.orders` owns purchase identity and purchase lifecycle.
+- `app.payments` owns payment-provider settlement tied to orders.
+- `app.memberships` owns resulting current membership state.
+
+Canonical order authority includes:
+
+- order identity
+- user binding
+- applicable course or bundle purchase binding
+- amount and currency
+- lifecycle status
+- order/provider modality
+- provider settlement correlation required to reconcile webhook events
+
+Provider correlation only:
+
+- Stripe checkout session state
+- Stripe subscription state
+- Stripe payment state
+- Stripe customer state
+- Stripe invoice state
+- Stripe payment intent state
+- provider identifiers stored on orders, payments, support tables, or logs
+
+`subscription` may remain provider/order modality. It is not Aveli domain
+authority.
+
+Inert unless later activated by explicit accepted authority:
+
+- `service_id`
+- `session_id`
+- `session_slot_id`
+- `connected_account_id`
+- service/session/Connect-like order fields
+
+These inert fields must not activate service checkout, session commerce, or
+Connect marketplace authority in Baseline V2.
+
 ## Payment Tables Classification
 
 app.payment_events:
@@ -296,7 +338,9 @@ Membership input rules:
 - Webhook flows that update membership without resolving purchase authority through orders/payments.
 - Webhook flows that create fallback purchase authority outside the canonical order path.
 - Duplicate membership initiation entrypoints that express the same purchase meaning.
-- Treating `subscription` as the canonical runtime authority term.
+- Treating `subscription` as Aveli domain authority.
+- Treating service/session/Connect-like order fields as active Baseline V2
+  commerce authority without later accepted activation authority.
 - Treating `past_due` as access-granting or grace-bearing by default.
 - Inferring a grace period from Stripe retry behavior without a separate explicit contract.
 - Treating session-status, portal, or cancellation surfaces as launch purchase entrypoints.
@@ -344,7 +388,8 @@ Membership input rules:
 
 ## 16. REFUND, WITHDRAWAL, CANCELLATION, AND ACCESS-REVOCATION LAW
 
-- Membership is a subscription purchase and remains order-backed and payment-backed.
+- Membership may use a provider subscription/order modality and remains
+  order-backed and payment-backed.
 - One-off digital product purchase means an order-backed and payment-backed purchase of course or bundle entitlement.
 - Backend is the only authority allowed to:
   - trigger refund workflow
@@ -353,7 +398,7 @@ Membership input rules:
   - decide when one-off product access ends
   - revoke access following a valid withdrawal outcome or separate statutory remedy outcome
 - Stripe is infrastructure and transport only.
-- Stripe subscription state, invoice state, charge state, refund state, dispute state, checkout-session state, customer-portal state, and webhook payload shape are never authority by themselves.
+- Stripe subscription state, invoice state, charge state, refund state, dispute state, checkout-session state, customer-portal state, and webhook payload shape are provider correlation only and are never authority by themselves.
 - Frontend state is never refund authority, cancellation-state authority, or access-revocation authority.
 - Token claims are never refund authority, cancellation-state authority, or access-revocation authority.
 - Ad hoc support surfaces, support notes, CRM state, and manual support acknowledgments are never refund authority, cancellation-state authority, or access-revocation authority.
@@ -398,5 +443,9 @@ Authority effect law:
 - This contract is the canonical launch commerce and membership purchase truth.
 - This contract does not own full post-auth entry composition or routing authority.
 - Membership state is an input to `GET /entry-state` under `onboarding_entry_authority_contract.md`.
+- `orders`, `payments`, and `memberships` are the canonical commerce trail.
+- `subscription` is provider/order modality only, not Aveli domain authority.
+- Service/session/Connect-like order fields remain inert unless later activated
+  by explicit accepted authority.
 - It is lockable as a contract artifact.
 - Contract truth and implementation drift are intentionally separated.

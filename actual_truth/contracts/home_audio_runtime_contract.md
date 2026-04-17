@@ -19,6 +19,20 @@ Field rules:
 - `media` MUST be present and MUST be `{ media_id, state, resolved_url } | null`
 - Field omission is forbidden for `media`
 
+## COURSE-LINK COMPOSITION AUTHORITY
+
+Runtime response shape remains governed by this contract.
+
+Course-linked home audio may be composed from canonical
+`app.home_player_course_links` source truth plus backend read composition under
+`home_audio_aggregation_contract.md`.
+
+`runtime_media` remains read-only projection authority where in scope, but it
+is not the source table for `app.home_player_course_links`.
+
+Frontend fallback, direct storage authority, and client-side access inference
+are forbidden.
+
 ## TRANSPORT CONSTRAINTS
 
 - Response payloads MUST preserve the listed field names exactly

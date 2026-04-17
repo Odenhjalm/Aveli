@@ -186,11 +186,25 @@ The following are forbidden as canonical source truth for profile/community medi
 
 ## 11. Baseline And Feature Boundary
 
-Profile/community media remains a non-core feature domain.
+Profile/community media is canonical Baseline V2 scope under
+`actual_truth/contracts/baseline_v2_authority_freeze_contract.md`.
 
-Baseline core does not own `app.profile_media_placements` directly.
+`app.profile_media_placements` is the authored-placement source truth for
+profile/community media.
 
-Any baseline evolution that supports this contract must be append-only and must attach the profile/community media feature above baseline core without mutating canonical core entities into profile/community media owners.
+`app.media_assets` owns media identity and media lifecycle for
+profile/community media assets.
+
+`app.profiles` remains projection-only. It may store projection-maintained
+profile/avatar identity, but it does not become source truth for
+profile/community media.
+
+Auth, onboarding, and profile-projection patch flows do not own avatar upload,
+avatar binding, profile media identity, or profile/community media placement
+authority.
+
+Any legacy statement that treats profile/community media as non-core for
+Baseline V2 is superseded for Baseline V2 planning.
 
 ## 12. Final Assertion
 
