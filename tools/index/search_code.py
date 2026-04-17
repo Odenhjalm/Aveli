@@ -1,4 +1,5 @@
 import hashlib
+import contextlib
 import json
 import math
 import os
@@ -43,6 +44,7 @@ from retrieval_observability import (
     append_jsonl,
     base_surface,
     utc_now_iso,
+    write_retrieval_health_surfaces,
 )
 
 # ---------------------------------------------------------
@@ -96,6 +98,12 @@ REQUEST_ID_ENV_VARS = (
     "AVELI_REQUEST_ID",
     "MCP_REQUEST_ID",
 )
+CORRELATION_ID_ENV_VARS = (
+    "AVELI_RETRIEVAL_CORRELATION_ID",
+    "AVELI_CORRELATION_ID",
+    "MCP_CORRELATION_ID",
+    "CORRELATION_ID",
+)
 
 _RUNTIME_STATE = None
 
@@ -110,6 +118,35 @@ def resolve_request_id(trace_id: str) -> str:
         if value:
             return value
     return trace_id
+
+
+def resolve_correlation_id(request_id: str) -> str:
+    for env_var in CORRELATION_ID_ENV_VARS:
+        value = os.environ.get(env_var, "").strip()
+        if value:
+            return value
+    return request_id
+
+
+@contextlib.contextmanager
+def suppress_model_load_output():
+    saved_stdout_fd = os.dup(1)
+    saved_stderr_fd = os.dup(2)
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+                yield
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(saved_stdout_fd, 1)
+        os.dup2(saved_stderr_fd, 2)
+        os.close(saved_stdout_fd)
+        os.close(saved_stderr_fd)
 
 
 def model_trace_bindings(runtime_state: dict) -> dict:
@@ -336,22 +373,24 @@ def load_warm_model_surface(model_authority: dict) -> dict:
         raise SystemExit("FEL: modellauktoritet saknar embedding- eller rerank-bindning")
 
     try:
-        embedding_model = SentenceTransformer(
-            str(embedding_binding["local_path"]),
-            device="cpu",
-            local_files_only=True,
-            trust_remote_code=False,
-        )
+        with suppress_model_load_output():
+            embedding_model = SentenceTransformer(
+                str(embedding_binding["local_path"]),
+                device="cpu",
+                local_files_only=True,
+                trust_remote_code=False,
+            )
     except Exception as exc:
         raise SystemExit("FEL: embeddingmodell kunde inte varmas fran kanonisk modellauktoritet") from exc
 
     try:
-        rerank_model = CrossEncoder(
-            str(rerank_binding["local_path"]),
-            device="cpu",
-            local_files_only=True,
-            trust_remote_code=False,
-        )
+        with suppress_model_load_output():
+            rerank_model = CrossEncoder(
+                str(rerank_binding["local_path"]),
+                device="cpu",
+                local_files_only=True,
+                trust_remote_code=False,
+            )
     except Exception as exc:
         raise SystemExit("FEL: rerankmodell kunde inte varmas fran kanonisk modellauktoritet") from exc
 
@@ -432,6 +471,10 @@ def load_runtime_state() -> dict:
         },
         "collection": collection,
     }
+    try:
+        write_retrieval_health_surfaces(_RUNTIME_STATE)
+    except RetrievalObservabilityError as exc:
+        raise SystemExit("FEL: retrieval health surfaces kunde inte skrivas") from exc
     return _RUNTIME_STATE
 
 
@@ -749,6 +792,7 @@ def execute_query(raw_query: str, runtime_state: dict) -> tuple[list[dict], int]
     started_perf = time.perf_counter()
     trace_id = sha256_text(f"retrieval_query_trace_v1:{started_at_utc}:{query_hash}")
     request_id = resolve_request_id(trace_id)
+    correlation_id = resolve_correlation_id(request_id)
     normalized_query_hash = None
     stage_timings: dict[str, float] = {}
     candidate_counts = {
@@ -867,6 +911,7 @@ def execute_query(raw_query: str, runtime_state: dict) -> tuple[list[dict], int]
             {
                 "trace_id": trace_id,
                 "request_id": request_id,
+                "correlation_id": correlation_id,
                 "started_at_utc": started_at_utc,
                 "duration_ms": round((time.perf_counter() - started_perf) * 1000.0, 3),
                 "failure_code": failure_code,

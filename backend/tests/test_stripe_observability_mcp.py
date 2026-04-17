@@ -22,7 +22,7 @@ async def test_stripe_observability_mcp_initialize_and_tool_call(async_client, m
 
     async def _fake_get_payments():
         return {
-            "artifact_type": "stripe_payments",
+            "artifact_type": "stripe_payment_health",
             "schema_version": "stripe_observability_v1",
             "generated_at_utc": "2026-04-17T12:00:00Z",
             "status": "ok",
@@ -74,11 +74,11 @@ async def test_stripe_observability_mcp_initialize_and_tool_call(async_client, m
     assert tools_list.status_code == 200
     listed = tools_list.json()["result"]["tools"]
     assert {tool["name"] for tool in listed} == {
-        "get_stripe_checkout_sessions",
-        "get_stripe_subscriptions",
-        "get_stripe_payments",
-        "get_stripe_webhook_state",
-        "get_stripe_observability_summary",
+        "stripe_checkout_health",
+        "stripe_subscription_health",
+        "stripe_payment_health",
+        "stripe_webhook_health",
+        "stripe_app_reconciliation",
     }
 
     tool_call = await async_client.post(
@@ -88,8 +88,8 @@ async def test_stripe_observability_mcp_initialize_and_tool_call(async_client, m
             "id": 3,
             "method": "tools/call",
             "params": {
-                "name": "get_stripe_payments",
-                "arguments": {},
+                "name": "stripe_payment_health",
+                "arguments": {"correlation_id": "phase2-correlation"},
             },
         },
         headers={
@@ -101,8 +101,12 @@ async def test_stripe_observability_mcp_initialize_and_tool_call(async_client, m
     result = tool_call.json()["result"]
     assert result["status"] == "ok"
     assert result["confidence"] == "high"
+    assert result["request_id"] == "3"
+    assert result["correlation_id"] == "phase2-correlation"
+    assert result["tool_name"] == "stripe_payment_health"
+    assert result["failure"] is None
     assert result["source"]["server"] == "aveli-stripe-observability-mcp"
-    assert result["data"]["artifact_type"] == "stripe_payments"
+    assert result["data"]["artifact_type"] == "stripe_payment_health"
     assert result["data"]["read_only"] is True
     assert result["data"]["authority_override"] is False
     assert result["data"]["stripe_api_used"] is False
@@ -153,7 +157,7 @@ async def test_stripe_observability_mcp_rejects_arguments(async_client, monkeypa
             "id": 4,
             "method": "tools/call",
             "params": {
-                "name": "get_stripe_webhook_state",
+                "name": "stripe_webhook_health",
                 "arguments": {"refund": True},
             },
         },
@@ -168,4 +172,5 @@ async def test_stripe_observability_mcp_rejects_arguments(async_client, monkeypa
     assert result["status"] == "error"
     assert result["confidence"] == "low"
     assert result["source"]["server"] == "aveli-stripe-observability-mcp"
-    assert result["data"]["error"] == "Unexpected arguments: refund"
+    assert result["tool_name"] == "stripe_webhook_health"
+    assert result["failure"]["message"] == "Unexpected arguments: refund"

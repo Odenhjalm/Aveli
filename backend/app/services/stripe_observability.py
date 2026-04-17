@@ -280,7 +280,7 @@ async def get_checkout_sessions() -> dict[str, Any]:
             )
         )
     return _surface(
-        "stripe_checkout_sessions",
+        "stripe_checkout_health",
         data={"summary": summary, "recent_orders": recent},
         issues=issues,
         mismatches=mismatches,
@@ -437,7 +437,7 @@ async def get_subscriptions() -> dict[str, Any]:
             )
         )
     return _surface(
-        "stripe_subscriptions",
+        "stripe_subscription_health",
         data={"summary": summary, "recent_subscription_orders": recent},
         issues=issues,
         mismatches=mismatches,
@@ -571,7 +571,7 @@ async def get_payments() -> dict[str, Any]:
             )
         )
     return _surface(
-        "stripe_payments",
+        "stripe_payment_health",
         data={"status_counts": summary, "recent_payments": recent},
         issues=issues,
         mismatches=mismatches,
@@ -692,7 +692,7 @@ async def get_webhook_state() -> dict[str, Any]:
             )
         )
     return _surface(
-        "stripe_webhook_state",
+        "stripe_webhook_health",
         data={
             "event_counts": event_counts,
             "recent_events": recent_events,
@@ -704,16 +704,64 @@ async def get_webhook_state() -> dict[str, Any]:
     )
 
 
-async def get_stripe_observability_summary() -> dict[str, Any]:
+async def get_app_reconciliation() -> dict[str, Any]:
     checkout = await get_checkout_sessions()
     subscriptions = await get_subscriptions()
     payments = await get_payments()
     webhooks = await get_webhook_state()
+    access_issues: list[dict[str, Any]] = []
+    paid_course_orders_without_access, course_access_issues = await _safe_fetch_all(
+        "app.orders_to_app.course_enrollments",
+        """
+        SELECT o.id AS order_id,
+               o.user_id,
+               o.order_type::text AS order_type,
+               o.course_id,
+               o.status,
+               o.stripe_checkout_id,
+               o.stripe_payment_intent,
+               o.updated_at
+        FROM app.orders o
+        LEFT JOIN app.course_enrollments ce
+          ON ce.user_id = o.user_id
+         AND ce.course_id = o.course_id
+        WHERE o.status = 'paid'
+          AND o.course_id IS NOT NULL
+          AND ce.id IS NULL
+        ORDER BY o.updated_at DESC
+        LIMIT %s
+        """,
+        (_RECENT_LIMIT,),
+    )
+    access_issues.extend(course_access_issues)
+
+    paid_subscriptions_without_access, subscription_access_issues = await _safe_fetch_all(
+        "app.orders_to_app.memberships.reconciliation",
+        """
+        SELECT o.id AS order_id,
+               o.user_id,
+               o.order_type::text AS order_type,
+               o.stripe_subscription_id,
+               o.status,
+               o.updated_at
+        FROM app.orders o
+        LEFT JOIN app.memberships m
+          ON m.user_id = o.user_id
+        WHERE o.order_type = 'subscription'
+          AND o.status = 'paid'
+          AND m.membership_id IS NULL
+        ORDER BY o.updated_at DESC
+        LIMIT %s
+        """,
+        (_RECENT_LIMIT,),
+    )
+    access_issues.extend(subscription_access_issues)
+
     surfaces = {
-        "checkout_sessions": checkout,
-        "subscriptions": subscriptions,
-        "payments": payments,
-        "webhook_state": webhooks,
+        "checkout_health": checkout,
+        "subscription_health": subscriptions,
+        "payment_health": payments,
+        "webhook_health": webhooks,
     }
     issues = [
         _issue(
@@ -730,8 +778,27 @@ async def get_stripe_observability_summary() -> dict[str, Any]:
         for surface in surfaces.values()
         for item in surface.get("mismatches", [])
     ]
+    issues.extend(access_issues)
+    if paid_course_orders_without_access:
+        mismatches.append(
+            _mismatch(
+                "paid_course_order_without_course_access",
+                "app.orders_to_app.course_enrollments",
+                "A paid course-backed Stripe order has no matching course enrollment",
+                paid_course_orders_without_access,
+            )
+        )
+    if paid_subscriptions_without_access:
+        mismatches.append(
+            _mismatch(
+                "paid_subscription_without_membership_access",
+                "app.orders_to_app.memberships",
+                "A paid Stripe subscription order has no matching app membership",
+                paid_subscriptions_without_access,
+            )
+        )
     return _surface(
-        "stripe_observability_summary",
+        "stripe_app_reconciliation",
         data={
             "stripe_config": {
                 "secret_key_configured": bool(settings.stripe_secret_key),
@@ -743,7 +810,16 @@ async def get_stripe_observability_summary() -> dict[str, Any]:
                 key: surface.get("status")
                 for key, surface in surfaces.items()
             },
+            "correlation_keys": ["order_id", "user_id", "stripe_checkout_id", "stripe_payment_intent", "stripe_subscription_id"],
+            "payment_success_access_checks": {
+                "paid_course_orders_without_access_count": len(paid_course_orders_without_access),
+                "paid_subscriptions_without_access_count": len(paid_subscriptions_without_access),
+            },
         },
         issues=issues,
         mismatches=mismatches,
     )
+
+
+async def get_stripe_observability_summary() -> dict[str, Any]:
+    return await get_app_reconciliation()

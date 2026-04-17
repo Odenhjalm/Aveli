@@ -435,7 +435,7 @@ async def get_deploy_status() -> dict[str, Any]:
             )
 
     return _surface(
-        "netlify_deploy_status",
+        "netlify_deploy_health",
         data={
             "local_config": config_summary,
             "site_link": state_summary,
@@ -480,7 +480,7 @@ async def get_build_logs() -> dict[str, Any]:
         )
 
     return _surface(
-        "netlify_build_logs",
+        "netlify_build_health",
         data={
             "site_link": state_summary,
             "local_log_files": local_logs,
@@ -542,7 +542,7 @@ async def get_env_completeness() -> dict[str, Any]:
         )
 
     return _surface(
-        "netlify_env_completeness",
+        "netlify_env_health",
         data={
             "local_config": config_summary,
             "required_env": required,
@@ -599,7 +599,7 @@ async def get_frontend_backend_connectivity() -> dict[str, Any]:
         )
 
     return _surface(
-        "netlify_frontend_backend_connectivity",
+        "netlify_connectivity_health",
         data={
             "connectivity_mode": "configuration_and_artifact_readiness",
             "live_http_probe_performed": False,

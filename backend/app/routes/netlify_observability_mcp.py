@@ -18,51 +18,37 @@ _DEFAULT_PROTOCOL_VERSION = "2025-11-25"
 _FALLBACK_PROTOCOL_VERSION = "2025-03-26"
 _PROTOCOL_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+_CORRELATION_ARGUMENT = "correlation_id"
+_READ_ONLY_TOOL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        _CORRELATION_ARGUMENT: {
+            "type": "string",
+            "description": "Optional cross-system correlation id for observability only.",
+        }
+    },
+    "additionalProperties": False,
+}
 _TOOL_DEFINITIONS = [
     {
-        "name": "get_netlify_deploy_status",
+        "name": "netlify_deploy_health",
         "description": "Return read-only Netlify deploy status diagnostics from local project state and optional read-only Netlify API data.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
+        "inputSchema": _READ_ONLY_TOOL_SCHEMA,
     },
     {
-        "name": "get_netlify_build_logs",
+        "name": "netlify_build_health",
         "description": "Return read-only Netlify build log and deploy summary diagnostics without triggering builds or deploys.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
+        "inputSchema": _READ_ONLY_TOOL_SCHEMA,
     },
     {
-        "name": "get_netlify_env_completeness",
+        "name": "netlify_env_health",
         "description": "Return read-only Netlify build environment completeness diagnostics without exposing secret values.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
+        "inputSchema": _READ_ONLY_TOOL_SCHEMA,
     },
     {
-        "name": "get_netlify_frontend_backend_connectivity",
+        "name": "netlify_connectivity_health",
         "description": "Return read-only frontend/backend connectivity readiness from Netlify config and frontend build artifacts.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "get_netlify_observability_summary",
-        "description": "Return a read-only summary of all Netlify observability surfaces.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
+        "inputSchema": _READ_ONLY_TOOL_SCHEMA,
     },
 ]
 _MCP_SERVER_NAME = "aveli-netlify-observability-mcp"
@@ -126,6 +112,25 @@ def _contract_response(*, status: str, data: dict[str, Any], query: str | None) 
     }
 
 
+def _string_request_id(request_id: Any) -> str:
+    if isinstance(request_id, str) and request_id.strip():
+        return request_id.strip()
+    if request_id is None:
+        return ""
+    return str(request_id)
+
+
+def _resolve_correlation_id(request: Request, request_id: Any, arguments: dict[str, Any]) -> str:
+    argument_value = arguments.get(_CORRELATION_ARGUMENT)
+    if isinstance(argument_value, str) and argument_value.strip():
+        return argument_value.strip()
+    header_value = request.headers.get("x-correlation-id") or request.headers.get("x-request-id")
+    if header_value and header_value.strip():
+        return header_value.strip()
+    request_id_text = _string_request_id(request_id)
+    return request_id_text or "unassigned"
+
+
 def _jsonrpc_result(request_id: Any, result: dict[str, Any], *, protocol_version: str) -> JSONResponse:
     return JSONResponse(
         content={"jsonrpc": "2.0", "id": request_id, "result": result},
@@ -152,20 +157,32 @@ def _jsonrpc_error(
     )
 
 
-def _tool_success(payload: dict[str, Any]) -> dict[str, Any]:
+def _tool_success(payload: dict[str, Any], *, request_id: Any, correlation_id: str, tool_name: str) -> dict[str, Any]:
     return _contract_response(
         status="ok",
         data=payload,
         query=None,
-    ) | {"confidence": "high"}
+    ) | {
+        "confidence": "high",
+        "request_id": _string_request_id(request_id),
+        "correlation_id": correlation_id,
+        "tool_name": tool_name,
+        "failure": None,
+    }
 
 
-def _tool_error(message: str) -> dict[str, Any]:
+def _tool_error(message: str, *, request_id: Any, correlation_id: str, tool_name: str | None) -> dict[str, Any]:
     return _contract_response(
         status="error",
-        data={"error": message},
+        data={},
         query=None,
-    ) | {"confidence": "low"}
+    ) | {
+        "confidence": "low",
+        "request_id": _string_request_id(request_id),
+        "correlation_id": correlation_id,
+        "tool_name": tool_name,
+        "failure": {"code": "tool_call_failed", "message": message},
+    }
 
 
 def _unexpected_keys(arguments: dict[str, Any], allowed: set[str]) -> set[str]:
@@ -173,17 +190,17 @@ def _unexpected_keys(arguments: dict[str, Any], allowed: set[str]) -> set[str]:
 
 
 async def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    unexpected = _unexpected_keys(arguments, set())
+    unexpected = _unexpected_keys(arguments, {_CORRELATION_ARGUMENT})
     if unexpected:
         raise ValueError(f"Unexpected arguments: {', '.join(sorted(unexpected))}")
 
-    if name == "get_netlify_deploy_status":
+    if name in {"netlify_deploy_health", "get_netlify_deploy_status"}:
         return await netlify_observability.get_deploy_status()
-    if name == "get_netlify_build_logs":
+    if name in {"netlify_build_health", "get_netlify_build_logs"}:
         return await netlify_observability.get_build_logs()
-    if name == "get_netlify_env_completeness":
+    if name in {"netlify_env_health", "get_netlify_env_completeness"}:
         return await netlify_observability.get_env_completeness()
-    if name == "get_netlify_frontend_backend_connectivity":
+    if name in {"netlify_connectivity_health", "get_netlify_frontend_backend_connectivity"}:
         return await netlify_observability.get_frontend_backend_connectivity()
     if name == "get_netlify_observability_summary":
         return await netlify_observability.get_netlify_observability_summary()
@@ -289,45 +306,81 @@ async def netlify_observability_mcp_endpoint(request: Request) -> Response:
         if not isinstance(tool_name, str) or not tool_name.strip():
             return _jsonrpc_result(
                 request_id,
-                _tool_error("Tool name is required"),
+                _tool_error(
+                    "Tool name is required",
+                    request_id=request_id,
+                    correlation_id=_resolve_correlation_id(request, request_id, {}),
+                    tool_name=None,
+                ),
                 protocol_version=protocol_version,
             )
         tool_name = tool_name.strip("'\"")
         if not tool_name:
             return _jsonrpc_result(
                 request_id,
-                _tool_error("Tool name is required"),
+                _tool_error(
+                    "Tool name is required",
+                    request_id=request_id,
+                    correlation_id=_resolve_correlation_id(request, request_id, {}),
+                    tool_name=None,
+                ),
                 protocol_version=protocol_version,
             )
         if not isinstance(arguments, dict):
             return _jsonrpc_result(
                 request_id,
-                _tool_error("Tool arguments must be an object"),
+                _tool_error(
+                    "Tool arguments must be an object",
+                    request_id=request_id,
+                    correlation_id=_resolve_correlation_id(request, request_id, {}),
+                    tool_name=tool_name,
+                ),
                 protocol_version=protocol_version,
             )
+        correlation_id = _resolve_correlation_id(request, request_id, arguments)
         try:
             payload = await _call_tool(name=tool_name, arguments=arguments)
         except KeyError:
             return _jsonrpc_result(
                 request_id,
-                _tool_error(f"Unknown tool: {tool_name}"),
+                _tool_error(
+                    f"Unknown tool: {tool_name}",
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                    tool_name=tool_name,
+                ),
                 protocol_version=protocol_version,
             )
         except ValueError as exc:
             return _jsonrpc_result(
                 request_id,
-                _tool_error(str(exc)),
+                _tool_error(
+                    str(exc),
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                    tool_name=tool_name,
+                ),
                 protocol_version=protocol_version,
             )
         except Exception as exc:  # pragma: no cover - defensive boundary
             return _jsonrpc_result(
                 request_id,
-                _tool_error(str(exc)),
+                _tool_error(
+                    str(exc),
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                    tool_name=tool_name,
+                ),
                 protocol_version=protocol_version,
             )
         return _jsonrpc_result(
             request_id,
-            _tool_success(payload),
+            _tool_success(
+                payload,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                tool_name=tool_name,
+            ),
             protocol_version=protocol_version,
         )
 

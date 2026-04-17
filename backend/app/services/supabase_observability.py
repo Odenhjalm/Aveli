@@ -273,7 +273,7 @@ async def _table_count(table_name: str) -> tuple[str, dict[str, Any], list[dict[
     return table_name, row, issues
 
 
-async def get_domain_projections() -> dict[str, Any]:
+async def get_domain_projection_health() -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
     table_counts: dict[str, Any] = {}
     for table_name in _DOMAIN_TABLES:
@@ -322,7 +322,7 @@ async def get_domain_projections() -> dict[str, Any]:
     issues.extend(course_projection_issues)
 
     return _surface(
-        "supabase_domain_projections",
+        "supabase_domain_projection_health",
         status=_status_from_issues(issues),
         data={
             "table_counts": table_counts,
@@ -336,7 +336,11 @@ async def get_domain_projections() -> dict[str, Any]:
     )
 
 
-async def get_storage_state() -> dict[str, Any]:
+async def get_domain_projections() -> dict[str, Any]:
+    return await get_domain_projection_health()
+
+
+async def get_storage_health() -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
     configured_buckets = {
         name: getattr(settings, name)
@@ -390,7 +394,7 @@ async def get_storage_state() -> dict[str, Any]:
     issues.extend(missing_source_issues)
 
     return _surface(
-        "supabase_storage_state",
+        "supabase_storage_health",
         status=_status_from_issues(issues),
         data={
             "configured_buckets": configured_buckets,
@@ -402,3 +406,7 @@ async def get_storage_state() -> dict[str, Any]:
         },
         issues=issues,
     )
+
+
+async def get_storage_state() -> dict[str, Any]:
+    return await get_storage_health()

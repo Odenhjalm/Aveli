@@ -74,10 +74,10 @@ async def test_supabase_observability_mcp_initialize_and_tool_call(async_client,
     assert tools_list.status_code == 200
     listed = tools_list.json()["result"]["tools"]
     assert {tool["name"] for tool in listed} == {
-        "get_supabase_connection_health",
-        "get_supabase_auth_state",
-        "get_supabase_domain_projections",
-        "get_supabase_storage_state",
+        "supabase_connection_health",
+        "supabase_auth_state",
+        "supabase_domain_projection_health",
+        "supabase_storage_health",
     }
 
     tool_call = await async_client.post(
@@ -87,8 +87,8 @@ async def test_supabase_observability_mcp_initialize_and_tool_call(async_client,
             "id": 3,
             "method": "tools/call",
             "params": {
-                "name": "get_supabase_connection_health",
-                "arguments": {},
+                "name": "supabase_connection_health",
+                "arguments": {"correlation_id": "phase2-correlation"},
             },
         },
         headers={
@@ -100,6 +100,10 @@ async def test_supabase_observability_mcp_initialize_and_tool_call(async_client,
     result = tool_call.json()["result"]
     assert result["status"] == "ok"
     assert result["confidence"] == "high"
+    assert result["request_id"] == "3"
+    assert result["correlation_id"] == "phase2-correlation"
+    assert result["tool_name"] == "supabase_connection_health"
+    assert result["failure"] is None
     assert result["source"]["server"] == "aveli-supabase-observability-mcp"
     assert result["data"]["artifact_type"] == "supabase_connection_health"
     assert result["data"]["read_only"] is True
@@ -151,7 +155,7 @@ async def test_supabase_observability_mcp_rejects_arguments(async_client, monkey
             "id": 4,
             "method": "tools/call",
             "params": {
-                "name": "get_supabase_storage_state",
+                "name": "supabase_storage_health",
                 "arguments": {"write": True},
             },
         },
@@ -166,4 +170,5 @@ async def test_supabase_observability_mcp_rejects_arguments(async_client, monkey
     assert result["status"] == "error"
     assert result["confidence"] == "low"
     assert result["source"]["server"] == "aveli-supabase-observability-mcp"
-    assert result["data"]["error"] == "Unexpected arguments: write"
+    assert result["tool_name"] == "supabase_storage_health"
+    assert result["failure"]["message"] == "Unexpected arguments: write"

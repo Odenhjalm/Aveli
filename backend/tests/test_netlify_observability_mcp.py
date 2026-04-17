@@ -22,7 +22,7 @@ async def test_netlify_observability_mcp_initialize_and_tool_call(async_client, 
 
     async def _fake_get_env_completeness():
         return {
-            "artifact_type": "netlify_env_completeness",
+            "artifact_type": "netlify_env_health",
             "schema_version": "netlify_observability_v1",
             "generated_at_utc": "2026-04-17T12:00:00Z",
             "status": "ok",
@@ -77,11 +77,10 @@ async def test_netlify_observability_mcp_initialize_and_tool_call(async_client, 
     assert tools_list.status_code == 200
     listed = tools_list.json()["result"]["tools"]
     assert {tool["name"] for tool in listed} == {
-        "get_netlify_deploy_status",
-        "get_netlify_build_logs",
-        "get_netlify_env_completeness",
-        "get_netlify_frontend_backend_connectivity",
-        "get_netlify_observability_summary",
+        "netlify_deploy_health",
+        "netlify_build_health",
+        "netlify_env_health",
+        "netlify_connectivity_health",
     }
 
     tool_call = await async_client.post(
@@ -91,8 +90,8 @@ async def test_netlify_observability_mcp_initialize_and_tool_call(async_client, 
             "id": 3,
             "method": "tools/call",
             "params": {
-                "name": "get_netlify_env_completeness",
-                "arguments": {},
+                "name": "netlify_env_health",
+                "arguments": {"correlation_id": "phase2-correlation"},
             },
         },
         headers={
@@ -104,8 +103,12 @@ async def test_netlify_observability_mcp_initialize_and_tool_call(async_client, 
     result = tool_call.json()["result"]
     assert result["status"] == "ok"
     assert result["confidence"] == "high"
+    assert result["request_id"] == "3"
+    assert result["correlation_id"] == "phase2-correlation"
+    assert result["tool_name"] == "netlify_env_health"
+    assert result["failure"] is None
     assert result["source"]["server"] == "aveli-netlify-observability-mcp"
-    assert result["data"]["artifact_type"] == "netlify_env_completeness"
+    assert result["data"]["artifact_type"] == "netlify_env_health"
     assert result["data"]["read_only"] is True
     assert result["data"]["authority_override"] is False
     assert result["data"]["netlify_api_mutations_used"] is False
@@ -157,7 +160,7 @@ async def test_netlify_observability_mcp_rejects_arguments(async_client, monkeyp
             "id": 4,
             "method": "tools/call",
             "params": {
-                "name": "get_netlify_deploy_status",
+                "name": "netlify_deploy_health",
                 "arguments": {"deploy": True},
             },
         },
@@ -172,4 +175,5 @@ async def test_netlify_observability_mcp_rejects_arguments(async_client, monkeyp
     assert result["status"] == "error"
     assert result["confidence"] == "low"
     assert result["source"]["server"] == "aveli-netlify-observability-mcp"
-    assert result["data"]["error"] == "Unexpected arguments: deploy"
+    assert result["tool_name"] == "netlify_deploy_health"
+    assert result["failure"]["message"] == "Unexpected arguments: deploy"
