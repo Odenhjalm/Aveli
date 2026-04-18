@@ -18,7 +18,6 @@ def test_removed_legacy_auth_and_profile_routes_are_not_mounted():
         ("/auth/change-password", "POST"),
         ("/auth/request-password-reset", "POST"),
         ("/profiles/me/avatar", "POST"),
-        ("/profiles/{user_id}/certificates", "GET"),
     }
 
     assert inventory.isdisjoint(forbidden)

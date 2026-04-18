@@ -8,16 +8,13 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/models/service.dart';
-import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 
 import '../helpers/backend_asset_resolver_stub.dart';
@@ -38,10 +35,8 @@ class _StubAuthRepository implements AuthRepository {
       throw UnimplementedError();
 
   @override
-  Future<Profile> register({
-    required String email,
-    required String password,
-  }) => throw UnimplementedError();
+  Future<Profile> register({required String email, required String password}) =>
+      throw UnimplementedError();
 
   @override
   Future<void> sendVerificationEmail(String email) async {}
@@ -62,10 +57,7 @@ class _StubAuthRepository implements AuthRepository {
   Future<Profile> getCurrentProfile() => throw UnimplementedError();
 
   @override
-  Future<Profile> createProfile({
-    required String displayName,
-    String? bio,
-  }) =>
+  Future<Profile> createProfile({required String displayName, String? bio}) =>
       throw UnimplementedError();
 
   @override
@@ -133,10 +125,6 @@ Future<void> _pumpDashboard(WidgetTester tester) async {
               const landing.LandingSection<landing.LandingCourseCard>(
                 items: [],
               ),
-        ),
-        publicSeminarsProvider.overrideWith((ref) async => const []),
-        myCertificatesProvider.overrideWith(
-          (ref) async => const <Certificate>[],
         ),
       ],
       child: MaterialApp.router(routerConfig: router),

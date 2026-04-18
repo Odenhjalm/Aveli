@@ -16,7 +16,7 @@ def studio_course_payload(title: str, slug: str) -> dict[str, object]:
         "title": title,
         "slug": slug,
         "course_group_id": str(uuid.uuid4()),
-        "step": "intro",
+        "group_position": 0,
         "price_amount_cents": None,
         "drip_enabled": False,
         "drip_interval_days": None,
@@ -50,8 +50,7 @@ async def promote_to_teacher(user_id: str) -> None:
             await cur.execute(
                 """
                 UPDATE app.auth_subjects
-                   SET role_v2 = 'teacher',
-                       role = 'teacher'
+                   SET role = 'teacher'
                  WHERE user_id = %s
                 """,
                 (user_id,),

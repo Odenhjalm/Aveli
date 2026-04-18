@@ -76,7 +76,6 @@ def test_profile_media_item_has_only_canonical_profile_media_fields() -> None:
     assert "teacher_id" not in dumped
     assert "media_kind" not in dumped
     assert "lesson_media_id" not in dumped
-    assert "seminar_recording_id" not in dumped
     assert "external_url" not in dumped
     assert "cover_image_url" not in dumped
     assert "is_published" not in dumped

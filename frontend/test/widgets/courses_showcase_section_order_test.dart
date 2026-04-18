@@ -10,7 +10,6 @@ import 'package:aveli/features/landing/application/landing_providers.dart'
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
-import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:aveli/shared/widgets/courses_showcase_section.dart';
 
 import '../helpers/backend_asset_resolver_stub.dart';
@@ -63,47 +62,13 @@ void main() {
     'showcase renders intro to step3 order with alphabetical titles',
     (tester) async {
       final courses = <CourseSummary>[
-        const CourseSummary(
-          id: 'step-2',
-          slug: 'foundations-of-soulwisdom',
-          title: 'Zen Flow',
-          journeyStep: CourseJourneyStep.step2,
-        ),
-        const CourseSummary(
-          id: 'step-1-b',
-          slug: 'foundations-of-soulwisdom',
-          title: 'Breathwork',
-          journeyStep: CourseJourneyStep.step1,
-        ),
-        const CourseSummary(
-          id: 'intro-b',
-          slug: 'foundations-of-soulwisdom',
-          title: 'Aurora',
-          journeyStep: CourseJourneyStep.intro,
-        ),
-        const CourseSummary(
-          id: 'step-3',
-          slug: 'foundations-of-soulwisdom',
-          title: 'Tarot Mastery',
-          journeyStep: CourseJourneyStep.step3,
-        ),
-        const CourseSummary(
-          id: 'unknown',
-          slug: 'foundations-of-soulwisdom',
-          title: 'Mystery Course',
-        ),
-        const CourseSummary(
-          id: 'intro-a',
-          slug: 'foundations-of-soulwisdom',
-          title: 'Alchemy Basics',
-          journeyStep: CourseJourneyStep.intro,
-        ),
-        const CourseSummary(
-          id: 'step-1-a',
-          slug: 'foundations-of-soulwisdom',
-          title: 'Astral Travel',
-          journeyStep: CourseJourneyStep.step1,
-        ),
+        _course(id: 'step-2', title: 'Zen Flow', groupPosition: 2),
+        _course(id: 'step-1-b', title: 'Breathwork', groupPosition: 1),
+        _course(id: 'intro-b', title: 'Aurora', groupPosition: 0),
+        _course(id: 'step-3', title: 'Tarot Mastery', groupPosition: 3),
+        _course(id: 'unknown', title: 'Mystery Course'),
+        _course(id: 'intro-a', title: 'Alchemy Basics', groupPosition: 0),
+        _course(id: 'step-1-a', title: 'Astral Travel', groupPosition: 1),
       ];
 
       await _pumpShowcase(tester, courses: courses);
@@ -138,5 +103,24 @@ void main() {
         previous = current;
       }
     },
+  );
+}
+
+CourseSummary _course({
+  required String id,
+  required String title,
+  int groupPosition = 4,
+}) {
+  return CourseSummary(
+    id: id,
+    slug: 'foundations-of-soulwisdom',
+    title: title,
+    groupPosition: groupPosition,
+    courseGroupId: 'series:foundations-of-soulwisdom',
+    coverMediaId: null,
+    cover: null,
+    priceCents: null,
+    dripEnabled: false,
+    dripIntervalDays: null,
   );
 }

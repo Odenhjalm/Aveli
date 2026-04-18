@@ -12,8 +12,19 @@ from app.services import courses_service, lesson_playback_service
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-def _course(course_id: str = "course-paid", *, step: str = "step1") -> dict[str, object]:
-    return {"id": course_id, "step": step, "is_published": True}
+def _course(
+    course_id: str = "course-paid",
+    *,
+    group_position: int = 1,
+    price_amount_cents: int | None = 1000,
+) -> dict[str, object]:
+    return {
+        "id": course_id,
+        "group_position": group_position,
+        "price_amount_cents": price_amount_cents,
+        "sellable": price_amount_cents is not None,
+        "visibility": "public",
+    }
 
 
 def _enrollment(*, source: str, position: int = 1) -> dict[str, object]:
@@ -31,7 +42,7 @@ async def test_canonical_course_access_denies_paid_course_without_enrollment(
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
         del slug
-        return _course(course_id or "course-paid", step="step1")
+        return _course(course_id or "course-paid")
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
@@ -57,7 +68,7 @@ async def test_canonical_course_access_denies_intro_course_without_intro_enrollm
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
         del slug
-        return _course(course_id or "course-intro", step="intro")
+        return _course(course_id or "course-intro", group_position=0, price_amount_cents=None)
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
@@ -83,7 +94,7 @@ async def test_canonical_course_access_allows_intro_only_with_intro_enrollment(
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
         del slug
-        return _course(course_id or "course-intro", step="intro")
+        return _course(course_id or "course-intro", group_position=0, price_amount_cents=None)
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
@@ -109,7 +120,7 @@ async def test_canonical_course_access_denies_wrong_enrollment_source(
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
         del slug
-        return _course(course_id or "course-paid", step="step1")
+        return _course(course_id or "course-paid")
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
@@ -135,7 +146,7 @@ async def test_create_intro_course_enrollment_uses_intro_enrollment_source(
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
         del slug
-        return _course(course_id or "course-intro", step="intro")
+        return _course(course_id or "course-intro", group_position=0, price_amount_cents=None)
 
     create_course_enrollment = AsyncMock(
         return_value=_enrollment(source="intro_enrollment")
@@ -168,7 +179,7 @@ async def test_create_intro_course_enrollment_rejects_non_intro_course(
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
         del slug
-        return _course(course_id or "course-paid", step="step1")
+        return _course(course_id or "course-paid")
 
     create_course_enrollment = AsyncMock()
 
@@ -196,7 +207,7 @@ async def test_lesson_playback_access_does_not_fall_back_to_entitlements(
         del user_id
         return {
             "lesson": {"id": lesson_id, "course_id": "course-paid"},
-            "course": _course("course-paid", step="step1"),
+            "course": _course("course-paid"),
             "enrollment": None,
             "expected_source": "purchase",
             "current_unlock_position": 0,
@@ -228,7 +239,7 @@ async def test_lesson_playback_access_allows_canonical_lesson_access(
         del user_id
         return {
             "lesson": {"id": lesson_id, "course_id": "course-intro"},
-            "course": _course("course-intro", step="intro"),
+            "course": _course("course-intro", group_position=0, price_amount_cents=None),
             "enrollment": _enrollment(source="intro_enrollment"),
             "expected_source": "intro_enrollment",
             "current_unlock_position": 1,

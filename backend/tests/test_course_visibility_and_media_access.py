@@ -39,8 +39,7 @@ async def promote_to_teacher(user_id: str) -> None:
             await cur.execute(
                 """
                 UPDATE app.auth_subjects
-                   SET role_v2 = 'teacher',
-                       role = 'teacher'
+                   SET role = 'teacher'
                  WHERE user_id = %s
                 """,
                 (user_id,),

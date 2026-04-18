@@ -101,7 +101,7 @@ async def ensure_admin_user(
                 SELECT u.email, a.user_id
                   FROM auth.users u
                   JOIN app.auth_subjects a ON a.user_id = u.id
-                 WHERE a.is_admin = true
+                 WHERE a.role = 'admin'::app.auth_subject_role
                  ORDER BY u.created_at ASC NULLS LAST, u.id ASC
                 """,
             )
@@ -132,7 +132,7 @@ async def fetch_auth_subject(user_id: str) -> dict[str, object]:
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                SELECT onboarding_state, role_v2, role, is_admin
+                SELECT onboarding_state, role::text
                   FROM app.auth_subjects
                  WHERE user_id = %s
                 """,
@@ -142,7 +142,5 @@ async def fetch_auth_subject(user_id: str) -> dict[str, object]:
     assert row is not None
     return {
         "onboarding_state": row[0],
-        "role_v2": row[1],
-        "role": row[2],
-        "is_admin": row[3],
+        "role": row[1],
     }

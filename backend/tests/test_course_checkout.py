@@ -32,7 +32,7 @@ async def _promote_to_teacher(user_id: str) -> None:
                 """
                 UPDATE app.auth_subjects
                    SET onboarding_state = 'completed',
-                       role_v2 = 'teacher',
+
                        role = 'teacher'
                  WHERE user_id = %s
                 """,
@@ -98,7 +98,7 @@ async def _create_course(
     slug: str,
     price_amount_cents: int | None,
     *,
-    step: str = "step1",
+    group_position: int = 1,
 ) -> str:
     response = await async_client.post(
         "/studio/courses",
@@ -107,7 +107,7 @@ async def _create_course(
             "title": f"Course {slug}",
             "slug": slug,
             "course_group_id": str(uuid.uuid4()),
-            "step": step,
+            "group_position": group_position,
             "price_amount_cents": price_amount_cents,
             "drip_enabled": False,
             "drip_interval_days": None,
@@ -219,7 +219,7 @@ async def test_course_pricing_requires_exact_slug(async_client, monkeypatch):
             teacher_headers,
             slug,
             2750,
-            step="step1",
+            group_position=1,
         )
 
         exact = await async_client.get(f"/api/courses/{slug}/pricing")
@@ -252,7 +252,7 @@ async def test_course_checkout_success(async_client, monkeypatch):
             teacher_headers,
             slug,
             1500,
-            step="step1",
+            group_position=1,
         )
 
         response = await async_client.post(
@@ -302,7 +302,7 @@ async def test_step2_course_checkout_uses_canonical_sellable_flow(async_client, 
             teacher_headers,
             slug,
             1900,
-            step="step2",
+            group_position=2,
         )
 
         response = await async_client.post(
@@ -338,7 +338,7 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
             teacher_headers,
             slug,
             1500,
-            step="step1",
+            group_position=1,
         )
 
         checkout_response = await async_client.post(
@@ -425,7 +425,7 @@ async def test_payment_intent_webhook_does_not_settle_checkout_backed_purchase(
             teacher_headers,
             slug,
             1500,
-            step="step1",
+            group_position=1,
         )
 
         checkout_response = await async_client.post(
@@ -492,7 +492,7 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
             teacher_headers,
             slug,
             1500,
-            step="step1",
+            group_position=1,
         )
 
         checkout_response = await async_client.post(

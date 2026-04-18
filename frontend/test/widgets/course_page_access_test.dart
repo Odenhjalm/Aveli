@@ -7,7 +7,6 @@ import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_page.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
-import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,7 +28,7 @@ CourseDetailData _detail({
   required String courseId,
   required String slug,
   required String title,
-  required CourseJourneyStep step,
+  required int groupPosition,
   String? coverMediaId,
   CourseCoverData? cover,
 }) {
@@ -38,7 +37,7 @@ CourseDetailData _detail({
       id: courseId,
       slug: slug,
       title: title,
-      step: step,
+      groupPosition: groupPosition,
       courseGroupId: 'group-1',
       coverMediaId: coverMediaId,
       cover: cover,
@@ -55,7 +54,7 @@ CourseDetailData _detail({
 CourseAccessData _enrolledState(String courseId) {
   return CourseAccessData(
     courseId: courseId,
-    courseStep: CourseJourneyStep.intro,
+    groupPosition: 0,
     requiredEnrollmentSource: null,
     enrollment: CourseEnrollmentRecord(
       id: 'enrollment-1',
@@ -86,7 +85,7 @@ void main() {
       courseId: 'course-intro',
       slug: 'intro-course',
       title: 'Intro Course',
-      step: CourseJourneyStep.intro,
+      groupPosition: 0,
     );
 
     await tester.pumpWidget(
@@ -118,7 +117,7 @@ void main() {
       courseId: 'course-enrolled',
       slug: 'enrolled-course',
       title: 'Enrolled Course',
-      step: CourseJourneyStep.intro,
+      groupPosition: 0,
     );
 
     await tester.pumpWidget(
@@ -153,7 +152,7 @@ void main() {
       courseId: 'course-cover',
       slug: 'cover-course',
       title: 'Cover Course',
-      step: CourseJourneyStep.intro,
+      groupPosition: 0,
       coverMediaId: 'media-1',
       cover: const CourseCoverData(
         mediaId: 'media-1',

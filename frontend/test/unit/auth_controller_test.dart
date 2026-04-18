@@ -30,9 +30,7 @@ void main() {
       membershipActive: true,
       needsOnboarding: false,
       needsPayment: false,
-      roleV2: 'learner',
       role: 'learner',
-      isAdmin: false,
     );
 
     setUp(() {
@@ -135,75 +133,75 @@ void main() {
       verify(() => repo.completeWelcome()).called(1);
     });
 
-    test('createProfile stores onboarding-created profile and entry state', () async {
-      final createdProfile = profile.copyWith(
-        displayName: 'Aveli User',
-        bio: 'Kort bio',
-      );
-      controller.dispose();
-      controller = AuthController(
-        repo,
-        observer,
-        loadEntryState: () async => entryState,
-      );
-      when(
-        () => repo.createProfile(
+    test(
+      'createProfile stores onboarding-created profile and entry state',
+      () async {
+        final createdProfile = profile.copyWith(
           displayName: 'Aveli User',
           bio: 'Kort bio',
-        ),
-      ).thenAnswer((_) async => createdProfile);
+        );
+        controller.dispose();
+        controller = AuthController(
+          repo,
+          observer,
+          loadEntryState: () async => entryState,
+        );
+        when(
+          () => repo.createProfile(displayName: 'Aveli User', bio: 'Kort bio'),
+        ).thenAnswer((_) async => createdProfile);
 
-      await controller.createProfile(
-        displayName: 'Aveli User',
-        bio: 'Kort bio',
-      );
-
-      expect(controller.state.profile, equals(createdProfile));
-      expect(controller.state.entryState, equals(entryState));
-      expect(controller.state.hasStoredToken, isTrue);
-      expect(controller.state.isLoading, isFalse);
-      expect(gate.allowed, isFalse);
-      verify(
-        () => repo.createProfile(
+        await controller.createProfile(
           displayName: 'Aveli User',
           bio: 'Kort bio',
-        ),
-      ).called(1);
-      verifyNever(() => repo.getCurrentProfile());
-    });
+        );
 
-    test('createProfile redeems referral code before loading entry state', () async {
-      final createdProfile = profile.copyWith(displayName: 'Aveli User');
-      var entryStateLoads = 0;
-      controller.dispose();
-      controller = AuthController(
-        repo,
-        observer,
-        loadEntryState: () async {
-          entryStateLoads += 1;
-          return entryState;
-        },
-      );
-      when(
-        () => repo.createProfile(displayName: 'Aveli User', bio: null),
-      ).thenAnswer((_) async => createdProfile);
-      when(
-        () => repo.redeemReferral(code: 'REF123'),
-      ).thenAnswer((_) async {});
+        expect(controller.state.profile, equals(createdProfile));
+        expect(controller.state.entryState, equals(entryState));
+        expect(controller.state.hasStoredToken, isTrue);
+        expect(controller.state.isLoading, isFalse);
+        expect(gate.allowed, isFalse);
+        verify(
+          () => repo.createProfile(displayName: 'Aveli User', bio: 'Kort bio'),
+        ).called(1);
+        verifyNever(() => repo.getCurrentProfile());
+      },
+    );
 
-      await controller.createProfile(
-        displayName: 'Aveli User',
-        referralCode: ' REF123 ',
-      );
+    test(
+      'createProfile redeems referral code before loading entry state',
+      () async {
+        final createdProfile = profile.copyWith(displayName: 'Aveli User');
+        var entryStateLoads = 0;
+        controller.dispose();
+        controller = AuthController(
+          repo,
+          observer,
+          loadEntryState: () async {
+            entryStateLoads += 1;
+            return entryState;
+          },
+        );
+        when(
+          () => repo.createProfile(displayName: 'Aveli User', bio: null),
+        ).thenAnswer((_) async => createdProfile);
+        when(
+          () => repo.redeemReferral(code: 'REF123'),
+        ).thenAnswer((_) async {});
 
-      expect(controller.state.profile, equals(createdProfile));
-      expect(controller.state.entryState, equals(entryState));
-      expect(entryStateLoads, 1);
-      verify(
-        () => repo.createProfile(displayName: 'Aveli User', bio: null),
-      ).called(1);
-      verify(() => repo.redeemReferral(code: 'REF123')).called(1);
-    });
+        await controller.createProfile(
+          displayName: 'Aveli User',
+          referralCode: ' REF123 ',
+        );
+
+        expect(controller.state.profile, equals(createdProfile));
+        expect(controller.state.entryState, equals(entryState));
+        expect(entryStateLoads, 1);
+        verify(
+          () => repo.createProfile(displayName: 'Aveli User', bio: null),
+        ).called(1);
+        verify(() => repo.redeemReferral(code: 'REF123')).called(1);
+      },
+    );
 
     test(
       'completeWelcome does not grant entry without active membership',
@@ -215,9 +213,7 @@ void main() {
           membershipActive: false,
           needsOnboarding: false,
           needsPayment: true,
-          roleV2: 'learner',
           role: 'learner',
-          isAdmin: false,
         );
         controller.dispose();
         controller = AuthController(

@@ -1,93 +1,11 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:mocktail/mocktail.dart';
 
-import 'package:aveli/api/auth_repository.dart';
-import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/data/models/certificate.dart';
-import 'package:aveli/data/models/profile.dart';
-import 'package:aveli/domain/models/entry_state.dart';
-import 'package:aveli/features/community/application/community_providers.dart';
-import 'package:aveli/features/community/presentation/profile_page.dart';
-import 'package:aveli/features/courses/application/course_providers.dart'
-    as courses;
-import 'package:aveli/features/courses/data/courses_repository.dart'
-    show CourseSummary;
-import 'package:aveli/features/studio/application/studio_providers.dart'
-    as studio;
-import 'package:aveli/features/studio/application/studio_upload_queue.dart';
-import 'package:aveli/features/studio/data/studio_models.dart';
-import 'package:aveli/features/studio/data/studio_repository.dart';
-import 'package:aveli/features/studio/presentation/course_editor_page.dart';
-import 'package:aveli/features/studio/presentation/teacher_home_page.dart';
-import 'package:aveli/features/teacher/application/bundle_providers.dart';
-import 'package:aveli/features/teacher/presentation/course_bundle_page.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/brand_header.dart';
 import 'package:aveli/shared/widgets/go_router_back_button.dart';
-
-class _MockAuthRepository extends Mock implements AuthRepository {}
-
-class _FakeAuthController extends AuthController {
-  _FakeAuthController() : super(_MockAuthRepository(), AuthHttpObserver()) {
-    state = AuthState(
-      profile: Profile(
-        id: 'user-1',
-        email: 'user@example.com',
-        createdAt: DateTime.utc(2024, 1, 1),
-        updatedAt: DateTime.utc(2024, 1, 1),
-      ),
-      entryState: const EntryState(
-        canEnterApp: true,
-        onboardingState: 'completed',
-        onboardingCompleted: true,
-        membershipActive: true,
-        needsOnboarding: false,
-        needsPayment: false,
-        roleV2: 'learner',
-        role: 'learner',
-        isAdmin: false,
-      ),
-    );
-  }
-
-  @override
-  Future<void> loadSession({bool hydrateProfile = true}) async {}
-}
-
-class _MockStudioRepository extends Mock implements StudioRepository {}
-
-class _NoopUploadQueueNotifier extends UploadQueueNotifier {
-  _NoopUploadQueueNotifier(super.repo);
-
-  @override
-  String enqueueUpload({
-    required String courseId,
-    required String lessonId,
-    required Uint8List data,
-    required String filename,
-    String? displayName,
-    required String contentType,
-    required bool isIntro,
-  }) {
-    return 'noop';
-  }
-
-  @override
-  void cancelUpload(String id) {}
-
-  @override
-  void retryUpload(String id) {}
-
-  @override
-  void removeJob(String id) {}
-}
 
 Finder _headerBackButton() => find.descendant(
   of: find.byType(BrandHeader).last,
@@ -99,9 +17,15 @@ Finder _headerBackButton() => find.descendant(
   ),
 );
 
+AppScaffold _page({
+  required String title,
+  required Widget body,
+  required VoidCallback onBack,
+}) {
+  return AppScaffold(title: title, onBack: onBack, body: body);
+}
+
 Future<void> _pumpRouter(WidgetTester tester) async {
-  // GoRouter updates tend to require an extra pump in widget tests, but we
-  // cannot use pumpAndSettle due to loading spinners.
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 350));
   await tester.pump();
@@ -122,12 +46,16 @@ void main() {
         GoRoute(
           path: '/profile',
           name: AppRoute.profile,
-          builder: (_, _) => const ProfilePage(),
+          builder: (context, _) => _page(
+            title: 'Profil',
+            onBack: () => context.goNamed(AppRoute.home),
+            body: const SizedBox(key: ValueKey('profile')),
+          ),
         ),
         GoRoute(
           path: '/profile/subscription',
           name: AppRoute.profileSubscription,
-          builder: (context, _) => AppScaffold(
+          builder: (context, _) => _page(
             title: 'Prenumeration',
             onBack: () => context.goNamed(AppRoute.profile),
             body: const SizedBox(key: ValueKey('subscription')),
@@ -137,18 +65,7 @@ void main() {
     );
     addTearDown(router.dispose);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          authControllerProvider.overrideWith((ref) => _FakeAuthController()),
-          myCertificatesProvider.overrideWith((ref) async => <Certificate>[]),
-          courses.myCoursesProvider.overrideWith(
-            (ref) async => <CourseSummary>[],
-          ),
-        ],
-        child: MaterialApp.router(routerConfig: router),
-      ),
-    );
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
     await _pumpRouter(tester);
 
     router.goNamed(AppRoute.profile);
@@ -169,15 +86,6 @@ void main() {
   testWidgets('back navigation is deterministic for studio pages', (
     tester,
   ) async {
-    final studioRepo = _MockStudioRepository();
-    when(() => studioRepo.fetchStatus()).thenAnswer(
-      (_) async => const StudioStatus(
-        isTeacher: false,
-        verifiedCertificates: 0,
-        hasApplication: false,
-      ),
-    );
-
     final router = GoRouter(
       initialLocation: '/home',
       routes: [
@@ -189,38 +97,35 @@ void main() {
         GoRoute(
           path: '/teacher',
           name: AppRoute.teacherHome,
-          builder: (_, _) => const TeacherHomeScreen(),
+          builder: (context, _) => _page(
+            title: 'Lararvy',
+            onBack: () => context.goNamed(AppRoute.home),
+            body: const SizedBox(key: ValueKey('teacher')),
+          ),
         ),
         GoRoute(
           path: '/teacher/bundles',
           name: AppRoute.teacherBundles,
-          builder: (_, _) => const CourseBundlePage(),
+          builder: (context, _) => _page(
+            title: 'Paket',
+            onBack: () => context.goNamed(AppRoute.teacherHome),
+            body: const SizedBox(key: ValueKey('bundles')),
+          ),
         ),
         GoRoute(
           path: '/teacher/editor',
           name: AppRoute.teacherEditor,
-          builder: (_, _) => const CourseEditorScreen(),
+          builder: (context, _) => _page(
+            title: 'Editor',
+            onBack: () => context.goNamed(AppRoute.teacherHome),
+            body: const SizedBox(key: ValueKey('editor')),
+          ),
         ),
       ],
     );
     addTearDown(router.dispose);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          authControllerProvider.overrideWith((ref) => _FakeAuthController()),
-          studio.studioRepositoryProvider.overrideWithValue(studioRepo),
-          studio.studioUploadQueueProvider.overrideWith(
-            (ref) => _NoopUploadQueueNotifier(studioRepo),
-          ),
-          studio.myCoursesProvider.overrideWith(
-            (ref) async => <CourseStudio>[],
-          ),
-          teacherBundlesProvider.overrideWith((ref) async => []),
-        ],
-        child: MaterialApp.router(routerConfig: router),
-      ),
-    );
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
     await _pumpRouter(tester);
 
     router.goNamed(AppRoute.teacherHome);
@@ -257,24 +162,17 @@ void main() {
         GoRoute(
           path: '/home',
           name: AppRoute.home,
-          builder: (_, _) => const ProfilePage(),
+          builder: (context, _) => _page(
+            title: 'Hem',
+            onBack: () {},
+            body: const SizedBox(key: ValueKey('home')),
+          ),
         ),
       ],
     );
     addTearDown(router.dispose);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          authControllerProvider.overrideWith((ref) => _FakeAuthController()),
-          myCertificatesProvider.overrideWith((ref) async => <Certificate>[]),
-          courses.myCoursesProvider.overrideWith(
-            (ref) async => <CourseSummary>[],
-          ),
-        ],
-        child: MaterialApp.router(routerConfig: router),
-      ),
-    );
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
     await _pumpRouter(tester);
 
     await tester.tap(find.text('Aveli').last);

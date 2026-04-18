@@ -132,9 +132,7 @@ void main() {
       membershipActive: true,
       needsOnboarding: false,
       needsPayment: false,
-      roleV2: 'learner',
       role: 'learner',
-      isAdmin: false,
     ),
     isEntryStateLoading: false,
   );
@@ -147,9 +145,7 @@ void main() {
       membershipActive: false,
       needsOnboarding: false,
       needsPayment: true,
-      roleV2: 'learner',
       role: 'learner',
-      isAdmin: false,
     ),
     isEntryStateLoading: false,
   );
@@ -162,9 +158,7 @@ void main() {
       membershipActive: false,
       needsOnboarding: true,
       needsPayment: true,
-      roleV2: 'learner',
       role: 'learner',
-      isAdmin: false,
     ),
     isEntryStateLoading: false,
   );
@@ -177,9 +171,7 @@ void main() {
       membershipActive: true,
       needsOnboarding: true,
       needsPayment: false,
-      roleV2: 'learner',
       role: 'learner',
-      isAdmin: false,
     ),
     isEntryStateLoading: false,
   );
@@ -192,9 +184,7 @@ void main() {
       membershipActive: true,
       needsOnboarding: true,
       needsPayment: false,
-      roleV2: 'learner',
       role: 'learner',
-      isAdmin: false,
     ),
     isEntryStateLoading: false,
   );
@@ -212,9 +202,7 @@ void main() {
       'membership_active': true,
       'needs_onboarding': true,
       'needs_payment': false,
-      'role_v2': 'learner',
       'role': 'learner',
-      'is_admin': false,
     });
 
     expect(state.onboardingState, EntryOnboardingState.welcomePending);
@@ -226,9 +214,7 @@ void main() {
         'membership_active': true,
         'needs_onboarding': true,
         'needs_payment': false,
-        'role_v2': 'learner',
         'role': 'learner',
-        'is_admin': false,
       }),
       throwsFormatException,
     );

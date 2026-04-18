@@ -8,7 +8,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/shared/utils/course_journey_step.dart';
 
 void main() {
   group('CourseSummary.fromResponse', () {
@@ -37,7 +36,7 @@ void main() {
       final state = await repo.fetchCourseState('course-1');
 
       expect(state.courseId, 'course-1');
-      expect(state.courseStep, CourseJourneyStep.intro);
+      expect(state.groupPosition, 0);
       expect(state.requiredEnrollmentSource, isNull);
       expect(state.hasEnrollment, isTrue);
       expect(state.enrollment!.source, 'purchase');
@@ -118,7 +117,7 @@ Map<String, Object?> _coursePayload({String slug = 'aveli-course'}) {
     'id': 'course-1',
     'slug': slug,
     'title': 'Aveli 101',
-    'step': 'intro',
+    'group_position': 0,
     'course_group_id': 'group-1',
     'cover_media_id': 'media-1',
     'cover': {
@@ -139,7 +138,7 @@ Map<String, Object?> _accessPayload({
 }) {
   return {
     'course_id': courseId,
-    'course_step': 'intro',
+    'group_position': 0,
     'required_enrollment_source': requiredEnrollmentSource,
     'enrollment': enrollment,
   };

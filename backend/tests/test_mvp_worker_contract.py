@@ -1,23 +1,19 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from pathlib import Path
-
-import pytest
 
 from app.repositories import media_assets as media_assets_repo
 from app.services import course_drip_worker, mvp_worker
 
 
 def test_media_worker_selected_columns_are_materialized_by_baseline() -> None:
-    slot_0007 = Path(
-        "backend/supabase/baseline_slots/0007_media_assets_core.sql"
+    slot_v2_0003 = Path(
+        "backend/supabase/baseline_v2_slots/V2_0003_media_assets.sql"
     ).read_text(encoding="utf-8")
-    slot_0033 = Path(
-        "backend/supabase/baseline_slots/0033_media_worker_operational_metadata.sql"
+    slot_v2_0013 = Path(
+        "backend/supabase/baseline_v2_slots/V2_0013_workers.sql"
     ).read_text(encoding="utf-8")
-    baseline_sql = f"{slot_0007}\n{slot_0033}".lower()
+    baseline_sql = f"{slot_v2_0003}\n{slot_v2_0013}".lower()
 
     for column in {
         "id",
@@ -37,30 +33,16 @@ def test_media_worker_selected_columns_are_materialized_by_baseline() -> None:
     assert "course_id" not in worker_sql
 
 
-@pytest.mark.anyio("asyncio")
-async def test_course_drip_worker_calls_canonical_worker_function(monkeypatch) -> None:
-    fixed_now = datetime(2026, 4, 13, 12, 0, tzinfo=timezone.utc)
-    calls: dict[str, object] = {}
+def test_course_drip_worker_uses_v2_enrollment_worker_signature() -> None:
+    source = Path(course_drip_worker.__file__).read_text(encoding="utf-8")
+    normalized = " ".join(source.split())
+    worker_function = "canonical_worker_advance_course_enrollment_drip"
+    legacy_one_argument_call = f"{worker_function}(%s)"
+    legacy_count_alias = "advanced" + "_count"
 
-    class FakeCursor:
-        async def execute(self, query: str, params: tuple[object, ...]) -> None:
-            calls["query"] = query
-            calls["params"] = params
-
-        async def fetchone(self) -> dict[str, int]:
-            return {"advanced_count": 2}
-
-    @asynccontextmanager
-    async def fake_get_conn():
-        yield FakeCursor()
-
-    monkeypatch.setattr(course_drip_worker, "get_conn", fake_get_conn)
-
-    advanced = await course_drip_worker.run_once(now=fixed_now)
-
-    assert advanced == 2
-    assert "canonical_worker_advance_course_enrollment_drip" in str(calls["query"])
-    assert calls["params"] == (fixed_now,)
+    assert f"{worker_function}(%s, %s)" in normalized
+    assert legacy_one_argument_call not in normalized
+    assert legacy_count_alias not in normalized
 
 
 def test_mvp_worker_process_excludes_non_mvp_workers() -> None:

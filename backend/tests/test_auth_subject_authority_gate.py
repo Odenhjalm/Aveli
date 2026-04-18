@@ -26,9 +26,7 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
         return {
             "user_id": USER_ID,
             "onboarding_state": "completed",
-            "role_v2": "learner",
             "role": "learner",
-            "is_admin": False,
         }
 
     async def _fake_get_profile(_: str):
@@ -57,7 +55,6 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
         {
             "email": "user@example.com",
             "role": "teacher",
-            "is_admin": True,
             "display_name": "Payload Name",
             "user_metadata": {
                 "display_name": "User Metadata Name",
@@ -65,7 +62,6 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
             },
             "app_metadata": {
                 "role": "teacher",
-                "is_admin": True,
             },
         },
     )
@@ -75,8 +71,6 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
         "email": "user@example.com",
         "onboarding_state": "completed",
         "role": "learner",
-        "role_v2": "learner",
-        "is_admin": False,
         "display_name": "Canonical Profile Name",
         "bio": "Canonical bio",
         "photo_url": "/profiles/avatar/media-123",
@@ -94,9 +88,7 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
         return {
             "user_id": USER_ID,
             "onboarding_state": "completed",
-            "role_v2": "learner",
             "role": "learner",
-            "is_admin": False,
         }
 
     async def _fake_get_profile(_: str):
@@ -119,7 +111,7 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
                 "photo_url": "https://example.com/avatar.jpg",
                 "bio": "Metadata bio",
             },
-            "app_metadata": {"role": "teacher", "is_admin": True},
+            "app_metadata": {"role": "teacher"},
         },
     )
 
@@ -128,8 +120,6 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
         "email": "user@example.com",
         "onboarding_state": "completed",
         "role": "learner",
-        "role_v2": "learner",
-        "is_admin": False,
         "display_name": None,
         "bio": None,
         "photo_url": None,
@@ -145,9 +135,7 @@ async def test_build_current_user_rejects_invalid_canonical_subject(monkeypatch)
         return {
             "user_id": USER_ID,
             "onboarding_state": "broken_state",
-            "role_v2": "teacher",
             "role": "learner",
-            "is_admin": False,
         }
 
     monkeypatch.setattr(
@@ -167,18 +155,18 @@ async def test_build_current_user_rejects_invalid_canonical_subject(monkeypatch)
         )
 
 
-async def test_require_admin_ignores_current_user_is_admin_flag_when_canonical_is_false(
+async def test_require_admin_ignores_current_user_role_when_canonical_is_false(
     monkeypatch,
 ) -> None:
     from app import permissions
 
-    async def _fake_is_admin_user(_: str) -> bool:
+    async def _fake_user_has_admin_role(_: str) -> bool:
         return False
 
-    monkeypatch.setattr("app.models.is_admin_user", _fake_is_admin_user)
+    monkeypatch.setattr("app.models.user_has_admin_role", _fake_user_has_admin_role)
 
     with pytest.raises(HTTPException, match="admin_required") as exc_info:
-        await permissions.require_admin({"id": "user-123", "is_admin": True})
+        await permissions.require_admin({"id": "user-123", "role": "admin"})
 
     assert exc_info.value.status_code == 403
 
@@ -188,12 +176,12 @@ async def test_require_admin_allows_after_canonical_entry_when_canonical_admin_i
 ) -> None:
     from app import permissions
 
-    async def _fake_is_admin_user(_: str) -> bool:
+    async def _fake_user_has_admin_role(_: str) -> bool:
         return True
 
-    monkeypatch.setattr("app.models.is_admin_user", _fake_is_admin_user)
+    monkeypatch.setattr("app.models.user_has_admin_role", _fake_user_has_admin_role)
 
-    current = {"id": "user-123", "is_admin": False}
+    current = {"id": "user-123", "role": "learner"}
     assert await permissions.require_admin(current) is current
 
 

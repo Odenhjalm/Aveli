@@ -13,6 +13,7 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/application/studio_upload_queue.dart';
 import 'package:aveli/features/studio/data/studio_models.dart';
@@ -28,6 +29,14 @@ class _MockStudioRepository extends Mock implements StudioRepository {}
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
+class _V2TeacherStatus extends Fake implements StudioStatus {
+  @override
+  bool get isTeacher => true;
+
+  @override
+  bool get hasApplication => false;
+}
+
 class _FakeAuthController extends AuthController {
   _FakeAuthController() : super(_MockAuthRepository(), AuthHttpObserver()) {
     state = AuthState(
@@ -36,6 +45,15 @@ class _FakeAuthController extends AuthController {
         email: 'teacher@example.com',
         createdAt: DateTime.utc(2026, 1, 1),
         updatedAt: DateTime.utc(2026, 1, 1),
+      ),
+      entryState: const EntryState(
+        canEnterApp: true,
+        onboardingState: EntryOnboardingState.completed,
+        onboardingCompleted: true,
+        membershipActive: true,
+        needsOnboarding: false,
+        needsPayment: false,
+        role: 'teacher',
       ),
     );
   }
@@ -75,7 +93,7 @@ const _course = CourseStudio(
   title: 'Tarot Basics',
   slug: 'tarot-basics',
   courseGroupId: 'course-group-1',
-  step: 'foundation',
+  groupPosition: 1,
   dripEnabled: false,
   dripIntervalDays: null,
   coverMediaId: null,
@@ -89,7 +107,7 @@ const _courseWithCover = CourseStudio(
   title: 'Tarot Basics',
   slug: 'tarot-basics',
   courseGroupId: 'course-group-1',
-  step: 'foundation',
+  groupPosition: 1,
   dripEnabled: false,
   dripIntervalDays: null,
   coverMediaId: 'course-cover-1',
@@ -188,13 +206,7 @@ void _stubBaseStudioData(
   List<LessonStudio> lessons = const [_lesson],
   Future<StudioLessonContentRead> Function(String lessonId)? readContent,
 }) {
-  when(() => repo.fetchStatus()).thenAnswer(
-    (_) async => const StudioStatus(
-      isTeacher: true,
-      verifiedCertificates: 1,
-      hasApplication: false,
-    ),
-  );
+  when(() => repo.fetchStatus()).thenAnswer((_) async => _V2TeacherStatus());
   when(() => repo.myCourses()).thenAnswer((_) async => [course]);
   when(() => repo.fetchCourseMeta('course-1')).thenAnswer((_) async => course);
   when(
@@ -254,13 +266,6 @@ Future<void> _pumpCourseEditor(
         ),
         authControllerProvider.overrideWith((ref) => _FakeAuthController()),
         studioRepositoryProvider.overrideWithValue(repo),
-        studioStatusProvider.overrideWith(
-          (ref) async => const StudioStatus(
-            isTeacher: true,
-            verifiedCertificates: 1,
-            hasApplication: false,
-          ),
-        ),
         studioUploadQueueProvider.overrideWith(
           (ref) => _NoopUploadQueueNotifier(repo),
         ),

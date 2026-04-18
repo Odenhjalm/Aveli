@@ -51,7 +51,7 @@ async def test_enroll_free_intro_course_updates_my_courses(async_client):
     items = [
         item
         for item in (catalog_resp.json().get("items") or [])
-        if item.get("step") == "intro"
+        if item.get("group_position") == 0
     ]
     if not items:
         pytest.skip("No free intro courses available in clean Supabase dataset")

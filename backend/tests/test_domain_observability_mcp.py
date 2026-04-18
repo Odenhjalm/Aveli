@@ -32,9 +32,7 @@ async def test_domain_observability_mcp_inspect_user(async_client, monkeypatch):
         return {
             "user_id": "user-123",
             "onboarding_state": "completed",
-            "role_v2": "teacher",
             "role": "teacher",
-            "is_admin": False,
         }
 
     async def _fake_get_profile(_: str):

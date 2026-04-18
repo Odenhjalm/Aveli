@@ -10,13 +10,12 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_catalog_page.dart';
-import 'package:aveli/shared/utils/course_journey_step.dart';
 
 CourseSummary _course({
   required String id,
   required String slug,
   required String title,
-  required CourseJourneyStep step,
+  required int groupPosition,
   String courseGroupId = '',
   int? priceCents,
 }) {
@@ -24,7 +23,7 @@ CourseSummary _course({
     id: id,
     slug: slug,
     title: title,
-    step: step,
+    groupPosition: groupPosition,
     courseGroupId: courseGroupId,
     coverMediaId: null,
     cover: null,
@@ -51,13 +50,13 @@ void main() {
           id: 'intro-1',
           slug: 'intro-start',
           title: 'Intro',
-          step: CourseJourneyStep.intro,
+          groupPosition: 0,
         ),
         _course(
           id: 'healing-1',
           slug: 'healing-path-step-1',
           title: 'Healing Path Steg 1',
-          step: CourseJourneyStep.step1,
+          groupPosition: 1,
           courseGroupId: 'series:healing-path',
           priceCents: 9900,
         ),
@@ -65,7 +64,7 @@ void main() {
           id: 'healing-2',
           slug: 'healing-path-step-2',
           title: 'Healing Path Steg 2',
-          step: CourseJourneyStep.step2,
+          groupPosition: 2,
           courseGroupId: 'series:healing-path',
           priceCents: 10900,
         ),
@@ -73,7 +72,7 @@ void main() {
           id: 'tarot-1',
           slug: 'tarot-core-step-1',
           title: 'Tarot Core Steg 1',
-          step: CourseJourneyStep.step1,
+          groupPosition: 1,
           courseGroupId: 'series:tarot-core',
           priceCents: 12900,
         ),
@@ -81,7 +80,7 @@ void main() {
           id: 'tarot-2',
           slug: 'tarot-core-step-2',
           title: 'Tarot Core Steg 2',
-          step: CourseJourneyStep.step2,
+          groupPosition: 2,
           courseGroupId: 'series:tarot-core',
           priceCents: 13900,
         ),
@@ -89,7 +88,7 @@ void main() {
           id: 'tarot-3',
           slug: 'tarot-core-step-3',
           title: 'Tarot Core Steg 3',
-          step: CourseJourneyStep.step3,
+          groupPosition: 3,
           courseGroupId: 'series:tarot-core',
           priceCents: 14900,
         ),
@@ -177,13 +176,13 @@ void main() {
           id: 'intro-1',
           slug: 'intro-start',
           title: 'Intro',
-          step: CourseJourneyStep.intro,
+          groupPosition: 0,
         ),
         _course(
           id: 'herbs-1',
           slug: 'utbildning-sjalvlakande-orter-och-nutrition-ax8b-hfrn5g87js',
           title: 'Utbildning Självläkande örter & nutrition del 1',
-          step: CourseJourneyStep.step1,
+          groupPosition: 1,
           courseGroupId: 'series:utbildning-självläkande-örter-nutrition',
           priceCents: 85000,
         ),
@@ -192,7 +191,7 @@ void main() {
           slug:
               'utbildning-sjalvlakande-orter-och-nutrition-del-2-1v3d-hfrncjb1c8',
           title: 'Utbildning Självläkande örter & nutrition del 2',
-          step: CourseJourneyStep.step2,
+          groupPosition: 2,
           courseGroupId: 'series:utbildning-självläkande-örter-nutrition',
           priceCents: 65000,
         ),
@@ -200,7 +199,7 @@ void main() {
           id: 'meditation-3',
           slug: 'utbildning-spirituell-meditation-del-3-l460-hfrms0fis0',
           title: 'Utbildning Spirituell meditation del 3 Meditationscoach',
-          step: CourseJourneyStep.step3,
+          groupPosition: 3,
           courseGroupId: 'series:utbildning-spirituell-meditation',
           priceCents: 198000,
         ),
@@ -208,7 +207,7 @@ void main() {
           id: 'meditation-2',
           slug: 'utbildning-spirituell-meditation-del-2-1274-hfrmnf8wug',
           title: 'Utbildning Spirituell meditation del 2',
-          step: CourseJourneyStep.step2,
+          groupPosition: 2,
           courseGroupId: 'series:utbildning-spirituell-meditation',
           priceCents: 155000,
         ),
@@ -216,7 +215,7 @@ void main() {
           id: 'meditation-1',
           slug: 'utbildning-spirituell-meditation-del-1-8m5g-hfrmdjn6yo',
           title: 'Utbildning Spirituell Meditation del 1',
-          step: CourseJourneyStep.step1,
+          groupPosition: 1,
           courseGroupId: 'series:utbildning-spirituell-meditation',
           priceCents: 65000,
         ),
@@ -310,10 +309,7 @@ class _StubAuthRepository implements AuthRepository {
   Future<Profile> completeWelcome() => throw UnimplementedError();
 
   @override
-  Future<Profile> createProfile({
-    required String displayName,
-    String? bio,
-  }) =>
+  Future<Profile> createProfile({required String displayName, String? bio}) =>
       throw UnimplementedError();
 
   @override
@@ -333,10 +329,8 @@ class _StubAuthRepository implements AuthRepository {
   Future<String?> currentToken() async => null;
 
   @override
-  Future<Profile> register({
-    required String email,
-    required String password,
-  }) => throw UnimplementedError();
+  Future<Profile> register({required String email, required String password}) =>
+      throw UnimplementedError();
 
   @override
   Future<void> requestPasswordReset(String email) async {}

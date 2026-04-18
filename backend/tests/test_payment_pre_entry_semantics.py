@@ -74,8 +74,6 @@ async def test_checkout_return_without_membership_cannot_enter_app(monkeypatch) 
                 "email": "member@example.com",
                 "onboarding_state": "completed",
                 "role": "learner",
-                "role_v2": "learner",
-                "is_admin": False,
             }
         )
 
@@ -104,8 +102,6 @@ async def test_active_payment_membership_still_requires_onboarding(
                 "email": "member@example.com",
                 "onboarding_state": "incomplete",
                 "role": "learner",
-                "role_v2": "learner",
-                "is_admin": False,
             }
         )
 
@@ -120,8 +116,6 @@ async def test_completed_onboarding_and_active_payment_membership_can_enter_app(
         "email": "member@example.com",
         "onboarding_state": "completed",
         "role": "learner",
-        "role_v2": "learner",
-        "is_admin": False,
     }
 
     async def fake_get_membership(user_id: str):

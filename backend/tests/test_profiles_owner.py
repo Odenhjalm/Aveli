@@ -132,8 +132,6 @@ async def test_profiles_me_patch_rejects_non_projection_authority_fields(async_c
             "display_name": "Allowed",
             "photo_url": "https://example.com/avatar.png",
             "onboarding_state": "completed",
-            "role_v2": "teacher",
-            "is_admin": True,
         },
     )
     assert resp.status_code == 422, resp.text
@@ -149,7 +147,5 @@ async def test_profiles_me_patch_rejects_non_projection_authority_fields(async_c
     assert {entry["field"] for entry in field_errors} == {
         "photo_url",
         "onboarding_state",
-        "role_v2",
-        "is_admin",
     }
     assert {entry["error_code"] for entry in field_errors} == {"extra_forbidden"}

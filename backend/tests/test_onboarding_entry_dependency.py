@@ -16,8 +16,6 @@ def _current_user(*, onboarding_state: str = "completed") -> dict[str, object]:
         "email": "user@example.com",
         "onboarding_state": onboarding_state,
         "role": "learner",
-        "role_v2": "learner",
-        "is_admin": False,
     }
 
 
@@ -27,8 +25,6 @@ def _teacher_current_user(*, onboarding_state: str = "completed") -> dict[str, o
         "email": "teacher@example.com",
         "onboarding_state": onboarding_state,
         "role": "teacher",
-        "role_v2": "teacher",
-        "is_admin": False,
     }
 
 
@@ -37,9 +33,7 @@ def _admin_current_user(*, onboarding_state: str = "completed") -> dict[str, obj
         "id": "admin-1",
         "email": "admin@example.com",
         "onboarding_state": onboarding_state,
-        "role": "learner",
-        "role_v2": "learner",
-        "is_admin": True,
+        "role": "admin",
     }
 
 
@@ -144,14 +138,14 @@ async def test_admin_route_denies_incomplete_onboarding_before_role_check(
     async def _fake_get_membership(_: str) -> dict[str, object]:
         return {"status": "active", "expires_at": None}
 
-    async def _unexpected_is_admin_user(_: str) -> None:
+    async def _unexpected_user_has_admin_role(_: str) -> None:
         raise AssertionError("admin role must not be checked before entry-state allows app entry")
 
     monkeypatch.setattr(
         "app.routes.entry_state.memberships_repo.get_membership",
         _fake_get_membership,
     )
-    monkeypatch.setattr("app.models.is_admin_user", _unexpected_is_admin_user)
+    monkeypatch.setattr("app.models.user_has_admin_role", _unexpected_user_has_admin_role)
 
     try:
         response = await async_client.get("/admin/settings")
@@ -171,14 +165,14 @@ async def test_admin_route_denies_missing_membership_before_role_check(
     async def _fake_get_membership(_: str) -> None:
         return None
 
-    async def _unexpected_is_admin_user(_: str) -> None:
+    async def _unexpected_user_has_admin_role(_: str) -> None:
         raise AssertionError("admin role must not be checked before entry-state allows app entry")
 
     monkeypatch.setattr(
         "app.routes.entry_state.memberships_repo.get_membership",
         _fake_get_membership,
     )
-    monkeypatch.setattr("app.models.is_admin_user", _unexpected_is_admin_user)
+    monkeypatch.setattr("app.models.user_has_admin_role", _unexpected_user_has_admin_role)
 
     try:
         response = await async_client.get("/admin/settings")
@@ -204,8 +198,6 @@ async def test_teacher_route_allows_after_app_entry_and_teacher_role(
     async def _fake_teacher_status(_: str) -> dict[str, Any]:
         return {
             "role": "teacher",
-            "is_admin": False,
-            "verified_certificates": 0,
         }
 
     monkeypatch.setattr(
@@ -223,8 +215,6 @@ async def test_teacher_route_allows_after_app_entry_and_teacher_role(
     assert response.status_code == 200
     assert response.json() == {
         "role": "teacher",
-        "is_admin": False,
-        "verified_certificates": 0,
     }
 
 
@@ -237,7 +227,7 @@ async def test_admin_route_allows_after_app_entry_and_admin_role(
     async def _fake_get_membership(_: str) -> dict[str, object]:
         return {"status": "active", "expires_at": None}
 
-    async def _fake_is_admin_user(_: str) -> bool:
+    async def _fake_user_has_admin_role(_: str) -> bool:
         return True
 
     async def _fake_priorities() -> list[dict[str, object]]:
@@ -250,7 +240,7 @@ async def test_admin_route_allows_after_app_entry_and_admin_role(
         "app.routes.entry_state.memberships_repo.get_membership",
         _fake_get_membership,
     )
-    monkeypatch.setattr("app.models.is_admin_user", _fake_is_admin_user)
+    monkeypatch.setattr("app.models.user_has_admin_role", _fake_user_has_admin_role)
     monkeypatch.setattr(
         "app.routes.admin.models.list_teacher_course_priorities",
         _fake_priorities,

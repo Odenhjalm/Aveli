@@ -133,7 +133,7 @@ void main() {
                 title: 'Min kurs',
                 slug: 'min-kurs',
                 courseGroupId: '',
-                step: 'intro',
+                groupPosition: 0,
                 dripEnabled: false,
                 dripIntervalDays: null,
                 coverMediaId: null,

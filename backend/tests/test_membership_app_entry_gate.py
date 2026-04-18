@@ -59,9 +59,7 @@ async def test_domain_observability_keeps_enrollment_separate_from_app_entry(
         return {
             "user_id": "user-123",
             "onboarding_state": "completed",
-            "role_v2": "learner",
             "role": "learner",
-            "is_admin": False,
         }
 
     async def _fake_get_profile(_: str):

@@ -17,12 +17,15 @@ COURSE_ID = "22222222-2222-2222-2222-222222222222"
 LESSON_ID = "33333333-3333-3333-3333-333333333333"
 
 
-def test_lesson_content_surface_sql_requires_enrollment_and_unlock_only():
-    sql = Path("backend/supabase/baseline_slots/0016_lesson_content_surface.sql").read_text()
+def test_lesson_content_surface_sql_is_projection_not_access_authority():
+    sql = Path(
+        "backend/supabase/baseline_v2_slots/V2_0010_read_projections.sql"
+    ).read_text()
 
-    assert "from app.course_enrollments as ce" in sql
-    assert "l.position <= ce.current_unlock_position" in sql
-    assert "request.jwt.claim.sub" in sql
+    assert "create view app.lesson_content_surface" in sql
+    assert "lc.content_markdown" in sql
+    assert "course_enrollments" not in sql
+    assert "request.jwt.claim.sub" not in sql
     assert "memberships" not in sql.lower()
 
 
@@ -231,7 +234,7 @@ async def test_lesson_detail_denies_admin_without_course_enrollment(monkeypatch)
     with pytest.raises(HTTPException) as excinfo:
         await course_routes.lesson_detail(
             LESSON_ID,
-            {"id": UUID(USER_ID), "is_admin": True},
+            {"id": UUID(USER_ID), "role": "admin"},
         )
 
     assert excinfo.value.status_code == 403
@@ -250,8 +253,6 @@ async def test_course_enrollment_cannot_substitute_for_global_app_entry(
             "email": "learner@example.com",
             "onboarding_state": "completed",
             "role": "learner",
-            "role_v2": "learner",
-            "is_admin": False,
         }
 
     async def no_membership(_: str) -> None:

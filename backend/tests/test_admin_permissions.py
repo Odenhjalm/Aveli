@@ -90,9 +90,7 @@ async def test_teacher_role_routes_require_admin_and_mutate_canonical_authority(
     subject_after_grant = await fetch_auth_subject(target_user["user_id"])
     assert subject_after_grant == {
         "onboarding_state": "incomplete",
-        "role_v2": "teacher",
         "role": "teacher",
-        "is_admin": False,
     }
 
     revoked_refresh = await async_client.post(
@@ -126,9 +124,7 @@ async def test_teacher_role_routes_require_admin_and_mutate_canonical_authority(
     subject_after_revoke = await fetch_auth_subject(target_user["user_id"])
     assert subject_after_revoke == {
         "onboarding_state": "incomplete",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
     revoked_again = await async_client.post(

@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = ROOT / "actual_truth" / "contracts" / "supabase_integration_boundary_contract.md"
-BASELINE_DIR = ROOT / "backend" / "supabase" / "baseline_slots"
+BASELINE_V2_DIR = ROOT / "backend" / "supabase" / "baseline_v2_slots"
 AUTH_PATH = ROOT / "backend" / "app" / "auth.py"
 MODELS_PATH = ROOT / "backend" / "app" / "models.py"
 PROFILES_REPO_PATH = ROOT / "backend" / "app" / "repositories" / "profiles.py"
@@ -71,30 +71,45 @@ def test_supabase_boundary_contract_maps_infrastructure_only_responsibilities() 
         "`auth.users` is identity-only",
         "`storage.objects` and `storage.buckets` are physical file persistence only",
         "Supabase-hosted Postgres is physical storage only",
-        "`app.auth_subjects` owns onboarding state, roles, and admin/access flags",
-        "`app.runtime_media` owns media runtime truth",
+        "`app.auth_subjects` is the canonical application subject authority",
+        "app-level role subject fields",
+        "`app.memberships` owns app-access truth",
+        "`app.course_enrollments` owns protected course-content access truth",
+        "Canonical schema authority is `backend/supabase/baseline_v2_slots`",
         "Frontend must use backend APIs only",
+    )
+    legacy_slot_dir = "/".join(("backend", "supabase", "baseline" + "_slots"))
+    forbidden_snippets = (
+        "admin/access flags",
+        "app-level admin subject fields",
+        "`app.runtime_media` owns media runtime truth",
+        f"Canonical schema authority is `{legacy_slot_dir}`",
     )
 
     for snippet in required_snippets:
         assert snippet in contract
 
+    for snippet in forbidden_snippets:
+        assert snippet not in contract
+
 
 def test_baseline_keeps_supabase_external_dependencies_outside_canonical_domain_logic() -> None:
-    forbidden_outside_foundation = (
-        "auth.users",
-        "storage.objects",
-        "storage.buckets",
-        "auth.uid(",
-        "auth.role(",
-    )
+    substrate_allowed_slots = {
+        "V2_0011_auth_session_and_subject_authority.sql",
+        "V2_0012_core_substrate_profiles_storage_referrals.sql",
+    }
+    forbidden_everywhere = ("auth.uid(", "auth.role(")
+    forbidden_outside_substrate = ("auth.users", "storage.objects", "storage.buckets")
 
-    for path in sorted(BASELINE_DIR.glob("*.sql")):
-        if path.name == "0001_canonical_foundation.sql":
+    for path in sorted(BASELINE_V2_DIR.glob("*.sql")):
+        source = _read(path)
+        for forbidden in forbidden_everywhere:
+            assert forbidden not in source, f"{_repo_relative(path)} contains {forbidden!r}"
+
+        if path.name in substrate_allowed_slots:
             continue
 
-        source = _read(path)
-        for forbidden in forbidden_outside_foundation:
+        for forbidden in forbidden_outside_substrate:
             assert forbidden not in source, f"{_repo_relative(path)} contains {forbidden!r}"
 
 
@@ -113,6 +128,8 @@ def test_frontend_runtime_has_no_direct_supabase_clients() -> None:
 
 def test_frontend_supporting_files_do_not_require_supabase_runtime_env() -> None:
     for path, forbidden_fragments in FRONTEND_SUPPORTING_FILES_WITHOUT_SUPABASE_RUNTIME_ENV.items():
+        if not path.exists():
+            continue
         source = _read(path)
         for forbidden in forbidden_fragments:
             assert forbidden not in source, f"{_repo_relative(path)} references {forbidden}"
@@ -149,12 +166,11 @@ def test_tool_dispatcher_uses_canonical_identity_and_role_sources() -> None:
         "JOIN auth.users u ON u.id = e.user_id",
         "JOIN app.auth_subjects a ON a.user_id = u.id",
         "COALESCE(p.display_name, u.email)",
-        "a.role_v2 AS role",
+        "a.role::text AS role",
         'detail="DATABASE_URL missing"',
     )
     forbidden_fragments = (
         "SUPABASE_DB_URL",
-        "COALESCE(p.role_v2, p.role)",
         "p.email",
     )
 

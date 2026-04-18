@@ -30,9 +30,7 @@ const _onboardingEntryState = EntryState(
   membershipActive: true,
   needsOnboarding: true,
   needsPayment: false,
-  roleV2: 'learner',
   role: 'learner',
-  isAdmin: false,
 );
 
 Profile _profile({String? displayName, String? bio}) {

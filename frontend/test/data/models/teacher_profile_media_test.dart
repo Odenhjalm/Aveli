@@ -20,7 +20,6 @@ void main() {
         'teacher_id': 'teacher-1',
         'media_kind': 'external',
         'lesson_media_id': 'lesson-media-1',
-        'seminar_recording_id': null,
         'external_url': 'https://example.com/profile',
         'title': null,
         'description': null,

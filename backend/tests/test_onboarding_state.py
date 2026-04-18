@@ -88,9 +88,7 @@ async def test_register_initializes_subject_and_projection_without_required_name
 
     assert await fetch_auth_subject(user["user_id"]) == {
         "onboarding_state": "incomplete",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
     me_resp = await async_client.get(
@@ -136,9 +134,7 @@ async def test_create_profile_persists_required_name_and_optional_bio(
 
     assert await fetch_auth_subject(user["user_id"]) == {
         "onboarding_state": "welcome_pending",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
 
@@ -186,8 +182,6 @@ async def test_create_profile_rejects_non_profile_authority_and_media_fields(
             "photo_url": "https://example.com/avatar.png",
             "avatar_media_id": str(uuid.uuid4()),
             "onboarding_state": "completed",
-            "role_v2": "teacher",
-            "is_admin": True,
         },
     )
     assert create_resp.status_code == 422, create_resp.text
@@ -198,8 +192,6 @@ async def test_create_profile_rejects_non_profile_authority_and_media_fields(
         "photo_url",
         "avatar_media_id",
         "onboarding_state",
-        "role_v2",
-        "is_admin",
     }
 
     me_resp = await async_client.get(
@@ -222,9 +214,7 @@ async def test_auth_subject_repository_cannot_complete_onboarding_directly():
         await auth_subjects_repo.ensure_auth_subject(
             uuid.uuid4(),
             onboarding_state="completed",
-            role_v2="learner",
             role="learner",
-            is_admin=False,
         )
 
 
@@ -245,9 +235,7 @@ async def test_onboarding_complete_rejects_incomplete_state(async_client):
     assert complete_resp.json()["detail"] == "Välkomststeget måste bekräftas först."
     assert await fetch_auth_subject(user["user_id"]) == {
         "onboarding_state": "incomplete",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
     assert await _event_types_for(user["user_id"]) == []
 
@@ -287,9 +275,7 @@ async def test_create_profile_rejects_completed_state_without_profile_mutation(
     assert me_resp.json()["bio"] == "Kort bio"
     assert await fetch_auth_subject(user["user_id"]) == {
         "onboarding_state": "completed",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
 
@@ -322,9 +308,7 @@ async def test_onboarding_complete_requires_explicit_refresh_boundary(async_clie
 
     assert await fetch_auth_subject(user["user_id"]) == {
         "onboarding_state": "completed",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
     refresh_resp = await async_client.post(
@@ -366,9 +350,7 @@ async def test_onboarding_complete_does_not_derive_completion_from_profile_name(
     }
     assert await fetch_auth_subject(user["user_id"]) == {
         "onboarding_state": "completed",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
     assert await _event_types_for(user["user_id"]) == ["onboarding_completed"]
 
@@ -398,9 +380,7 @@ async def test_onboarding_complete_does_not_require_profile_projection_before_mu
     }
     assert await fetch_auth_subject(user["user_id"]) == {
         "onboarding_state": "completed",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
     assert await _event_types_for(user["user_id"]) == ["onboarding_completed"]
 
@@ -428,9 +408,7 @@ async def test_login_and_refresh_do_not_complete_onboarding(async_client):
 
     assert await fetch_auth_subject(user["user_id"]) == {
         "onboarding_state": "incomplete",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
 
@@ -476,7 +454,5 @@ async def test_verify_email_does_not_complete_onboarding(async_client):
 
     assert await fetch_auth_subject(user["user_id"]) == {
         "onboarding_state": "incomplete",
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }

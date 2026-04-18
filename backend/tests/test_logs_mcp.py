@@ -53,11 +53,9 @@ async def _register_teacher(async_client) -> tuple[dict[str, str], str]:
                 INSERT INTO app.auth_subjects (
                   user_id,
                   onboarding_state,
-                  role_v2,
                   role,
-                  is_admin
                 )
-                VALUES (%s::uuid, 'incomplete', 'teacher', 'teacher', false)
+                VALUES (%s::uuid, 'incomplete', 'teacher')
                 """,
                 (user_id,),
             )
@@ -88,7 +86,7 @@ async def _create_course_and_lesson(async_client, headers: dict[str, str]) -> tu
             "title": "Logs MCP Course",
             "slug": slug,
             "course_group_id": str(uuid.uuid4()),
-            "step": "intro",
+            "group_position": 0,
             "price_amount_cents": None,
             "drip_enabled": False,
             "drip_interval_days": None,

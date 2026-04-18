@@ -15,8 +15,6 @@ def _current_user(*, onboarding_state: str = "completed") -> dict[str, object]:
         "email": "entry@example.com",
         "onboarding_state": onboarding_state,
         "role": "learner",
-        "role_v2": "learner",
-        "is_admin": False,
     }
 
 
@@ -72,9 +70,7 @@ async def test_entry_state_denies_incomplete_onboarding(async_client, monkeypatc
         "membership_active": True,
         "needs_onboarding": True,
         "needs_payment": False,
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
 
@@ -97,9 +93,7 @@ async def test_entry_state_denies_welcome_pending_onboarding(
         "membership_active": True,
         "needs_onboarding": True,
         "needs_payment": False,
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
 
@@ -147,9 +141,7 @@ async def test_entry_state_denies_missing_or_inactive_membership(
         "membership_active": False,
         "needs_onboarding": False,
         "needs_payment": expected_needs_payment,
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
 
@@ -172,9 +164,7 @@ async def test_entry_state_allows_completed_onboarding_and_active_membership(
         "membership_active": True,
         "needs_onboarding": False,
         "needs_payment": False,
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
 
@@ -201,9 +191,7 @@ async def test_entry_state_handles_referral_membership_without_payment_prompt(
         "membership_active": False,
         "needs_onboarding": False,
         "needs_payment": True,
-        "role_v2": "learner",
         "role": "learner",
-        "is_admin": False,
     }
 
 

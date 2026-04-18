@@ -156,8 +156,7 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
                 await cur.execute(
                     """
                     UPDATE app.auth_subjects
-                       SET role_v2 = 'teacher',
-                           role = 'teacher'
+                       SET role = 'teacher'
                      WHERE user_id = %s
                     """,
                     (teacher_id,),
@@ -172,7 +171,7 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
                 "title": "Premium Course",
                 "slug": slug,
                 "course_group_id": str(uuid.uuid4()),
-                "step": "step1",
+                "group_position": 1,
                 "price_amount_cents": 12900,
                 "drip_enabled": False,
                 "drip_interval_days": None,

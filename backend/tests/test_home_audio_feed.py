@@ -39,11 +39,9 @@ async def _register_user(
                 INSERT INTO app.auth_subjects (
                   user_id,
                   onboarding_state,
-                  role_v2,
                   role,
-                  is_admin
                 )
-                VALUES (%s::uuid, 'completed', 'learner', 'learner', false)
+                VALUES (%s::uuid, 'completed', 'learner')
                 """,
                 (user_id,),
             )
@@ -87,8 +85,7 @@ async def _promote_to_teacher(user_id: str) -> None:
             await cur.execute(
                 """
                 UPDATE app.auth_subjects
-                   SET role_v2 = 'teacher',
-                       role = 'teacher'
+                   SET role = 'teacher'
                  WHERE user_id = %s
                 """,
                 (user_id,),

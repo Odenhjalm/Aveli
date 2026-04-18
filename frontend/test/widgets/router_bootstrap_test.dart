@@ -288,9 +288,7 @@ void main() {
       membershipActive: true,
       needsOnboarding: false,
       needsPayment: false,
-      roleV2: 'learner',
       role: 'learner',
-      isAdmin: false,
     );
 
     await tester.pumpWidget(
@@ -317,9 +315,7 @@ void main() {
       membershipActive: false,
       needsOnboarding: false,
       needsPayment: true,
-      roleV2: 'learner',
       role: 'learner',
-      isAdmin: false,
     );
 
     await tester.pumpWidget(
@@ -346,9 +342,7 @@ void main() {
         membershipActive: true,
         needsOnboarding: true,
         needsPayment: false,
-        roleV2: 'learner',
         role: 'learner',
-        isAdmin: false,
       );
 
       await tester.pumpWidget(
@@ -376,9 +370,7 @@ void main() {
         membershipActive: true,
         needsOnboarding: true,
         needsPayment: false,
-        roleV2: 'learner',
         role: 'learner',
-        isAdmin: false,
       );
       final profile = Profile(
         id: 'user-1',

@@ -107,7 +107,7 @@ async def test_admin_settings_route_still_returns_canonical_priority_surface(
     monkeypatch,
 ):
     teacher_id = str(uuid4())
-    current = {"id": str(uuid4()), "is_admin": True}
+    current = {"id": str(uuid4()), "role": "admin"}
 
     async def fake_list_teacher_course_priorities(limit=None):
         assert limit is None

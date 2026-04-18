@@ -113,11 +113,9 @@ async def _register_user(
                 INSERT INTO app.auth_subjects (
                   user_id,
                   onboarding_state,
-                  role_v2,
                   role,
-                  is_admin
                 )
-                VALUES (%s::uuid, 'completed', 'learner', 'learner', false)
+                VALUES (%s::uuid, 'completed', 'learner')
                 """,
                 (user_id,),
             )
@@ -161,8 +159,7 @@ async def _promote_to_teacher(user_id: str) -> None:
             await cur.execute(
                 """
                 update app.auth_subjects
-                   set role_v2 = 'teacher',
-                       role = 'teacher'
+                   set role = 'teacher'
                  where user_id = %s::uuid
                 """,
                 (user_id,),
@@ -265,7 +262,7 @@ async def _insert_course(
                   title,
                   slug,
                   course_group_id,
-                  step,
+                  group_position,
                   price_amount_cents,
                   drip_enabled,
                   drip_interval_days,
@@ -277,7 +274,7 @@ async def _insert_course(
                   %s,
                   %s,
                   %s::uuid,
-                  'step1'::app.course_step,
+                  1,
                   1000,
                   false,
                   null,
