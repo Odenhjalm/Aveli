@@ -88,6 +88,7 @@ async def create_subscription_checkout(
     order = await orders_repo.create_order(
         user_id=user_id,
         course_id=None,
+        bundle_id=None,
         amount_cents=amount_cents,
         currency=currency,
         order_type="subscription",

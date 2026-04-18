@@ -45,8 +45,9 @@ async def mark_order_paid(
                        stripe_customer_id = COALESCE(%s, stripe_customer_id),
                        updated_at = now()
                  WHERE id = %s
-                 RETURNING id, user_id, service_id, course_id, amount_cents,
-                           currency, status, stripe_checkout_id, stripe_payment_intent,
+                 RETURNING id, user_id, course_id, bundle_id, order_type,
+                           amount_cents, currency, status,
+                           stripe_checkout_id, stripe_payment_intent,
                            stripe_subscription_id, stripe_customer_id,
                            metadata, created_at, updated_at
                 """,
