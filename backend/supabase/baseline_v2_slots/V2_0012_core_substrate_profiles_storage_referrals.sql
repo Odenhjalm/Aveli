@@ -250,3 +250,189 @@ comment on column app.referral_codes.teacher_id is
 
 comment on column app.referral_codes.email is
   'Lowercase invited recipient email used to validate redemption eligibility.';
+
+create or replace function app.canonical_redeem_referral_code(
+  p_code text,
+  p_email text,
+  p_redeeming_user_id uuid,
+  p_membership_id uuid,
+  p_redeemed_at timestamptz default clock_timestamp()
+)
+returns app.memberships
+language plpgsql
+security definer
+set search_path = pg_catalog, app
+as $$
+declare
+  v_code text;
+  v_email text;
+  v_subject_email text;
+  v_referral app.referral_codes%rowtype;
+  v_membership app.memberships%rowtype;
+  v_has_membership boolean := false;
+  v_idempotent_redemption boolean := false;
+  v_effective_at timestamptz;
+  v_expires_at timestamptz;
+begin
+  if p_code is null or btrim(p_code) = '' then
+    raise exception 'referral redemption requires code';
+  end if;
+
+  if p_email is null or btrim(p_email) = '' then
+    raise exception 'referral redemption requires email';
+  end if;
+
+  if p_redeeming_user_id is null then
+    raise exception 'referral redemption requires redeeming user id';
+  end if;
+
+  if p_membership_id is null then
+    raise exception 'referral redemption requires explicit membership id';
+  end if;
+
+  if p_redeemed_at is null then
+    raise exception 'referral redemption requires redeemed_at';
+  end if;
+
+  v_code := upper(btrim(p_code));
+  v_email := lower(btrim(p_email));
+
+  select email
+    into v_subject_email
+  from app.auth_subjects
+  where user_id = p_redeeming_user_id;
+
+  if not found then
+    raise exception 'redeeming auth subject % does not exist', p_redeeming_user_id;
+  end if;
+
+  if v_subject_email is not null
+     and lower(btrim(v_subject_email)) <> v_email then
+    raise exception 'redeeming auth subject email does not match referral email';
+  end if;
+
+  select *
+    into v_referral
+  from app.referral_codes
+  where code = v_code
+    and email = v_email
+  for update;
+
+  if not found then
+    raise exception 'referral code does not exist for the supplied email';
+  end if;
+
+  if v_referral.redeemed_by_user_id is not null then
+    if v_referral.redeemed_by_user_id <> p_redeeming_user_id then
+      raise exception 'referral code has already been redeemed by another user';
+    end if;
+
+    if v_referral.redeemed_at is null then
+      raise exception 'referral code redemption state is invalid';
+    end if;
+
+    v_idempotent_redemption := true;
+  end if;
+
+  select *
+    into v_membership
+  from app.memberships
+  where user_id = p_redeeming_user_id
+  for update;
+
+  v_has_membership := found;
+
+  if v_has_membership then
+    if v_membership.source <> 'referral'::app.membership_source then
+      raise exception 'existing membership is not referral-sourced';
+    end if;
+
+    if not v_idempotent_redemption then
+      raise exception 'redeeming user already has a referral membership';
+    end if;
+  end if;
+
+  if v_idempotent_redemption then
+    v_effective_at := v_referral.redeemed_at;
+  else
+    if v_referral.active = false then
+      raise exception 'referral code is not active';
+    end if;
+
+    v_effective_at := p_redeemed_at;
+
+    update app.referral_codes
+       set active = false,
+           redeemed_by_user_id = p_redeeming_user_id,
+           redeemed_at = v_effective_at,
+           updated_at = v_effective_at
+     where id = v_referral.id
+    returning * into v_referral;
+  end if;
+
+  if v_referral.free_days is not null then
+    v_expires_at := v_effective_at + make_interval(days => v_referral.free_days);
+  elsif v_referral.free_months is not null then
+    v_expires_at := v_effective_at + make_interval(months => v_referral.free_months);
+  else
+    raise exception 'referral code has no grant duration';
+  end if;
+
+  if v_expires_at <= v_effective_at then
+    raise exception 'referral grant expiry must be after effective time';
+  end if;
+
+  if v_has_membership then
+    return v_membership;
+  end if;
+
+  insert into app.memberships (
+    membership_id,
+    user_id,
+    status,
+    source,
+    effective_at,
+    expires_at,
+    canceled_at,
+    ended_at,
+    provider_customer_id,
+    provider_subscription_id,
+    created_at,
+    updated_at
+  )
+  values (
+    p_membership_id,
+    p_redeeming_user_id,
+    'active'::app.membership_status,
+    'referral'::app.membership_source,
+    v_effective_at,
+    v_expires_at,
+    null,
+    null,
+    null,
+    null,
+    v_effective_at,
+    v_effective_at
+  )
+  returning * into v_membership;
+
+  return v_membership;
+end;
+$$;
+
+revoke all on function app.canonical_redeem_referral_code(
+  text,
+  text,
+  uuid,
+  uuid,
+  timestamptz
+) from public;
+
+comment on function app.canonical_redeem_referral_code(
+  text,
+  text,
+  uuid,
+  uuid,
+  timestamptz
+) is
+  'Canonical referral redemption function. It validates code, email, and redemption state, grants referral-sourced membership, and never creates orders, payments, course enrollments, auth, or onboarding authority.';
