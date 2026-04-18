@@ -7,7 +7,6 @@ from typing import Any
 from ..config import settings
 from ..observability import log_buffer
 from ..repositories import (
-    livekit_jobs as livekit_jobs_repo,
     media_assets as media_assets_repo,
     media_resolution_failures as media_resolution_failures_repo,
 )
@@ -134,24 +133,6 @@ def _normalize_resolution_failure(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_webhook_failure(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "source": "livekit_webhook_jobs",
-        "timestamp": _iso(row.get("updated_at")),
-        "severity": "ERROR",
-        "component": "worker",
-        "event": "livekit_webhook_failed",
-        "message": log_buffer.sanitize_string(str(row.get("last_error") or "LiveKit webhook job failed")),
-        "details": {
-            "job_id": str(row.get("id")),
-            "event_type": row.get("event"),
-            "attempt": int(row.get("attempt") or 0),
-            "status": row.get("status"),
-            "last_attempt_at": _iso(row.get("last_attempt_at")),
-        },
-    }
-
-
 def _matches_asset_id(event: dict[str, Any], asset_id: str) -> bool:
     details = event.get("details") or {}
     for key in ("asset_id", "media_id", "media_asset_id"):
@@ -211,14 +192,8 @@ async def get_recent_errors(limit: int | None = None) -> dict[str, Any]:
             limit=bounded_limit
         )
     ]
-    webhook_items = [
-        _normalize_webhook_failure(row)
-        for row in await livekit_jobs_repo.list_recent_failed_webhook_jobs(
-            limit=bounded_limit
-        )
-    ]
     recent_errors = _sorted_items(
-        [*log_items, *media_items, *resolution_items, *webhook_items],
+        [*log_items, *media_items, *resolution_items],
         limit=bounded_limit,
     )
     return {
@@ -229,7 +204,6 @@ async def get_recent_errors(limit: int | None = None) -> dict[str, Any]:
             "log_buffer",
             "media_assets",
             "media_resolution_failures",
-            "livekit_webhook_jobs",
         ],
     }
 
@@ -304,7 +278,6 @@ async def get_cleanup_activity(window: str | None = None) -> dict[str, Any]:
 async def get_worker_health() -> dict[str, Any]:
     transcode_metrics = await media_transcode_worker.get_metrics()
     webhook_metrics = livekit_events.get_metrics()
-    webhook_snapshot = await livekit_jobs_repo.get_webhook_queue_snapshot()
     membership_metrics = membership_expiry_warnings.get_metrics()
 
     transcode_enabled = bool(transcode_metrics.get("final_state"))
@@ -329,7 +302,6 @@ async def get_worker_health() -> dict[str, Any]:
     webhook_status = _status_from_flags(
         worker_running=bool(webhook_metrics.get("worker_running")),
         last_error=webhook_metrics.get("last_failure"),
-        degraded_signal=bool(int(webhook_snapshot.get("failed") or 0) > 0),
         verification_mode=webhook_verification_mode,
         write_suppressed=webhook_write_suppressed,
     )
@@ -375,11 +347,8 @@ async def get_worker_health() -> dict[str, Any]:
             "status": webhook_status,
             "worker_running": bool(webhook_metrics.get("worker_running")),
             "queue_size": int(webhook_metrics.get("queue_size") or 0),
-            "pending_jobs": int(webhook_snapshot.get("pending") or 0),
-            "processing_jobs": int(webhook_snapshot.get("processing") or 0),
-            "failed_jobs": int(webhook_snapshot.get("failed") or 0),
-            "next_due_at": _iso(webhook_snapshot.get("next_due_at")),
-            "last_failed_at": _iso(webhook_snapshot.get("last_failed_at")),
+            "pending_jobs": int(webhook_metrics.get("pending_jobs") or 0),
+            "failed_jobs": int(webhook_metrics.get("failed_jobs") or 0),
             "last_failure": log_buffer.sanitize_value(webhook_metrics.get("last_failure")),
             "verification_mode": webhook_verification_mode,
             "write_suppressed": webhook_write_suppressed,

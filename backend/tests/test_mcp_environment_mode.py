@@ -626,15 +626,6 @@ async def test_logs_worker_health_reports_livekit_paused_in_verification_mode(mo
             "write_suppressed": True,
         }
 
-    async def fake_queue_snapshot():
-        return {
-            "pending": 0,
-            "processing": 0,
-            "failed": 0,
-            "next_due_at": None,
-            "last_failed_at": None,
-        }
-
     def fake_membership_metrics():
         return {
             "worker_running": True,
@@ -656,12 +647,7 @@ async def test_logs_worker_health_reports_livekit_paused_in_verification_mode(mo
         fake_webhook_metrics,
         raising=True,
     )
-    monkeypatch.setattr(
-        logs_observability.livekit_jobs_repo,
-        "get_webhook_queue_snapshot",
-        fake_queue_snapshot,
-        raising=True,
-    )
+    assert not hasattr(logs_observability, "livekit_jobs_repo")
     monkeypatch.setattr(
         logs_observability.membership_expiry_warnings,
         "get_metrics",
@@ -676,5 +662,7 @@ async def test_logs_worker_health_reports_livekit_paused_in_verification_mode(mo
     assert result["worker_health"]["membership_expiry_warnings"]["status"] == "ok"
     assert result["worker_health"]["media_transcode"]["verification_mode"] is True
     assert result["worker_health"]["livekit_webhooks"]["worker_running"] is False
+    assert result["worker_health"]["livekit_webhooks"]["pending_jobs"] == 0
+    assert result["worker_health"]["livekit_webhooks"]["failed_jobs"] == 0
     assert result["worker_health"]["livekit_webhooks"]["write_suppressed"] is True
     assert result["worker_health"]["membership_expiry_warnings"]["verification_mode"] is True

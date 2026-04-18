@@ -54,6 +54,21 @@ async def test_livekit_webhook_handler_returns_inert_response():
     }
 
 
+async def test_livekit_queue_read_helpers_return_paused_constants():
+    assert await livekit_jobs_repo.get_webhook_job_counts() == {
+        "pending": 0,
+        "failed": 0,
+    }
+    assert await livekit_jobs_repo.get_webhook_queue_snapshot() == {
+        "pending": 0,
+        "processing": 0,
+        "failed": 0,
+        "next_due_at": None,
+        "last_failed_at": None,
+    }
+    assert await livekit_jobs_repo.list_recent_failed_webhook_jobs() == []
+
+
 @pytest.mark.parametrize(
     ("function_name", "args", "kwargs"),
     [

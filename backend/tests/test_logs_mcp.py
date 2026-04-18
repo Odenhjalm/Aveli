@@ -189,7 +189,7 @@ async def test_logs_mcp_initialize_and_tool_call(async_client, monkeypatch):
             "generated_at": "2026-03-23T12:00:00+00:00",
             "worker_health": {
                 "media_transcode": {"status": "ok"},
-                "livekit_webhooks": {"status": "ok"},
+                "livekit_webhooks": {"status": "stopped"},
                 "membership_expiry_warnings": {"status": "ok"},
             },
             "safety": {"logs_mcp_enabled": True, "log_buffer_max_events": 500},
