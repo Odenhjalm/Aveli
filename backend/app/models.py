@@ -425,9 +425,7 @@ async def teacher_status(user_id: str) -> dict:
     role = "teacher" if _effective_subject_role(auth_subject) == "teacher" else "learner"
     return {
         "role": role,
-        "verified_certificates": 0,
         "has_application": False,
-        "certificates_enabled": False,
     }
 
 
@@ -1349,8 +1347,7 @@ async def list_teacher_directory(limit: int = 100) -> list[dict]:
                    td.created_at,
                    prof.display_name,
                    {_profile_photo_url_sql("prof")} AS photo_url,
-                   prof.bio,
-                   0 AS verified_certificates
+                   prof.bio
             FROM app.teacher_directory td
             LEFT JOIN app.profiles prof ON prof.user_id = td.user_id
             ORDER BY td.created_at DESC
@@ -1382,7 +1379,6 @@ async def list_teacher_directory(limit: int = 100) -> list[dict]:
                 "rating": rating,
                 "created_at": row.get("created_at"),
                 "profile": profile,
-                "verified_certificates": int(row.get("verified_certificates") or 0),
             }
         )
     return items
@@ -1399,8 +1395,7 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
                    td.created_at,
                    prof.display_name,
                    {_profile_photo_url_sql("prof")} AS photo_url,
-                   prof.bio,
-                   0 AS verified_certificates
+                   prof.bio
             FROM app.teacher_directory td
             LEFT JOIN app.profiles prof ON prof.user_id = td.user_id
             WHERE td.user_id = %s
@@ -1451,7 +1446,6 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
             "rating": None,
             "created_at": fallback_profile.get("created_at"),
             "profile": profile,
-            "verified_certificates": 0,
         }
 
     specialties = _as_string_list(row.get("specialties"))
@@ -1473,7 +1467,6 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
         "rating": rating,
         "created_at": row.get("created_at"),
         "profile": profile,
-        "verified_certificates": int(row.get("verified_certificates") or 0),
     }
 
 

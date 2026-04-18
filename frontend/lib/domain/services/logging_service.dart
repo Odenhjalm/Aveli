@@ -9,7 +9,7 @@ class LoggingService {
     final formatted = _format(message, extras);
     developer.log(
       formatted,
-      name: 'LiveKit',
+      name: 'Aveli',
       level: 800,
       error: null,
       stackTrace: null,
@@ -28,7 +28,7 @@ class LoggingService {
     final formatted = _format(message, extras);
     developer.log(
       formatted,
-      name: 'LiveKit',
+      name: 'Aveli',
       level: 1000,
       error: error,
       stackTrace: stackTrace,

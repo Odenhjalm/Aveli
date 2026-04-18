@@ -7,13 +7,11 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/auth/application/user_access_provider.dart';
-import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/repositories/profile_repository.dart';
 import 'package:aveli/features/courses/application/course_providers.dart'
     as courses_front;
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
@@ -111,7 +109,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final authState = ref.watch(authControllerProvider);
     final access = ref.watch(userAccessProvider);
     final profile = authState.profile;
-    final certificatesAsync = ref.watch(myCertificatesProvider);
     final coursesAsync = ref.watch(courses_front.myCoursesProvider);
     if (authState.isLoading && profile == null) {
       return const AppScaffold(
@@ -184,14 +181,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   onSaveProfile: () => _saveProfile(profile),
                 ),
                 columnGap,
-                buildRow(
-                  _BioSection(
-                    profile: profile,
-                    editing: _editing,
-                    saving: _saving,
-                    controller: _bioCtrl,
-                  ),
-                  _CertificatesSection(certificatesAsync: certificatesAsync),
+                _BioSection(
+                  profile: profile,
+                  editing: _editing,
+                  saving: _saving,
+                  controller: _bioCtrl,
                 ),
                 columnGap,
                 buildRow(
@@ -682,42 +676,6 @@ class _PasswordResetSection extends StatelessWidget {
   }
 }
 
-class _CertificatesSection extends StatelessWidget {
-  const _CertificatesSection({required this.certificatesAsync});
-
-  final AsyncValue<List<Certificate>> certificatesAsync;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return _GlassSection(
-      title: 'Mina certifikat',
-      child: certificatesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Text(
-          error is AppFailure ? error.message : error.toString(),
-          style: theme.textTheme.bodyMedium,
-        ),
-        data: (certificates) {
-          if (certificates.isEmpty) {
-            return Text(
-              'Inga certifikat är registrerade ännu. Lägg till dina diplom och intyg via Studio.',
-              style: theme.textTheme.bodyMedium,
-            );
-          }
-          return Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: certificates
-                .map((c) => _CertificateBadge(certificate: c))
-                .toList(growable: false),
-          );
-        },
-      ),
-    );
-  }
-}
-
 class _GlassSection extends StatelessWidget {
   const _GlassSection({required this.title, required this.child, this.actions});
 
@@ -804,84 +762,6 @@ class _ProfileChip extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _CertificateBadge extends StatelessWidget {
-  const _CertificateBadge({required this.certificate});
-
-  final Certificate certificate;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final status = certificate.status;
-    final color = switch (status) {
-      CertificateStatus.verified => Colors.greenAccent,
-      CertificateStatus.rejected => Colors.redAccent,
-      CertificateStatus.pending => Colors.orangeAccent,
-      CertificateStatus.unknown => Colors.lightBlueAccent,
-    };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-        color: color.withValues(alpha: 0.12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(
-            certificate.isVerified
-                ? Icons.workspace_premium_rounded
-                : certificate.isPending
-                ? Icons.hourglass_top_rounded
-                : certificate.isRejected
-                ? Icons.highlight_off_rounded
-                : Icons.description_outlined,
-            color: color,
-          ),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                certificate.title.trim().isEmpty
-                    ? 'Certifikat'
-                    : certificate.title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _statusLabel(certificate),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _statusLabel(Certificate certificate) {
-    switch (certificate.status) {
-      case CertificateStatus.pending:
-        return 'Under granskning';
-      case CertificateStatus.verified:
-        return 'Verifierat';
-      case CertificateStatus.rejected:
-        return 'Avslaget';
-      case CertificateStatus.unknown:
-        return certificate.statusRaw;
-    }
   }
 }
 

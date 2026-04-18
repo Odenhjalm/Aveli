@@ -59,7 +59,8 @@ class StudioRepository {
   }
 
   Future<StudioStatus> fetchStatus() async {
-    return _unsupportedRuntime('Studio status');
+    final response = await _client.raw.get<Object?>('/studio/status');
+    return StudioStatus.fromResponse(response.data);
   }
 
   Future<Map<String, Object?>> createReferralInvitation({
@@ -326,39 +327,6 @@ class StudioRepository {
     return _unsupportedRuntime('Home player course links');
   }
 
-  Future<TeacherProfileMediaItem> createProfileMedia({
-    required TeacherProfileMediaKind mediaKind,
-    String? lessonMediaId,
-    String? seminarRecordingId,
-    String? externalUrl,
-    String? title,
-    String? description,
-    String? coverMediaId,
-    String? coverImageUrl,
-    required int position,
-    required bool isPublished,
-    required bool enabledForHomePlayer,
-  }) async {
-    return _unsupportedRuntime('Studio profile media');
-  }
-
-  Future<TeacherProfileMediaItem> updateProfileMedia(
-    String itemId, {
-    String? title,
-    String? description,
-    String? coverMediaId,
-    String? coverImageUrl,
-    int? position,
-    bool? isPublished,
-    bool? enabledForHomePlayer,
-  }) async {
-    return _unsupportedRuntime('Studio profile media');
-  }
-
-  Future<void> deleteProfileMedia(String itemId) async {
-    return _unsupportedRuntime('Studio profile media');
-  }
-
   Future<void> reorderLessonMedia(
     String lessonId,
     List<String> orderedMediaIds,
@@ -377,63 +345,18 @@ class StudioRepository {
   Future<Uint8List> downloadMedia(String mediaId) async {
     return _unsupportedRuntime('Studio media download');
   }
-
-  Future<Map<String, Object?>> ensureQuiz(String courseId) async {
-    return _unsupportedRuntime('Studio quiz shell');
-  }
-
-  Future<List<Map<String, Object?>>> myCertificates({
-    bool verifiedOnly = false,
-  }) async {
-    return _unsupportedRuntime('Studio certificates');
-  }
-
-  Future<Map<String, Object?>> addCertificate({
-    required String title,
-    String status = 'pending',
-    String? notes,
-    String? evidenceUrl,
-  }) async {
-    return _unsupportedRuntime('Studio certificates');
-  }
-
-  Future<List<Map<String, Object?>>> quizQuestions(String quizId) async {
-    return _unsupportedRuntime('Studio quiz questions');
-  }
-
-  Future<Map<String, Object?>> upsertQuestion({
-    required String quizId,
-    String? id,
-    required Map<String, Object?> data,
-  }) async {
-    return _unsupportedRuntime('Studio quiz questions');
-  }
-
-  Future<void> deleteQuestion(String quizId, String questionId) async {
-    return _unsupportedRuntime('Studio quiz questions');
-  }
 }
 
 class StudioStatus {
-  const StudioStatus({
-    required this.isTeacher,
-    required this.verifiedCertificates,
-    required this.hasApplication,
-  });
+  const StudioStatus({required this.isTeacher, required this.hasApplication});
 
   final bool isTeacher;
-  final int verifiedCertificates;
   final bool hasApplication;
 
   factory StudioStatus.fromResponse(Object? payload) {
     final role = StudioRepository._requiredResponseField(
       payload,
       'role',
-      'Studio status',
-    );
-    final verifiedCertificates = StudioRepository._requiredResponseField(
-      payload,
-      'verified_certificates',
       'Studio status',
     );
     final hasApplication = StudioRepository._requiredResponseField(
@@ -444,19 +367,11 @@ class StudioStatus {
     if (role is! String) {
       throw StateError('Studio status field "role" must be a string');
     }
-    if (verifiedCertificates is! int && verifiedCertificates is! num) {
-      throw StateError(
-        'Studio status field "verified_certificates" must be an int',
-      );
-    }
     if (hasApplication is! bool) {
       throw StateError('Studio status field "has_application" must be a bool');
     }
     return StudioStatus(
       isTeacher: role == 'teacher',
-      verifiedCertificates: verifiedCertificates is int
-          ? verifiedCertificates
-          : (verifiedCertificates as num).toInt(),
       hasApplication: hasApplication,
     );
   }

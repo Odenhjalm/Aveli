@@ -1,22 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_extras.dart';
 import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/data/models/activity.dart';
-import 'package:aveli/data/models/certificate.dart';
-import 'package:aveli/data/models/seminar.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
-import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:aveli/features/seminars/application/seminar_providers.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
@@ -48,8 +43,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final isTeacher = access.isTeacher || access.isAdmin;
     final feedAsync = ref.watch(homeFeedProvider);
     final servicesAsync = ref.watch(homeServicesProvider);
-    final seminarsAsync = ref.watch(publicSeminarsProvider);
-    final certificatesAsync = ref.watch(myCertificatesProvider);
 
     return AppScaffold(
       title: '',
@@ -158,14 +151,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
-                                    _FeedSection(
-                                      feedAsync: feedAsync,
-                                      seminarsAsync: seminarsAsync,
-                                    ),
+                                    _FeedSection(feedAsync: feedAsync),
                                     const SizedBox(height: 24),
                                     _ServicesSection(
                                       servicesAsync: servicesAsync,
-                                      certificatesAsync: certificatesAsync,
                                       isAuthenticated:
                                           authState.isAuthenticated,
                                     ),
@@ -206,14 +195,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                         gridMainAxisSpacing: 2,
                       ),
                       const SizedBox(height: 22),
-                      _FeedSection(
-                        feedAsync: feedAsync,
-                        seminarsAsync: seminarsAsync,
-                      ),
+                      _FeedSection(feedAsync: feedAsync),
                       const SizedBox(height: 22),
                       _ServicesSection(
                         servicesAsync: servicesAsync,
-                        certificatesAsync: certificatesAsync,
                         isAuthenticated: authState.isAuthenticated,
                       ),
                     ],
@@ -229,246 +214,72 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
 }
 
 class _FeedSection extends StatelessWidget {
-  const _FeedSection({required this.feedAsync, required this.seminarsAsync});
+  const _FeedSection({required this.feedAsync});
 
   final AsyncValue<List<Activity>> feedAsync;
-  final AsyncValue<List<Seminar>> seminarsAsync;
 
   @override
   Widget build(BuildContext context) {
     return _SectionCard(
-      title: 'Gemensam vägg',
+      title: 'Gemensam vagg',
       trailing: TextButton(
         onPressed: () => context.goNamed(AppRoute.community),
         child: const Text('Visa allt'),
       ),
       child: feedAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Text('Kunde inte hämta feed: ${error.toString()}'),
+        error: (error, _) => Text('Kunde inte hamta feed: ${error.toString()}'),
         data: (activities) {
-          final seminarHighlights = _buildSeminarHighlights(context);
-          if (activities.isEmpty && seminarHighlights == null) {
-            return const MetaText('Inga aktiviteter ännu.');
+          if (activities.isEmpty) {
+            return const MetaText('Inga aktiviteter annu.');
           }
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (seminarHighlights != null) ...[
-                seminarHighlights,
-                if (activities.isNotEmpty) const SizedBox(height: 12),
-              ],
-              if (activities.isEmpty)
-                const MetaText('Inga aktiviteter ännu.')
-              else
-                for (final activity in activities.take(10))
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: _GlassTile(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.bolt_outlined),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                NameText(
-                                  activity.summary.isEmpty
-                                      ? activity.type
-                                      : activity.summary,
-                                  baseStyle: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                  fontWeight: FontWeight.w600,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                MetaText(
-                                  MaterialLocalizations.of(
-                                    context,
-                                  ).formatFullDate(
-                                    activity.occurredAt.toLocal(),
-                                  ),
-                                  baseStyle: Theme.of(
-                                    context,
-                                  ).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
+              for (final activity in activities.take(10))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: _GlassTile(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.bolt_outlined),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              NameText(
+                                activity.summary.isEmpty
+                                    ? activity.type
+                                    : activity.summary,
+                                baseStyle: Theme.of(
+                                  context,
+                                ).textTheme.titleMedium,
+                                fontWeight: FontWeight.w600,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              MetaText(
+                                MaterialLocalizations.of(
+                                  context,
+                                ).formatFullDate(activity.occurredAt.toLocal()),
+                                baseStyle: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall,
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
+                ),
             ],
           );
         },
-      ),
-    );
-  }
-
-  Widget? _buildSeminarHighlights(BuildContext context) {
-    return seminarsAsync.maybeWhen(
-      data: (seminars) {
-        final upcoming = _upcomingSeminars(seminars);
-        if (upcoming.isEmpty) return null;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SectionHeading(
-              'Livesändningar',
-              baseStyle: Theme.of(context).textTheme.titleMedium,
-              fontWeight: FontWeight.w600,
-              maxLines: 2,
-            ),
-            const SizedBox(height: 8),
-            for (final seminar in upcoming.take(2))
-              Builder(
-                builder: (tileContext) {
-                  void join() {
-                    tileContext.pushNamed(
-                      AppRoute.seminarJoin,
-                      pathParameters: {'id': seminar.id},
-                    );
-                  }
-
-                  return _SeminarHighlightTile(
-                    seminar: seminar,
-                    onTap: join,
-                    action: GradientButton.tonal(
-                      onPressed: join,
-                      child: const Text('Gå med'),
-                    ),
-                  );
-                },
-              ),
-          ],
-        );
-      },
-      orElse: () => null,
-    );
-  }
-}
-
-List<Seminar> _upcomingSeminars(List<Seminar> seminars) {
-  final filtered = seminars
-      .where(
-        (seminar) =>
-            seminar.status == SeminarStatus.live ||
-            seminar.status == SeminarStatus.scheduled,
-      )
-      .toList(growable: false);
-  filtered.sort((a, b) {
-    if (a.status == SeminarStatus.live && b.status != SeminarStatus.live) {
-      return -1;
-    }
-    if (b.status == SeminarStatus.live && a.status != SeminarStatus.live) {
-      return 1;
-    }
-    final aTime = a.scheduledAt ?? DateTime.utc(9999, 12, 31);
-    final bTime = b.scheduledAt ?? DateTime.utc(9999, 12, 31);
-    return aTime.compareTo(bTime);
-  });
-  return filtered;
-}
-
-String _formatSeminarDate(DateTime date) {
-  final localizedDate = DateFormat('EEEE d MMM', 'sv_SE').format(date);
-  final String dateLabel = toBeginningOfSentenceCase(localizedDate);
-  final timeLabel = DateFormat('HH:mm', 'sv_SE').format(date);
-  return '$dateLabel · $timeLabel';
-}
-
-class _SeminarHighlightTile extends StatelessWidget {
-  const _SeminarHighlightTile({
-    required this.seminar,
-    required this.onTap,
-    this.action,
-  });
-
-  final Seminar seminar;
-  final VoidCallback onTap;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheduled = seminar.scheduledAt?.toLocal();
-    final hostNameCandidate = seminar.hostDisplayName?.trim();
-    final metadataHostValue = seminar.livekitMetadata['host_name']?.toString();
-    final metadataHost = metadataHostValue?.trim();
-    final hostName = (hostNameCandidate != null && hostNameCandidate.isNotEmpty)
-        ? hostNameCandidate
-        : (metadataHost != null && metadataHost.isNotEmpty
-              ? metadataHost
-              : 'Okänd lärare');
-    final scheduleLabel = scheduled != null
-        ? _formatSeminarDate(scheduled)
-        : null;
-    final statusLabel = switch (seminar.status) {
-      SeminarStatus.live => 'Live nu',
-      SeminarStatus.scheduled => 'Planerat',
-      SeminarStatus.ended => 'Avslutat',
-      SeminarStatus.canceled => 'Inställt',
-      SeminarStatus.draft => null,
-    };
-    final infoLine = [
-      if (statusLabel != null) statusLabel,
-      if (scheduleLabel != null) scheduleLabel,
-      if (seminar.durationMinutes != null && seminar.durationMinutes! > 0)
-        '${seminar.durationMinutes} min',
-    ].join(' • ');
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: _GlassTile(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                seminar.title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Lärare: $hostName',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              if (infoLine.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  infoLine,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ],
-              if (seminar.description != null &&
-                  seminar.description!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  seminar.description!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ],
-              if (action != null) ...[
-                const SizedBox(height: 12),
-                Align(alignment: Alignment.centerRight, child: action!),
-              ],
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -477,18 +288,16 @@ class _SeminarHighlightTile extends StatelessWidget {
 class _ServicesSection extends StatelessWidget {
   const _ServicesSection({
     required this.servicesAsync,
-    required this.certificatesAsync,
     required this.isAuthenticated,
   });
 
   final AsyncValue<List<Service>> servicesAsync;
-  final AsyncValue<List<Certificate>> certificatesAsync;
   final bool isAuthenticated;
 
   @override
   Widget build(BuildContext context) {
     return _SectionCard(
-      title: 'Tjänster',
+      title: 'Tjanster',
       trailing: TextButton(
         onPressed: () => context.goNamed(
           AppRoute.community,
@@ -500,11 +309,11 @@ class _ServicesSection extends StatelessWidget {
       child: servicesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Text(
-          'Kunde inte hämta tjänster: ${AppFailure.from(error).message}',
+          'Kunde inte hamta tjanster: ${AppFailure.from(error).message}',
         ),
         data: (services) {
           if (services.isEmpty) {
-            return const MetaText('Inga tjänster publicerade just nu.');
+            return const MetaText('Inga tjanster publicerade just nu.');
           }
           return Column(
             mainAxisSize: MainAxisSize.min,
@@ -540,20 +349,9 @@ class _ServicesSection extends StatelessWidget {
                           ],
                           if (service.requiresCertification) ...[
                             const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.verified_user_rounded,
-                                  size: 16,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  service.certifiedArea?.isNotEmpty == true
-                                      ? 'Kräver certifiering: ${service.certifiedArea}'
-                                      : 'Kräver certifiering',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
+                            Text(
+                              'Certifieringsbaserade bokningar ar pausade i Baseline V2.',
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
                           const SizedBox(height: 12),
@@ -598,43 +396,20 @@ class _ServicesSection extends StatelessWidget {
       return (
         action: null,
         label: 'Boka',
-        helper: 'Bokning är inte tillgänglig i appen just nu.',
+        helper: 'Bokning ar inte tillganglig i appen just nu.',
       );
     }
     if (!isAuthenticated) {
       return (
         action: _GateAction.login,
         label: 'Logga in',
-        helper: 'Logga in för att visa dina certifieringar.',
+        helper: 'Logga in for att visa tjansten.',
       );
     }
-    return certificatesAsync.when(
-      loading: () =>
-          (action: null, label: 'Kontrollerar behörighet...', helper: null),
-      error: (error, _) => (
-        action: null,
-        label: 'Inte tillgängligt',
-        helper: 'Certifieringsstatus kunde inte hämtas just nu.',
-      ),
-      data: (certs) {
-        final requiredArea = (service.certifiedArea ?? '').trim();
-        final hasMatch = certs.any((cert) {
-          if (!cert.isVerified) return false;
-          if (requiredArea.isEmpty) return true;
-          return cert.title.trim().toLowerCase() == requiredArea.toLowerCase();
-        });
-        if (hasMatch) {
-          return (
-            action: null,
-            label: 'Boka',
-            helper: 'Bokning är inte tillgänglig i appen just nu.',
-          );
-        }
-        final helper = requiredArea.isEmpty
-            ? 'Verifierad certifiering krävs innan bokning.'
-            : 'Du behöver certifieringen "$requiredArea" för att boka.';
-        return (action: null, label: 'Certifiering krävs', helper: helper);
-      },
+    return (
+      action: null,
+      label: 'Inte tillgangligt',
+      helper: 'Certifieringsbaserade bokningar ar pausade i Baseline V2.',
     );
   }
 

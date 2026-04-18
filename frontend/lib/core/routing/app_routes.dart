@@ -19,7 +19,6 @@ abstract class AppRoute {
   static const profileView = 'profile-view';
   static const teacherProfile = 'teacher-profile';
   static const home = 'home';
-  static const sfuDemo = 'sfu-demo';
   static const messages = 'messages';
   static const directMessage = 'dm';
   static const profile = 'profile';
@@ -38,12 +37,6 @@ abstract class AppRoute {
   static const teacherEditor = 'teacher-editor';
   static const teacherBundles = 'teacher-bundles';
   static const studioProfile = 'studio-profile';
-  static const seminarStudio = 'seminar-studio';
-  static const seminarDetail = 'seminar-detail';
-  static const seminarPreJoin = 'seminar-prejoin';
-  static const seminarBroadcast = 'seminar-broadcast';
-  static const seminarDiscover = 'seminar-discover';
-  static const seminarJoin = 'seminar-join';
   static const subscribe = 'subscribe';
   static const booking = 'booking';
   static const privacy = 'privacy';

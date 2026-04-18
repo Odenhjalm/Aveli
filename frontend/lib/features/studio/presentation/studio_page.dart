@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/hero_background.dart';
@@ -20,7 +18,7 @@ class StudioPage extends ConsumerWidget {
     if (!authState.canEnterApp) {
       return const AppScaffold(
         title: 'Studio',
-        body: Center(child: Text('Backend entry krävs för Studio.')),
+        body: Center(child: Text('Backend entry kravs for Studio.')),
       );
     }
 
@@ -44,23 +42,17 @@ class StudioPage extends ConsumerWidget {
   }
 }
 
-class _StudioApplyView extends ConsumerStatefulWidget {
+class _StudioApplyView extends StatelessWidget {
   const _StudioApplyView({required this.status});
 
   final StudioStatus status;
 
   @override
-  ConsumerState<_StudioApplyView> createState() => _StudioApplyViewState();
-}
-
-class _StudioApplyViewState extends ConsumerState<_StudioApplyView> {
-  @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    final verified = widget.status.verifiedCertificates;
-    final message = verified > 0
-        ? 'Dina verifierade certifikat aktiverar Pro-status när sista kursdel är klar. Studio låses automatiskt upp därefter.'
-        : 'Du behöver minst ett verifierat certifikat för att få tillgång till Studio. Lägg till certifikat på din profil och invänta verifiering.';
+    final message = status.hasApplication
+        ? 'Din ansokan ar pausad tills en administrator aktiverar lararrollen.'
+        : 'Studio kraver lararroll enligt Baseline V2. Be en administrator aktivera lararrollen.';
 
     return AppScaffold(
       title: 'Studio',
@@ -81,22 +73,11 @@ class _StudioApplyViewState extends ConsumerState<_StudioApplyView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Studio är på väg',
+                  'Studio ar pa vag',
                   style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 Text(message),
-                const SizedBox(height: 16),
-                Text('Verifierade certifikat: $verified'),
-                if (verified == 0) ...[
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () => context.pushNamed(AppRoute.profile),
-                    child: const Text(
-                      'Gå till profil för att lägga till certifikat',
-                    ),
-                  ),
-                ],
               ],
             ),
           ),

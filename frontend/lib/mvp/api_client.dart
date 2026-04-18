@@ -117,14 +117,6 @@ class MvpApiClient {
         .toList();
   }
 
-  Future<LiveKitTokenPayload> requestLiveKitToken(String seminarId) async {
-    final response = await _dio.post(
-      '/sfu/token',
-      data: {'seminar_id': seminarId},
-    );
-    return LiveKitTokenPayload.fromJson(response.data as Map<String, dynamic>);
-  }
-
   String get baseUrl => _config.baseUrl;
 
   String _currentRole() {
@@ -243,18 +235,4 @@ class FeedActivity {
   final String id;
   final String summary;
   final DateTime? occurredAt;
-}
-
-class LiveKitTokenPayload {
-  const LiveKitTokenPayload({required this.wsUrl, required this.token});
-
-  factory LiveKitTokenPayload.fromJson(Map<String, dynamic> json) {
-    return LiveKitTokenPayload(
-      wsUrl: json['ws_url'] as String,
-      token: json['token'] as String,
-    );
-  }
-
-  final String wsUrl;
-  final String token;
 }

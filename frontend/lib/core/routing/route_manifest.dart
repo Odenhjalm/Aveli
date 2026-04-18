@@ -121,11 +121,6 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.authenticated,
   ),
   RouteManifestEntry(
-    name: AppRoute.sfuDemo,
-    path: RoutePath.sfuDemo,
-    access: RouteAccessLevel.authenticated,
-  ),
-  RouteManifestEntry(
     name: AppRoute.messages,
     path: RoutePath.messages,
     access: RouteAccessLevel.authenticated,
@@ -249,35 +244,5 @@ const List<RouteManifestEntry> routeManifest = [
     name: AppRoute.studioProfile,
     path: RoutePath.studioProfile,
     access: RouteAccessLevel.teacher,
-  ),
-  RouteManifestEntry(
-    name: AppRoute.seminarStudio,
-    path: RoutePath.seminarStudio,
-    access: RouteAccessLevel.teacher,
-  ),
-  RouteManifestEntry(
-    name: AppRoute.seminarDetail,
-    path: RoutePath.seminarDetail,
-    access: RouteAccessLevel.teacher,
-  ),
-  RouteManifestEntry(
-    name: AppRoute.seminarPreJoin,
-    path: RoutePath.seminarPreJoin,
-    access: RouteAccessLevel.teacher,
-  ),
-  RouteManifestEntry(
-    name: AppRoute.seminarBroadcast,
-    path: RoutePath.seminarBroadcast,
-    access: RouteAccessLevel.teacher,
-  ),
-  RouteManifestEntry(
-    name: AppRoute.seminarDiscover,
-    path: RoutePath.seminarDiscover,
-    access: RouteAccessLevel.authenticated,
-  ),
-  RouteManifestEntry(
-    name: AppRoute.seminarJoin,
-    path: RoutePath.seminarJoin,
-    access: RouteAccessLevel.authenticated,
   ),
 ];

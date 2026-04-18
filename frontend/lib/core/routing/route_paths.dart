@@ -11,7 +11,6 @@ abstract class RoutePath {
   static const forgotPassword = '/forgot-password';
   static const resetPassword = '/reset-password';
   static const home = '/home';
-  static const sfuDemo = '/sfu-demo';
   static const courseIntro = '/course-intro';
   static const courseCatalog = '/courses';
   static const courseIntroRedirect = '/course-intro-redirect';
@@ -37,12 +36,6 @@ abstract class RoutePath {
   static const teacherEditor = '/teacher/editor';
   static const teacherBundles = '/teacher/bundles';
   static const studioProfile = '/studio/profile';
-  static const seminarStudio = '/studio/seminars';
-  static const seminarDetail = '/studio/seminars/:id';
-  static const seminarPreJoin = '/studio/seminars/:id/prejoin';
-  static const seminarBroadcast = '/studio/seminars/:id/broadcast';
-  static const seminarDiscover = '/seminars';
-  static const seminarJoin = '/seminars/:id/join';
   static const subscribe = '/subscribe';
   static const booking = '/booking';
   static const privacy = '/privacy';

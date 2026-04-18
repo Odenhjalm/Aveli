@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 
-import '../data/certificates_repository.dart';
 import '../data/studio_repository.dart';
 import '../data/studio_sessions_repository.dart';
 import '../data/studio_models.dart';
@@ -12,11 +11,6 @@ import 'studio_upload_queue.dart';
 final studioRepositoryProvider = Provider<StudioRepository>((ref) {
   final client = ref.watch(apiClientProvider);
   return StudioRepository(client: client);
-});
-
-final certificatesRepositoryProvider = Provider<CertificatesRepository>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return CertificatesRepository(client);
 });
 
 final sessionsRepositoryProvider = Provider<SessionsRepository>((ref) {
@@ -56,11 +50,7 @@ final myCoursesProvider = FutureProvider<List<CourseStudio>>((ref) async {
 final studioStatusProvider = FutureProvider<StudioStatus>((ref) async {
   final auth = ref.watch(authControllerProvider);
   if (!auth.canEnterApp) {
-    return const StudioStatus(
-      isTeacher: false,
-      verifiedCertificates: 0,
-      hasApplication: false,
-    );
+    return const StudioStatus(isTeacher: false, hasApplication: false);
   }
   final repo = ref.watch(studioRepositoryProvider);
   return repo.fetchStatus();

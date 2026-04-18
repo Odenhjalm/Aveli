@@ -19,7 +19,7 @@ It operates under `SYSTEM_LAWS.md`, `auth_onboarding_contract.md`,
   - Forbidden responsibility:
     - onboarding state
     - role truth
-    - admin/access truth
+    - application access truth
     - profile/media runtime truth
     - frontend representation truth
 
@@ -47,11 +47,10 @@ It operates under `SYSTEM_LAWS.md`, `auth_onboarding_contract.md`,
 - `app.auth_subjects` is the canonical application subject authority for:
   - onboarding subject state
   - app-level role subject fields
-  - app-level admin subject fields
 - `app.profiles` is projection-only and non-authoritative.
 - `app.memberships` owns app-access truth.
 - `app.course_enrollments` owns protected course-content access truth.
-- `app.runtime_media` owns media runtime truth.
+- `app.media_assets` owns canonical media-asset lifecycle truth.
 - Backend read composition owns frontend-facing media/profile representation.
 
 ## 3. MEDIATION LAW
@@ -67,7 +66,7 @@ It operates under `SYSTEM_LAWS.md`, `auth_onboarding_contract.md`,
 
 ## 4. BASELINE LAW
 
-- Canonical schema authority is `backend/supabase/baseline_slots`.
+- Canonical schema authority is `backend/supabase/baseline_v2_slots`.
 - No backend or frontend runtime behavior may depend on Supabase schema outside baseline.
 - Legacy migration artifacts may exist for reference, but they are never runtime authority.
 - External Supabase dependencies remain soft references only and must not become database-owned domain truth.

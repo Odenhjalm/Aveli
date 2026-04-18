@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'app_config.dart';
 import 'widgets/mvp_home_page.dart';
-import 'widgets/mvp_livekit_page.dart';
 import 'widgets/mvp_login_page.dart';
 import 'widgets/mvp_profile_page.dart';
 
@@ -45,7 +44,10 @@ class _MvpAppState extends State<MvpApp> {
         valueListenable: _client.accessToken,
         builder: (context, token, _) {
           if (token == null) {
-            return MvpLoginPage(client: _client, onSuccess: _handleAuthenticated);
+            return MvpLoginPage(
+              client: _client,
+              onSuccess: _handleAuthenticated,
+            );
           }
           return Scaffold(
             appBar: AppBar(
@@ -63,17 +65,24 @@ class _MvpAppState extends State<MvpApp> {
               children: [
                 MvpHomePage(client: _client),
                 MvpProfilePage(client: _client),
-                MvpLiveKitPage(client: _client),
               ],
             ),
             bottomNavigationBar: NavigationBar(
               selectedIndex: _currentIndex,
               destinations: const [
-                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profil'),
-                NavigationDestination(icon: Icon(Icons.video_call_outlined), selectedIcon: Icon(Icons.video_call), label: 'Live'),
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Profil',
+                ),
               ],
-              onDestinationSelected: (index) => setState(() => _currentIndex = index),
+              onDestinationSelected: (index) =>
+                  setState(() => _currentIndex = index),
             ),
           );
         },

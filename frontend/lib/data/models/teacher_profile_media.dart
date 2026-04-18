@@ -33,15 +33,6 @@ String? _optionalString(Object? value, String fieldName) {
   }
 }
 
-int _requireInt(Object? value, String fieldName) {
-  switch (value) {
-    case final int number:
-      return number;
-    default:
-      throw FormatException('Invalid field type for $fieldName');
-  }
-}
-
 int? _optionalInt(Object? value, String fieldName) {
   switch (value) {
     case null:
@@ -53,25 +44,14 @@ int? _optionalInt(Object? value, String fieldName) {
   }
 }
 
-bool _requireBool(Object? value, String fieldName) {
-  switch (value) {
-    case final bool flag:
-      return flag;
-    default:
-      throw FormatException('Invalid field type for $fieldName');
-  }
-}
-
-DateTime _requireDateTime(Object? value, String fieldName) {
-  return DateTime.parse(_requireString(value, fieldName));
-}
-
 DateTime? _optionalDateTime(Object? value, String fieldName) {
   switch (value) {
     case null:
       return null;
+    case final String text:
+      return DateTime.parse(text);
     default:
-      return _requireDateTime(value, fieldName);
+      throw FormatException('Invalid field type for $fieldName');
   }
 }
 
@@ -97,62 +77,6 @@ ResolvedMediaData? _optionalResolvedMedia(Object? value, String fieldName) {
   }
 }
 
-enum TeacherProfileMediaKind {
-  lessonMedia('lesson_media'),
-  seminarRecording('seminar_recording'),
-  external('external');
-
-  const TeacherProfileMediaKind(this.apiValue);
-
-  final String apiValue;
-
-  static TeacherProfileMediaKind fromApi(String value) {
-    return TeacherProfileMediaKind.values.firstWhere(
-      (kind) => kind.apiValue == value,
-      orElse: () => throw ArgumentError.value(
-        value,
-        'value',
-        'Unknown teacher profile media kind',
-      ),
-    );
-  }
-}
-
-void _validateTeacherProfileMediaIdentity({
-  required TeacherProfileMediaKind mediaKind,
-  required String? lessonMediaId,
-  required String? seminarRecordingId,
-  required String? externalUrl,
-}) {
-  final hasLessonMedia = lessonMediaId != null;
-  final hasSeminarRecording = seminarRecordingId != null;
-  final hasExternal = externalUrl != null && externalUrl.trim().isNotEmpty;
-
-  switch (mediaKind) {
-    case TeacherProfileMediaKind.lessonMedia:
-      if (!hasLessonMedia || hasSeminarRecording || externalUrl != null) {
-        throw const FormatException(
-          'lesson_media items require lesson_media_id and forbid seminar_recording_id/external_url',
-        );
-      }
-      return;
-    case TeacherProfileMediaKind.seminarRecording:
-      if (!hasSeminarRecording || hasLessonMedia || externalUrl != null) {
-        throw const FormatException(
-          'seminar_recording items require seminar_recording_id and forbid lesson_media_id/external_url',
-        );
-      }
-      return;
-    case TeacherProfileMediaKind.external:
-      if (!hasExternal || hasLessonMedia || hasSeminarRecording) {
-        throw const FormatException(
-          'external items require external_url and forbid lesson_media_id/seminar_recording_id',
-        );
-      }
-      return;
-  }
-}
-
 class TeacherProfileLessonSource extends Equatable {
   const TeacherProfileLessonSource({
     required this.id,
@@ -170,10 +94,6 @@ class TeacherProfileLessonSource extends Equatable {
     this.createdAt,
     this.media,
   });
-
-  factory TeacherProfileLessonSource.fromJson(Object? payload) {
-    return TeacherProfileLessonSource.fromResponse(payload);
-  }
 
   factory TeacherProfileLessonSource.fromResponse(Object? payload) {
     return TeacherProfileLessonSource(
@@ -224,6 +144,10 @@ class TeacherProfileLessonSource extends Equatable {
     );
   }
 
+  factory TeacherProfileLessonSource.fromJson(Object? payload) {
+    return TeacherProfileLessonSource.fromResponse(payload);
+  }
+
   final String id;
   final String lessonId;
   final String? lessonTitle;
@@ -258,176 +182,31 @@ class TeacherProfileLessonSource extends Equatable {
   ];
 }
 
-class TeacherProfileRecordingSource extends Equatable {
-  const TeacherProfileRecordingSource({
-    required this.id,
-    required this.seminarId,
-    this.seminarTitle,
-    this.sessionId,
-    required this.assetUrl,
-    required this.status,
-    this.durationSeconds,
-    this.byteSize,
-    required this.published,
-    this.createdAt,
-    this.updatedAt,
-  });
-
-  factory TeacherProfileRecordingSource.fromResponse(Object? payload) {
-    return TeacherProfileRecordingSource(
-      id: _requireString(_requiredField(payload, 'id'), 'id'),
-      seminarId: _requireString(
-        _requiredField(payload, 'seminar_id'),
-        'seminar_id',
-      ),
-      seminarTitle: _optionalString(
-        _requiredField(payload, 'seminar_title'),
-        'seminar_title',
-      ),
-      sessionId: _optionalString(
-        _requiredField(payload, 'session_id'),
-        'session_id',
-      ),
-      assetUrl: _requireString(
-        _requiredField(payload, 'asset_url'),
-        'asset_url',
-      ),
-      status: _requireString(_requiredField(payload, 'status'), 'status'),
-      durationSeconds: _optionalInt(
-        _requiredField(payload, 'duration_seconds'),
-        'duration_seconds',
-      ),
-      byteSize: _optionalInt(_requiredField(payload, 'byte_size'), 'byte_size'),
-      published: _requireBool(
-        _requiredField(payload, 'published'),
-        'published',
-      ),
-      createdAt: _optionalDateTime(
-        _requiredField(payload, 'created_at'),
-        'created_at',
-      ),
-      updatedAt: _optionalDateTime(
-        _requiredField(payload, 'updated_at'),
-        'updated_at',
-      ),
-    );
-  }
-
-  factory TeacherProfileRecordingSource.fromJson(Object? payload) {
-    return TeacherProfileRecordingSource.fromResponse(payload);
-  }
-
-  final String id;
-  final String seminarId;
-  final String? seminarTitle;
-  final String? sessionId;
-  final String assetUrl;
-  final String status;
-  final int? durationSeconds;
-  final int? byteSize;
-  final bool published;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
-
-  @override
-  List<Object?> get props => [
-    id,
-    seminarId,
-    seminarTitle,
-    sessionId,
-    assetUrl,
-    status,
-    durationSeconds,
-    byteSize,
-    published,
-    createdAt,
-    updatedAt,
-  ];
-}
-
 class TeacherProfileMediaItem extends Equatable {
   const TeacherProfileMediaItem({
     required this.id,
-    required this.teacherId,
-    required this.mediaKind,
-    this.lessonMediaId,
-    this.seminarRecordingId,
-    this.externalUrl,
-    this.title,
-    this.description,
-    this.coverMediaId,
-    this.coverImageUrl,
-    required this.position,
-    required this.isPublished,
-    required this.enabledForHomePlayer,
-    required this.createdAt,
-    required this.updatedAt,
+    required this.subjectUserId,
+    required this.mediaAssetId,
+    required this.visibility,
+    this.media,
   });
 
   factory TeacherProfileMediaItem.fromResponse(Object? payload) {
-    final id = _requireString(_requiredField(payload, 'id'), 'id');
-    final teacherId = _requireString(
-      _requiredField(payload, 'teacher_id'),
-      'teacher_id',
-    );
-    final mediaKind = TeacherProfileMediaKind.fromApi(
-      _requireString(_requiredField(payload, 'media_kind'), 'media_kind'),
-    );
-    final lessonMediaId = _optionalString(
-      _requiredField(payload, 'lesson_media_id'),
-      'lesson_media_id',
-    );
-    final seminarRecordingId = _optionalString(
-      _requiredField(payload, 'seminar_recording_id'),
-      'seminar_recording_id',
-    );
-    final externalUrl = _optionalString(
-      _requiredField(payload, 'external_url'),
-      'external_url',
-    );
-    _validateTeacherProfileMediaIdentity(
-      mediaKind: mediaKind,
-      lessonMediaId: lessonMediaId,
-      seminarRecordingId: seminarRecordingId,
-      externalUrl: externalUrl,
-    );
     return TeacherProfileMediaItem(
-      id: id,
-      teacherId: teacherId,
-      mediaKind: mediaKind,
-      lessonMediaId: lessonMediaId,
-      seminarRecordingId: seminarRecordingId,
-      externalUrl: externalUrl,
-      title: _optionalString(_requiredField(payload, 'title'), 'title'),
-      description: _optionalString(
-        _requiredField(payload, 'description'),
-        'description',
+      id: _requireString(_requiredField(payload, 'id'), 'id'),
+      subjectUserId: _requireString(
+        _requiredField(payload, 'subject_user_id'),
+        'subject_user_id',
       ),
-      coverMediaId: _optionalString(
-        _requiredField(payload, 'cover_media_id'),
-        'cover_media_id',
+      mediaAssetId: _requireString(
+        _requiredField(payload, 'media_asset_id'),
+        'media_asset_id',
       ),
-      coverImageUrl: _optionalString(
-        _requiredField(payload, 'cover_image_url'),
-        'cover_image_url',
+      visibility: _requireString(
+        _requiredField(payload, 'visibility'),
+        'visibility',
       ),
-      position: _requireInt(_requiredField(payload, 'position'), 'position'),
-      isPublished: _requireBool(
-        _requiredField(payload, 'is_published'),
-        'is_published',
-      ),
-      enabledForHomePlayer: _requireBool(
-        _requiredField(payload, 'enabled_for_home_player'),
-        'enabled_for_home_player',
-      ),
-      createdAt: _requireDateTime(
-        _requiredField(payload, 'created_at'),
-        'created_at',
-      ),
-      updatedAt: _requireDateTime(
-        _requiredField(payload, 'updated_at'),
-        'updated_at',
-      ),
+      media: _optionalResolvedMedia(_requiredField(payload, 'media'), 'media'),
     );
   }
 
@@ -436,82 +215,31 @@ class TeacherProfileMediaItem extends Equatable {
   }
 
   final String id;
-  final String teacherId;
-  final TeacherProfileMediaKind mediaKind;
-  final String? lessonMediaId;
-  final String? seminarRecordingId;
-  final String? externalUrl;
-  final String? title;
-  final String? description;
-  final String? coverMediaId;
-  final String? coverImageUrl;
-  final int position;
-  final bool isPublished;
-  final bool enabledForHomePlayer;
-  final DateTime createdAt;
-  final DateTime updatedAt;
+  final String subjectUserId;
+  final String mediaAssetId;
+  final String visibility;
+  final ResolvedMediaData? media;
 
-  bool matchesSourceReference(
-    TeacherProfileMediaKind kind,
-    String sourceReference,
-  ) {
-    switch (kind) {
-      case TeacherProfileMediaKind.lessonMedia:
-        return mediaKind == kind && lessonMediaId == sourceReference;
-      case TeacherProfileMediaKind.seminarRecording:
-        return mediaKind == kind && seminarRecordingId == sourceReference;
-      case TeacherProfileMediaKind.external:
-        return mediaKind == kind && externalUrl == sourceReference;
-    }
-  }
+  bool get isPublished => visibility == 'published';
 
   @override
   List<Object?> get props => [
     id,
-    teacherId,
-    mediaKind,
-    lessonMediaId,
-    seminarRecordingId,
-    externalUrl,
-    title,
-    description,
-    coverMediaId,
-    coverImageUrl,
-    position,
-    isPublished,
-    enabledForHomePlayer,
-    createdAt,
-    updatedAt,
+    subjectUserId,
+    mediaAssetId,
+    visibility,
+    media,
   ];
 }
 
 class TeacherProfileMediaPayload extends Equatable {
-  const TeacherProfileMediaPayload({
-    required this.items,
-    required this.lessonMediaSources,
-    required this.seminarRecordingSources,
-  });
+  const TeacherProfileMediaPayload({required this.items});
 
   factory TeacherProfileMediaPayload.fromResponse(Object? payload) {
     final itemsJson = _requireList(_requiredField(payload, 'items'), 'items');
-    final lessonsJson = _requireList(
-      _requiredField(payload, 'lesson_media_sources'),
-      'lesson_media_sources',
-    );
-    final recordingsJson = _requireList(
-      _requiredField(payload, 'seminar_recording_sources'),
-      'seminar_recording_sources',
-    );
-
     return TeacherProfileMediaPayload(
       items: itemsJson
           .map(TeacherProfileMediaItem.fromResponse)
-          .toList(growable: false),
-      lessonMediaSources: lessonsJson
-          .map(TeacherProfileLessonSource.fromResponse)
-          .toList(growable: false),
-      seminarRecordingSources: recordingsJson
-          .map(TeacherProfileRecordingSource.fromResponse)
           .toList(growable: false),
     );
   }
@@ -520,48 +248,10 @@ class TeacherProfileMediaPayload extends Equatable {
     return TeacherProfileMediaPayload.fromResponse(payload);
   }
 
-  static const empty = TeacherProfileMediaPayload(
-    items: [],
-    lessonMediaSources: [],
-    seminarRecordingSources: [],
-  );
+  static const empty = TeacherProfileMediaPayload(items: []);
 
   final List<TeacherProfileMediaItem> items;
-  final List<TeacherProfileLessonSource> lessonMediaSources;
-  final List<TeacherProfileRecordingSource> seminarRecordingSources;
-
-  TeacherProfileLessonSource? lessonSourceFor(TeacherProfileMediaItem item) {
-    final lessonMediaId = item.lessonMediaId;
-    if (lessonMediaId == null) {
-      return null;
-    }
-    for (final source in lessonMediaSources) {
-      if (source.id == lessonMediaId) {
-        return source;
-      }
-    }
-    return null;
-  }
-
-  TeacherProfileRecordingSource? recordingSourceFor(
-    TeacherProfileMediaItem item,
-  ) {
-    final seminarRecordingId = item.seminarRecordingId;
-    if (seminarRecordingId == null) {
-      return null;
-    }
-    for (final source in seminarRecordingSources) {
-      if (source.id == seminarRecordingId) {
-        return source;
-      }
-    }
-    return null;
-  }
 
   @override
-  List<Object?> get props => [
-    items,
-    lessonMediaSources,
-    seminarRecordingSources,
-  ];
+  List<Object?> get props => [items];
 }

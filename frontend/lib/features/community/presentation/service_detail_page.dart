@@ -41,10 +41,8 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
         }
         final provider = state.provider;
         final session = ref.watch(routeSessionSnapshotProvider);
-        final certsAsync = ref.watch(myCertificatesProvider);
         final gate = evaluateCertificationGate(
           service: service,
-          viewerCertificates: certsAsync,
           isAuthenticated: session.isAuthenticated,
         );
         final t = Theme.of(context).textTheme;

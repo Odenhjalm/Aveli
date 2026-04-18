@@ -654,34 +654,6 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Liveseminarier',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Liveseminarier är pausade medan kursflödet använder Baseline V2.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    GradientButton.icon(
-                      onPressed: null,
-                      icon: const Icon(Icons.live_tv_outlined),
-                      label: const Text('Liveseminarier pausade'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              GlassCard(
-                padding: const EdgeInsets.all(24),
-                opacity: 0.16,
-                borderColor: Colors.white.withValues(alpha: 0.15),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
                       'Skapa inbjudningskod',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,

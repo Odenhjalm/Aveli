@@ -356,7 +356,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int? _documentReadyRequestId;
   bool _lessonPreviewMode = false;
 
-  bool get _quizFeatureEnabled => false;
   int _persistedLessonPreviewRequestId = 0;
   bool _persistedLessonPreviewLoading = false;
   String? _persistedLessonPreviewError;
@@ -401,13 +400,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _lessonMediaRequestId = 0;
   int _lessonContentRequestId = 0;
   int _saveCourseRequestId = 0;
-
-  Map<String, Object?>? _quiz;
-  final TextEditingController _qPrompt = TextEditingController();
-  final TextEditingController _qOptions = TextEditingController();
-  final TextEditingController _qCorrect = TextEditingController();
-  String _qKind = 'single';
-  List<Map<String, Object?>> _questions = <Map<String, Object?>>[];
 
   quill.QuillController get _lessonContentController =>
       _editorSession.controller;
@@ -1249,9 +1241,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   @override
   void dispose() {
     _uploadSubscription?.close();
-    _qPrompt.dispose();
-    _qOptions.dispose();
-    _qCorrect.dispose();
     _courseTitleCtrl.dispose();
     _courseSlugCtrl.dispose();
     _coursePriceCtrl.dispose();
@@ -5828,164 +5817,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  Future<void> _ensureQuiz() async {
-    if (!_requireEditModeForMutation()) {
-      return;
-    }
-    final cid = _selectedCourseId;
-    if (cid == null) return;
-    try {
-      final quiz = await _studioRepo.ensureQuiz(cid);
-      final quizId = safeString(quiz, 'id');
-      if (quizId == null) {
-        throw StateError('Quiz saknar ID.');
-      }
-      final qs = await _studioRepo.quizQuestions(quizId);
-      if (!mounted) return;
-      setState(() {
-        _quiz = quiz;
-        _questions = qs;
-      });
-    } on AppFailure catch (e) {
-      if (!mounted || !context.mounted) return;
-      showSnack(context, 'Kunde inte ladda quiz: ${e.message}');
-    } catch (e, stackTrace) {
-      _showFriendlyErrorSnack('Kunde inte ladda quiz', e, stackTrace);
-    }
-  }
-
-  String _quizKindLabel(String kind) {
-    switch (kind) {
-      case 'single':
-        return 'Ett svar';
-      case 'multi':
-        return 'Flera svar';
-      case 'boolean':
-        return 'Sant/falskt';
-      default:
-        return kind;
-    }
-  }
-
-  Future<void> _addQuestion() async {
-    if (!_requireEditModeForMutation()) {
-      return;
-    }
-    if (_quiz == null) {
-      await _ensureQuiz();
-      if (_quiz == null) return;
-    }
-    if (!mounted) return;
-    final quizId = safeString(_quiz, 'id');
-    if (quizId == null) {
-      if (context.mounted) {
-        showSnack(context, 'Quiz saknar id och kan inte uppdateras.');
-      }
-      return;
-    }
-    final prompt = _qPrompt.text.trim();
-    if (prompt.isEmpty) {
-      showSnack(context, 'Frågetext krävs.');
-      return;
-    }
-    final pos = _questions.isEmpty
-        ? 0
-        : _questions
-                  .map((e) => (e['position'] ?? 0) as int)
-                  .reduce((a, b) => a > b ? a : b) +
-              1;
-
-    dynamic options;
-    dynamic correct;
-    if (_qKind == 'single') {
-      options = _qOptions.text
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-      correct = int.tryParse(_qCorrect.text.trim());
-      if (correct == null) {
-        showSnack(context, 'Rätt svar: använd ett index (t.ex. 0).');
-        return;
-      }
-    } else if (_qKind == 'multi') {
-      options = _qOptions.text
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-      correct = _qCorrect.text
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .map(int.tryParse)
-          .whereType<int>()
-          .toList();
-      if ((correct as List).isEmpty) {
-        showSnack(context, 'Rätt svar: använd index (t.ex. 0,2).');
-        return;
-      }
-    } else {
-      final v = _qCorrect.text.trim().toLowerCase();
-      if (v != 'true' && v != 'false') {
-        showSnack(context, 'Rätt svar: true eller false.');
-        return;
-      }
-      options = null;
-      correct = v == 'true';
-    }
-
-    final data = {
-      'quiz_id': quizId,
-      'position': pos,
-      'kind': _qKind,
-      'prompt': prompt,
-      'options': options,
-      'correct': correct,
-    };
-    try {
-      await _studioRepo.upsertQuestion(quizId: quizId, data: data);
-      _qPrompt.clear();
-      _qOptions.clear();
-      _qCorrect.clear();
-      final qs = await _studioRepo.quizQuestions(quizId);
-      if (mounted) setState(() => _questions = qs);
-    } on AppFailure catch (e) {
-      if (!mounted || !context.mounted) return;
-      showSnack(context, 'Kunde inte spara quizfråga: ${e.message}');
-    } catch (e) {
-      if (!mounted || !context.mounted) return;
-      showSnack(context, 'Fel vid quizfråga: $e');
-    }
-  }
-
-  Future<void> _deleteQuestion(String id) async {
-    if (!_requireEditModeForMutation()) {
-      return;
-    }
-    final quizId = safeString(_quiz, 'id');
-    if (quizId == null) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Quiz saknar id och kan inte uppdateras.');
-      }
-      return;
-    }
-    try {
-      await _studioRepo.deleteQuestion(quizId, id);
-      if (_quiz != null) {
-        final qs = await _studioRepo.quizQuestions(quizId);
-        if (!mounted) return;
-        setState(() => _questions = qs);
-      }
-    } on AppFailure catch (e) {
-      if (!mounted || !context.mounted) return;
-      showSnack(context, 'Kunde inte ta bort fråga: ${e.message}');
-    } catch (e) {
-      if (!mounted || !context.mounted) return;
-      showSnack(context, 'Fel vid borttagning: $e');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_checking) {
@@ -6049,10 +5880,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final mediaStatus = _mediaStatus;
     final downloadStatus = _downloadStatus;
     final mediaLoadError = _mediaLoadError;
-    final quiz = _quiz;
-    final quizTitle = safeString(quiz, 'title') ?? 'Quiz';
-    final quizPassScore = safeString(quiz, 'pass_score') ?? '-';
-    final quizActionsEnabled = _quizFeatureEnabled;
 
     final editorContent = LayoutBuilder(
       builder: (context, constraints) {
@@ -6091,10 +5918,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           await _loadCourseMeta();
                           await _loadLessons(preserveSelection: false);
                           if (!mounted) return;
-                          setState(() {
-                            _quiz = null;
-                            _questions = <Map<String, Object?>>[];
-                          });
+                          setState(() {});
                         },
                         decoration: const InputDecoration(
                           hintText: 'Välj kurs',
@@ -6632,134 +6456,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                             ],
                           ],
                         ),
-                ),
-                gap16,
-                _SectionCard(
-                  title: 'Quiz',
-                  actions: [
-                    OutlinedButton.icon(
-                      onPressed:
-                          quizActionsEnabled &&
-                              _selectedCourseId != null &&
-                              !_lessonPreviewMode
-                          ? _ensureQuiz
-                          : null,
-                      icon: const Icon(Icons.auto_awesome),
-                      label: const Text('Quiz pausat'),
-                    ),
-                  ],
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Quiz är pausat eftersom Baseline V2 saknar quiz-auktoritet.',
-                      ),
-                      gap12,
-                      if (quiz == null) const Text('Inget quiz laddat.'),
-                      if (quiz != null) ...[
-                        Text('Quiz: $quizTitle (gräns: $quizPassScore%)'),
-                        gap12,
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            for (final kind in <String>[
-                              'single',
-                              'multi',
-                              'boolean',
-                            ])
-                              ChoiceChip(
-                                label: Text(_quizKindLabel(kind)),
-                                selected: _qKind == kind,
-                                onSelected: _lessonPreviewMode ||
-                                        !quizActionsEnabled
-                                    ? null
-                                    : (selected) => setState(
-                                        () => _qKind = selected ? kind : _qKind,
-                                      ),
-                              ),
-                          ],
-                        ),
-                        gap8,
-                        TextField(
-                          controller: _qPrompt,
-                          readOnly: _lessonPreviewMode,
-                          decoration: const InputDecoration(
-                            labelText: 'Frågetext',
-                          ),
-                        ),
-                        if (_qKind != 'boolean') ...[
-                          gap8,
-                          TextField(
-                            controller: _qOptions,
-                            readOnly: _lessonPreviewMode,
-                            decoration: const InputDecoration(
-                              labelText: 'Alternativ (komma-separerade)',
-                            ),
-                          ),
-                          gap8,
-                          TextField(
-                            controller: _qCorrect,
-                            readOnly: _lessonPreviewMode,
-                            decoration: const InputDecoration(
-                              labelText: 'Rätt svar (index eller index, index)',
-                            ),
-                          ),
-                        ] else ...[
-                          gap8,
-                          TextField(
-                            controller: _qCorrect,
-                            readOnly: _lessonPreviewMode,
-                            decoration: const InputDecoration(
-                              labelText: 'Rätt svar (true/false)',
-                            ),
-                          ),
-                        ],
-                        gap10,
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: GradientButton(
-                            onPressed:
-                                _lessonPreviewMode || !quizActionsEnabled
-                                ? null
-                                : _addQuestion,
-                            child: const Text('Lägg till fråga'),
-                          ),
-                        ),
-                        const Divider(height: 24),
-                        const Text('Frågor'),
-                        gap6,
-                        if (_questions.isEmpty)
-                          const Text('Inga frågor ännu.')
-                        else
-                          ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _questions.length,
-                            separatorBuilder: (context, _) => gap6,
-                            itemBuilder: (context, index) {
-                              final q = _questions[index];
-                              final questionId = safeString(q, 'id');
-                              return ListTile(
-                                leading: const Icon(Icons.help_outline),
-                                title: Text('${q['prompt']}'),
-                                subtitle: Text(
-                                  'Typ: ${q['kind']} • Pos: ${q['position']}',
-                                ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete_outline),
-                                  onPressed:
-                                      questionId == null ||
-                                          _lessonPreviewMode ||
-                                          !quizActionsEnabled
-                                      ? null
-                                      : () => _deleteQuestion(questionId),
-                                ),
-                              );
-                            },
-                          ),
-                      ],
-                    ],
-                  ),
                 ),
               ],
             ),

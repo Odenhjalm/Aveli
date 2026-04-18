@@ -322,11 +322,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const HomeDashboardPage(),
       ),
       GoRoute(
-        path: RoutePath.sfuDemo,
-        name: AppRoute.sfuDemo,
-        builder: (context, state) => const NotFoundPage(),
-      ),
-      GoRoute(
         path: RoutePath.courseIntro,
         name: AppRoute.courseIntro,
         builder: (context, state) => const CourseIntroPage(),
@@ -503,26 +498,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const StudioProfilePage(),
       ),
       GoRoute(
-        path: RoutePath.seminarStudio,
-        name: AppRoute.seminarStudio,
-        builder: (context, state) => const NotFoundPage(),
-      ),
-      GoRoute(
-        path: RoutePath.seminarDetail,
-        name: AppRoute.seminarDetail,
-        builder: (context, state) => const NotFoundPage(),
-      ),
-      GoRoute(
-        path: RoutePath.seminarPreJoin,
-        name: AppRoute.seminarPreJoin,
-        builder: (context, state) => const NotFoundPage(),
-      ),
-      GoRoute(
-        path: RoutePath.seminarBroadcast,
-        name: AppRoute.seminarBroadcast,
-        builder: (context, state) => const NotFoundPage(),
-      ),
-      GoRoute(
         path: RoutePath.subscribe,
         name: AppRoute.subscribe,
         redirect: (context, state) => RoutePath.checkoutMembership,
@@ -547,16 +522,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePath.settings,
         name: AppRoute.settings,
         builder: (context, state) => const SettingsPage(),
-      ),
-      GoRoute(
-        path: RoutePath.seminarDiscover,
-        name: AppRoute.seminarDiscover,
-        builder: (context, state) => const NotFoundPage(),
-      ),
-      GoRoute(
-        path: RoutePath.seminarJoin,
-        name: AppRoute.seminarJoin,
-        builder: (context, state) => const NotFoundPage(),
       ),
       GoRoute(
         path: RoutePath.community,

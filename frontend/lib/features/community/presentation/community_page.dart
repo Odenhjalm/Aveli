@@ -195,12 +195,7 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
         ),
       ),
       const SizedBox(height: 12),
-      ...teachers.map(
-        (t) => _TeacherListTile(
-          teacher: t,
-          certCount: state.certCount[t['user_id']] ?? 0,
-        ),
-      ),
+      ...teachers.map((t) => _TeacherListTile(teacher: t)),
     ];
   }
 
@@ -434,10 +429,9 @@ class _ServicesCatalog extends StatelessWidget {
 }
 
 class _TeacherListTile extends StatelessWidget {
-  const _TeacherListTile({required this.teacher, required this.certCount});
+  const _TeacherListTile({required this.teacher});
 
   final Map<String, dynamic> teacher;
-  final int certCount;
 
   @override
   Widget build(BuildContext context) {
@@ -456,7 +450,6 @@ class _TeacherListTile extends StatelessWidget {
           [
             if (headline.isNotEmpty) headline,
             if (specs.isNotEmpty) specs,
-            if (certCount > 0) '$certCount verifierade certifikat',
           ].where((element) => element.isNotEmpty).join('\n'),
         ),
         trailing: OutlinedButton(

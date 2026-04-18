@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..config import settings
-from ..db import get_conn
+from ..db import pool
 from ..observability import log_buffer
 
 logger = logging.getLogger(__name__)
@@ -85,21 +85,38 @@ async def stop_worker() -> None:
 
 async def run_once(*, now: datetime | None = None) -> int:
     current_time = now or datetime.now(timezone.utc)
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            select count(*) as advanced_count
-            from app.canonical_worker_advance_course_enrollment_drip(%s)
-            """,
-            (current_time,),
-        )
-        row = await cur.fetchone()
-    advanced_count = int((row or {}).get("advanced_count") or 0)
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                select ce.id, ce.current_unlock_position
+                from app.course_enrollments as ce
+                join app.courses as c on c.id = ce.course_id
+                where c.drip_enabled = true
+                order by ce.updated_at asc, ce.id asc
+                limit 100
+                """
+            )
+            candidates = await cur.fetchall()
+            advanced_enrollments = 0
+            for enrollment_id, current_unlock_position in candidates:
+                await cur.execute(
+                    """
+                    select current_unlock_position
+                    from app.canonical_worker_advance_course_enrollment_drip(%s, %s)
+                    """,
+                    (enrollment_id, current_time),
+                )
+                row = await cur.fetchone()
+                next_unlock_position = int(row[0] if row else 0)
+                if next_unlock_position > int(current_unlock_position or 0):
+                    advanced_enrollments += 1
+            await conn.commit()
     logger.info(
         "COURSE_DRIP_WORKER_RUN_SUMMARY",
-        extra={"advanced_enrollments": advanced_count},
+        extra={"advanced_enrollments": advanced_enrollments},
     )
-    return advanced_count
+    return advanced_enrollments
 
 
 async def _poll_loop() -> None:

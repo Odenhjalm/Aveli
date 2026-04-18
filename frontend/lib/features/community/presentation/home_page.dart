@@ -87,7 +87,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         onRefresh: () async {
           ref.invalidate(postsProvider);
           ref.invalidate(myCoursesProvider);
-          ref.invalidate(myCertificatesProvider);
           await ref.read(authControllerProvider.notifier).loadSession();
         },
         child: ListView(

@@ -241,7 +241,6 @@ class TeacherDirectoryItem(BaseModel):
     rating: Optional[float] = None
     created_at: datetime
     profile: Optional[SimpleProfile] = None
-    verified_certificates: int = 0
 
 
 class TeacherDirectoryResponse(BaseModel):
@@ -497,7 +496,6 @@ class TeacherDetailResponse(BaseModel):
     teacher: Optional[TeacherDirectoryItem] = None
     services: List[ServiceSummary] = []
     meditations: List[MeditationSummary] = []
-    certificates: List[dict[str, Any]] = []
 
 
 class ReviewRecord(BaseModel):

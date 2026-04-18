@@ -60,33 +60,10 @@ async def community_teacher_detail(user_id: str, current: OptionalCurrentUser = 
     services = await models.list_teacher_services(user_id)
     meditations = await models.list_teacher_meditations(user_id)
 
-    viewer_id = str(current["id"]) if current else None
-    has_admin_role = str((current or {}).get("role") or "").strip().lower() == "admin"
-    can_view_full = viewer_id == user_id or has_admin_role
-
-    certificate_rows = await models.certificates_of(
-        user_id, verified_only=not can_view_full
-    )
-    if can_view_full:
-        certificates = [dict(row) for row in certificate_rows]
-    else:
-        certificates = [
-            {
-                "id": row["id"],
-                "title": row["title"],
-                "status": row["status"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-            }
-            for row in certificate_rows
-            if row.get("status") == "verified"
-        ]
-
     return {
         "teacher": teacher,
         "services": services,
         "meditations": meditations,
-        "certificates": certificates,
     }
 
 

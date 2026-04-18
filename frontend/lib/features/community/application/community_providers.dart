@@ -4,12 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/api/auth_repository.dart';
-import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/features/community/data/community_repository.dart';
 import 'package:aveli/features/community/data/posts_repository.dart';
 import 'package:aveli/features/community/data/admin_repository.dart';
-import 'package:aveli/features/studio/application/studio_providers.dart';
-import 'package:aveli/data/models/certificate.dart';
 import 'package:aveli/features/community/data/meditations_repository.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
@@ -44,13 +41,9 @@ final postsProvider = AutoDisposeFutureProvider<List<CommunityPost>>((
 });
 
 class TeacherDirectoryState {
-  const TeacherDirectoryState({
-    required this.teachers,
-    required this.certCount,
-  });
+  const TeacherDirectoryState({required this.teachers});
 
   final List<Map<String, dynamic>> teachers;
-  final Map<String, int> certCount;
 }
 
 final teacherDirectoryProvider =
@@ -58,14 +51,7 @@ final teacherDirectoryProvider =
       final repo = ref.watch(communityRepositoryProvider);
       try {
         final teachers = await repo.listTeachers();
-        final certCount = <String, int>{};
-        for (final teacher in teachers) {
-          final id = teacher['user_id'] as String?;
-          if (id == null) continue;
-          final count = teacher['verified_certificates'];
-          certCount[id] = count is num ? count.toInt() : 0;
-        }
-        return TeacherDirectoryState(teachers: teachers, certCount: certCount);
+        return TeacherDirectoryState(teachers: teachers);
       } catch (error, stackTrace) {
         throw AppFailure.from(error, stackTrace);
       }
@@ -78,41 +64,17 @@ final communityServicesProvider = AutoDisposeFutureProvider<List<Service>>((
   return repo.activeServices();
 });
 
-final myCertificatesProvider = AutoDisposeFutureProvider<List<Certificate>>((
-  ref,
-) async {
-  final auth = ref.watch(authControllerProvider);
-  if (auth.profile == null) {
-    return const <Certificate>[];
-  }
-  final repo = ref.watch(certificatesRepositoryProvider);
-  try {
-    final certs = await repo.myCertificates();
-    return certs
-        .where((c) => c.title != Certificate.teacherApplicationTitle)
-        .toList(growable: false);
-  } catch (error, stackTrace) {
-    final failure = AppFailure.from(error, stackTrace);
-    if (failure.kind == AppFailureKind.unauthorized) {
-      return const <Certificate>[];
-    }
-    throw failure;
-  }
-});
-
 class TeacherProfileState {
   const TeacherProfileState({
     required this.teacher,
     required this.services,
     required this.meditations,
-    required this.certificates,
     required this.profileMedia,
   });
 
   final Map<String, dynamic>? teacher;
   final List<Service> services;
   final List<Map<String, dynamic>> meditations;
-  final List<Certificate> certificates;
   final TeacherProfileMediaPayload profileMedia;
 }
 
@@ -137,19 +99,10 @@ final teacherProfileProvider =
         final meditations = (detail['meditations'] as List? ?? [])
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList(growable: false);
-        final certs = (detail['certificates'] as List? ?? [])
-            .map((item) {
-              final map = Map<String, dynamic>.from(item as Map);
-              map.putIfAbsent('user_id', () => userId);
-              return Certificate.fromJson(map);
-            })
-            .where((c) => c.title != Certificate.teacherApplicationTitle)
-            .toList(growable: false);
         return TeacherProfileState(
           teacher: teacher,
           services: services,
           meditations: meditations,
-          certificates: certs,
           profileMedia: mediaPayload,
         );
       } catch (error, stackTrace) {
@@ -158,15 +111,10 @@ final teacherProfileProvider =
     });
 
 class AdminDashboardState {
-  const AdminDashboardState({
-    required this.isAdmin,
-    required this.requests,
-    required this.certificates,
-  });
+  const AdminDashboardState({required this.isAdmin, required this.requests});
 
   final bool isAdmin;
   final List<Map<String, dynamic>> requests;
-  final List<Map<String, dynamic>> certificates;
 }
 
 class AdminMetricsState {
@@ -299,11 +247,7 @@ class AdminSettingsState {
 final adminDashboardProvider = AutoDisposeFutureProvider<AdminDashboardState>((
   ref,
 ) async {
-  return const AdminDashboardState(
-    isAdmin: false,
-    requests: [],
-    certificates: [],
-  );
+  return const AdminDashboardState(isAdmin: false, requests: []);
 });
 
 final adminSettingsProvider = AutoDisposeFutureProvider<AdminSettingsState>((

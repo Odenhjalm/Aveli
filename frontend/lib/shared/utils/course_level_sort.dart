@@ -1,25 +1,9 @@
-int levelOrder(String level) {
-  final normalized = level.trim().toLowerCase().replaceAll(
-    RegExp(r'[\s_-]+'),
-    '',
-  );
-
-  switch (normalized) {
-    case 'intro':
-    case 'introduction':
-      return 0;
-    case 'steg1':
-    case 'position1':
-      return 1;
-    case 'steg2':
-    case 'position2':
-      return 2;
-    case 'steg3':
-    case 'position3':
-      return 3;
-    default:
-      return 999;
+int levelOrder(String groupPosition) {
+  final position = int.tryParse(groupPosition.trim());
+  if (position == null || position < 0) {
+    return 999;
   }
+  return position;
 }
 
 void sortCourseMapsByLevelThenTitle(List<Map<String, dynamic>> courses) {
@@ -55,11 +39,9 @@ int compareCourseMapsByLevelThenTitle(
 }
 
 String _courseLevel(Map<String, dynamic> course) {
-  for (final key in const ['level', 'group_position']) {
-    final value = course[key]?.toString().trim();
-    if (value != null && value.isNotEmpty) {
-      return value;
-    }
+  final value = course['group_position']?.toString().trim();
+  if (value != null && value.isNotEmpty) {
+    return value;
   }
 
   return '';
