@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 
+from backend.bootstrap.baseline_v2 import BaselineV2Error, ensure_v2_baseline
 from backend.scripts.bootstrap_gate import ensure_local_execution_ready
 
 
@@ -45,6 +46,18 @@ def main() -> None:
     print("[AVELI] Bootstrapping backend...")
 
     ensure_local_execution_ready()
+    try:
+        baseline_status = ensure_v2_baseline()
+    except BaselineV2Error as exc:
+        raise SystemExit(f"[AVELI BASELINE] {exc}") from exc
+
+    print(
+        "[AVELI BASELINE] "
+        f"BASELINE_MODE={baseline_status['mode']} "
+        f"BASELINE_STATE={baseline_status['state']} "
+        f"SCHEMA_HASH={baseline_status['schema_hash']}"
+    )
+
     _apply_windows_selector_policy()
 
     print(f"[AVELI] HOST={_host()} PORT={_port()}")
