@@ -1,0 +1,96 @@
+{
+  "inputs": [],
+  "servers": {
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "Authorization": "Bearer local_token"
+      }
+    },
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=ihirfhnpjtetdmdvqvyu&features=docs,database,debugging,development,functions,branching,storage",
+      "headers": {
+        "Authorization": "Bearer local_token"
+      }
+
+    },
+    "stripe": {
+      "type": "http",
+      "url": "https://mcp.stripe.com",
+      "headers": {
+        "Authorization": "Bearer local_token"
+      }
+    },
+    "netlify": {
+      "command": "npx",
+      "args": ["-y", "@netlify/mcp"]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--headless"
+      ]
+    },
+    "figma": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "figma-developer-mcp",
+        "--stdio",
+        "--figma-api-key",
+        "local_token"
+      ]
+    },
+    "aveli-logs": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/logs"
+    },
+    "aveli-media-control-plane": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/media-control-plane"
+    },
+    "aveli-domain-observability": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/domain-observability"
+    },
+    "aveli-verification": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/verification"
+    },
+    "aveli-semantic-search": {
+     "type": "stdio",
+     "command": ".repo_index/.search_venv/Scripts/python.exe",
+     "args": [
+     "tools/mcp/semantic_search_server.py"
+    ],
+
+   "env": {
+    "PYTHONUTF8": "1",
+    "PYTHONIOENCODING": "utf-8",
+    "AVELI_ENVIRONMENT_DEPENDENCY_RESULT_ARTIFACT": "actual_truth/DETERMINED_TASKS/retrieval_index_environment_dependencies/D01_environment_dependency_result_c78b8e68c25d1484475bf3f07b25facc97ddcf89278cc36f02b3d480509fa8e3.json"
+  }
+},
+    "aveli-supabase-observability": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/supabase-observability"
+    },
+    "aveli-stripe-observability": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/stripe-observability"
+    },
+    "aveli-netlify-observability": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/netlify-observability"
+    },
+    "aveli-dev-operator": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp/dev-operator"
+    }
+  }
+}

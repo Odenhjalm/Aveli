@@ -127,9 +127,8 @@ assets/backend/*
 !assets/audio/**
 
 # --- IGNORE ---
-.vscode/mcp.json
-.vscode/
-mcp.json
+
+
 backend/test.env
 backend/supabase/.temp/
 
@@ -141,7 +140,7 @@ applied
 Aveli.code-workspace
 
 # Mcp
-mcp.json
+
 config.json
 codex/config.toml
 playwright.config.ts

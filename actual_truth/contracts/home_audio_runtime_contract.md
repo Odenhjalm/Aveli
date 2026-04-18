@@ -33,6 +33,25 @@ is not the source table for `app.home_player_course_links`.
 Frontend fallback, direct storage authority, and client-side access inference
 are forbidden.
 
+## DETERMINISTIC DELIVERY RESOLVER BOUNDARY
+
+Home-audio runtime output may include only the governed `media` object shape
+defined by this contract.
+
+The backend resolver owns deterministic delivery policy outside
+`app.runtime_media`. The resolver may read accepted projection facts from
+`runtime_media`, but it must resolve playback delivery from canonical media
+identity, accepted source authority, media lifecycle state, playback object
+readiness, and backend access rules.
+
+`runtime_media` must remain read-only projection. It must not become delivery
+policy authority, storage URL authority, signed URL authority, or fallback
+authority.
+
+If delivery cannot be resolved deterministically, the emitted `media` value must
+fail closed according to the governed shape, and any diagnostic write must be
+observability/support only.
+
 ## TRANSPORT CONSTRAINTS
 
 - Response payloads MUST preserve the listed field names exactly

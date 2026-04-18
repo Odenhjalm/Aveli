@@ -50,6 +50,27 @@ media = { media_id, state, resolved_url } | null
 Frontend surfaces are render-only. They must not resolve, construct, infer, or
 normalize media truth.
 
+## 3A. DETERMINISTIC DELIVERY RESOLVER BOUNDARY
+
+Delivery policy is owned by the backend media resolver contract and execution
+surface, not by `app.runtime_media`.
+
+The deterministic resolver policy is:
+
+- source tables own media inclusion, placement, and lifecycle authority
+- `app.runtime_media` may expose read projection facts needed by the resolver
+- the resolver must validate media identity, media state, purpose, playback
+  object, playback format, and access context before producing `resolved_url`
+- storage buckets, object paths, signed URLs, public URLs, and proxy URLs are
+  delivery outputs or infrastructure coordinates only
+- delivery failure must fail closed and may write observability support such as
+  `app.media_resolution_failures`
+
+`app.runtime_media` must not contain delivery-policy branching, signed URL
+authority, access inference, or fallback authority. If a resolver needs
+bucket/path policy, that policy must be defined outside the view and derived
+from accepted media purpose, media state, and backend access rules.
+
 ## 4. HOME PLAYER COURSE-LINK BOUNDARY
 
 `app.home_player_course_links` is canonical source truth for course-linked home
