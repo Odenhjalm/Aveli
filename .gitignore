@@ -185,3 +185,4 @@ actual_truth/build_approvals/*
 actual_truth/offline_wheelhouse/*
 actual_truth/DETERMINED_TASKS/retrieval_index_environment_wheelhouse/*
 actual_truth/build_approvals/*
+ audit_output/*
