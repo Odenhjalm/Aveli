@@ -87,7 +87,6 @@ async def create_subscription_checkout(
     }
     order = await orders_repo.create_order(
         user_id=user_id,
-        service_id=None,
         course_id=None,
         amount_cents=amount_cents,
         currency=currency,
@@ -95,9 +94,6 @@ async def create_subscription_checkout(
         metadata=metadata,
         stripe_customer_id=customer_id,
         stripe_subscription_id=None,
-        connected_account_id=None,
-        session_id=None,
-        session_slot_id=None,
     )
     metadata["order_id"] = str(order["id"])
 

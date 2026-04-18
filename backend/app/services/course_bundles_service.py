@@ -187,17 +187,14 @@ async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> Ch
 
     order = await repositories.create_order(
         user_id=user_id,
-        service_id=None,
         course_id=None,
+        bundle_id=str(bundle_id),
         amount_cents=int(bundle.get("price_amount_cents") or 0),
         currency=_CANONICAL_BUNDLE_STRIPE_CURRENCY,
         order_type="bundle",
         metadata=metadata,
         stripe_customer_id=customer_id,
         stripe_subscription_id=None,
-        connected_account_id=None,
-        session_id=None,
-        session_slot_id=None,
     )
     metadata["order_id"] = str(order["id"])
 

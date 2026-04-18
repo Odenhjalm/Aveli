@@ -11,10 +11,8 @@ from ..db import get_conn, pool
 _ORDER_SELECT = """
     SELECT id,
            user_id,
-           service_id,
            course_id,
-           session_id,
-           session_slot_id,
+           bundle_id,
            order_type,
            amount_cents,
            currency,
@@ -23,7 +21,6 @@ _ORDER_SELECT = """
            stripe_payment_intent,
            stripe_subscription_id,
            stripe_customer_id,
-           connected_account_id,
            metadata,
            created_at,
            updated_at
@@ -34,29 +31,36 @@ _ORDER_SELECT = """
 async def create_order(
     *,
     user_id: str | UUID,
-    service_id: str | UUID | None,
     course_id: str | UUID | None,
+    bundle_id: str | UUID | None = None,
     amount_cents: int,
     currency: str,
     metadata: dict[str, Any] | None = None,
     order_type: str | None = None,
-    session_id: str | UUID | None = None,
-    session_slot_id: str | UUID | None = None,
     stripe_subscription_id: str | None = None,
     stripe_customer_id: str | None = None,
-    connected_account_id: str | None = None,
 ) -> dict[str, Any]:
     normalized_order_type = (order_type or "one_off").lower()
+    if normalized_order_type == "one_off":
+        if course_id is None or bundle_id is not None:
+            raise ValueError("one_off orders require exactly one course target")
+    elif normalized_order_type == "bundle":
+        if bundle_id is None or course_id is not None:
+            raise ValueError("bundle orders require exactly one bundle target")
+    elif normalized_order_type == "subscription":
+        if course_id is not None or bundle_id is not None:
+            raise ValueError("subscription orders cannot target course or bundle")
+    else:
+        raise ValueError("unsupported order_type")
+
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 INSERT INTO app.orders (
                     user_id,
-                    service_id,
                     course_id,
-                    session_id,
-                    session_slot_id,
+                    bundle_id,
                     order_type,
                     amount_cents,
                     currency,
@@ -65,16 +69,13 @@ async def create_order(
                     stripe_payment_intent,
                     stripe_subscription_id,
                     stripe_customer_id,
-                    connected_account_id,
                     metadata
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', NULL, NULL, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, 'pending', NULL, NULL, %s, %s, %s)
                 RETURNING id,
                           user_id,
-                          service_id,
                           course_id,
-                          session_id,
-                          session_slot_id,
+                          bundle_id,
                           order_type,
                           amount_cents,
                           currency,
@@ -83,23 +84,19 @@ async def create_order(
                           stripe_payment_intent,
                           stripe_subscription_id,
                           stripe_customer_id,
-                          connected_account_id,
                           metadata,
                           created_at,
                           updated_at
                 """,
                 (
                     user_id,
-                    service_id,
                     course_id,
-                    session_id,
-                    session_slot_id,
+                    bundle_id,
                     normalized_order_type,
                     amount_cents,
                     currency,
                     stripe_subscription_id,
                     stripe_customer_id,
-                    connected_account_id,
                     Jsonb(metadata or {}),
                 ),
             )
@@ -250,10 +247,8 @@ async def set_order_checkout_reference(
                  WHERE id = %s
                  RETURNING id,
                            user_id,
-                           service_id,
                            course_id,
-                           session_id,
-                           session_slot_id,
+                           bundle_id,
                            order_type,
                            amount_cents,
                            currency,
@@ -262,7 +257,6 @@ async def set_order_checkout_reference(
                            stripe_payment_intent,
                            stripe_subscription_id,
                            stripe_customer_id,
-                           connected_account_id,
                            metadata,
                            created_at,
                            updated_at
@@ -304,10 +298,8 @@ async def mark_order_refunded(
                      WHERE id = %s
                  RETURNING id,
                            user_id,
-                           service_id,
                            course_id,
-                           session_id,
-                           session_slot_id,
+                           bundle_id,
                            order_type,
                            amount_cents,
                            currency,
@@ -316,7 +308,6 @@ async def mark_order_refunded(
                            stripe_payment_intent,
                            stripe_subscription_id,
                            stripe_customer_id,
-                           connected_account_id,
                            metadata,
                            created_at,
                            updated_at

@@ -93,7 +93,7 @@ async def run_once(*, now: datetime | None = None) -> int:
                 from app.course_enrollments as ce
                 join app.courses as c on c.id = ce.course_id
                 where c.drip_enabled = true
-                order by ce.updated_at asc, ce.id asc
+                order by ce.granted_at asc, ce.id asc
                 limit 100
                 """
             )

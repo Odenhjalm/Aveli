@@ -656,8 +656,8 @@ class ServiceListResponse(BaseModel):
 
 
 class OrderCreateRequest(BaseModel):
-    service_id: Optional[UUID] = None
     course_id: Optional[UUID] = None
+    bundle_id: Optional[UUID] = None
     amount_cents: Optional[int] = None
     currency: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None
@@ -666,10 +666,8 @@ class OrderCreateRequest(BaseModel):
 class OrderRecord(BaseModel):
     id: UUID
     user_id: UUID
-    service_id: Optional[UUID] = None
     course_id: Optional[UUID] = None
-    session_id: Optional[UUID] = None
-    session_slot_id: Optional[UUID] = None
+    bundle_id: Optional[UUID] = None
     order_type: str = "one_off"
     amount_cents: int
     currency: str
@@ -678,7 +676,6 @@ class OrderRecord(BaseModel):
     stripe_payment_intent: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     stripe_customer_id: Optional[str] = None
-    connected_account_id: Optional[str] = None
     metadata: dict[str, Any] = {}
     created_at: datetime
     updated_at: datetime
@@ -1492,13 +1489,6 @@ class CouponRedeemResponse(BaseModel):
 
 class OrderCourseCreateRequest(BaseModel):
     course_id: UUID
-    amount_cents: int
-    currency: Optional[str] = "sek"
-    metadata: Optional[dict[str, Any]] = None
-
-
-class OrderServiceCreateRequest(BaseModel):
-    service_id: UUID
     amount_cents: int
     currency: Optional[str] = "sek"
     metadata: Optional[dict[str, Any]] = None

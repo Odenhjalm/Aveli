@@ -145,17 +145,13 @@ async def test_webhook_upserts_membership(async_client, monkeypatch):
     _, user_id, _ = await register_user(async_client)
     order = await repositories.create_order(
         user_id=str(user_id),
-        service_id=None,
         course_id=None,
         amount_cents=9900,
         currency="sek",
         metadata={"checkout_type": "membership", "source": "purchase"},
         order_type="subscription",
-        session_id=None,
-        session_slot_id=None,
         stripe_subscription_id=None,
         stripe_customer_id="cus_123",
-        connected_account_id=None,
     )
 
     event_suffix = uuid.uuid4().hex
@@ -282,17 +278,13 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
     try:
         membership_order = await repositories.create_order(
             user_id=str(student_id),
-            service_id=None,
             course_id=None,
             amount_cents=9900,
             currency="sek",
             metadata={"checkout_type": "membership", "source": "purchase"},
             order_type="subscription",
-            session_id=None,
-            session_slot_id=None,
             stripe_subscription_id=None,
             stripe_customer_id="cus_canonical",
-            connected_account_id=None,
         )
         course_slug = f"integration-webhook-course-{uuid.uuid4().hex[:8]}"
         course_id = await _create_course(async_client, teacher_headers, course_slug, 1500)

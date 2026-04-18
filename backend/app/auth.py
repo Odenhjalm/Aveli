@@ -1,42 +1,99 @@
+import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
+import hmac
+import re
 import uuid
 from typing import Annotated, Any
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 
 from .config import settings
 from .utils.supabase_jwt import SupabaseJwtError, verify_supabase_access_token
-pwd_context = CryptContext(
-    schemes=["bcrypt_sha256", "bcrypt"],
-    deprecated="auto",
-)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_optional_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 _CANONICAL_APP_ENTRY_REQUIRED = "canonical_app_entry_required"
 
-
-def _configure_password_backends() -> None:
-    # Prefer os_crypt when available so long passwords remain safe even if the
-    # pyca/bcrypt backend rejects >72-byte secrets.
-    for scheme in ("bcrypt_sha256", "bcrypt"):
-        handler = pwd_context.handler(scheme)
-        if handler.has_backend("os_crypt"):
-            handler.set_backend("os_crypt")
-
-
-_configure_password_backends()
+_BCRYPT_SHA256_RE = re.compile(
+    r"^\$bcrypt-sha256\$v=(?P<version>\d+),t=(?P<ident>2b),r=(?P<rounds>\d{1,2})"
+    r"\$(?P<salt>[./A-Za-z0-9]{22})\$(?P<checksum>[./A-Za-z0-9]{31})$"
+)
+_BCRYPT_RE = re.compile(r"^\$2[abxy]\$\d{2}\$[./A-Za-z0-9]{53}$")
+_BCRYPT_SHA256_PREFIX = "$bcrypt-sha256$"
+_BCRYPT_IDENT = "2b"
+_BCRYPT_ROUNDS = 12
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt(rounds=_BCRYPT_ROUNDS, prefix=_BCRYPT_IDENT.encode("ascii"))
+    salt_text = salt.decode("ascii")
+    salt_body = salt_text[7:29]
+    checksum = _bcrypt_sha256_checksum(
+        password=password,
+        salt_body=salt_body,
+        rounds=_BCRYPT_ROUNDS,
+    )
+    return (
+        f"{_BCRYPT_SHA256_PREFIX}v=2,t={_BCRYPT_IDENT},r={_BCRYPT_ROUNDS}"
+        f"${salt_body}${checksum}"
+    )
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    return pwd_context.verify(password, hashed)
+    try:
+        if hashed.startswith(_BCRYPT_SHA256_PREFIX):
+            return _verify_bcrypt_sha256(password, hashed)
+        if _BCRYPT_RE.match(hashed):
+            return _verify_legacy_bcrypt(password, hashed)
+        return False
+    except Exception:
+        return False
+
+
+def _bcrypt_sha256_secret(password: str, salt_body: str) -> bytes:
+    digest = hmac.new(
+        salt_body.encode("ascii"),
+        password.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    return base64.b64encode(digest)
+
+
+def _bcrypt_sha256_checksum(
+    *,
+    password: str,
+    salt_body: str,
+    rounds: int,
+) -> str:
+    secret = _bcrypt_sha256_secret(password, salt_body)
+    config = f"${_BCRYPT_IDENT}${rounds:02d}${salt_body}".encode("ascii")
+    return bcrypt.hashpw(secret, config).decode("ascii")[29:]
+
+
+def _verify_bcrypt_sha256(password: str, hashed: str) -> bool:
+    match = _BCRYPT_SHA256_RE.match(hashed)
+    if not match:
+        return False
+    if int(match.group("version")) != 2:
+        return False
+    rounds = int(match.group("rounds"))
+    salt_body = match.group("salt")
+    checksum = _bcrypt_sha256_checksum(
+        password=password,
+        salt_body=salt_body,
+        rounds=rounds,
+    )
+    return hmac.compare_digest(checksum, match.group("checksum"))
+
+
+def _verify_legacy_bcrypt(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("ascii"))
+    except ValueError:
+        return False
 
 
 def decode_jwt(token: str) -> dict[str, Any]:

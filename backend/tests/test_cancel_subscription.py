@@ -43,17 +43,13 @@ async def test_cancel_subscription_submits_intent_without_mutating_membership(as
     )
     await repositories.create_order(
         user_id=str(user_id),
-        service_id=None,
         course_id=None,
         amount_cents=1000,
         currency="sek",
         metadata={"checkout_type": "membership", "source": "purchase"},
         order_type="subscription",
-        session_id=None,
-        session_slot_id=None,
         stripe_subscription_id="sub_test",
         stripe_customer_id="cus_test",
-        connected_account_id=None,
     )
 
     captured_payload: dict[str, object] = {}
@@ -97,17 +93,13 @@ async def test_cancel_subscription_rejects_mismatched_subscription_id(async_clie
     )
     await repositories.create_order(
         user_id=str(user_id),
-        service_id=None,
         course_id=None,
         amount_cents=1000,
         currency="sek",
         metadata={"checkout_type": "membership", "source": "purchase"},
         order_type="subscription",
-        session_id=None,
-        session_slot_id=None,
         stripe_subscription_id="sub_real",
         stripe_customer_id="cus_test",
-        connected_account_id=None,
     )
 
     stripe_called = False
