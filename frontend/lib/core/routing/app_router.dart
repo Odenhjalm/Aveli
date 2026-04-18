@@ -20,7 +20,6 @@ import 'package:aveli/features/community/presentation/admin_page.dart';
 import 'package:aveli/features/community/presentation/admin_settings_page.dart';
 import 'package:aveli/features/community/presentation/community_page.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
-import 'package:aveli/features/home/presentation/livekit_demo_page.dart';
 import 'package:aveli/features/media_control_plane/admin/media_control_dashboard.dart';
 import 'package:aveli/features/community/presentation/profile_page.dart'
     as community_profile;
@@ -50,13 +49,6 @@ import 'package:aveli/features/studio/presentation/profile_media_page.dart';
 import 'package:aveli/features/studio/presentation/studio_page.dart';
 import 'package:aveli/features/studio/presentation/teacher_home_page.dart';
 import 'package:aveli/features/teacher/presentation/course_bundle_page.dart';
-import 'package:aveli/features/seminars/presentation/seminar_studio_page.dart';
-import 'package:aveli/features/seminars/presentation/seminar_detail_page.dart';
-import 'package:aveli/features/seminars/presentation/seminar_prejoin_page.dart';
-import 'package:aveli/features/seminars/presentation/seminar_route_args.dart';
-import 'package:aveli/features/seminars/presentation/seminar_broadcast_page.dart';
-import 'package:aveli/features/seminars/presentation/seminar_discover_page.dart';
-import 'package:aveli/features/seminars/presentation/seminar_join_page.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
 
 class AppRouterNotifier extends ChangeNotifier {
@@ -332,7 +324,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.sfuDemo,
         name: AppRoute.sfuDemo,
-        builder: (context, state) => const LiveKitDemoPage(),
+        builder: (context, state) => const NotFoundPage(),
       ),
       GoRoute(
         path: RoutePath.courseIntro,
@@ -513,35 +505,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.seminarStudio,
         name: AppRoute.seminarStudio,
-        builder: (context, state) => const SeminarStudioPage(),
+        builder: (context, state) => const NotFoundPage(),
       ),
       GoRoute(
         path: RoutePath.seminarDetail,
         name: AppRoute.seminarDetail,
-        builder: (context, state) =>
-            SeminarDetailPage(seminarId: state.pathParameters['id']!),
+        builder: (context, state) => const NotFoundPage(),
       ),
       GoRoute(
         path: RoutePath.seminarPreJoin,
         name: AppRoute.seminarPreJoin,
-        builder: (context, state) {
-          final args = state.extra;
-          if (args is! SeminarPreJoinArgs) {
-            return const NotFoundPage();
-          }
-          return SeminarPreJoinPage(args: args);
-        },
+        builder: (context, state) => const NotFoundPage(),
       ),
       GoRoute(
         path: RoutePath.seminarBroadcast,
         name: AppRoute.seminarBroadcast,
-        builder: (context, state) {
-          final args = state.extra;
-          if (args is! SeminarBroadcastArgs) {
-            return const NotFoundPage();
-          }
-          return SeminarBroadcastPage(args: args);
-        },
+        builder: (context, state) => const NotFoundPage(),
       ),
       GoRoute(
         path: RoutePath.subscribe,
@@ -572,13 +551,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePath.seminarDiscover,
         name: AppRoute.seminarDiscover,
-        builder: (context, state) => const SeminarDiscoverPage(),
+        builder: (context, state) => const NotFoundPage(),
       ),
       GoRoute(
         path: RoutePath.seminarJoin,
         name: AppRoute.seminarJoin,
-        builder: (context, state) =>
-            SeminarJoinPage(seminarId: state.pathParameters['id']!),
+        builder: (context, state) => const NotFoundPage(),
       ),
       GoRoute(
         path: RoutePath.community,

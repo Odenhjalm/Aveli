@@ -134,7 +134,7 @@ class CourseCore {
     required this.title,
     required this.slug,
     required this.courseGroupId,
-    required this.step,
+    required this.groupPosition,
     required this.dripEnabled,
     required this.dripIntervalDays,
     required this.coverMediaId,
@@ -145,7 +145,7 @@ class CourseCore {
   final String title;
   final String slug;
   final String courseGroupId;
-  final String step;
+  final int groupPosition;
   final bool dripEnabled;
   final int? dripIntervalDays;
   final String? coverMediaId;
@@ -159,7 +159,7 @@ class CourseStudio extends CourseCore {
     required super.title,
     required super.slug,
     required super.courseGroupId,
-    required super.step,
+    required super.groupPosition,
     required super.dripEnabled,
     required super.dripIntervalDays,
     required super.coverMediaId,
@@ -178,7 +178,7 @@ class CourseStudio extends CourseCore {
       title: _requiredResponseString(payload, 'title', label),
       slug: _requiredResponseString(payload, 'slug', label),
       courseGroupId: _requiredResponseString(payload, 'course_group_id', label),
-      step: _requiredResponseStringValue(payload, 'step', label),
+      groupPosition: _requiredResponseInt(payload, 'group_position', label),
       dripEnabled: _requiredResponseBool(payload, 'drip_enabled', label),
       dripIntervalDays: _nullableResponseInt(
         payload,
@@ -209,7 +209,7 @@ class CourseStudio extends CourseCore {
     String? title,
     String? slug,
     String? courseGroupId,
-    String? step,
+    int? groupPosition,
     bool? dripEnabled,
     int? dripIntervalDays,
     String? coverMediaId,
@@ -228,7 +228,7 @@ class CourseStudio extends CourseCore {
       courseGroupId: clearCourseGroupId
           ? ''
           : (courseGroupId ?? this.courseGroupId),
-      step: step ?? this.step,
+      groupPosition: groupPosition ?? this.groupPosition,
       dripEnabled: dripEnabled ?? this.dripEnabled,
       dripIntervalDays: clearDripIntervalDays
           ? null

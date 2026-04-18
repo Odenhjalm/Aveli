@@ -8,7 +8,7 @@ from psycopg.rows import dict_row
 from ..db import get_conn, pool
 
 _VALID_ONBOARDING_STATES = frozenset({"incomplete", "welcome_pending", "completed"})
-_VALID_ROLES = frozenset({"learner", "teacher"})
+_VALID_ROLES = frozenset({"learner", "teacher", "admin"})
 
 
 def _normalize_text(value: object) -> str:
@@ -43,10 +43,9 @@ async def get_auth_subject(user_id: str | UUID) -> dict[str, Any] | None:
         await cur.execute(
             """
             SELECT user_id,
+                   email,
                    onboarding_state,
-                   role_v2,
-                   role,
-                   is_admin
+                   role::text as role
             FROM app.auth_subjects
             WHERE user_id = %s
             LIMIT 1
@@ -60,15 +59,12 @@ async def get_auth_subject(user_id: str | UUID) -> dict[str, Any] | None:
 async def ensure_auth_subject(
     user_id: str | UUID,
     *,
+    email: str | None = None,
     onboarding_state: str,
-    role_v2: str,
     role: str,
-    is_admin: bool,
 ) -> dict[str, Any] | None:
     validated_onboarding_state = _validated_initial_onboarding_state(onboarding_state)
-    validated_role_v2 = _validated_role(role_v2)
     validated_role = _validated_role(role)
-    validated_is_admin = bool(is_admin)
 
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
@@ -76,28 +72,26 @@ async def ensure_auth_subject(
                 """
                 INSERT INTO app.auth_subjects (
                     user_id,
+                    email,
                     onboarding_state,
-                    role_v2,
-                    role,
-                    is_admin
+                    role
                 )
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (user_id) DO NOTHING
-                RETURNING user_id, onboarding_state, role_v2, role, is_admin
+                RETURNING user_id, email, onboarding_state, role::text as role
                 """,
                 (
                     user_id,
+                    email,
                     validated_onboarding_state,
-                    validated_role_v2,
                     validated_role,
-                    validated_is_admin,
                 ),
             )
             row = await cur.fetchone()
             if row is None:
                 await cur.execute(
                     """
-                    SELECT user_id, onboarding_state, role_v2, role, is_admin
+                    SELECT user_id, email, onboarding_state, role::text as role
                     FROM app.auth_subjects
                     WHERE user_id = %s
                     LIMIT 1
@@ -111,22 +105,19 @@ async def ensure_auth_subject(
 async def set_role_authority(
     user_id: str | UUID,
     *,
-    role_v2: str,
     role: str,
 ) -> dict[str, Any] | None:
-    validated_role_v2 = _validated_role(role_v2)
     validated_role = _validated_role(role)
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 UPDATE app.auth_subjects
-                   SET role_v2 = %s,
-                       role = %s
+                   SET role = %s
                  WHERE user_id = %s
-                 RETURNING user_id, onboarding_state, role_v2, role, is_admin
+                 RETURNING user_id, email, onboarding_state, role::text as role
                 """,
-                (validated_role_v2, validated_role, user_id),
+                (validated_role, user_id),
             )
             row = await cur.fetchone()
             await conn.commit()
@@ -144,7 +135,7 @@ async def mark_create_profile_step_complete(
                    SET onboarding_state = 'welcome_pending'
                  WHERE user_id = %s
                    AND onboarding_state = 'incomplete'
-                 RETURNING user_id, onboarding_state, role_v2, role, is_admin
+                 RETURNING user_id, email, onboarding_state, role::text as role
                 """,
                 (user_id,),
             )

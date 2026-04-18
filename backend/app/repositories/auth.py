@@ -88,30 +88,27 @@ async def create_user(
                 """
                 INSERT INTO app.auth_subjects (
                     user_id,
+                    email,
                     onboarding_state,
-                    role_v2,
-                    role,
-                    is_admin
+                    role
                 )
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (user_id) DO NOTHING
                 """,
                 (
                     user_id,
+                    normalized_email,
                     canonical_onboarding_state,
                     canonical_role,
-                    canonical_role,
-                    False,
                 ),
             )
 
             await conn.commit()
             await ensure_auth_subject(
                 user_id,
+                email=normalized_email,
                 onboarding_state=canonical_onboarding_state,
-                role_v2=canonical_role,
                 role=canonical_role,
-                is_admin=False,
             )
             await _upsert_profile_row(
                 user_id=user_id,

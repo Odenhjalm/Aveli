@@ -210,19 +210,19 @@ async def get_auth_state() -> dict[str, Any]:
         """
         SELECT
           COUNT(*)::int AS subject_count,
-          COUNT(*) FILTER (WHERE is_admin = true)::int AS admin_subject_count
+          COUNT(*) FILTER (WHERE role = 'admin'::app.auth_subject_role)::int AS admin_subject_count
         FROM app.auth_subjects
         """,
     )
     issues.extend(auth_subject_issues)
 
     role_counts, role_issues = await _safe_fetch_all(
-        "app.auth_subjects.role_v2",
+        "app.auth_subjects.role",
         """
-        SELECT role_v2, COUNT(*)::int AS count
+        SELECT role::text AS role, COUNT(*)::int AS count
         FROM app.auth_subjects
-        GROUP BY role_v2
-        ORDER BY role_v2
+        GROUP BY role
+        ORDER BY role
         """,
     )
     issues.extend(role_issues)

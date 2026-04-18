@@ -16,7 +16,7 @@ from fastapi import (
     status,
 )
 
-from .. import models, repositories, schemas
+from .. import models, schemas
 from ..auth import CurrentUser
 from ..config import settings
 from ..db import get_conn
@@ -58,6 +58,15 @@ def _raise_livekit_paused() -> NoReturn:
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="LiveKit är pausat.",
     )
+
+
+def _raise_v2_feature_disabled(feature: str) -> NoReturn:
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=f"{feature} has no Baseline V2 authority",
+    )
+
+
 _STUDIO_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
 )
@@ -67,7 +76,7 @@ _CANONICAL_COURSE_FIELDS = (
     "slug",
     "title",
     "course_group_id",
-    "step",
+    "group_position",
     "cover_media_id",
     "cover",
     "price_amount_cents",
@@ -864,8 +873,8 @@ async def create_referral_invitation(
 
 @router.get("/certificates")
 async def studio_certificates(current: TeacherEntryUser, verified_only: bool = False):
-    rows = await models.user_certificates(current["id"], verified_only)
-    return {"items": rows}
+    del current, verified_only
+    _raise_v2_feature_disabled("Studio certificates")
 
 
 @router.post("/certificates")
@@ -873,17 +882,8 @@ async def studio_add_certificate(
     payload: schemas.StudioCertificateCreate,
     current: TeacherEntryUser,
 ):
-    try:
-        row = await models.add_certificate(
-            current["id"],
-            title=payload.title,
-            status=payload.status,
-            notes=payload.notes,
-            evidence_url=payload.evidence_url,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return row
+    del payload, current
+    _raise_v2_feature_disabled("Studio certificates")
 
 
 @course_lesson_router.post("/courses", response_model=schemas.Course)
@@ -1465,7 +1465,7 @@ async def list_lesson_media(
 )
 async def studio_profile_media(current: TeacherEntryUser):
     teacher_id = str(current["id"])
-    rows = await repositories.list_teacher_profile_media(teacher_id)
+    rows = await profile_media_repo.list_teacher_profile_media(teacher_id)
     return schemas.TeacherProfileMediaListResponse(
         items=[await profile_media_item_from_row(row) for row in rows],
     )
@@ -1480,7 +1480,7 @@ async def studio_create_profile_media(
     payload: schemas.TeacherProfileMediaCreate,
     current: TeacherEntryUser,
 ):
-    row = await repositories.create_teacher_profile_media(
+    row = await profile_media_repo.create_teacher_profile_media(
         teacher_id=str(current["id"]),
         media_asset_id=str(payload.media_asset_id),
         visibility=payload.visibility.value,
@@ -1507,7 +1507,7 @@ async def studio_update_profile_media(
     if payload.visibility is not None:
         fields["visibility"] = payload.visibility.value
 
-    row = await repositories.update_teacher_profile_media(
+    row = await profile_media_repo.update_teacher_profile_media(
         item_id=str(item_id),
         teacher_id=str(current["id"]),
         fields=fields,
@@ -1519,13 +1519,13 @@ async def studio_update_profile_media(
 
 @router.delete("/profile/media/{item_id}", status_code=204)
 async def studio_delete_profile_media(item_id: UUID, current: TeacherEntryUser):
-    existing = await repositories.get_teacher_profile_media(
+    existing = await profile_media_repo.get_teacher_profile_media(
         item_id=str(item_id),
         teacher_id=str(current["id"]),
     )
     if not existing:
         raise HTTPException(status_code=404, detail="Profile media item not found")
-    deleted = await repositories.delete_teacher_profile_media(
+    deleted = await profile_media_repo.delete_teacher_profile_media(
         item_id=str(item_id),
         teacher_id=str(current["id"]),
     )
@@ -1709,9 +1709,8 @@ def _ensure_host_access(seminar: Dict[str, Any], user_id: str) -> None:
 
 @router.get("/seminars", response_model=schemas.SeminarListResponse)
 async def studio_list_seminars(current: TeacherEntryUser):
-    rows = await repositories.list_host_seminars(str(current["id"]))
-    items = [_seminar_from_row(row) for row in rows]
-    return schemas.SeminarListResponse(items=items)
+    del current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.post("/seminars", response_model=schemas.SeminarResponse)
@@ -1719,31 +1718,14 @@ async def studio_create_seminar(
     payload: schemas.SeminarCreateRequest,
     current: TeacherEntryUser,
 ):
-    row = await repositories.create_seminar(
-        host_id=str(current["id"]),
-        title=payload.title,
-        description=payload.description,
-        scheduled_at=payload.scheduled_at.isoformat() if payload.scheduled_at else None,
-        duration_minutes=payload.duration_minutes,
-    )
-    return _seminar_from_row(row)
+    del payload, current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.get("/seminars/{seminar_id}", response_model=schemas.SeminarDetailResponse)
 async def studio_get_seminar(seminar_id: UUID, current: TeacherEntryUser):
-    seminar = await repositories.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    _ensure_host_access(seminar, str(current["id"]))
-    sessions = await repositories.list_seminar_sessions(str(seminar_id))
-    attendees = await repositories.list_seminar_attendees(str(seminar_id))
-    recordings = await repositories.list_seminar_recordings(str(seminar_id))
-    return schemas.SeminarDetailResponse(
-        seminar=_seminar_from_row(seminar),
-        sessions=[_session_from_row(row) for row in sessions],
-        attendees=[_attendee_from_row(row) for row in attendees],
-        recordings=[_recording_from_row(row) for row in recordings],
-    )
+    del seminar_id, current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.post(
@@ -1756,17 +1738,8 @@ async def studio_grant_seminar_access(
     payload: schemas.SeminarAttendeeGrantRequest,
     current: TeacherEntryUser,
 ):
-    seminar = await repositories.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    _ensure_host_access(seminar, str(current["id"]))
-    row = await repositories.register_attendee(
-        seminar_id=str(seminar_id),
-        user_id=str(payload.user_id),
-        role=payload.role or "participant",
-        invite_status=payload.invite_status or "accepted",
-    )
-    return _attendee_from_row(row)
+    del seminar_id, payload, current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.delete(
@@ -1778,17 +1751,8 @@ async def studio_revoke_seminar_access(
     user_id: UUID,
     current: TeacherEntryUser,
 ):
-    seminar = await repositories.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    _ensure_host_access(seminar, str(current["id"]))
-    removed = await repositories.unregister_attendee(
-        seminar_id=str(seminar_id),
-        user_id=str(user_id),
-    )
-    if not removed:
-        raise HTTPException(status_code=404, detail="Attendee not found")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    del seminar_id, user_id, current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.patch("/seminars/{seminar_id}", response_model=schemas.SeminarResponse)
@@ -1797,65 +1761,20 @@ async def studio_update_seminar(
     payload: schemas.SeminarUpdateRequest,
     current: TeacherEntryUser,
 ):
-    seminar = await repositories.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    _ensure_host_access(seminar, str(current["id"]))
-
-    fields: Dict[str, Any] = {}
-    if payload.title is not None:
-        fields["title"] = payload.title
-    if payload.description is not None:
-        fields["description"] = payload.description
-    if payload.scheduled_at is not None:
-        fields["scheduled_at"] = payload.scheduled_at.isoformat()
-    if payload.duration_minutes is not None:
-        fields["duration_minutes"] = payload.duration_minutes
-
-    row = await repositories.update_seminar(
-        seminar_id=str(seminar_id),
-        host_id=str(current["id"]),
-        fields=fields,
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    return _seminar_from_row(row)
+    del seminar_id, payload, current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.post("/seminars/{seminar_id}/publish", response_model=schemas.SeminarResponse)
 async def studio_publish_seminar(seminar_id: UUID, current: TeacherEntryUser):
-    seminar = await repositories.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    _ensure_host_access(seminar, str(current["id"]))
-    if seminar["status"] not in ("draft", "canceled"):
-        raise HTTPException(status_code=409, detail="Seminar already published")
-    row = await repositories.set_seminar_status(
-        seminar_id=str(seminar_id),
-        host_id=str(current["id"]),
-        status="scheduled",
-    )
-    if not row:
-        raise HTTPException(status_code=500, detail="Failed to update seminar status")
-    return _seminar_from_row(row)
+    del seminar_id, current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.post("/seminars/{seminar_id}/cancel", response_model=schemas.SeminarResponse)
 async def studio_cancel_seminar(seminar_id: UUID, current: TeacherEntryUser):
-    seminar = await repositories.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    _ensure_host_access(seminar, str(current["id"]))
-    if seminar["status"] == "canceled":
-        return _seminar_from_row(seminar)
-    row = await repositories.set_seminar_status(
-        seminar_id=str(seminar_id),
-        host_id=str(current["id"]),
-        status="canceled",
-    )
-    if not row:
-        raise HTTPException(status_code=500, detail="Failed to cancel seminar")
-    return _seminar_from_row(row)
+    del seminar_id, current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.post(
@@ -1867,11 +1786,8 @@ async def studio_start_seminar_session(
     payload: schemas.SeminarSessionStartRequest,
     current: TeacherEntryUser,
 ):
-    seminar = await repositories.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    _ensure_host_access(seminar, str(current["id"]))
-    _raise_livekit_paused()
+    del seminar_id, payload, current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.post(
@@ -1884,15 +1800,8 @@ async def studio_end_seminar_session(
     current: TeacherEntryUser,
     payload: schemas.SeminarSessionEndRequest | None = None,
 ):
-    seminar = await repositories.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    _ensure_host_access(seminar, str(current["id"]))
-
-    session = await repositories.get_seminar_session(str(session_id))
-    if not session or str(session["seminar_id"]) != str(seminar["id"]):
-        raise HTTPException(status_code=404, detail="Seminar session not found")
-    _raise_livekit_paused()
+    del seminar_id, session_id, current, payload
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @router.post(
@@ -1904,72 +1813,8 @@ async def studio_reserve_recording(
     payload: schemas.SeminarRecordingReserveRequest,
     current: TeacherEntryUser,
 ):
-    seminar = await repositories.get_seminar(str(seminar_id))
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    _ensure_host_access(seminar, str(current["id"]))
-
-    session_row = None
-    if payload.session_id:
-        session_row = await repositories.get_seminar_session(str(payload.session_id))
-        if session_row and str(session_row["seminar_id"]) != str(seminar["id"]):
-            logger.warning(
-                "Recording reserve: session %s does not belong to seminar %s",
-                payload.session_id,
-                seminar_id,
-            )
-            session_row = None
-        if not session_row:
-            logger.info(
-                "Recording reserve: session %s not found, falling back to latest session",
-                payload.session_id,
-            )
-    if session_row is None:
-        session_row = await repositories.get_latest_session(str(seminar_id))
-
-    recordings_dir = Path(settings.media_root) / _LIVE_RECORDINGS_ROOT / str(seminar_id)
-    recordings_dir.mkdir(parents=True, exist_ok=True)
-
-    extension = (payload.extension or "mp4").strip().lower()
-    extension = extension.lstrip(".")
-    if not extension or any(ch for ch in extension if not ch.isalnum()):
-        extension = "mp4"
-
-    filename = f"{uuid4().hex}.{extension}"
-    disk_path = recordings_dir / filename
-    if not disk_path.exists():
-        try:
-            disk_path.touch()
-        except OSError as exc:
-            logger.warning("Failed to create recording placeholder file: %s", exc)
-
-    asset_relative_path = f"{_LIVE_RECORDINGS_ROOT}/{seminar_id}/{filename}"
-
-    session_id_value = None
-    if payload.session_id:
-        session_id_value = str(payload.session_id)
-    elif session_row:
-        session_id_value = str(session_row["id"])
-
-    metadata = {
-        "placeholder": True,
-        "created_by": str(current["id"]),
-        "reserved_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if session_id_value:
-        metadata["session_id"] = session_id_value
-
-    row = await repositories.upsert_recording(
-        seminar_id=str(seminar_id),
-        session_id=session_id_value,
-        asset_url=asset_relative_path,
-        status="pending",
-        duration_seconds=None,
-        byte_size=0,
-        metadata=metadata,
-    )
-
-    return _recording_from_row(row)
+    del seminar_id, payload, current
+    _raise_v2_feature_disabled("Studio seminars")
 
 
 @course_lesson_router.get("/courses", response_model=schemas.CourseListResponse)
@@ -2273,26 +2118,14 @@ async def media_file(
 
 @router.post("/courses/{course_id}/quiz")
 async def ensure_quiz(course_id: str, current: TeacherEntryUser):
-    await studio_authority.get_course_for_teacher_or_404(
-        course_id,
-        str(current["id"]),
-    )
-    quiz = await models.ensure_quiz_for_user(course_id, current["id"])
-    if not quiz:
-        raise HTTPException(status_code=400, detail="Failed to ensure quiz")
-    return {"quiz": quiz}
+    del course_id, current
+    _raise_v2_feature_disabled("Studio quizzes")
 
 
 @router.get("/quizzes/{quiz_id}/questions")
 async def quiz_questions(quiz_id: str, current: TeacherEntryUser):
-    if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
-        _log_quiz_owner_denied(
-            str(current["id"]),
-            quiz_id,
-        )
-        raise HTTPException(status_code=403, detail="Not quiz owner")
-    rows = await models.quiz_questions(quiz_id)
-    return {"items": rows}
+    del quiz_id, current
+    _raise_v2_feature_disabled("Studio quizzes")
 
 
 @router.post("/quizzes/{quiz_id}/questions")
@@ -2301,19 +2134,8 @@ async def create_question(
     payload: schemas.QuizQuestionUpsert,
     current: TeacherEntryUser,
 ):
-    if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
-        _log_quiz_owner_denied(
-            str(current["id"]),
-            quiz_id,
-        )
-        raise HTTPException(status_code=403, detail="Not quiz owner")
-    row = await models.upsert_quiz_question(
-        quiz_id,
-        payload.model_dump(exclude_unset=True),
-    )
-    if not row:
-        raise HTTPException(status_code=400, detail="Failed to upsert question")
-    return row
+    del quiz_id, payload, current
+    _raise_v2_feature_disabled("Studio quizzes")
 
 
 @router.put("/quizzes/{quiz_id}/questions/{question_id}")
@@ -2323,29 +2145,11 @@ async def update_question(
     payload: schemas.QuizQuestionUpsert,
     current: TeacherEntryUser,
 ):
-    if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
-        _log_quiz_owner_denied(
-            str(current["id"]),
-            quiz_id,
-        )
-        raise HTTPException(status_code=403, detail="Not quiz owner")
-    data = payload.model_dump(exclude_unset=True)
-    data["id"] = question_id
-    row = await models.upsert_quiz_question(quiz_id, data)
-    if not row:
-        raise HTTPException(status_code=404, detail="Question not found")
-    return row
+    del quiz_id, question_id, payload, current
+    _raise_v2_feature_disabled("Studio quizzes")
 
 
 @router.delete("/quizzes/{quiz_id}/questions/{question_id}")
 async def delete_question(quiz_id: str, question_id: str, current: TeacherEntryUser):
-    if not await models.quiz_belongs_to_user(quiz_id, current["id"]):
-        _log_quiz_owner_denied(
-            str(current["id"]),
-            quiz_id,
-        )
-        raise HTTPException(status_code=403, detail="Not quiz owner")
-    deleted = await models.delete_quiz_question(question_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Question not found")
-    return {"deleted": True}
+    del quiz_id, question_id, current
+    _raise_v2_feature_disabled("Studio quizzes")

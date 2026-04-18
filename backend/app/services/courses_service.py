@@ -29,7 +29,6 @@ from . import storage_service
 
 logger = logging.getLogger(__name__)
 _CANONICAL_COURSE_STRIPE_CURRENCY = "sek"
-_SELLABLE_COURSE_STEPS = frozenset({"step1", "step2", "step3"})
 _COURSE_DELETE_BLOCKED_DETAIL = "Course delete blocked by dependent rows"
 
 _HOME_AUDIO_MEDIA_STATES = frozenset(
@@ -62,23 +61,13 @@ def _if_match_contains_etag(if_match: str | None, expected_etag: str) -> bool:
     return expected_etag in {candidate.strip() for candidate in value.split(",")}
 
 
-def _source_matches_course_step(*, course_step: str, enrollment_source: str) -> bool:
-    normalized_step = str(course_step or "").strip().lower()
-    normalized_source = str(enrollment_source or "").strip().lower()
-    if normalized_step == "intro":
-        return normalized_source == "intro_enrollment"
-    return normalized_source == "purchase"
-
-
 def _course_expected_source(course: Mapping[str, Any] | None) -> str | None:
     if not course:
         return None
-    normalized_step = str(course.get("step") or "").strip().lower()
-    if normalized_step == "intro":
-        return "intro_enrollment"
-    if normalized_step in {"step1", "step2", "step3"}:
+    amount_cents = int(course.get("price_amount_cents") or 0)
+    if bool(course.get("sellable")) or amount_cents > 0:
         return "purchase"
-    return None
+    return "intro_enrollment"
 
 
 def _validate_course_drip_configuration(
@@ -98,20 +87,17 @@ def _reject_legacy_cover_url_write(payload: Mapping[str, Any]) -> None:
 
 
 def _course_requires_stripe_mapping(course: Mapping[str, Any]) -> bool:
-    normalized_step = str(course.get("step") or "").strip().lower()
     amount_cents = int(course.get("price_amount_cents") or 0)
-    return normalized_step in _SELLABLE_COURSE_STEPS and amount_cents > 0
+    return amount_cents > 0
 
 
 def _is_course_sellable_subject(course: Mapping[str, Any]) -> bool:
-    normalized_step = str(course.get("step") or "").strip().lower()
     teacher_id = str(course.get("teacher_id") or "").strip()
     amount_cents = int(course.get("price_amount_cents") or 0)
     stripe_product_id = str(course.get("stripe_product_id") or "").strip()
     active_price_id = str(course.get("active_stripe_price_id") or "").strip()
     return (
-        normalized_step in _SELLABLE_COURSE_STEPS
-        and bool(teacher_id)
+        bool(teacher_id)
         and amount_cents > 0
         and bool(stripe_product_id)
         and bool(active_price_id)
@@ -1018,7 +1004,7 @@ async def update_course(
     course = dict(row)
 
     should_refresh_mapping = bool(
-        {"price_amount_cents", "step"} & set(patch.keys())
+        {"price_amount_cents"} & set(patch.keys())
     )
     if not should_refresh_mapping:
         return course
@@ -1324,7 +1310,7 @@ def _canonical_course_state_payload(
 ) -> dict[str, Any]:
     return {
         "course_id": str(course.get("id") or ""),
-        "course_step": str(course.get("step") or ""),
+        "group_position": int(course.get("group_position") or 0),
         "required_enrollment_source": expected_source,
         "enrollment": dict(enrollment) if enrollment is not None else None,
     }
@@ -1423,8 +1409,7 @@ async def create_intro_course_enrollment(
     if course is None:
         raise LookupError("course not found")
 
-    course_step = str(course.get("step") or "").strip().lower()
-    if course_step != "intro":
+    if _course_expected_source(course) != "intro_enrollment":
         raise PermissionError("purchase enrollment required")
 
     enrollment = await courses_repo.create_course_enrollment(

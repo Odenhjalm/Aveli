@@ -33,13 +33,10 @@ def _actor_role_from_payload(context_payload: Mapping[str, Any] | None) -> str |
 
 def _user_role(user: Mapping[str, Any], context_payload: Mapping[str, Any] | None) -> str:
     actor_role = _actor_role_from_payload(context_payload)
-    if user.get("is_admin"):
-        return "admin"
-
-    role_v2 = _normalize_role(user.get("role_v2")) or "user"
-    if role_v2 == "user" and actor_role:
+    role = _normalize_role(user.get("role")) or "user"
+    if role == "user" and actor_role:
         return actor_role
-    return role_v2
+    return role
 
 
 def validate_context_payload(

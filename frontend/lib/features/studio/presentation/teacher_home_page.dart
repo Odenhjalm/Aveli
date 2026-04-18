@@ -184,10 +184,9 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
     return regex.hasMatch(value);
   }
 
-  String _courseStepLabel(CourseStudio course) {
-    final step = course.step.trim();
-    if (step.isEmpty) return 'Steg saknas';
-    return 'Steg $step';
+  String _coursePositionLabel(CourseStudio course) {
+    if (course.groupPosition <= 0) return 'Position 0';
+    return 'Position ${course.groupPosition}';
   }
 
   String _courseReleaseLabel(CourseStudio course) {
@@ -574,7 +573,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                                               children: [
                                                 _CourseBadge(
                                                   icon: Icons.route_outlined,
-                                                  label: _courseStepLabel(
+                                                  label: _coursePositionLabel(
                                                     course,
                                                   ),
                                                 ),
@@ -662,14 +661,14 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Planera och sänd live-seminarier med deltagare från Aveli-communityn. Du kan skapa schemalagda rum, bjuda in deltagare och starta sändningen direkt från studion.',
+                      'Liveseminarier är pausade medan kursflödet använder Baseline V2.',
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
                     GradientButton.icon(
-                      onPressed: () => context.goNamed(AppRoute.seminarStudio),
+                      onPressed: null,
                       icon: const Icon(Icons.live_tv_outlined),
-                      label: const Text('Öppna liveseminarier'),
+                      label: const Text('Liveseminarier pausade'),
                     ),
                   ],
                 ),

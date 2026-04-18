@@ -33,9 +33,7 @@ async def build_entry_state(
         membership_active=membership_active,
         needs_onboarding=not onboarding_completed,
         needs_payment=not membership_active,
-        role_v2=current.get("role_v2"),
         role=current.get("role"),
-        is_admin=current.get("is_admin"),
     )
 
 

@@ -44,8 +44,8 @@ def _test_visibility_clause(alias: str) -> str:
 def _effective_role_sql(alias: str) -> str:
     return f"""
         CASE
-            WHEN lower(COALESCE({alias}.role_v2, '')) IN ('learner', 'teacher')
-                THEN lower({alias}.role_v2)
+            WHEN lower(COALESCE({alias}.role::text, '')) IN ('learner', 'teacher', 'admin')
+                THEN lower({alias}.role::text)
             ELSE NULL
         END
     """
@@ -62,9 +62,9 @@ def _profile_photo_url_sql(alias: str) -> str:
 def _effective_subject_role(auth_subject: dict[str, Any] | None) -> str | None:
     if auth_subject is None:
         return None
-    role_v2 = str(auth_subject.get("role_v2") or "").strip().lower()
-    if role_v2 in {"learner", "teacher"}:
-        return role_v2
+    role = str(auth_subject.get("role") or "").strip().lower()
+    if role in {"learner", "teacher", "admin"}:
+        return role
     return None
 
 
@@ -400,20 +400,8 @@ async def teacher_courses(user_id: str) -> Iterable[dict]:
 async def user_certificates(
     user_id: str, verified_only: bool = False
 ) -> Iterable[dict]:
-    clauses = ["user_id = %s", "lower(title) <> lower(%s)"]
-    params = [user_id]
-    params.append("Läraransökan")
-    if verified_only:
-        clauses.append("status = 'verified'")
-    query = """
-        SELECT id, user_id, title, status, notes, evidence_url, created_at, updated_at
-        FROM app.certificates
-        WHERE {where}
-        ORDER BY updated_at DESC
-    """.format(where=" AND ".join(clauses))
-    async with get_conn() as cur:
-        await cur.execute(query, params)
-        return await cur.fetchall()
+    del user_id, verified_only
+    return []
 
 
 async def add_certificate(
@@ -424,21 +412,8 @@ async def add_certificate(
     notes: str | None = None,
     evidence_url: str | None = None,
 ) -> dict:
-    if str(title or "").strip().lower() == "läraransökan":
-        raise ValueError("Teacher application certificates are forbidden")
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                INSERT INTO app.certificates (user_id, title, status, notes, evidence_url)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id, user_id, title, status, notes, evidence_url, created_at, updated_at
-                """,
-                (user_id, title, status, notes, evidence_url),
-            )
-            row = await _fetchone(cur)
-            await conn.commit()
-            return row
+    del user_id, title, status, notes, evidence_url
+    raise RuntimeError("certificates have no Baseline V2 authority")
 
 
 async def certificates_of(user_id: str, verified_only: bool = False) -> Iterable[dict]:
@@ -448,11 +423,11 @@ async def certificates_of(user_id: str, verified_only: bool = False) -> Iterable
 async def teacher_status(user_id: str) -> dict:
     auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
     role = "teacher" if _effective_subject_role(auth_subject) == "teacher" else "learner"
-    verified = await user_certificates(user_id, True)
     return {
         "role": role,
-        "is_admin": bool(auth_subject.get("is_admin")) if auth_subject else False,
-        "verified_certificates": len(verified),
+        "verified_certificates": 0,
+        "has_application": False,
+        "certificates_enabled": False,
     }
 
 
@@ -499,12 +474,8 @@ async def list_courses(
     search: str | None = None,
     limit: int | None = None,
 ) -> Iterable[dict]:
-    rows = await courses_service.list_public_courses(
-        published_only=published_only,
-        free_intro=free_intro,
-        search=search,
-        limit=limit,
-    )
+    del published_only, free_intro
+    rows = await courses_service.list_public_courses(search=search, limit=limit)
     return rows
 
 
@@ -524,14 +495,16 @@ async def _list_landing_courses(
     clauses = []
     params: list[Any] = []
 
+    clauses.append("c.visibility = 'public'::app.course_visibility")
+
     if intro_only:
-        clauses.append("lower(c.step::text) = 'intro'")
+        clauses.append("c.group_position = 0")
 
     where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     order_sql = (
         "ORDER BY c.updated_at DESC"
         if intro_only
-        else "ORDER BY COALESCE(pr.priority, 1000), c.updated_at DESC"
+        else "ORDER BY c.group_position ASC, c.updated_at DESC"
     )
 
     async with pool.connection() as conn:  # type: ignore
@@ -542,15 +515,13 @@ async def _list_landing_courses(
                     c.id,
                     c.slug,
                     c.title,
-                    c.step::text AS step,
+                    c.group_position,
                     c.price_amount_cents,
                     cpc.short_description,
                     NULL::text AS resolved_cover_url
                 FROM app.courses c
                 LEFT JOIN app.course_public_content cpc
                   ON cpc.course_id = c.id
-                LEFT JOIN app.course_display_priorities pr
-                  ON pr.teacher_id = c.created_by
                 {where_sql}
                 {order_sql}
                 LIMIT %s
@@ -660,7 +631,9 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
             SELECT
                 teacher_id AS teacher_id,
                 COUNT(*) AS total_courses,
-                COUNT(*) FILTER (WHERE is_published = true) AS published_courses
+                COUNT(*) FILTER (
+                    WHERE visibility = 'public'::app.course_visibility
+                ) AS published_courses
             FROM app.courses
             GROUP BY teacher_id
         )
@@ -669,11 +642,11 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
             prof.display_name,
             u.email AS email,
             {_profile_photo_url_sql("prof")} AS photo_url,
-            COALESCE(pr.priority, 100) AS priority,
-            pr.notes,
-            pr.updated_at,
-            pr.updated_by,
-            upd.display_name AS updated_by_name,
+            100 AS priority,
+            NULL::text AS notes,
+            NULL::timestamptz AS updated_at,
+            NULL::uuid AS updated_by,
+            NULL::text AS updated_by_name,
             COALESCE(stats.total_courses, 0) AS total_courses,
             COALESCE(stats.published_courses, 0) AS published_courses
         FROM app.profiles prof
@@ -681,14 +654,10 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
           ON u.id = prof.user_id
         LEFT JOIN app.auth_subjects subj
           ON subj.user_id = prof.user_id
-        LEFT JOIN app.course_display_priorities pr
-          ON pr.teacher_id = prof.user_id
-        LEFT JOIN app.profiles upd
-          ON upd.user_id = pr.updated_by
         LEFT JOIN course_stats stats
           ON stats.teacher_id = prof.user_id
         WHERE ({teacher_role_sql}) = 'teacher'
-        ORDER BY COALESCE(pr.priority, 1000), lower(COALESCE(prof.display_name, u.email))
+        ORDER BY lower(COALESCE(prof.display_name, u.email))
     """
     params: tuple = ()
     if limit is not None:
@@ -712,7 +681,9 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                     SELECT
                         teacher_id AS teacher_id,
                         COUNT(*) AS total_courses,
-                        COUNT(*) FILTER (WHERE is_published = true) AS published_courses
+                        COUNT(*) FILTER (
+                            WHERE visibility = 'public'::app.course_visibility
+                        ) AS published_courses
                     FROM app.courses
                     GROUP BY teacher_id
                 )
@@ -721,11 +692,11 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                     prof.display_name,
                     u.email AS email,
                     {_profile_photo_url_sql("prof")} AS photo_url,
-                    COALESCE(pr.priority, 100) AS priority,
-                    pr.notes,
-                    pr.updated_at,
-                    pr.updated_by,
-                    upd.display_name AS updated_by_name,
+                    100 AS priority,
+                    NULL::text AS notes,
+                    NULL::timestamptz AS updated_at,
+                    NULL::uuid AS updated_by,
+                    NULL::text AS updated_by_name,
                     COALESCE(stats.total_courses, 0) AS total_courses,
                     COALESCE(stats.published_courses, 0) AS published_courses
                 FROM app.profiles prof
@@ -733,10 +704,6 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                   ON u.id = prof.user_id
                 LEFT JOIN app.auth_subjects subj
                   ON subj.user_id = prof.user_id
-                LEFT JOIN app.course_display_priorities pr
-                  ON pr.teacher_id = prof.user_id
-                LEFT JOIN app.profiles upd
-                  ON upd.user_id = pr.updated_by
                 LEFT JOIN course_stats stats
                   ON stats.teacher_id = prof.user_id
                 WHERE ({teacher_role_sql}) = 'teacher'
@@ -758,7 +725,8 @@ async def fetch_admin_metrics() -> dict:
                     (SELECT COUNT(*) FROM app.auth_subjects subj
                         WHERE ({teacher_role_sql}) = 'teacher') AS total_teachers,
                     (SELECT COUNT(*) FROM app.courses) AS total_courses,
-                    (SELECT COUNT(*) FROM app.courses WHERE is_published = true) AS published_courses,
+                    (SELECT COUNT(*) FROM app.courses
+                        WHERE visibility = 'public'::app.course_visibility) AS published_courses,
                     (SELECT COUNT(*) FROM app.orders WHERE status = 'paid') AS paid_orders_total,
                     (SELECT COUNT(*) FROM app.orders
                         WHERE status = 'paid'
@@ -1229,125 +1197,38 @@ async def save_stripe_customer_id(user_id: str, customer_id: str) -> None:
 
 
 async def course_quiz_info(course_id: str, user_id: str | None):
-    return await courses_service.course_quiz_info(course_id, user_id)
+    del course_id, user_id
+    raise RuntimeError("quizzes have no Baseline V2 authority")
 
 
 async def quiz_questions(quiz_id: str) -> Iterable[dict]:
-    return await courses_service.quiz_questions(quiz_id)
+    del quiz_id
+    raise RuntimeError("quizzes have no Baseline V2 authority")
 
 
 async def submit_quiz(quiz_id: str, user_id: str, answers: dict):
-    return await courses_service.submit_quiz(quiz_id, user_id, answers)
+    del quiz_id, user_id, answers
+    raise RuntimeError("quizzes have no Baseline V2 authority")
 
 
 async def ensure_quiz_for_user(course_id: str, user_id: str) -> dict | None:
-    if not await is_course_owner(user_id, course_id):
-        return None
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    "SELECT id, course_id, title, pass_score, created_at "
-                    "FROM app.course_quizzes WHERE course_id = %s LIMIT 1",
-                    (course_id,),
-                )
-            except errors.UndefinedTable:
-                await conn.rollback()
-                return None
-            row = await _fetchone(cur)
-            if row:
-                return row
-            await cur.execute(
-                """
-                INSERT INTO app.course_quizzes (course_id, title, pass_score, created_by)
-                VALUES (%s, 'Quiz', 80, %s)
-                RETURNING id, course_id, title, pass_score, created_at
-                """,
-                (course_id, user_id),
-            )
-            new_row = await _fetchone(cur)
-            await conn.commit()
-            return new_row
+    del course_id, user_id
+    raise RuntimeError("quizzes have no Baseline V2 authority")
 
 
 async def quiz_belongs_to_user(quiz_id: str, user_id: str) -> bool:
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT cq.course_id, c.teacher_id
-            FROM app.course_quizzes cq
-            JOIN app.courses c ON c.id = cq.course_id
-            WHERE cq.id = %s
-            """,
-            (quiz_id,),
-        )
-        row = await _fetchone(cur)
-    if not row:
-        return False
-    return row.get("teacher_id") == user_id
+    del quiz_id, user_id
+    return False
 
 
 async def upsert_quiz_question(quiz_id: str, data: dict) -> dict | None:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            if data.get("id"):
-                fields = []
-                params = []
-                for key in ("position", "kind", "prompt", "options", "correct"):
-                    if key in data:
-                        fields.append(f"{key} = %s")
-                        value = data[key]
-                        if key == "options" and value is not None:
-                            value = Jsonb(value)
-                        params.append(value)
-                if not fields:
-                    await cur.execute(
-                        "SELECT id, quiz_id, position, kind, prompt, options, correct "
-                        "FROM app.quiz_questions WHERE id = %s",
-                        (data["id"],),
-                    )
-                else:
-                    params.extend([data["id"], quiz_id])
-                    await cur.execute(
-                        """
-                        UPDATE app.quiz_questions
-                        SET {set_clause}, updated_at = now()
-                        WHERE id = %s AND quiz_id = %s
-                        RETURNING id, quiz_id, position, kind, prompt, options, correct
-                        """.format(set_clause=", ".join(fields)),
-                        params,
-                    )
-            else:
-                await cur.execute(
-                    """
-                    INSERT INTO app.quiz_questions (quiz_id, position, kind, prompt, options, correct)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    RETURNING id, quiz_id, position, kind, prompt, options, correct
-                    """,
-                    (
-                        quiz_id,
-                        data.get("position", 0),
-                        data.get("kind", "single"),
-                        data.get("prompt"),
-                        Jsonb(data.get("options") or {}),
-                        data.get("correct"),
-                    ),
-                )
-            row = await _fetchone(cur)
-            await conn.commit()
-            return row
+    del quiz_id, data
+    raise RuntimeError("quizzes have no Baseline V2 authority")
 
 
 async def delete_quiz_question(question_id: str) -> bool:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                "DELETE FROM app.quiz_questions WHERE id = %s",
-                (question_id,),
-            )
-            deleted = cur.rowcount > 0
-            await conn.commit()
-            return deleted
+    del question_id
+    return False
 
 
 def _as_string_list(value) -> list[str]:
@@ -1469,14 +1350,9 @@ async def list_teacher_directory(limit: int = 100) -> list[dict]:
                    prof.display_name,
                    {_profile_photo_url_sql("prof")} AS photo_url,
                    prof.bio,
-                   COALESCE(cert.count, 0) AS verified_certificates
+                   0 AS verified_certificates
             FROM app.teacher_directory td
             LEFT JOIN app.profiles prof ON prof.user_id = td.user_id
-            LEFT JOIN (
-                SELECT user_id, COUNT(*) FILTER (WHERE status = 'verified') AS count
-                FROM app.certificates
-                GROUP BY user_id
-            ) cert ON cert.user_id = td.user_id
             ORDER BY td.created_at DESC
             LIMIT %s
             """,
@@ -1524,14 +1400,9 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
                    prof.display_name,
                    {_profile_photo_url_sql("prof")} AS photo_url,
                    prof.bio,
-                   COALESCE(cert.count, 0) AS verified_certificates
+                   0 AS verified_certificates
             FROM app.teacher_directory td
             LEFT JOIN app.profiles prof ON prof.user_id = td.user_id
-            LEFT JOIN (
-                SELECT user_id, COUNT(*) FILTER (WHERE status = 'verified') AS count
-                FROM app.certificates
-                GROUP BY user_id
-            ) cert ON cert.user_id = td.user_id
             WHERE td.user_id = %s
             LIMIT 1
             """,
@@ -1732,20 +1603,8 @@ async def list_teacher_meditations(user_id: str) -> list[dict]:
 
 
 async def verified_certificate_counts(user_ids: list[str]) -> dict[str, int]:
-    if not user_ids:
-        return {}
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            SELECT user_id, COUNT(*) AS count
-            FROM app.certificates
-            WHERE status = 'verified' AND user_id = ANY(%s)
-            GROUP BY user_id
-            """,
-            (user_ids,),
-        )
-        rows = await cur.fetchall()
-    return {row["user_id"]: int(row["count"]) for row in rows}
+    del user_ids
+    return {}
 
 
 async def list_reviews_for_service(service_id: str) -> list[dict]:
@@ -1883,16 +1742,16 @@ async def get_profile_row(user_id: str) -> dict | None:
     return await repo_get_profile(user_id)
 
 
-async def is_admin_user(user_id: str) -> bool:
+async def user_has_admin_role(user_id: str) -> bool:
     auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
-    return bool(auth_subject.get("is_admin")) if auth_subject else False
+    return _effective_subject_role(auth_subject) == "admin"
 
 
 async def _set_teacher_role(
     *,
     target_user_id: str,
     actor_user_id: str,
-    role_v2: str,
+    role: str,
     event_type: str,
 ) -> dict[str, Any]:
     if actor_user_id == target_user_id:
@@ -1904,8 +1763,7 @@ async def _set_teacher_role(
 
     updated_subject = await auth_subjects_repo.set_role_authority(
         target_user_id,
-        role_v2=role_v2,
-        role=role_v2,
+        role=role,
     )
     if not updated_subject:
         raise LookupError("Canonical auth subject missing")
@@ -1915,7 +1773,7 @@ async def _set_teacher_role(
         actor_user_id=actor_user_id,
         subject_user_id=target_user_id,
         event_type=event_type,
-        metadata={"role_v2": role_v2},
+        metadata={"role": role},
     )
     return updated_subject
 
@@ -1924,7 +1782,7 @@ async def grant_teacher_role(target_user_id: str, actor_user_id: str) -> dict[st
     return await _set_teacher_role(
         target_user_id=target_user_id,
         actor_user_id=actor_user_id,
-        role_v2="teacher",
+        role="teacher",
         event_type="teacher_role_granted",
     )
 
@@ -1936,7 +1794,7 @@ async def revoke_teacher_role(
     return await _set_teacher_role(
         target_user_id=target_user_id,
         actor_user_id=actor_user_id,
-        role_v2="learner",
+        role="learner",
         event_type="teacher_role_revoked",
     )
 
@@ -1982,50 +1840,15 @@ async def is_following_user(follower_id: str, followee_id: str) -> bool:
 async def list_notifications_for_user(
     user_id: str, unread_only: bool = False
 ) -> list[dict]:
-    async with get_conn() as cur:
-        if unread_only:
-            await cur.execute(
-                """
-                SELECT id, kind, payload, is_read, created_at
-                FROM app.notifications
-                WHERE user_id = %s AND is_read = false
-                ORDER BY created_at DESC
-                LIMIT 200
-                """,
-                (user_id,),
-            )
-        else:
-            await cur.execute(
-                """
-                SELECT id, kind, payload, is_read, created_at
-                FROM app.notifications
-                WHERE user_id = %s
-                ORDER BY created_at DESC
-                LIMIT 200
-                """,
-                (user_id,),
-            )
-        rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    del user_id, unread_only
+    return []
 
 
 async def mark_notification_read(
     notification_id: str, user_id: str, is_read: bool
 ) -> dict | None:
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                UPDATE app.notifications
-                SET is_read = %s
-                WHERE id = %s AND user_id = %s
-                RETURNING id, user_id, kind, payload, is_read, created_at
-                """,
-                (is_read, notification_id, user_id),
-            )
-            row = await _fetchone(cur)
-            await conn.commit()
-    return dict(row) if row else None
+    del notification_id, user_id, is_read
+    return None
 
 
 async def profile_overview(

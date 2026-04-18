@@ -10,7 +10,7 @@ _CANONICAL_COURSE_FIELDS = (
     "slug",
     "title",
     "course_group_id",
-    "step",
+    "group_position",
     "cover_media_id",
     "cover",
     "price_amount_cents",

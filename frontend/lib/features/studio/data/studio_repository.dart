@@ -431,11 +431,6 @@ class StudioStatus {
       'role',
       'Studio status',
     );
-    final isAdmin = StudioRepository._requiredResponseField(
-      payload,
-      'is_admin',
-      'Studio status',
-    );
     final verifiedCertificates = StudioRepository._requiredResponseField(
       payload,
       'verified_certificates',
@@ -448,9 +443,6 @@ class StudioStatus {
     );
     if (role is! String) {
       throw StateError('Studio status field "role" must be a string');
-    }
-    if (isAdmin is! bool) {
-      throw StateError('Studio status field "is_admin" must be a bool');
     }
     if (verifiedCertificates is! int && verifiedCertificates is! num) {
       throw StateError(

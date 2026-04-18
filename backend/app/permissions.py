@@ -25,7 +25,7 @@ async def require_teacher(current: AppEntryUser):
 
 
 async def require_admin(current: AppEntryUser):
-    allowed = await models.is_admin_user(current["id"])
+    allowed = await models.user_has_admin_role(current["id"])
     if not allowed:
         logger.warning(
             "Permission denied: admin_required user_id=%s",

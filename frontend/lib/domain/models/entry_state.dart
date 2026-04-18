@@ -32,9 +32,7 @@ class EntryState {
     required this.membershipActive,
     required this.needsOnboarding,
     required this.needsPayment,
-    required this.roleV2,
     required this.role,
-    required this.isAdmin,
   });
 
   factory EntryState.fromJson(Map<String, dynamic> json) {
@@ -45,9 +43,7 @@ class EntryState {
       membershipActive: _readBool(json, 'membership_active'),
       needsOnboarding: _readBool(json, 'needs_onboarding'),
       needsPayment: _readBool(json, 'needs_payment'),
-      roleV2: _readString(json, 'role_v2'),
       role: _readString(json, 'role'),
-      isAdmin: _readBool(json, 'is_admin'),
     );
   }
 
@@ -57,9 +53,9 @@ class EntryState {
   final bool membershipActive;
   final bool needsOnboarding;
   final bool needsPayment;
-  final String roleV2;
   final String role;
-  final bool isAdmin;
+
+  bool get isAdmin => role == 'admin';
 
   Map<String, dynamic> toJson() => {
     'can_enter_app': canEnterApp,
@@ -68,9 +64,7 @@ class EntryState {
     'membership_active': membershipActive,
     'needs_onboarding': needsOnboarding,
     'needs_payment': needsPayment,
-    'role_v2': roleV2,
     'role': role,
-    'is_admin': isAdmin,
   };
 
   static bool _readBool(Map<String, dynamic> json, String key) {

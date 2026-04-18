@@ -170,19 +170,15 @@ def _list_intro_courses(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
         SELECT id,
                slug,
                title,
-               description,
+               course_group_id,
+               group_position,
                cover_media_id,
-               video_url,
-               branch,
-               is_free_intro,
-               is_published,
                price_amount_cents,
-               currency,
                created_at,
                updated_at
           FROM app.courses
-         WHERE is_published = true
-           AND is_free_intro = true
+         WHERE visibility = 'public'::app.course_visibility
+           AND group_position = 0
          ORDER BY updated_at DESC
          LIMIT %s
     """
@@ -197,14 +193,10 @@ def _get_course_by_id(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
         SELECT id,
                slug,
                title,
-               description,
+               course_group_id,
+               group_position,
                cover_media_id,
-               video_url,
-               branch,
-               is_free_intro,
-               is_published,
                price_amount_cents,
-               currency,
                created_at,
                updated_at
           FROM app.courses
@@ -222,14 +214,10 @@ def _get_course_by_slug(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
         SELECT id,
                slug,
                title,
-               description,
+               course_group_id,
+               group_position,
                cover_media_id,
-               video_url,
-               branch,
-               is_free_intro,
-               is_published,
                price_amount_cents,
-               currency,
                created_at,
                updated_at
           FROM app.courses
@@ -240,51 +228,13 @@ def _get_course_by_slug(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
 
 
 def _list_seminars(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
-    limit = _validated_limit(args)
-    sql = """
-        SELECT s.id,
-               s.host_id,
-               s.title,
-               s.description,
-               s.status,
-               s.scheduled_at,
-               s.duration_minutes,
-               s.livekit_room,
-               s.created_at,
-               s.updated_at,
-               p.display_name AS host_display_name
-          FROM app.seminars s
-     LEFT JOIN app.profiles p ON p.user_id = s.host_id
-         WHERE s.status IN ('scheduled', 'live')
-         ORDER BY s.scheduled_at NULLS LAST, s.created_at DESC
-         LIMIT %s
-    """
-    return _fetch_rows(sql, (limit,), limit_cap=limit)
+    del args
+    return {"stub": True, "disabled": True, "reason": "seminars have no Baseline V2 authority"}
 
 
 def _get_seminar_by_id(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
-    if not args or not args.get("seminar_id"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="seminar_id is required")
-    seminar_id = str(args.get("seminar_id"))
-    sql = """
-        SELECT s.id,
-               s.host_id,
-               s.title,
-               s.description,
-               s.status,
-               s.scheduled_at,
-               s.duration_minutes,
-               s.livekit_room,
-               s.livekit_metadata,
-               s.created_at,
-               s.updated_at,
-               p.display_name AS host_display_name
-          FROM app.seminars s
-     LEFT JOIN app.profiles p ON p.user_id = s.host_id
-         WHERE s.id = %s
-         LIMIT 1
-    """
-    return _fetch_single(sql, (seminar_id,))
+    del args
+    return {"stub": True, "disabled": True, "reason": "seminars have no Baseline V2 authority"}
 
 
 def _list_course_students(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
@@ -296,7 +246,7 @@ def _list_course_students(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
         SELECT e.user_id,
                COALESCE(p.display_name, u.email) AS display_name,
                u.email
-         FROM app.enrollments e
+         FROM app.course_enrollments e
          JOIN auth.users u ON u.id = e.user_id
      LEFT JOIN app.profiles p ON p.user_id = e.user_id
          WHERE e.course_id = %s
@@ -315,8 +265,7 @@ def _get_user_summary(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
         SELECT u.id AS user_id,
                u.email,
                p.display_name,
-               a.role_v2 AS role,
-               a.is_admin,
+               a.role::text AS role,
                m.status AS membership_status,
                m.expires_at AS membership_expires_at,
                m.updated_at AS membership_updated_at
@@ -343,9 +292,9 @@ def _get_course_progress(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
         SELECT e.user_id,
                e.course_id,
                e.source,
-               e.created_at,
-               e.updated_at
-          FROM app.enrollments e
+               e.granted_at,
+               e.current_unlock_position
+          FROM app.course_enrollments e
          WHERE e.user_id = %s
            AND e.course_id = %s
          LIMIT 1

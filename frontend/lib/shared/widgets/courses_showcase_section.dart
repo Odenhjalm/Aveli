@@ -287,7 +287,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
             id: course.id,
             title: course.title,
             slug: course.slug,
-            step: course.step.name,
+            groupPosition: course.groupPosition,
             coverMediaId: course.coverMediaId,
             cover: course.cover,
             priceAmountCents: course.priceCents,
@@ -690,7 +690,7 @@ class _CourseTileGlass extends StatelessWidget {
     final title = course.title;
     final desc = course.shortDescription ?? '';
     final slug = course.slug;
-    final isIntro = course.step == 'intro';
+    final isIntro = course.groupPosition == 0;
     final priceCents = course.priceAmountCents;
     final coverUrlFuture = Future<String?>.value(course.resolvedCoverUrl);
     final priceLabel = priceCents == null
@@ -886,35 +886,10 @@ class _CourseTileGlass extends StatelessWidget {
   }
 }
 
-int _courseLevelOrder(String? level) {
-  final normalized = level?.trim().toLowerCase().replaceAll(
-    RegExp(r'[\s_-]+'),
-    '',
-  );
-  switch (normalized) {
-    case 'intro':
-    case 'introduction':
-      return 0;
-    case 'step1':
-    case 'steg1':
-      return 1;
-    case 'step2':
-    case 'steg2':
-      return 2;
-    case 'step3':
-    case 'steg3':
-      return 3;
-    default:
-      return 999;
-  }
-}
-
 String _normalizedCourseValue(String value) => value.trim().toLowerCase();
 
 int _compareCourses(landing.LandingCourseCard a, landing.LandingCourseCard b) {
-  final levelCompare = _courseLevelOrder(
-    a.step,
-  ).compareTo(_courseLevelOrder(b.step));
+  final levelCompare = a.groupPosition.compareTo(b.groupPosition);
   if (levelCompare != 0) {
     return levelCompare;
   }

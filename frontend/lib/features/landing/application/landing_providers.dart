@@ -74,7 +74,7 @@ class LandingCourseCard {
     required this.id,
     required this.slug,
     required this.title,
-    required this.step,
+    required this.groupPosition,
     required this.coverMediaId,
     required this.cover,
     required this.priceAmountCents,
@@ -84,7 +84,7 @@ class LandingCourseCard {
   final String id;
   final String slug;
   final String title;
-  final String step;
+  final int groupPosition;
   final String? coverMediaId;
   final CourseCoverData? cover;
   final int? priceAmountCents;
@@ -96,7 +96,11 @@ class LandingCourseCard {
       id: _requireString(_field(payload, 'id'), 'id'),
       slug: _requireString(_field(payload, 'slug'), 'slug'),
       title: _requireString(_field(payload, 'title'), 'title'),
-      step: _requireString(_field(payload, 'step'), 'step'),
+      groupPosition: _optionalInt(
+            _field(payload, 'group_position'),
+            'group_position',
+          ) ??
+          0,
       coverMediaId: _optionalString(switch (payload) {
         final Map<Object?, Object?> data => data['cover_media_id'],
         _ => null,

@@ -18,7 +18,6 @@ import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
-import 'package:aveli/shared/utils/course_journey_step.dart';
 
 class CourseCatalogPage extends ConsumerWidget {
   const CourseCatalogPage({super.key});
@@ -99,32 +98,32 @@ class _JourneyPage extends ConsumerWidget {
 
     final introCourses = <CourseSummary>[];
     final journeyCourses = <CourseSummary>[];
-    final step3Courses = <CourseSummary>[];
+    final position3Courses = <CourseSummary>[];
 
     for (final course in published) {
-      switch (course.step) {
-        case CourseJourneyStep.intro:
+      switch (course.groupPosition) {
+        case 0:
           introCourses.add(course);
           break;
-        case CourseJourneyStep.step1:
+        case 1:
+        case 2:
           journeyCourses.add(course);
           break;
-        case CourseJourneyStep.step2:
+        case 3:
           journeyCourses.add(course);
+          position3Courses.add(course);
           break;
-        case CourseJourneyStep.step3:
+        default:
           journeyCourses.add(course);
-          step3Courses.add(course);
-          break;
       }
     }
 
-    final step3Ids = step3Courses
+    final position3Ids = position3Courses
         .map((course) => course.id)
         .toList(growable: false);
 
     final step3ProgressAsync = ref.watch(
-      courseProgressProvider(CourseProgressRequest(step3Ids)),
+      courseProgressProvider(CourseProgressRequest(position3Ids)),
     );
     final hasCompletedStep3 =
         step3ProgressAsync.valueOrNull?.values.any((value) => value >= 0.999) ??

@@ -14,7 +14,7 @@ class SeminarRepository {
   }
 
   Future<List<Seminar>> listHostSeminars() async {
-    return _unsupportedRuntime('Studio seminars');
+    return const <Seminar>[];
   }
 
   Future<SeminarDetail> getSeminarDetail(String id) async {
@@ -89,7 +89,7 @@ class SeminarRepository {
   }
 
   Future<List<Seminar>> listPublicSeminars() async {
-    return _unsupportedRuntime('Public seminars');
+    return const <Seminar>[];
   }
 
   Future<SeminarDetail> getPublicSeminar(String id) async {

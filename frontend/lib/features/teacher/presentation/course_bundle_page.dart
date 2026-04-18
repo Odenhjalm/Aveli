@@ -27,11 +27,10 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
   bool _submitting = false;
 
   String _courseSelectionLabel(CourseStudio course) {
-    final step = course.step.trim();
-    if (step.isEmpty) {
+    if (course.groupPosition <= 0) {
       return 'Kurs';
     }
-    return 'Steg $step';
+    return 'Steg ${course.groupPosition}';
   }
 
   @override

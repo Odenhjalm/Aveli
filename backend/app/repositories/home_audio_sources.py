@@ -225,7 +225,7 @@ async def get_home_player_course_link(
           hpcl.enabled,
           CASE
             WHEN hpcl.lesson_media_id IS NULL OR lm.id IS NULL OR ma.id IS NULL THEN 'source_missing'
-            WHEN COALESCE(c.is_published, false) = false THEN 'course_unpublished'
+            WHEN c.visibility <> 'public'::app.course_visibility THEN 'course_unpublished'
             ELSE 'active'
           END AS status,
           ma.media_type::text AS kind,
@@ -264,7 +264,7 @@ async def resolve_lesson_media_course_owner(lesson_media_id: str) -> Optional[di
         SELECT
           c.teacher_id AS teacher_id,
           c.title AS course_title,
-          c.is_published AS course_is_published,
+          (c.visibility = 'public'::app.course_visibility) AS course_is_published,
           ma.media_type::text AS media_type
         FROM app.lesson_media lm
         JOIN app.lessons l ON l.id = lm.lesson_id

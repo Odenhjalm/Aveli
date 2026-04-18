@@ -48,14 +48,10 @@ async def can_purchase_course(
     if not user_id:
         return False, "Användar-id saknas"
 
-    course_step = str(course.get("step") or "").strip().lower()
-    if course_step not in {"intro", "step1", "step2", "step3"}:
-        return False, "Kurssteget saknas"
-    if course_step == "intro":
-        return False, "Introkurser kräver introinskrivning"
-    if course_step in {"step1", "step2", "step3"}:
-        return True, None
-    return False, "Kurssteget stöds inte"
+    amount_cents = int(course.get("price_amount_cents") or 0)
+    if not bool(course.get("sellable")) or amount_cents <= 0:
+        return False, "Course is not purchasable"
+    return True, None
 
 
 async def create_course_checkout(

@@ -52,9 +52,6 @@ __all__ = [
     "SubscriptionSessionRequest",
 ]
 
-CourseJourneyStep = Literal["intro", "step1", "step2", "step3"]
-
-
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -639,7 +636,6 @@ class MeResponse(BaseModel):
     email: str
     display_name: Optional[str] = None
     role: str
-    is_admin: bool
 
 
 class ServiceItem(BaseModel):
@@ -812,7 +808,7 @@ class Course(BaseModel):
     slug: str
     title: str
     course_group_id: UUID
-    step: str
+    group_position: int
     cover_media_id: UUID | None = None
     cover: ResolvedMedia | None = None
     price_amount_cents: int | None = None
@@ -838,7 +834,7 @@ class LandingCourseCard(BaseModel):
     id: UUID
     slug: str
     title: str
-    step: str
+    group_position: int
     price_amount_cents: int | None = None
     short_description: str | None = None
     resolved_cover_url: str | None = None
@@ -947,7 +943,7 @@ class CourseAccessStateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     course_id: UUID
-    course_step: CourseJourneyStep
+    group_position: int
     required_enrollment_source: str | None = None
     enrollment: CourseEnrollmentRecord | None = None
 
@@ -1122,7 +1118,7 @@ class StudioCourseCreate(BaseModel):
     title: str
     slug: str
     course_group_id: UUID
-    step: str
+    group_position: int = Field(ge=0)
     cover_media_id: UUID | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool
@@ -1145,7 +1141,7 @@ class StudioCourseUpdate(BaseModel):
     title: str | None = None
     slug: str | None = None
     course_group_id: UUID | None = None
-    step: str | None = None
+    group_position: int | None = Field(default=None, ge=0)
     cover_media_id: UUID | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool | None = None
@@ -1593,9 +1589,7 @@ class EntryStateResponse(BaseModel):
     membership_active: bool
     needs_onboarding: bool
     needs_payment: bool
-    role_v2: str
     role: str
-    is_admin: bool
 
 
 class EntitlementsMembership(BaseModel):

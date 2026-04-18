@@ -319,7 +319,7 @@ async def _call_canonical_worker_transition(
             (result).playback_format as playback_format,
             ((result).state)::text as state
         from (
-            select app.canonical_worker_transition_media_asset_state(
+            select app.canonical_worker_transition_media_asset(
                 %s::uuid,
                 %s::app.media_state,
                 %s
@@ -698,7 +698,7 @@ async def fetch_and_lock_pending_media_assets(
                 if state == "uploaded":
                     await cur.execute(
                         """
-                        select app.canonical_worker_transition_media_asset_state(
+                        select app.canonical_worker_transition_media_asset(
                             %s::uuid,
                             'processing'::app.media_state,
                             null

@@ -7,8 +7,6 @@ import 'package:aveli/data/models/certificate.dart';
 class CertificatesRepository {
   CertificatesRepository(ApiClient _);
 
-  static const String _applicationTitle = 'Läraransökan';
-
   Future<T> _unsupportedRuntime<T>(String surface) {
     return Future<T>.error(
       UnsupportedError('$surface is inert in mounted runtime'),
@@ -16,28 +14,22 @@ class CertificatesRepository {
   }
 
   Future<List<Certificate>> myCertificates({bool verifiedOnly = false}) async {
-    return _unsupportedRuntime('Studio certificates');
+    return const <Certificate>[];
   }
 
   Future<List<Certificate>> certificatesOf(
     String userId, {
     bool verifiedOnly = true,
   }) async {
-    return _unsupportedRuntime('Profile certificates');
+    return const <Certificate>[];
   }
 
   Future<Certificate?> teacherApplicationOf(String userId) async {
-    final certs = await certificatesOf(userId, verifiedOnly: false);
-    for (final cert in certs) {
-      if (cert.title.toLowerCase() == _applicationTitle.toLowerCase()) {
-        return cert;
-      }
-    }
     return null;
   }
 
   Future<Certificate?> myTeacherApplication() async {
-    return _unsupportedRuntime('Studio certificates');
+    return null;
   }
 
   Future<Certificate?> addCertificate({

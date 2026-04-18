@@ -355,6 +355,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _documentReadyLessonId;
   int? _documentReadyRequestId;
   bool _lessonPreviewMode = false;
+
+  bool get _quizFeatureEnabled => false;
   int _persistedLessonPreviewRequestId = 0;
   bool _persistedLessonPreviewLoading = false;
   String? _persistedLessonPreviewError;
@@ -6050,6 +6052,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final quiz = _quiz;
     final quizTitle = safeString(quiz, 'title') ?? 'Quiz';
     final quizPassScore = safeString(quiz, 'pass_score') ?? '-';
+    final quizActionsEnabled = _quizFeatureEnabled;
 
     final editorContent = LayoutBuilder(
       builder: (context, constraints) {
@@ -6635,16 +6638,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   title: 'Quiz',
                   actions: [
                     OutlinedButton.icon(
-                      onPressed: _selectedCourseId == null || _lessonPreviewMode
-                          ? null
-                          : _ensureQuiz,
+                      onPressed:
+                          quizActionsEnabled &&
+                              _selectedCourseId != null &&
+                              !_lessonPreviewMode
+                          ? _ensureQuiz
+                          : null,
                       icon: const Icon(Icons.auto_awesome),
-                      label: const Text('Skapa/Hämta quiz'),
+                      label: const Text('Quiz pausat'),
                     ),
                   ],
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const Text(
+                        'Quiz är pausat eftersom Baseline V2 saknar quiz-auktoritet.',
+                      ),
+                      gap12,
                       if (quiz == null) const Text('Inget quiz laddat.'),
                       if (quiz != null) ...[
                         Text('Quiz: $quizTitle (gräns: $quizPassScore%)'),
@@ -6660,7 +6670,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               ChoiceChip(
                                 label: Text(_quizKindLabel(kind)),
                                 selected: _qKind == kind,
-                                onSelected: _lessonPreviewMode
+                                onSelected: _lessonPreviewMode ||
+                                        !quizActionsEnabled
                                     ? null
                                     : (selected) => setState(
                                         () => _qKind = selected ? kind : _qKind,
@@ -6707,7 +6718,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: GradientButton(
-                            onPressed: _lessonPreviewMode ? null : _addQuestion,
+                            onPressed:
+                                _lessonPreviewMode || !quizActionsEnabled
+                                ? null
+                                : _addQuestion,
                             child: const Text('Lägg till fråga'),
                           ),
                         ),
@@ -6734,7 +6748,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 trailing: IconButton(
                                   icon: const Icon(Icons.delete_outline),
                                   onPressed:
-                                      questionId == null || _lessonPreviewMode
+                                      questionId == null ||
+                                          _lessonPreviewMode ||
+                                          !quizActionsEnabled
                                       ? null
                                       : () => _deleteQuestion(questionId),
                                 ),

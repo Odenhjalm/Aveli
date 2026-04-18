@@ -8,14 +8,14 @@ int levelOrder(String level) {
     case 'intro':
     case 'introduction':
       return 0;
-    case 'step1':
     case 'steg1':
+    case 'position1':
       return 1;
-    case 'step2':
     case 'steg2':
+    case 'position2':
       return 2;
-    case 'step3':
     case 'steg3':
+    case 'position3':
       return 3;
     default:
       return 999;
@@ -55,7 +55,7 @@ int compareCourseMapsByLevelThenTitle(
 }
 
 String _courseLevel(Map<String, dynamic> course) {
-  for (final key in const ['level', 'step']) {
+  for (final key in const ['level', 'group_position']) {
     final value = course[key]?.toString().trim();
     if (value != null && value.isNotEmpty) {
       return value;

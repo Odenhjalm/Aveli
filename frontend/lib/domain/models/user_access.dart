@@ -15,10 +15,9 @@ class UserAccessState {
   bool get canEnterApp => entryState?.canEnterApp ?? false;
   bool get isAuthenticated => canEnterApp;
 
-  // Frontend must not derive role/admin authority from JWT claims.
-  bool get isAdmin => false;
-  UserRole get role => UserRole.learner;
-  bool get isTeacher => false;
+  bool get isAdmin => entryState?.role == 'admin';
+  UserRole get role => parseUserRole(entryState?.role);
+  bool get isTeacher => entryState?.role == 'teacher';
   bool get isProfessional => false;
 
   UserAccessState copyWith({

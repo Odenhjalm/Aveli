@@ -149,10 +149,9 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _normalized_subject_role(role_v2: object, role: object) -> str | None:
-    del role
-    normalized = str(role_v2 or "").strip().lower()
-    if normalized in {"learner", "teacher"}:
+def _normalized_subject_role(role: object) -> str | None:
+    normalized = str(role or "").strip().lower()
+    if normalized in {"learner", "teacher", "admin"}:
         return normalized
     return None
 
@@ -177,18 +176,12 @@ async def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str
     if auth_subject is None:
         raise ValueError("Canonical auth subject missing")
 
-    normalized_role = _normalized_subject_role(
-        auth_subject.get("role_v2"),
-        auth_subject.get("role"),
-    )
+    normalized_role = _normalized_subject_role(auth_subject.get("role"))
     onboarding_state = _validated_onboarding_state(auth_subject.get("onboarding_state"))
-    is_admin = auth_subject.get("is_admin")
     if normalized_role is None:
         raise ValueError("Canonical role authority missing")
     if onboarding_state is None:
         raise ValueError("Canonical onboarding_state invalid")
-    if not isinstance(is_admin, bool):
-        raise ValueError("Canonical is_admin invalid")
 
     profile = await get_profile(user_id)
 
@@ -197,8 +190,6 @@ async def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str
         "email": user.get("email") or payload.get("email"),
         "onboarding_state": onboarding_state,
         "role": normalized_role,
-        "role_v2": normalized_role,
-        "is_admin": is_admin,
         "display_name": profile.get("display_name") if profile else None,
         "bio": profile.get("bio") if profile else None,
         "photo_url": profile.get("photo_url") if profile else None,

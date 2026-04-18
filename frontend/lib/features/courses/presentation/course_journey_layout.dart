@@ -1,5 +1,4 @@
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/shared/utils/course_journey_step.dart';
 
 class CourseJourneySeriesRow {
   const CourseJourneySeriesRow({
@@ -22,25 +21,29 @@ List<CourseJourneySeriesRow> buildCourseJourneySeriesRows(
   final rowIndexBySeriesKey = <String, int>{};
 
   for (final course in courses) {
-    final step = course.step;
+    final groupPosition = course.groupPosition;
     final groupId = course.courseGroupId.trim();
-    if (step == CourseJourneyStep.intro || groupId.isEmpty) {
+    if (groupPosition == 0 || groupId.isEmpty) {
       continue;
     }
 
     final existingIndex = rowIndexBySeriesKey[groupId];
     if (existingIndex == null) {
-      rows.add(_rowWithCourse(seriesKey: groupId, course: course, step: step));
+      rows.add(_rowWithCourse(
+        seriesKey: groupId,
+        course: course,
+        groupPosition: groupPosition,
+      ));
       rowIndexBySeriesKey[groupId] = rows.length - 1;
       continue;
     }
 
     final existing = rows[existingIndex];
-    if (_slotForStep(existing, step) == null) {
+    if (_slotForGroupPosition(existing, groupPosition) == null) {
       rows[existingIndex] = _copyRowWithCourse(
         row: existing,
         course: course,
-        step: step,
+        groupPosition: groupPosition,
       );
     }
   }
@@ -51,61 +54,61 @@ List<CourseJourneySeriesRow> buildCourseJourneySeriesRows(
 CourseJourneySeriesRow _rowWithCourse({
   required String seriesKey,
   required CourseSummary course,
-  required CourseJourneyStep step,
+  required int groupPosition,
 }) {
-  return switch (step) {
-    CourseJourneyStep.step1 => CourseJourneySeriesRow(
+  return switch (groupPosition) {
+    1 => CourseJourneySeriesRow(
       seriesKey: seriesKey,
       step1: course,
     ),
-    CourseJourneyStep.step2 => CourseJourneySeriesRow(
+    2 => CourseJourneySeriesRow(
       seriesKey: seriesKey,
       step2: course,
     ),
-    CourseJourneyStep.step3 => CourseJourneySeriesRow(
+    3 => CourseJourneySeriesRow(
       seriesKey: seriesKey,
       step3: course,
     ),
-    CourseJourneyStep.intro => CourseJourneySeriesRow(seriesKey: seriesKey),
+    _ => CourseJourneySeriesRow(seriesKey: seriesKey),
   };
 }
 
 CourseJourneySeriesRow _copyRowWithCourse({
   required CourseJourneySeriesRow row,
   required CourseSummary course,
-  required CourseJourneyStep step,
+  required int groupPosition,
 }) {
-  return switch (step) {
-    CourseJourneyStep.step1 => CourseJourneySeriesRow(
+  return switch (groupPosition) {
+    1 => CourseJourneySeriesRow(
       seriesKey: row.seriesKey,
       step1: course,
       step2: row.step2,
       step3: row.step3,
     ),
-    CourseJourneyStep.step2 => CourseJourneySeriesRow(
+    2 => CourseJourneySeriesRow(
       seriesKey: row.seriesKey,
       step1: row.step1,
       step2: course,
       step3: row.step3,
     ),
-    CourseJourneyStep.step3 => CourseJourneySeriesRow(
+    3 => CourseJourneySeriesRow(
       seriesKey: row.seriesKey,
       step1: row.step1,
       step2: row.step2,
       step3: course,
     ),
-    CourseJourneyStep.intro => row,
+    _ => row,
   };
 }
 
-CourseSummary? _slotForStep(
+CourseSummary? _slotForGroupPosition(
   CourseJourneySeriesRow row,
-  CourseJourneyStep step,
+  int groupPosition,
 ) {
-  return switch (step) {
-    CourseJourneyStep.step1 => row.step1,
-    CourseJourneyStep.step2 => row.step2,
-    CourseJourneyStep.step3 => row.step3,
-    CourseJourneyStep.intro => null,
+  return switch (groupPosition) {
+    1 => row.step1,
+    2 => row.step2,
+    3 => row.step3,
+    _ => null,
   };
 }

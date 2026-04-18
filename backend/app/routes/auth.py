@@ -139,23 +139,15 @@ async def _record_auth_event(
     )
 
 
-async def _compatibility_token_claims(user_id: str) -> dict[str, Any]:
-    """Return compatibility-only JWT claims.
-
-    Backend authority for role, admin, and onboarding must always be resolved
-    from canonical app.auth_subjects reads at request time. These claims remain
-    in the token only for compatibility and must never be treated as authority.
-    """
+async def _token_claims(user_id: str) -> dict[str, Any]:
+    """Return non-authoritative convenience claims for the issued token."""
     user = await models.get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="user_not_found")
     auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
     if not auth_subject:
         raise HTTPException(status_code=404, detail="subject_not_found")
-    role = _normalized_subject_role(
-        auth_subject.get("role_v2"),
-        auth_subject.get("role"),
-    )
+    role = _normalized_subject_role(auth_subject.get("role"))
     if role is None:
         raise HTTPException(status_code=500, detail="internal_error")
     onboarding_state = _validated_onboarding_state(
@@ -163,12 +155,8 @@ async def _compatibility_token_claims(user_id: str) -> dict[str, Any]:
     )
     if onboarding_state is None:
         raise HTTPException(status_code=500, detail="internal_error")
-    is_admin = auth_subject.get("is_admin")
-    if not isinstance(is_admin, bool):
-        raise HTTPException(status_code=500, detail="internal_error")
     return {
         "role": role,
-        "is_admin": is_admin,
     }
 
 
@@ -181,7 +169,7 @@ async def _complete_onboarding_at_canonical_route(user_id: str) -> dict[str, Any
                    SET onboarding_state = 'completed'
                  WHERE user_id = %s
                    AND onboarding_state = 'welcome_pending'
-                 RETURNING user_id, onboarding_state, role_v2, role, is_admin
+                 RETURNING user_id, email, onboarding_state, role::text as role
                 """,
                 (user_id,),
             )
@@ -221,7 +209,7 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
 
     user_id = await models.create_user(payload.email, payload.password)
     user_id_str = str(user_id)
-    claims = await _compatibility_token_claims(user_id_str)
+    claims = await _token_claims(user_id_str)
     access_token = create_access_token(user_id_str, claims=claims)
     refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id_str)
     await models.register_refresh_token(
@@ -273,7 +261,7 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
         raise HTTPException(status_code=401, detail="invalid_credentials")
 
     user_id = str(user["id"])
-    claims = await _compatibility_token_claims(user_id)
+    claims = await _token_claims(user_id)
     access_token = create_access_token(user_id, claims=claims)
     refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id)
     await models.register_refresh_token(
@@ -357,7 +345,7 @@ async def refresh_token(payload: schemas.TokenRefreshRequest, request: Request):
     user_row = await models.get_user_by_id(user_id)
     email = user_row.get("email") if user_row else None
 
-    claims = await _compatibility_token_claims(user_id)
+    claims = await _token_claims(user_id)
     access_token = create_access_token(user_id, claims=claims)
     new_refresh_token, new_jti, new_exp = create_refresh_token(user_id)
     await models.register_refresh_token(

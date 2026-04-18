@@ -61,8 +61,8 @@ async def community_teacher_detail(user_id: str, current: OptionalCurrentUser = 
     meditations = await models.list_teacher_meditations(user_id)
 
     viewer_id = str(current["id"]) if current else None
-    is_admin = bool(current.get("is_admin")) if current else False
-    can_view_full = viewer_id == user_id or is_admin
+    has_admin_role = str((current or {}).get("role") or "").strip().lower() == "admin"
+    can_view_full = viewer_id == user_id or has_admin_role
 
     certificate_rows = await models.certificates_of(
         user_id, verified_only=not can_view_full
@@ -127,14 +127,11 @@ async def community_teacher_meditations(user_id: str):
 
 @router.get("/teachers/{user_id}/certificates")
 async def community_teacher_certificates(user_id: str, current: CurrentUser):
-    viewer_id = str(current["id"])
-    if user_id != viewer_id and not bool(current.get("is_admin")):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not allowed to access certificates",
-        )
-    rows = await models.certificates_of(user_id, verified_only=False)
-    return {"items": [dict(row) for row in rows]}
+    del user_id, current
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Certificates have no Baseline V2 authority",
+    )
 
 
 @router.get(
@@ -143,7 +140,7 @@ async def community_teacher_certificates(user_id: str, current: CurrentUser):
 )
 async def community_profile_detail(user_id: str, current: CurrentUser):
     viewer_id = str(current["id"])
-    if user_id != viewer_id and not bool(current.get("is_admin")):
+    if user_id != viewer_id and str(current.get("role") or "").strip().lower() != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not allowed to access this profile",
@@ -194,8 +191,11 @@ async def community_unfollow(user_id: str, current: CurrentUser):
 
 @router.get("/certificates/verified-count")
 async def community_verified_count(user_id: list[str] = Query(default=[])):
-    counts = await models.verified_certificate_counts(user_id)
-    return {"counts": counts}
+    del user_id
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Certificates have no Baseline V2 authority",
+    )
 
 
 @router.get(
@@ -228,8 +228,11 @@ async def community_create_tarot_request(
     response_model=schemas.NotificationListResponse,
 )
 async def community_notifications(current: CurrentUser, unread_only: bool = False):
-    items = await models.list_notifications_for_user(current["id"], unread_only)
-    return {"items": items}
+    del current, unread_only
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Notifications have no Baseline V2 authority",
+    )
 
 
 @router.patch(
@@ -241,12 +244,11 @@ async def community_update_notification(
     payload: schemas.NotificationUpdate,
     current: CurrentUser,
 ):
-    row = await models.mark_notification_read(
-        notification_id, current["id"], payload.is_read
+    del notification_id, payload, current
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Notifications have no Baseline V2 authority",
     )
-    if not row:
-        raise HTTPException(status_code=404, detail="Notification not found")
-    return row
 
 
 @router.get("/services/{service_id}/reviews", response_model=schemas.ReviewListResponse)

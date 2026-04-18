@@ -47,11 +47,6 @@ def _email_verification_state(user_row: dict[str, Any] | None) -> str:
 def _role_state(auth_subject_row: dict[str, Any] | None) -> str:
     if auth_subject_row is None:
         return "missing"
-    if bool(auth_subject_row.get("is_admin")):
-        return "admin"
-    role_v2 = normalize_text(auth_subject_row.get("role_v2"))
-    if role_v2 in {"learner", "teacher"}:
-        return role_v2
     role = normalize_text(auth_subject_row.get("role"))
     return role or "missing"
 
@@ -256,9 +251,7 @@ async def inspect_user(user_id: str) -> dict[str, Any]:
             "auth_subject": {
                 "authority": "auth_subjects",
                 "auth_subject_present": auth_subject_row is not None,
-                "role_v2": normalize_text((auth_subject_row or {}).get("role_v2")),
                 "role": normalize_text((auth_subject_row or {}).get("role")),
-                "is_admin": bool((auth_subject_row or {}).get("is_admin")),
             },
             "profile": {
                 "profile_present": profile_row is not None,

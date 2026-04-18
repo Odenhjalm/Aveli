@@ -9,7 +9,6 @@ import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/payments/presentation/paywall_prompt.dart';
-import 'package:aveli/shared/utils/course_journey_step.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -145,7 +144,7 @@ class _CourseContent extends StatelessWidget {
     final hasEnrollment = courseState?.hasEnrollment == true;
     final currentUnlockPosition =
         courseState?.enrollment?.currentUnlockPosition;
-    final isIntroCourse = course.step == CourseJourneyStep.intro;
+    final isIntroCourse = course.isIntroCourse;
     final lessons = _visibleCourseLessons(detail.lessons);
     final unlockedLessons = lessons
         .where(

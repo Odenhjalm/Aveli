@@ -14,7 +14,7 @@ from context7.runtime import (
     validate_context,
 )
 
-from .. import models, repositories
+from .. import models
 
 CONTEXT_VERSION = "2025-02-18"
 SCHEMA_VERSION = "2025-02-01"
@@ -34,7 +34,7 @@ def _env_snapshot() -> dict[str, str | None]:
 
 
 def _actor_role(user: Mapping[str, Any], *, is_teacher: bool) -> str:
-    if user.get("is_admin"):
+    if str(user.get("role") or "").strip().lower() == "admin":
         return "admin"
     if is_teacher:
         return "teacher"
@@ -71,17 +71,11 @@ async def _ensure_course_access(course_id: str, *, user_id: str, role: str, is_t
 
 
 async def _ensure_seminar_access(seminar_id: str, *, user_id: str, role: str, is_teacher: bool) -> None:
-    seminar = await repositories.get_seminar(seminar_id)
-    if not seminar:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seminar not found")
-
-    host_id = str(seminar.get("host_id")) if seminar.get("host_id") else None
-    if role == "admin" or (is_teacher and host_id == user_id):
-        return
-
-    allowed = await repositories.user_can_access_seminar(user_id, seminar_id)
-    if not allowed:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to seminar")
+    del seminar_id, user_id, role, is_teacher
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Seminars have no Baseline V2 authority",
+    )
 
 
 async def _ensure_classroom_access(classroom_id: str) -> None:

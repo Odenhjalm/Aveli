@@ -4,7 +4,6 @@ import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/resolved_media_contract.dart';
-import 'package:aveli/shared/utils/course_journey_step.dart';
 
 Object? _requiredField(Object? payload, String fieldName) {
   switch (payload) {
@@ -84,13 +83,12 @@ DateTime _requireDateTime(Object? value, String fieldName) {
   return DateTime.parse(raw);
 }
 
-CourseJourneyStep _requireCourseStep(Object? value, String fieldName) {
-  final raw = _requireString(value, fieldName);
-  final step = courseJourneyStepFromApi(raw);
-  if (step == null) {
+int _requireGroupPosition(Object? value, String fieldName) {
+  final position = _requireInt(value, fieldName);
+  if (position < 0) {
     throw StateError('Invalid field value for $fieldName');
   }
-  return step;
+  return position;
 }
 
 List<Object?> _requireList(Object? value, String fieldName) {
@@ -124,7 +122,7 @@ class CoursesRepository {
         return items;
       }
       return items
-          .where((course) => course.step == CourseJourneyStep.intro)
+          .where((course) => course.isIntroCourse)
           .toList(growable: false);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
@@ -181,7 +179,7 @@ class CoursesRepository {
     try {
       final courses = await fetchPublishedCourses();
       for (final course in courses) {
-        if (course.step == CourseJourneyStep.intro) {
+        if (course.isIntroCourse) {
           return course;
         }
       }
@@ -292,13 +290,13 @@ class CourseEnrollmentRecord {
 class CourseAccessData {
   const CourseAccessData({
     required this.courseId,
-    required this.courseStep,
+    required this.groupPosition,
     required this.requiredEnrollmentSource,
     required this.enrollment,
   });
 
   final String courseId;
-  final CourseJourneyStep courseStep;
+  final int groupPosition;
   final String? requiredEnrollmentSource;
   final CourseEnrollmentRecord? enrollment;
 
@@ -311,9 +309,9 @@ class CourseAccessData {
         _requiredField(payload, 'course_id'),
         'course_id',
       ),
-      courseStep: _requireCourseStep(
-        _requiredField(payload, 'course_step'),
-        'course_step',
+      groupPosition: _requireGroupPosition(
+        _requiredField(payload, 'group_position'),
+        'group_position',
       ),
       requiredEnrollmentSource: _optionalString(
         _requiredField(payload, 'required_enrollment_source'),
@@ -367,7 +365,7 @@ class CourseSummary {
     required this.id,
     required this.slug,
     required this.title,
-    required this.step,
+    required this.groupPosition,
     required this.courseGroupId,
     required this.coverMediaId,
     required this.cover,
@@ -379,7 +377,7 @@ class CourseSummary {
   final String id;
   final String slug;
   final String title;
-  final CourseJourneyStep step;
+  final int groupPosition;
   final String courseGroupId;
   final String? coverMediaId;
   final CourseCoverData? cover;
@@ -387,14 +385,17 @@ class CourseSummary {
   final bool dripEnabled;
   final int? dripIntervalDays;
 
-  bool get isIntroCourse => step == CourseJourneyStep.intro;
+  bool get isIntroCourse => groupPosition == 0;
 
   factory CourseSummary.fromResponse(Object? payload) {
     return CourseSummary(
       id: _requireString(_requiredField(payload, 'id'), 'id'),
       slug: _requireString(_requiredField(payload, 'slug'), 'slug'),
       title: _requireString(_requiredField(payload, 'title'), 'title'),
-      step: _requireCourseStep(_requiredField(payload, 'step'), 'step'),
+      groupPosition: _requireGroupPosition(
+        _requiredField(payload, 'group_position'),
+        'group_position',
+      ),
       courseGroupId: _requireString(
         _requiredField(payload, 'course_group_id'),
         'course_group_id',

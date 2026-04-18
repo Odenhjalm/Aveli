@@ -9,7 +9,7 @@ class CourseRow(TypedDict):
     slug: str
     title: str
     course_group_id: UUID
-    step: str
+    group_position: int
     price_amount_cents: int | None
     stripe_product_id: str | None
     active_stripe_price_id: str | None

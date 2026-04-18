@@ -15,7 +15,7 @@ _CANONICAL_COURSE_FIELDS = (
     "slug",
     "title",
     "course_group_id",
-    "step",
+    "group_position",
     "cover_media_id",
     "cover",
     "price_amount_cents",
@@ -63,7 +63,7 @@ def _course_access_response(payload: dict) -> schemas.CourseAccessStateResponse:
     enrollment = payload.get("enrollment")
     return schemas.CourseAccessStateResponse(
         course_id=payload["course_id"],
-        course_step=payload["course_step"],
+        group_position=payload["group_position"],
         required_enrollment_source=payload.get("required_enrollment_source"),
         enrollment=(
             schemas.CourseEnrollmentRecord(**enrollment)
