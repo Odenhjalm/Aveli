@@ -307,30 +307,41 @@ async def _call_canonical_worker_transition(
     *,
     target_state: str,
     playback_object_path: str | None = None,
+    playback_format: str | None = None,
+    error_message: str | None = None,
+    next_retry_at: Any | None = None,
 ) -> dict[str, Any] | None:
     query = """
         select
-            (result).id as id,
-            ((result).media_type)::text as media_type,
-            ((result).purpose)::text as purpose,
-            (result).original_object_path as original_object_path,
-            (result).ingest_format as ingest_format,
-            (result).playback_object_path as playback_object_path,
-            (result).playback_format as playback_format,
-            ((result).state)::text as state
-        from (
-            select app.canonical_worker_transition_media_asset(
-                %s::uuid,
-                %s::app.media_state,
-                %s
-            ) as result
-        ) as transition
+            result.id as id,
+            result.media_type::text as media_type,
+            result.purpose::text as purpose,
+            result.original_object_path as original_object_path,
+            result.ingest_format as ingest_format,
+            result.playback_object_path as playback_object_path,
+            result.playback_format as playback_format,
+            result.state::text as state
+        from app.canonical_worker_transition_media_asset(
+            %s::uuid,
+            %s::app.media_state,
+            %s,
+            %s,
+            %s,
+            %s
+        ) as result
     """
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 query,
-                (media_asset_id, target_state, playback_object_path),
+                (
+                    media_asset_id,
+                    target_state,
+                    playback_object_path,
+                    playback_format,
+                    error_message,
+                    next_retry_at,
+                ),
             )
             row = await cur.fetchone()
             await conn.commit()
@@ -347,20 +358,10 @@ async def mark_media_asset_uploaded(*, media_id: str) -> dict[str, Any] | None:
     if current_state != "pending_upload":
         return None
 
-    query = f"""
-        update app.media_assets
-        set state = 'uploaded'::app.media_state
-        where id = %s::uuid
-          and state = 'pending_upload'::app.media_state
-        returning
-            {_MEDIA_ASSET_RETURNING_SQL}
-    """
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, (media_id,))
-            row = await cur.fetchone()
-            await conn.commit()
-    return _decorate_media_asset_row(dict(row) if row else None)
+    return await _call_canonical_worker_transition(
+        media_id,
+        target_state="uploaded",
+    )
 
 
 async def mark_lesson_media_pipeline_asset_uploaded(
@@ -376,20 +377,10 @@ async def mark_lesson_media_pipeline_asset_uploaded(
     if current_state != "pending_upload":
         return None
 
-    query = f"""
-        update app.media_assets
-        set state = 'uploaded'::app.media_state
-        where id = %s::uuid
-          and state = 'pending_upload'::app.media_state
-        returning
-            {_MEDIA_ASSET_RETURNING_SQL}
-    """
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, (media_id,))
-            row = await cur.fetchone()
-            await conn.commit()
-    return _decorate_media_asset_row(dict(row) if row else None)
+    return await _call_canonical_worker_transition(
+        media_id,
+        target_state="uploaded",
+    )
 
 
 async def mark_media_asset_ready_passthrough(
@@ -423,7 +414,7 @@ async def mark_media_asset_ready_from_worker(
     codec: str | None = None,
     playback_storage_bucket: str | None = None,
 ) -> dict[str, Any] | None:
-    del playback_format, duration_seconds, codec, playback_storage_bucket
+    del duration_seconds, codec, playback_storage_bucket
     media_asset = await get_media_asset(media_id)
     if media_asset is None:
         return None
@@ -445,6 +436,7 @@ async def mark_media_asset_ready_from_worker(
         media_id,
         target_state="ready",
         playback_object_path=playback_object_path,
+        playback_format=playback_format,
     )
 
 
@@ -616,34 +608,15 @@ async def release_processing_media_assets(*, stale_after_seconds: int) -> int:
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                update app.media_assets
-                set
-                    processing_locked_at = null,
-                    next_retry_at = case
-                        when next_retry_at is null or next_retry_at > now()
-                            then now()
-                        else next_retry_at
-                    end,
-                    updated_at = now()
-                where state = 'processing'::app.media_state
-                  and processing_locked_at is not null
-                  and processing_locked_at < now() - make_interval(secs => %s::integer)
-                  and (
-                    media_type = 'audio'::app.media_type
-                    or (
-                      media_type = 'image'::app.media_type
-                      and purpose in (
-                        'course_cover'::app.media_purpose,
-                        'profile_media'::app.media_purpose
-                      )
-                    )
-                  )
+                select app.canonical_worker_release_stale_media_asset_locks(
+                    %s::integer
+                ) as released
                 """,
                 (max(1, int(stale_after_seconds)),),
             )
-            released = cur.rowcount
+            row = await cur.fetchone()
             await conn.commit()
-    return int(released or 0)
+    return int(row[0] if row else 0)
 
 
 async def fetch_and_lock_pending_media_assets(
@@ -692,31 +665,21 @@ async def fetch_and_lock_pending_media_assets(
 
             for candidate in candidates:
                 media_id = str(candidate.get("id") or "").strip()
-                state = str(candidate.get("state") or "").strip().lower()
                 if not media_id:
                     continue
-                if state == "uploaded":
-                    await cur.execute(
-                        """
-                        select app.canonical_worker_transition_media_asset(
-                            %s::uuid,
-                            'processing'::app.media_state,
-                            null
-                        )
-                        """,
-                        (media_id,),
-                    )
                 await cur.execute(
-                    f"""
-                    update app.media_assets
-                    set
-                        processing_locked_at = now(),
-                        updated_at = now()
-                    where id = %s::uuid
-                      and state = 'processing'::app.media_state
-                      and processing_locked_at is null
-                    returning
-                        {_MEDIA_TRANSCODE_WORKER_SQL}
+                    """
+                    select
+                        result.id as id,
+                        result.media_type::text as media_type,
+                        result.purpose::text as purpose,
+                        result.original_object_path as original_object_path,
+                        result.ingest_format as ingest_format,
+                        result.state::text as state,
+                        result.processing_attempts as processing_attempts
+                    from app.canonical_worker_lock_media_asset_for_processing(
+                        %s::uuid
+                    ) as result
                     """,
                     (media_id,),
                 )
@@ -750,18 +713,12 @@ async def defer_media_asset_processing(
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                update app.media_assets
-                set
-                    processing_locked_at = null,
-                    next_retry_at = coalesce(%s, now()),
-                    updated_at = now()
-                where id = %s::uuid
-                  and state in (
-                    'uploaded'::app.media_state,
-                    'processing'::app.media_state
-                  )
+                select app.canonical_worker_defer_media_asset_processing(
+                    %s::uuid,
+                    coalesce(%s::timestamptz, clock_timestamp())
+                )
                 """,
-                (next_retry_at, media_id),
+                (media_id, next_retry_at),
             )
             await conn.commit()
 
@@ -787,28 +744,13 @@ async def mark_media_asset_failed(
         await _call_canonical_worker_transition(
             media_id,
             target_state="failed",
+            error_message=error_message,
+            next_retry_at=next_retry_at,
         )
     elif current_state != "failed":
         raise RuntimeError(
             "canonical worker failed transition requires uploaded or processing state"
         )
-
-    if not await media_processing_queue_supported():
-        return
-
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                update app.media_assets
-                set
-                    error_message = %s,
-                    next_retry_at = %s
-                where id = %s::uuid
-                """,
-                (error_message, next_retry_at, media_id),
-            )
-            await conn.commit()
 
 
 async def increment_processing_attempts(*, media_id: str) -> None:
@@ -818,9 +760,9 @@ async def increment_processing_attempts(*, media_id: str) -> None:
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                update app.media_assets
-                set processing_attempts = coalesce(processing_attempts, 0) + 1
-                where id = %s::uuid
+                select app.canonical_worker_increment_media_asset_attempts(
+                    %s::uuid
+                )
                 """,
                 (media_id,),
             )

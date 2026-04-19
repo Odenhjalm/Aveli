@@ -17,16 +17,16 @@ MANAGED_SCHEMAS = ("app", "auth", "storage")
 BASELINE_MODE_ENV = "BASELINE_MODE"
 DEFAULT_BASELINE_MODE = "V2"
 
-EXPECTED_V2_SCHEMA_HASH = "89b98e02bf5babd93400e3bd4c6d8b1702cf533d5215923f687f88c9ba302110"
+EXPECTED_V2_SCHEMA_HASH = "bd18f23efbc00a9c3afd79fe45ffedfd0dcf0bb2c2c7771a292c2ebe9098e6da"
 EXPECTED_V2_COUNTS = {
     "enums": 13,
     "tables": 30,
     "app_tables": 27,
     "views": 5,
     "fks": 37,
-    "constraints": 144,
+    "constraints": 147,
     "triggers": 11,
-    "functions": 16,
+    "functions": 20,
 }
 EXPECTED_V2_SLOTS = (
     "V2_0001_foundation_enums.sql",
@@ -42,11 +42,17 @@ EXPECTED_V2_SLOTS = (
     "V2_0011_auth_session_and_subject_authority.sql",
     "V2_0012_core_substrate_profiles_storage_referrals.sql",
     "V2_0013_workers.sql",
+    "V2_0014_media_asset_content_identity.sql",
+    "V2_0015_media_worker_lifecycle_functions.sql",
 )
 
 LEGACY_COLUMNS = ("role_v2", "is_admin", "course_step", "created_by", "is_published")
 WORKER_FUNCTIONS = (
     "canonical_worker_advance_course_enrollment_drip",
+    "canonical_worker_defer_media_asset_processing",
+    "canonical_worker_increment_media_asset_attempts",
+    "canonical_worker_lock_media_asset_for_processing",
+    "canonical_worker_release_stale_media_asset_locks",
     "canonical_worker_transition_media_asset",
 )
 

@@ -13,7 +13,10 @@ def test_media_worker_selected_columns_are_materialized_by_baseline() -> None:
     slot_v2_0013 = Path(
         "backend/supabase/baseline_v2_slots/V2_0013_workers.sql"
     ).read_text(encoding="utf-8")
-    baseline_sql = f"{slot_v2_0003}\n{slot_v2_0013}".lower()
+    slot_v2_0015 = Path(
+        "backend/supabase/baseline_v2_slots/V2_0015_media_worker_lifecycle_functions.sql"
+    ).read_text(encoding="utf-8")
+    baseline_sql = f"{slot_v2_0003}\n{slot_v2_0013}\n{slot_v2_0015}".lower()
 
     for column in {
         "id",
@@ -31,6 +34,17 @@ def test_media_worker_selected_columns_are_materialized_by_baseline() -> None:
     assert "storage_bucket" not in worker_sql
     assert "original_filename" not in worker_sql
     assert "course_id" not in worker_sql
+
+
+def test_media_repository_lifecycle_mutations_use_db_functions_only() -> None:
+    source = Path(media_assets_repo.__file__).read_text(encoding="utf-8").lower()
+
+    assert "update app.media_assets" not in source
+    assert "canonical_worker_transition_media_asset" in source
+    assert "canonical_worker_lock_media_asset_for_processing" in source
+    assert "canonical_worker_release_stale_media_asset_locks" in source
+    assert "canonical_worker_defer_media_asset_processing" in source
+    assert "canonical_worker_increment_media_asset_attempts" in source
 
 
 def test_course_drip_worker_uses_v2_enrollment_worker_signature() -> None:
