@@ -38,10 +38,14 @@ def _baseline_v2_connection():
     database_conninfo = _db_conninfo(db_name)
 
     with psycopg.connect(admin_conninfo, autocommit=True) as admin_conn:
-        admin_conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
+        admin_conn.execute(
+            sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name))
+        )
 
     try:
-        with psycopg.connect(database_conninfo, autocommit=True, row_factory=dict_row) as conn:
+        with psycopg.connect(
+            database_conninfo, autocommit=True, row_factory=dict_row
+        ) as conn:
             for slot in baseline_v2._slot_paths():
                 conn.execute(slot.read_text(encoding="utf-8"))
             yield conn
@@ -56,7 +60,9 @@ def _baseline_v2_connection():
                 """,
                 (db_name,),
             )
-            admin_conn.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(db_name)))
+            admin_conn.execute(
+                sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(db_name))
+            )
 
 
 def _insert_media_asset(conn: psycopg.Connection, *, media_id: str) -> None:
@@ -132,9 +138,9 @@ async def test_media_lifecycle_mutations_are_db_function_owned():
             match="media lifecycle fields may be mutated only through the canonical worker context",
         ):
             conn.execute(
-                sql.SQL("UPDATE {} SET state = 'uploaded'::app.media_state WHERE id = %s::uuid").format(
-                    sql.Identifier("app", "media_assets")
-                ),
+                sql.SQL(
+                    "UPDATE {} SET state = 'uploaded'::app.media_state WHERE id = %s::uuid"
+                ).format(sql.Identifier("app", "media_assets")),
                 (media_id,),
             )
 
@@ -158,9 +164,9 @@ async def test_media_lifecycle_mutations_are_db_function_owned():
             match="media lifecycle fields may be mutated only through the canonical worker context",
         ):
             conn.execute(
-                sql.SQL("UPDATE {} SET processing_attempts = processing_attempts + 1 WHERE id = %s::uuid").format(
-                    sql.Identifier("app", "media_assets")
-                ),
+                sql.SQL(
+                    "UPDATE {} SET processing_attempts = processing_attempts + 1 WHERE id = %s::uuid"
+                ).format(sql.Identifier("app", "media_assets")),
                 (media_id,),
             )
 
@@ -196,7 +202,9 @@ async def test_media_lifecycle_mutations_are_db_function_owned():
         assert relocked is not None
         assert str(relocked["state"]) == "processing"
 
-        with pytest.raises(psycopg.Error, match="ready audio media requires playback_format mp3"):
+        with pytest.raises(
+            psycopg.Error, match="ready audio media requires playback_format mp3"
+        ):
             _transition(
                 conn,
                 media_id,
@@ -242,3 +250,51 @@ async def test_media_worker_failed_transition_carries_error_and_retry():
         assert failed["error_message"] == "source missing"
         assert failed["next_retry_at"] == retry_at
         assert failed["processing_locked_at"] is None
+
+
+async def test_media_worker_requeues_failed_asset_without_resetting_attempt_history():
+    with _baseline_v2_connection() as conn:
+        media_id = str(uuid4())
+        _insert_media_asset(conn, media_id=media_id)
+        _transition(conn, media_id, "uploaded")
+        conn.execute(
+            """
+            SELECT app.canonical_worker_lock_media_asset_for_processing(%s::uuid)
+            """,
+            (media_id,),
+        )
+        conn.execute(
+            """
+            SELECT app.canonical_worker_increment_media_asset_attempts(%s::uuid)
+            """,
+            (media_id,),
+        )
+        _transition(conn, media_id, "failed", error_message="upload signing failed")
+
+        with pytest.raises(
+            psycopg.Error,
+            match="media lifecycle fields may be mutated only through the canonical worker context",
+        ):
+            conn.execute(
+                sql.SQL(
+                    "UPDATE {} SET state = 'uploaded'::app.media_state WHERE id = %s::uuid"
+                ).format(sql.Identifier("app", "media_assets")),
+                (media_id,),
+            )
+
+        requeued = conn.execute(
+            """
+            SELECT *
+            FROM app.canonical_worker_requeue_failed_media_asset(%s::uuid)
+            """,
+            (media_id,),
+        ).fetchone()
+
+        assert requeued is not None
+        assert str(requeued["state"]) == "uploaded"
+        assert requeued["error_message"] is None
+        assert requeued["processing_locked_at"] is None
+        assert requeued["next_retry_at"] is None
+        assert requeued["playback_object_path"] is None
+        assert requeued["playback_format"] is None
+        assert int(requeued["processing_attempts"]) == 1

@@ -675,6 +675,9 @@ async def fetch_and_lock_pending_media_assets(
                         result.purpose::text as purpose,
                         result.original_object_path as original_object_path,
                         result.ingest_format as ingest_format,
+                        result.file_size as file_size,
+                        result.content_hash as content_hash,
+                        result.content_hash_algorithm as content_hash_algorithm,
                         result.state::text as state,
                         result.processing_attempts as processing_attempts
                     from app.canonical_worker_lock_media_asset_for_processing(

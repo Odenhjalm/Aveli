@@ -38,6 +38,14 @@ def _course_list_response(
     return schemas.CourseListResponse(items=[_course_response(row) for row in rows])
 
 
+def _lesson_structure_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row.get("id"),
+        "lesson_title": row.get("lesson_title"),
+        "position": row.get("position"),
+    }
+
+
 async def _assert_can_access_lesson(user: dict | None, lesson_id: str) -> dict:
     access = await courses_service.read_canonical_lesson_access(
         str((user or {}).get("id") or ""),
@@ -83,7 +91,10 @@ def _lesson_content_response(
     return schemas.LessonContentResponse(
         lesson=schemas.LessonContentItem(**lesson),
         course_id=course_id,
-        lessons=[schemas.LessonStructureItem(**row) for row in lessons],
+        lessons=[
+            schemas.LessonStructureItem(**_lesson_structure_payload(row))
+            for row in lessons
+        ],
         media=[schemas.LearnerLessonMediaItem(**row) for row in media_rows],
     )
 
@@ -133,8 +144,8 @@ async def course_pricing_api(slug: str):
 @router.get("/lessons/{lesson_id}", response_model=schemas.LessonContentResponse)
 async def lesson_detail(lesson_id: str, current: AppEntryUser):
     lesson = await _assert_can_access_lesson(current, lesson_id)
-    course_id = lesson.get("course_id")
-    if not isinstance(course_id, str) or course_id == "":
+    course_id = str(lesson.get("course_id") or "").strip()
+    if course_id == "":
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Lesson course_id is required",

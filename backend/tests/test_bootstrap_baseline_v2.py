@@ -29,6 +29,27 @@ def test_v2_slot_order_is_explicit_and_complete() -> None:
     )
 
 
+def test_v2_local_bootstrap_allows_inherited_cloud_flags(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+
+    baseline_v2._require_local_database(
+        "postgresql://postgres:postgres@127.0.0.1:5432/aveli_projection_v2_clean_target"
+    )
+
+
+def test_v2_non_local_bootstrap_rejects_cloud_flags(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+
+    with pytest.raises(baseline_v2.BaselineV2Error, match="cloud runtime flag detected"):
+        baseline_v2._require_local_database(
+            "postgresql://postgres:postgres@127.0.0.1:5432/aveli_local"
+        )
+
+
 def test_run_server_invokes_v2_baseline_gate() -> None:
     source = Path("backend/bootstrap/run_server.py").read_text(encoding="utf-8")
 

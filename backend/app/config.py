@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _PRODUCTION_ENVS = {"prod", "production", "live"}
 _LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "db", "host.docker.internal"}
 _ALLOWED_MCP_MODES = {"local", "production"}
+_CLOUD_RUNTIME_ENV_KEYS = ("FLY_APP_NAME", "K_SERVICE", "AWS_EXECUTION_ENV", "DYNO")
 _BACKEND_DIR = Path(__file__).resolve().parents[1]
 _SETTINGS_ENV_FILES = (
     str(_BACKEND_DIR / ".env"),
@@ -28,13 +29,15 @@ def _app_env_lower() -> str:
     return raw.strip().lower()
 
 
+def _explicit_local_runtime() -> bool:
+    mcp_mode = (os.environ.get("MCP_MODE") or "").strip().lower()
+    return _app_env_lower() == "local" and mcp_mode == "local"
+
+
 def _is_cloud_runtime() -> bool:
-    return bool(
-        os.environ.get("FLY_APP_NAME")
-        or os.environ.get("K_SERVICE")
-        or os.environ.get("AWS_EXECUTION_ENV")
-        or os.environ.get("DYNO")
-    )
+    if _explicit_local_runtime():
+        return False
+    return any(os.environ.get(key) for key in _CLOUD_RUNTIME_ENV_KEYS)
 
 
 def _db_target(db_url: str) -> str:

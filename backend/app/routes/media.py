@@ -10,8 +10,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
-from .. import models, schemas
-from ..auth import CurrentUser
 from ..config import settings
 from ..repositories import media_resolution_failures
 from ..repositories import storage_objects
@@ -415,7 +413,17 @@ async def _build_streaming_response(
         if range_header:
             request_headers["Range"] = range_header
 
-        client = httpx.AsyncClient(follow_redirects=True, timeout=None)
+        logger.info(
+            "Storage proxy download request started media_id=%s storage_bucket=%s storage_path=%s",
+            row.get("id"),
+            bucket,
+            storage_path,
+        )
+        client = httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=storage_service.storage_http_timeout(),
+            limits=storage_service.storage_http_limits(),
+        )
         upstream_ctx = client.stream("GET", presigned.url, headers=request_headers)
         try:
             upstream = await upstream_ctx.__aenter__()
@@ -440,6 +448,13 @@ async def _build_streaming_response(
                 },
             )
             raise HTTPException(status_code=503, detail="Storage unavailable") from exc
+        logger.info(
+            "Storage proxy download response received media_id=%s storage_bucket=%s storage_path=%s status=%s",
+            row.get("id"),
+            bucket,
+            storage_path,
+            upstream.status_code,
+        )
 
         if upstream.status_code >= 400:
             status_code = upstream.status_code
@@ -518,8 +533,24 @@ async def _build_streaming_response(
             await upstream_ctx.__aexit__(None, None, None)
             await client.aclose()
 
+        async def _stream_upstream():
+            try:
+                async for chunk in upstream.aiter_bytes():
+                    yield chunk
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "Storage proxy stream failed: media_id=%s storage_bucket=%s storage_path=%s error=%s",
+                    row.get("id"),
+                    bucket,
+                    storage_path,
+                    exc,
+                )
+                raise storage_service.StorageServiceError(
+                    "Storage proxy stream failed"
+                ) from exc
+
         return StreamingResponse(
-            upstream.aiter_bytes(),
+            _stream_upstream(),
             status_code=upstream.status_code,
             media_type=content_type,
             headers=response_headers,

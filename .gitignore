@@ -188,3 +188,7 @@ actual_truth/build_approvals/*
 audit_output/*
 courses/*
 structured_restore/*
+canonical_projection_export/*
+canonical_projection_export_v2/*
+canonical_projection_export_v2_clean/*
+media/*

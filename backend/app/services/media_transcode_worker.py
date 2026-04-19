@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
+import re
+import shutil
+import subprocess
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
@@ -18,6 +22,10 @@ from ..repositories import media_assets as media_assets_repo
 from ..services import storage_service
 
 logger = logging.getLogger(__name__)
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_LOCAL_SOURCE_ROOT = (
+    _REPO_ROOT / "canonical_projection_export_v2_clean" / "media"
+)
 
 
 class SourceNotReadyError(RuntimeError):
@@ -28,6 +36,13 @@ _worker_task: asyncio.Task[None] | None = None
 _logged_missing_source_assets: set[str] = set()
 _verification_mode: bool = False
 _worker_run_started_at: float | None = None
+_DOWNLOAD_CHUNK_TIMEOUT_SECONDS = 5.0
+_FFMPEG_TIMEOUT_SECONDS = 180.0
+_FFPROBE_TIMEOUT_SECONDS = 30.0
+_READ_CHUNK_SIZE = 1024 * 1024
+_DURATION_RE = re.compile(
+    r"Duration:\s*(?P<hours>\d+):(?P<minutes>\d+):(?P<seconds>\d+(?:\.\d+)?)"
+)
 
 
 def _now() -> datetime:
@@ -63,6 +78,324 @@ def _truncate(message: str, limit: int = 500) -> str:
     if len(message) <= limit:
         return message
     return message[: limit - 3] + "..."
+
+
+def _configured_local_source_root() -> Path | None:
+    raw = os.environ.get("MEDIA_LOCAL_SOURCE_ROOT")
+    if raw:
+        root = Path(raw).expanduser().resolve(strict=False)
+        return root if root.is_dir() else None
+    if (
+        str(settings.mcp_mode).strip().lower() == "local"
+        and _DEFAULT_LOCAL_SOURCE_ROOT.is_dir()
+    ):
+        return _DEFAULT_LOCAL_SOURCE_ROOT
+    return None
+
+
+def _hash_file(path: Path) -> tuple[int, str]:
+    hasher = hashlib.sha256()
+    size = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(_READ_CHUNK_SIZE)
+            if not chunk:
+                break
+            size += len(chunk)
+            hasher.update(chunk)
+    return size, hasher.hexdigest()
+
+
+def _resolve_local_projection_source_file(asset: dict) -> Path | None:
+    root = _configured_local_source_root()
+    if root is None:
+        return None
+
+    media_id = str(asset.get("id") or "").strip()
+    ingest_format = str(asset.get("ingest_format") or "").strip().lower().lstrip(".")
+    if not media_id or not ingest_format:
+        return None
+
+    candidate = (root / f"{media_id}.{ingest_format}").resolve(strict=False)
+    try:
+        common = os.path.commonpath(
+            [
+                os.path.normcase(str(root)),
+                os.path.normcase(str(candidate)),
+            ]
+        )
+    except ValueError:
+        return None
+    if common != os.path.normcase(str(root)) or not candidate.is_file():
+        return None
+
+    expected_size = asset.get("file_size")
+    expected_hash = str(asset.get("content_hash") or "").strip().lower()
+    expected_algorithm = str(asset.get("content_hash_algorithm") or "").strip().lower()
+    if expected_size is None and not expected_hash:
+        logger.warning(
+            "Local projection source found without DB identity fields media_id=%s path=%s",
+            media_id,
+            candidate,
+        )
+        return candidate
+
+    actual_size, actual_hash = _hash_file(candidate)
+    if expected_size is not None and actual_size != int(expected_size):
+        raise storage_service.StorageServiceError(
+            f"Local projection source size mismatch for media {media_id}"
+        )
+    if expected_hash:
+        if expected_algorithm != "sha256":
+            raise storage_service.StorageServiceError(
+                f"Local projection source hash algorithm is not sha256 for media {media_id}"
+            )
+        if actual_hash != expected_hash:
+            raise storage_service.StorageServiceError(
+                f"Local projection source hash mismatch for media {media_id}"
+            )
+    return candidate
+
+
+async def _copy_local_source_to_file(source: Path, destination: Path) -> None:
+    logger.info(
+        "Local source copy started source=%s destination=%s", source, destination
+    )
+    bytes_written = 0
+    with source.open("rb") as source_handle, destination.open(
+        "wb"
+    ) as destination_handle:
+        while True:
+            chunk = await asyncio.to_thread(source_handle.read, _READ_CHUNK_SIZE)
+            if not chunk:
+                break
+            bytes_written += len(chunk)
+            await asyncio.to_thread(destination_handle.write, chunk)
+            logger.info(
+                "Local source copy chunk source=%s destination=%s bytes_received=%s total_bytes=%s",
+                source,
+                destination,
+                len(chunk),
+                bytes_written,
+            )
+
+    if not destination.exists() or destination.stat().st_size <= 0:
+        raise storage_service.StorageServiceError(
+            f"Local source copy produced no readable bytes: {destination}"
+        )
+    logger.info(
+        "Local source copy completed source=%s destination=%s bytes=%s",
+        source,
+        destination,
+        destination.stat().st_size,
+    )
+
+
+def _local_storage_enabled() -> bool:
+    return str(settings.mcp_mode).strip().lower() == "local"
+
+
+def _local_storage_object_path(bucket: str | None, object_path: str) -> Path:
+    normalized_path = str(object_path or "").strip().lstrip("/\\")
+    if not normalized_path:
+        raise storage_service.StorageServiceError("Local storage object path is empty")
+
+    normalized_bucket = str(bucket or "").strip().strip("/\\")
+    root = Path(settings.media_root).expanduser().resolve(strict=False)
+    candidate = (
+        root / normalized_bucket / Path(normalized_path)
+        if normalized_bucket
+        else root / Path(normalized_path)
+    ).resolve(strict=False)
+    try:
+        common = os.path.commonpath(
+            [
+                os.path.normcase(str(root)),
+                os.path.normcase(str(candidate)),
+            ]
+        )
+    except ValueError as exc:
+        raise storage_service.StorageServiceError(
+            "Local storage object path escapes media root"
+        ) from exc
+    if common != os.path.normcase(str(root)):
+        raise storage_service.StorageServiceError(
+            "Local storage object path escapes media root"
+        )
+    return candidate
+
+
+def _local_storage_object_exists(bucket: str | None, object_path: str) -> bool:
+    if not _local_storage_enabled():
+        return False
+    try:
+        candidate = _local_storage_object_path(bucket, object_path)
+    except storage_service.StorageServiceError:
+        return False
+    return candidate.is_file() and candidate.stat().st_size > 0
+
+
+async def _write_local_storage_object(
+    *,
+    bucket: str | None,
+    object_path: str,
+    source: Path,
+    upsert: bool,
+) -> None:
+    if not _local_storage_enabled():
+        raise storage_service.StorageServiceError(
+            "Local derived storage fallback is unavailable outside local mode"
+        )
+    if not source.is_file() or source.stat().st_size <= 0:
+        raise storage_service.StorageServiceError(
+            f"Local derived storage source is missing or empty: {source}"
+        )
+
+    target = _local_storage_object_path(bucket, object_path)
+    source_size, source_hash = await asyncio.to_thread(_hash_file, source)
+    if target.exists():
+        target_size, target_hash = await asyncio.to_thread(_hash_file, target)
+        if target_size == source_size and target_hash == source_hash:
+            logger.info(
+                "Local derived object already present bucket=%s path=%s file=%s bytes=%s",
+                bucket,
+                object_path,
+                target,
+                target_size,
+            )
+            return
+        if not upsert:
+            raise storage_service.StorageServiceError(
+                f"Local derived object already exists with different bytes: {target}"
+            )
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp_file: Path | None = None
+    bytes_written = 0
+    try:
+        with tempfile.NamedTemporaryFile(
+            "wb",
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_file = Path(handle.name)
+            with source.open("rb") as source_handle:
+                while True:
+                    chunk = await asyncio.to_thread(
+                        source_handle.read, _READ_CHUNK_SIZE
+                    )
+                    if not chunk:
+                        break
+                    bytes_written += len(chunk)
+                    await asyncio.to_thread(handle.write, chunk)
+                    logger.info(
+                        "Local derived object write chunk bucket=%s path=%s bytes_received=%s total_bytes=%s",
+                        bucket,
+                        object_path,
+                        len(chunk),
+                        bytes_written,
+                    )
+            await asyncio.to_thread(handle.flush)
+
+        os.replace(temp_file, target)
+        temp_file = None
+    finally:
+        if temp_file is not None and temp_file.exists():
+            temp_file.unlink(missing_ok=True)
+
+    if not target.is_file() or target.stat().st_size != source_size:
+        raise storage_service.StorageServiceError(
+            f"Local derived object write verification failed: {target}"
+        )
+    _, target_hash = await asyncio.to_thread(_hash_file, target)
+    if target_hash != source_hash:
+        raise storage_service.StorageServiceError(
+            f"Local derived object hash verification failed: {target}"
+        )
+    logger.info(
+        "Local derived object write completed bucket=%s path=%s file=%s bytes=%s",
+        bucket,
+        object_path,
+        target,
+        target.stat().st_size,
+    )
+
+
+async def _upload_derived_file(
+    *,
+    storage: storage_service.StorageService,
+    object_path: str,
+    source: Path,
+    content_type: str,
+    upsert: bool,
+    cache_seconds: int | None,
+) -> None:
+    try:
+        upload = await storage.create_upload_url(
+            object_path,
+            content_type=content_type,
+            upsert=upsert,
+            cache_seconds=cache_seconds,
+        )
+        await _upload_file(upload.url, source, upload.headers)
+        return
+    except storage_service.StorageServiceError as exc:
+        if not _local_storage_enabled():
+            raise
+        logger.warning(
+            "Supabase derived upload failed; writing local derived object bucket=%s path=%s source=%s error=%s",
+            storage.bucket,
+            object_path,
+            source,
+            exc,
+        )
+        await _write_local_storage_object(
+            bucket=storage.bucket,
+            object_path=object_path,
+            source=source,
+            upsert=upsert,
+        )
+
+
+async def _materialize_source_file(
+    *,
+    asset: dict,
+    source_storage: storage_service.StorageService,
+    source_path: str,
+    destination: Path,
+) -> None:
+    local_source = _resolve_local_projection_source_file(asset)
+    try:
+        signed = await source_storage.get_presigned_url(
+            source_path,
+            ttl=settings.media_playback_url_ttl_seconds,
+            download=False,
+        )
+    except storage_service.StorageObjectNotFoundError as exc:
+        if local_source is None:
+            raise SourceNotReadyError(str(exc)) from exc
+        logger.warning(
+            "Supabase source object missing; using verified local projection source media_id=%s path=%s",
+            asset.get("id"),
+            local_source,
+        )
+        await _copy_local_source_to_file(local_source, destination)
+        return
+    except storage_service.StorageServiceError as exc:
+        if local_source is None:
+            raise
+        logger.warning(
+            "Supabase source signing failed; using verified local projection source media_id=%s path=%s error=%s",
+            asset.get("id"),
+            local_source,
+            exc,
+        )
+        await _copy_local_source_to_file(local_source, destination)
+        return
+
+    await _download_to_file(signed.url, destination)
 
 
 def _derive_audio_output_path(source_path: str, ext: str) -> str:
@@ -133,6 +466,8 @@ async def _storage_object_exists(
     normalized_path = str(object_path or "").strip().lstrip("/")
     if not normalized_path:
         return False
+    if _local_storage_object_exists(storage.bucket, normalized_path):
+        return True
     try:
         await storage.get_presigned_url(
             normalized_path,
@@ -437,14 +772,6 @@ async def _transcode_audio_asset(
         "storage_bucket"
     ) or storage_service.canonical_source_bucket_for_media_asset(asset)
     source_storage = storage_service.get_storage_service(source_bucket)
-    try:
-        signed = await source_storage.get_presigned_url(
-            source_path,
-            ttl=settings.media_playback_url_ttl_seconds,
-            download=False,
-        )
-    except storage_service.StorageObjectNotFoundError as exc:
-        raise SourceNotReadyError(str(exc)) from exc
     output_path = _derive_audio_output_path(source_path, "mp3")
 
     with tempfile.TemporaryDirectory(prefix="aveli_media_") as temp_dir:
@@ -452,18 +779,53 @@ async def _transcode_audio_asset(
         input_file = temp_root / f"source{_audio_source_suffix(asset)}"
         output_file = temp_root / "output.mp3"
 
-        await _download_to_file(signed.url, input_file)
+        logger.info(
+            "Audio source materialization starting media_id=%s", asset.get("id")
+        )
+        await _materialize_source_file(
+            asset=asset,
+            source_storage=source_storage,
+            source_path=source_path,
+            destination=input_file,
+        )
+        logger.info(
+            "Audio source materialized media_id=%s path=%s bytes=%s",
+            asset.get("id"),
+            input_file,
+            input_file.stat().st_size,
+        )
         await consume_attempt()
-        await _run_ffmpeg_audio(input_file, output_file)
+        if _audio_source_suffix(asset) == ".mp3":
+            logger.info(
+                "Audio source already mp3; skipping transcode media_id=%s input=%s",
+                asset.get("id"),
+                input_file,
+            )
+            output_file = input_file
+        else:
+            logger.info(
+                "Audio ffmpeg transcode starting media_id=%s input=%s output=%s",
+                asset.get("id"),
+                input_file,
+                output_file,
+            )
+            await _run_ffmpeg_audio(input_file, output_file)
+            logger.info(
+                "Audio ffmpeg transcode completed media_id=%s output=%s bytes=%s",
+                asset.get("id"),
+                output_file,
+                output_file.stat().st_size if output_file.exists() else 0,
+            )
         duration = await _probe_duration(output_file)
 
-        upload = await source_storage.create_upload_url(
-            output_path,
+        await _upload_derived_file(
+            storage=source_storage,
+            object_path=output_path,
+            source=output_file,
             content_type="audio/mpeg",
             upsert=True,
             cache_seconds=settings.media_public_cache_seconds,
         )
-        await _upload_file(upload.url, output_file, upload.headers)
 
     await _verify_ready_contract(
         asset=asset,
@@ -511,14 +873,6 @@ async def _transcode_cover_asset(
         "storage_bucket"
     ) or storage_service.canonical_source_bucket_for_media_asset(asset)
     source_storage = storage_service.get_storage_service(source_bucket)
-    try:
-        signed = await source_storage.get_presigned_url(
-            source_path,
-            ttl=settings.media_playback_url_ttl_seconds,
-            download=False,
-        )
-    except storage_service.StorageObjectNotFoundError as exc:
-        raise SourceNotReadyError(str(exc)) from exc
     output_path = _derive_cover_output_path(source_path, "jpg")
 
     with tempfile.TemporaryDirectory(prefix="aveli_cover_") as temp_dir:
@@ -526,20 +880,26 @@ async def _transcode_cover_asset(
         input_file = temp_root / "cover_source"
         output_file = temp_root / "cover.jpg"
 
-        await _download_to_file(signed.url, input_file)
+        await _materialize_source_file(
+            asset=asset,
+            source_storage=source_storage,
+            source_path=source_path,
+            destination=input_file,
+        )
         await consume_attempt()
         await _run_ffmpeg_cover(input_file, output_file)
 
         public_storage = storage_service.get_storage_service(
             settings.media_public_bucket
         )
-        upload = await public_storage.create_upload_url(
-            output_path,
+        await _upload_derived_file(
+            storage=public_storage,
+            object_path=output_path,
+            source=output_file,
             content_type="image/jpeg",
             upsert=True,
             cache_seconds=settings.media_public_cache_seconds,
         )
-        await _upload_file(upload.url, output_file, upload.headers)
     await _verify_ready_contract(
         asset=asset,
         playback_storage=public_storage,
@@ -592,14 +952,6 @@ async def _transcode_profile_media_image_asset(
         "storage_bucket"
     ) or storage_service.canonical_source_bucket_for_media_asset(asset)
     source_storage = storage_service.get_storage_service(source_bucket)
-    try:
-        signed = await source_storage.get_presigned_url(
-            source_path,
-            ttl=settings.media_playback_url_ttl_seconds,
-            download=False,
-        )
-    except storage_service.StorageObjectNotFoundError as exc:
-        raise SourceNotReadyError(str(exc)) from exc
     output_path = _derive_profile_media_output_path(source_path, "jpg")
 
     with tempfile.TemporaryDirectory(prefix="aveli_profile_media_") as temp_dir:
@@ -607,20 +959,26 @@ async def _transcode_profile_media_image_asset(
         input_file = temp_root / "profile_media_source"
         output_file = temp_root / "profile_media.jpg"
 
-        await _download_to_file(signed.url, input_file)
+        await _materialize_source_file(
+            asset=asset,
+            source_storage=source_storage,
+            source_path=source_path,
+            destination=input_file,
+        )
         await consume_attempt()
         await _run_ffmpeg_cover(input_file, output_file)
 
         public_storage = storage_service.get_storage_service(
             settings.media_public_bucket
         )
-        upload = await public_storage.create_upload_url(
-            output_path,
+        await _upload_derived_file(
+            storage=public_storage,
+            object_path=output_path,
+            source=output_file,
             content_type="image/jpeg",
             upsert=True,
             cache_seconds=settings.media_public_cache_seconds,
         )
-        await _upload_file(upload.url, output_file, upload.headers)
 
     await _verify_ready_contract(
         asset=asset,
@@ -664,20 +1022,96 @@ async def _transcode_profile_media_image_asset(
 
 
 async def _download_to_file(url: str, destination: Path) -> None:
-    timeout = httpx.Timeout(10.0, read=None)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream("GET", url) as response:
-            if response.status_code == 404:
-                raise SourceNotReadyError("Source object not yet available")
-            response.raise_for_status()
-            with destination.open("wb") as handle:
-                async for chunk in response.aiter_bytes(chunk_size=1024 * 1024):
-                    handle.write(chunk)
+    timeout = httpx.Timeout(connect=5.0, read=5.0, write=5.0, pool=5.0)
+    logger.info(
+        "Storage download request started url=%s destination=%s",
+        storage_service.redact_http_url(url),
+        destination,
+    )
+    bytes_written = 0
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            limits=storage_service.storage_http_limits(),
+        ) as client:
+            async with client.stream("GET", url) as response:
+                logger.info(
+                    "Storage download response received url=%s status=%s",
+                    storage_service.redact_http_url(url),
+                    response.status_code,
+                )
+                if response.status_code == 404:
+                    raise SourceNotReadyError("Source object not yet available")
+                response.raise_for_status()
+                with destination.open("wb") as handle:
+                    chunks = response.aiter_bytes(chunk_size=1024 * 1024).__aiter__()
+                    while True:
+                        try:
+                            chunk = await asyncio.wait_for(
+                                chunks.__anext__(),
+                                timeout=_DOWNLOAD_CHUNK_TIMEOUT_SECONDS,
+                            )
+                        except StopAsyncIteration:
+                            break
+                        except TimeoutError as exc:
+                            logger.warning(
+                                "Storage download stalled url=%s destination=%s timeout_seconds=%s bytes_received=%s",
+                                storage_service.redact_http_url(url),
+                                destination,
+                                _DOWNLOAD_CHUNK_TIMEOUT_SECONDS,
+                                bytes_written,
+                            )
+                            raise storage_service.StorageServiceError(
+                                "Timed out waiting for storage download bytes"
+                            ) from exc
+                        if not chunk:
+                            continue
+                        bytes_written += len(chunk)
+                        logger.info(
+                            "Storage download chunk received url=%s destination=%s bytes_received=%s total_bytes=%s",
+                            storage_service.redact_http_url(url),
+                            destination,
+                            len(chunk),
+                            bytes_written,
+                        )
+                        handle.write(chunk)
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "Storage download request failed url=%s destination=%s error=%s",
+            storage_service.redact_http_url(url),
+            destination,
+            exc,
+        )
+        raise storage_service.StorageServiceError(
+            "Failed to download storage object"
+        ) from exc
+
+    if not destination.exists():
+        raise storage_service.StorageServiceError(
+            f"Storage download did not create file: {destination}"
+        )
+    final_size = destination.stat().st_size
+    if final_size <= 0:
+        raise storage_service.StorageServiceError(
+            f"Storage download produced empty file: {destination}"
+        )
+    logger.info(
+        "Storage download completed destination=%s bytes=%s streamed_bytes=%s",
+        destination,
+        final_size,
+        bytes_written,
+    )
 
 
 async def _upload_file(url: str, source: Path, headers: dict[str, str] | None) -> None:
-    timeout = httpx.Timeout(10.0, read=None)
     upload_headers = dict(headers or {})
+    if not source.exists():
+        raise storage_service.StorageServiceError(
+            f"Upload source file missing: {source}"
+        )
+    source_size = source.stat().st_size
+    if source_size <= 0:
+        raise storage_service.StorageServiceError(f"Upload source file empty: {source}")
 
     async def _file_stream(path: Path, chunk_size: int = 1024 * 1024):
         with path.open("rb") as handle:
@@ -687,18 +1121,115 @@ async def _upload_file(url: str, source: Path, headers: dict[str, str] | None) -
                     break
                 yield chunk
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.put(
-            url, headers=upload_headers, content=_file_stream(source)
+    logger.info(
+        "Storage upload request started url=%s source=%s bytes=%s",
+        storage_service.redact_http_url(url),
+        source,
+        source_size,
+    )
+    try:
+        async with httpx.AsyncClient(
+            timeout=storage_service.storage_http_timeout(),
+            limits=storage_service.storage_http_limits(),
+        ) as client:
+            response = await client.put(
+                url, headers=upload_headers, content=_file_stream(source)
+            )
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "Storage upload request failed url=%s source=%s error=%s",
+            storage_service.redact_http_url(url),
+            source,
+            exc,
         )
+        raise storage_service.StorageServiceError(
+            "Failed to upload storage object"
+        ) from exc
+    logger.info(
+        "Storage upload request completed url=%s source=%s status=%s",
+        storage_service.redact_http_url(url),
+        source,
+        response.status_code,
+    )
     if response.status_code >= 400:
-        raise RuntimeError(f"Upload failed with status {response.status_code}")
+        raise storage_service.StorageServiceError(
+            f"Upload failed with status {response.status_code}",
+            status_code=response.status_code,
+        )
+
+
+def _ffmpeg_executable() -> str:
+    configured = os.environ.get("FFMPEG_BINARY")
+    if configured:
+        return configured
+    discovered = shutil.which("ffmpeg")
+    if discovered:
+        return discovered
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+def _ffprobe_executable() -> str | None:
+    configured = os.environ.get("FFPROBE_BINARY")
+    if configured:
+        return configured
+    return shutil.which("ffprobe")
+
+
+async def _run_subprocess(
+    command: list[str],
+    *,
+    label: str,
+    timeout_seconds: float,
+    allow_nonzero: bool = False,
+) -> tuple[int, str, str]:
+    logger.info("%s subprocess starting command=%s", label, command)
+
+    def _run() -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout_seconds,
+        )
+
+    try:
+        result = await asyncio.to_thread(_run)
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"{label} binary not found: {command[0]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"{label} timed out after {timeout_seconds:g}s") from exc
+
+    stdout = result.stdout.decode("utf-8", errors="ignore")
+    stderr = result.stderr.decode("utf-8", errors="ignore")
+    logger.info(
+        "%s subprocess completed returncode=%s stdout=%s stderr=%s",
+        label,
+        result.returncode,
+        _truncate(stdout or "<empty>"),
+        _truncate(stderr or "<empty>"),
+    )
+    if result.returncode != 0 and not allow_nonzero:
+        raise RuntimeError(_truncate(stderr or stdout or f"{label} failed"))
+    return int(result.returncode or 0), stdout, stderr
 
 
 async def _run_ffmpeg_audio(input_path: Path, output_path: Path) -> None:
-    logger.info("Running ffmpeg audio input=%s output=%s", input_path, output_path)
+    if not input_path.exists() or input_path.stat().st_size <= 0:
+        raise RuntimeError(f"ffmpeg audio input missing or empty: {input_path}")
+    logger.info(
+        "Running ffmpeg audio input=%s input_bytes=%s output=%s",
+        input_path,
+        input_path.stat().st_size,
+        output_path,
+    )
     command = [
-        "ffmpeg",
+        _ffmpeg_executable(),
         "-hide_banner",
         "-nostdin",
         "-y",
@@ -713,22 +1244,26 @@ async def _run_ffmpeg_audio(input_path: Path, output_path: Path) -> None:
         "192k",
         str(output_path),
     ]
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    await _run_subprocess(
+        command,
+        label="ffmpeg audio",
+        timeout_seconds=_FFMPEG_TIMEOUT_SECONDS,
     )
-    stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        error = stderr.decode("utf-8", errors="ignore") or stdout.decode(
-            "utf-8", errors="ignore"
-        )
-        raise RuntimeError(_truncate(error or "ffmpeg failed"))
+    if not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError(f"ffmpeg audio output missing or empty: {output_path}")
 
 
 async def _run_ffmpeg_cover(input_path: Path, output_path: Path) -> None:
+    if not input_path.exists() or input_path.stat().st_size <= 0:
+        raise RuntimeError(f"ffmpeg cover input missing or empty: {input_path}")
+    logger.info(
+        "Running ffmpeg cover input=%s input_bytes=%s output=%s",
+        input_path,
+        input_path.stat().st_size,
+        output_path,
+    )
     command = [
-        "ffmpeg",
+        _ffmpeg_executable(),
         "-hide_banner",
         "-nostdin",
         "-y",
@@ -742,48 +1277,72 @@ async def _run_ffmpeg_cover(input_path: Path, output_path: Path) -> None:
         "3",
         str(output_path),
     ]
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    await _run_subprocess(
+        command,
+        label="ffmpeg cover",
+        timeout_seconds=_FFMPEG_TIMEOUT_SECONDS,
     )
-    stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        error = stderr.decode("utf-8", errors="ignore") or stdout.decode(
-            "utf-8", errors="ignore"
-        )
-        raise RuntimeError(_truncate(error or "ffmpeg failed"))
+    if not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError(f"ffmpeg cover output missing or empty: {output_path}")
+
+
+def _parse_duration_seconds(output: str) -> int | None:
+    match = _DURATION_RE.search(output)
+    if not match:
+        return None
+    hours = int(match.group("hours"))
+    minutes = int(match.group("minutes"))
+    seconds = float(match.group("seconds"))
+    return int((hours * 3600) + (minutes * 60) + seconds)
 
 
 async def _probe_duration(path: Path) -> int | None:
+    if not path.exists() or path.stat().st_size <= 0:
+        raise RuntimeError(f"duration probe input missing or empty: {path}")
+
+    ffprobe = _ffprobe_executable()
+    if ffprobe is not None:
+        command = [
+            ffprobe,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ]
+        try:
+            _, stdout, _ = await _run_subprocess(
+                command,
+                label="ffprobe duration",
+                timeout_seconds=_FFPROBE_TIMEOUT_SECONDS,
+            )
+        except RuntimeError as exc:
+            logger.warning("ffprobe duration failed path=%s error=%s", path, exc)
+        else:
+            raw = stdout.strip()
+            if raw:
+                try:
+                    return int(float(raw))
+                except ValueError:
+                    logger.warning(
+                        "ffprobe duration was not numeric path=%s raw=%s", path, raw
+                    )
+
     command = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
+        _ffmpeg_executable(),
+        "-hide_banner",
+        "-i",
         str(path),
     ]
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except FileNotFoundError:
-        return None
-    stdout, _ = await process.communicate()
-    if process.returncode != 0:
-        return None
-    raw = stdout.decode("utf-8", errors="ignore").strip()
-    if not raw:
-        return None
-    try:
-        return int(float(raw))
-    except ValueError:
-        return None
+    _, stdout, stderr = await _run_subprocess(
+        command,
+        label="ffmpeg duration",
+        timeout_seconds=_FFPROBE_TIMEOUT_SECONDS,
+        allow_nonzero=True,
+    )
+    return _parse_duration_seconds(stderr or stdout)
 
 
 async def _run_worker_forever() -> None:

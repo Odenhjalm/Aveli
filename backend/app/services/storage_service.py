@@ -1,15 +1,38 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx
 
 from ..config import settings
 from ..utils.http_headers import build_content_disposition
+
+logger = logging.getLogger(__name__)
+
+
+def storage_http_timeout() -> httpx.Timeout:
+    return httpx.Timeout(10.0, connect=5.0, read=10.0)
+
+
+def storage_http_limits() -> httpx.Limits:
+    return httpx.Limits(max_keepalive_connections=0)
+
+
+def redact_http_url(url: str) -> str:
+    try:
+        parsed = urlsplit(str(url))
+    except ValueError:
+        return "<invalid-url>"
+    if not parsed.query:
+        return str(url)
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, "<redacted>", parsed.fragment)
+    )
 
 
 class StorageServiceError(RuntimeError):
@@ -80,9 +103,7 @@ class StorageService:
 
         normalized_path = path.lstrip("/")
         base_url = supabase_url.rstrip("/")
-        return (
-            f"{base_url}/storage/v1/object/public/{self._bucket}/{normalized_path}"
-        )
+        return f"{base_url}/storage/v1/object/public/{self._bucket}/{normalized_path}"
 
     async def get_presigned_url(
         self,
@@ -110,7 +131,15 @@ class StorageService:
         )
         payload: dict[str, Any] = {"expiresIn": expires_in}
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        logger.info(
+            "Supabase Storage presigned URL request started bucket=%s path=%s",
+            self._bucket,
+            normalized_path,
+        )
+        async with httpx.AsyncClient(
+            timeout=storage_http_timeout(),
+            limits=storage_http_limits(),
+        ) as client:
             try:
                 response = await client.post(
                     request_url,
@@ -122,7 +151,19 @@ class StorageService:
                     },
                 )
             except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+                logger.warning(
+                    "Supabase Storage presigned URL request failed bucket=%s path=%s error=%s",
+                    self._bucket,
+                    normalized_path,
+                    exc,
+                )
                 raise StorageServiceError("Failed to call Supabase Storage") from exc
+        logger.info(
+            "Supabase Storage presigned URL request completed bucket=%s path=%s status=%s",
+            self._bucket,
+            normalized_path,
+            response.status_code,
+        )
 
         if response.status_code >= 400:
             error = None
@@ -159,9 +200,7 @@ class StorageService:
             connector = "&" if "?" in signed_path else "?"
             quoted_download = quote(download_name, safe="")
             signed_path = f"{signed_path}{connector}download={quoted_download}"
-            headers = {
-                "Content-Disposition": build_content_disposition(download_name)
-            }
+            headers = {"Content-Disposition": build_content_disposition(download_name)}
         else:
             headers = {}
         if signed_path.startswith("/object/"):
@@ -202,7 +241,15 @@ class StorageService:
         if upsert:
             headers["x-upsert"] = "true"
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        logger.info(
+            "Supabase Storage upload signing request started bucket=%s path=%s",
+            self._bucket,
+            normalized_path,
+        )
+        async with httpx.AsyncClient(
+            timeout=storage_http_timeout(),
+            limits=storage_http_limits(),
+        ) as client:
             try:
                 response = await client.post(
                     request_url,
@@ -210,7 +257,19 @@ class StorageService:
                     headers=headers,
                 )
             except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+                logger.warning(
+                    "Supabase Storage upload signing request failed bucket=%s path=%s error=%s",
+                    self._bucket,
+                    normalized_path,
+                    exc,
+                )
                 raise StorageServiceError("Failed to call Supabase Storage") from exc
+        logger.info(
+            "Supabase Storage upload signing request completed bucket=%s path=%s status=%s",
+            self._bucket,
+            normalized_path,
+            response.status_code,
+        )
 
         if response.status_code >= 400:
             raise StorageServiceError(
@@ -260,8 +319,16 @@ class StorageService:
             upsert=upsert,
             cache_seconds=cache_seconds,
         )
-        timeout = httpx.Timeout(15.0, read=None, write=None)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        logger.info(
+            "Supabase Storage upload request started bucket=%s path=%s url=%s",
+            self._bucket,
+            upload.path,
+            redact_http_url(upload.url),
+        )
+        async with httpx.AsyncClient(
+            timeout=storage_http_timeout(),
+            limits=storage_http_limits(),
+        ) as client:
             try:
                 response = await client.put(
                     upload.url,
@@ -269,7 +336,20 @@ class StorageService:
                     content=content,
                 )
             except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+                logger.warning(
+                    "Supabase Storage upload request failed bucket=%s path=%s url=%s error=%s",
+                    self._bucket,
+                    upload.path,
+                    redact_http_url(upload.url),
+                    exc,
+                )
                 raise StorageServiceError("Failed to upload storage object") from exc
+        logger.info(
+            "Supabase Storage upload request completed bucket=%s path=%s status=%s",
+            self._bucket,
+            upload.path,
+            response.status_code,
+        )
 
         if response.status_code >= 400:
             raise StorageServiceError(
@@ -292,7 +372,15 @@ class StorageService:
         quoted_path = quote(normalized_path, safe="/")
         request_url = f"{base_url}/storage/v1/object/{self._bucket}/{quoted_path}"
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        logger.info(
+            "Supabase Storage delete request started bucket=%s path=%s",
+            self._bucket,
+            normalized_path,
+        )
+        async with httpx.AsyncClient(
+            timeout=storage_http_timeout(),
+            limits=storage_http_limits(),
+        ) as client:
             try:
                 response = await client.delete(
                     request_url,
@@ -302,7 +390,19 @@ class StorageService:
                     },
                 )
             except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+                logger.warning(
+                    "Supabase Storage delete request failed bucket=%s path=%s error=%s",
+                    self._bucket,
+                    normalized_path,
+                    exc,
+                )
                 raise StorageServiceError("Failed to call Supabase Storage") from exc
+        logger.info(
+            "Supabase Storage delete request completed bucket=%s path=%s status=%s",
+            self._bucket,
+            normalized_path,
+            response.status_code,
+        )
 
         if response.status_code in {200, 204}:
             return True
@@ -380,12 +480,34 @@ async def copy_object(
         cache_seconds=cache_seconds,
     )
 
-    timeout = httpx.Timeout(10.0, read=None)
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(
+        timeout=storage_http_timeout(),
+        limits=storage_http_limits(),
+    ) as client:
+        logger.info(
+            "Supabase Storage copy download request started source_bucket=%s source_path=%s url=%s",
+            normalized_source_bucket,
+            normalized_source_path,
+            redact_http_url(signed_source.url),
+        )
         try:
             source_response = await client.get(signed_source.url)
         except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+            logger.warning(
+                "Supabase Storage copy download request failed source_bucket=%s source_path=%s url=%s error=%s",
+                normalized_source_bucket,
+                normalized_source_path,
+                redact_http_url(signed_source.url),
+                exc,
+            )
             raise StorageServiceError("Failed to download source object") from exc
+        logger.info(
+            "Supabase Storage copy download request completed source_bucket=%s source_path=%s status=%s bytes=%s",
+            normalized_source_bucket,
+            normalized_source_path,
+            source_response.status_code,
+            len(source_response.content or b""),
+        )
 
         if source_response.status_code == 404:
             raise StorageObjectNotFoundError("Supabase Storage object not found")
@@ -394,6 +516,12 @@ async def copy_object(
                 f"Supabase Storage download failed with status {source_response.status_code}"
             )
 
+        logger.info(
+            "Supabase Storage copy upload request started destination_bucket=%s destination_path=%s url=%s",
+            normalized_destination_bucket,
+            normalized_destination_path,
+            redact_http_url(signed_destination.url),
+        )
         try:
             destination_response = await client.put(
                 signed_destination.url,
@@ -401,7 +529,20 @@ async def copy_object(
                 content=source_response.content,
             )
         except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+            logger.warning(
+                "Supabase Storage copy upload request failed destination_bucket=%s destination_path=%s url=%s error=%s",
+                normalized_destination_bucket,
+                normalized_destination_path,
+                redact_http_url(signed_destination.url),
+                exc,
+            )
             raise StorageServiceError("Failed to upload destination object") from exc
+        logger.info(
+            "Supabase Storage copy upload request completed destination_bucket=%s destination_path=%s status=%s",
+            normalized_destination_bucket,
+            normalized_destination_path,
+            destination_response.status_code,
+        )
 
     if destination_response.status_code >= 400:
         raise StorageServiceError(

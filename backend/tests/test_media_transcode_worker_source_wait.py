@@ -1,6 +1,8 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
 import pytest
 
 from app.services import media_transcode_worker as worker
@@ -150,6 +152,225 @@ async def test_worker_defers_without_consuming_attempt_when_download_returns_404
 
 
 @pytest.mark.anyio("asyncio")
+async def test_download_to_file_wraps_http_errors_and_uses_fail_fast_client(
+    monkeypatch,
+    tmp_path,
+):
+    captured: dict[str, object] = {}
+
+    class FailingStream:
+        async def __aenter__(self):
+            raise httpx.ReadTimeout("read timed out")
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            captured["init"] = {"args": args, "kwargs": kwargs}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, method, url):
+            captured["request"] = {"method": method, "url": url}
+            return FailingStream()
+
+    monkeypatch.setattr(worker.httpx, "AsyncClient", DummyAsyncClient)
+
+    destination = tmp_path / "source.wav"
+    with pytest.raises(worker.storage_service.StorageServiceError) as exc_info:
+        await worker._download_to_file(
+            "https://example.invalid/source.wav?token=secret",
+            destination,
+        )
+
+    assert isinstance(exc_info.value.__cause__, httpx.ReadTimeout)
+    assert not destination.exists()
+    assert captured["request"] == {
+        "method": "GET",
+        "url": "https://example.invalid/source.wav?token=secret",
+    }
+    timeout = captured["init"]["kwargs"]["timeout"]
+    limits = captured["init"]["kwargs"]["limits"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.connect == 5.0
+    assert timeout.read == 5.0
+    assert timeout.write == 5.0
+    assert timeout.pool == 5.0
+    assert isinstance(limits, httpx.Limits)
+    assert limits.max_keepalive_connections == 0
+
+
+@pytest.mark.anyio("asyncio")
+async def test_download_to_file_fails_when_stream_stalls(monkeypatch, tmp_path):
+    class HangingResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self, *, chunk_size):
+            await asyncio.sleep(3600)
+            yield b"never"
+
+    class HangingStream:
+        async def __aenter__(self):
+            return HangingResponse()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, method, url):
+            return HangingStream()
+
+    monkeypatch.setattr(worker.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(worker, "_DOWNLOAD_CHUNK_TIMEOUT_SECONDS", 0.01)
+
+    with pytest.raises(worker.storage_service.StorageServiceError) as exc_info:
+        await worker._download_to_file(
+            "https://example.invalid/source.wav?token=secret",
+            tmp_path / "source.wav",
+        )
+
+    assert "Timed out waiting for storage download bytes" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, TimeoutError)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_download_to_file_writes_non_empty_payload(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+
+    class DummyResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self, *, chunk_size):
+            captured["chunk_size"] = chunk_size
+            yield b"abc"
+            yield b"def"
+
+    class DummyStream:
+        async def __aenter__(self):
+            return DummyResponse()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            captured["init"] = {"args": args, "kwargs": kwargs}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, method, url):
+            captured["request"] = {"method": method, "url": url}
+            return DummyStream()
+
+    monkeypatch.setattr(worker.httpx, "AsyncClient", DummyAsyncClient)
+
+    destination = tmp_path / "source.wav"
+    await worker._download_to_file(
+        "https://example.invalid/source.wav?token=secret",
+        destination,
+    )
+
+    assert destination.read_bytes() == b"abcdef"
+    assert captured["chunk_size"] == 1024 * 1024
+
+
+@pytest.mark.anyio("asyncio")
+async def test_worker_records_download_timeout_without_crashing(monkeypatch):
+    fixed_now = datetime(2026, 1, 25, tzinfo=timezone.utc)
+    monkeypatch.setattr(worker, "_now", lambda: fixed_now)
+
+    calls: dict[str, object] = {}
+
+    class DummySigned:
+        url = "https://example.invalid/source.wav?token=secret"
+
+    class DummyStorage:
+        bucket = "course-media"
+
+        async def get_presigned_url(self, *args, **kwargs):
+            return DummySigned()
+
+    async def fake_download_to_file(url, destination):
+        raise worker.storage_service.StorageServiceError(
+            "Timed out waiting for storage download bytes"
+        )
+
+    async def increment_processing_attempts(*, media_id: str) -> None:
+        calls["increment"] = media_id
+
+    async def mark_media_asset_failed(**kwargs) -> None:
+        calls["failed"] = kwargs
+
+    async def defer_media_asset_processing(*args, **kwargs) -> None:
+        raise AssertionError("download errors must not use source-not-ready deferral")
+
+    monkeypatch.setattr(
+        worker.storage_service, "get_storage_service", lambda bucket: DummyStorage()
+    )
+    monkeypatch.setattr(worker, "_download_to_file", fake_download_to_file)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "increment_processing_attempts",
+        increment_processing_attempts,
+    )
+    monkeypatch.setattr(
+        worker.media_assets_repo, "mark_media_asset_failed", mark_media_asset_failed
+    )
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "defer_media_asset_processing",
+        defer_media_asset_processing,
+    )
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "compute_backoff",
+        lambda attempts, max_seconds: timedelta(seconds=30),
+    )
+
+    await worker._process_asset(
+        {
+            "id": "media-timeout",
+            "processing_attempts": 0,
+            "media_type": "audio",
+            "purpose": "lesson_audio",
+            "original_object_path": "media/source/audio/lesson/foo.wav",
+            "storage_bucket": "course-media",
+        }
+    )
+
+    assert calls["increment"] == "media-timeout"
+    assert calls["failed"] == {
+        "media_id": "media-timeout",
+        "error_message": "Timed out waiting for storage download bytes",
+        "next_retry_at": fixed_now + timedelta(seconds=30),
+    }
+
+
+@pytest.mark.anyio("asyncio")
 async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeypatch):
     calls: dict[str, object] = {}
 
@@ -245,6 +466,38 @@ async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeyp
         "codec": "mp3",
         "playback_storage_bucket": "course-media",
     }
+
+
+@pytest.mark.anyio("asyncio")
+async def test_derived_upload_falls_back_to_local_storage_in_local_mode(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(worker.settings, "mcp_mode", "local")
+    monkeypatch.setattr(worker.settings, "media_root", str(tmp_path))
+    source = tmp_path / "source.mp3"
+    source.write_bytes(b"mp3-bytes")
+
+    class DummyStorage:
+        bucket = "course-media"
+
+        async def create_upload_url(self, *args, **kwargs):
+            raise worker.storage_service.StorageServiceError("upload signing failed")
+
+    await worker._upload_derived_file(
+        storage=DummyStorage(),
+        object_path="media/derived/audio/demo.mp3",
+        source=source,
+        content_type="audio/mpeg",
+        upsert=True,
+        cache_seconds=3600,
+    )
+
+    target = tmp_path / "course-media" / "media" / "derived" / "audio" / "demo.mp3"
+    assert target.read_bytes() == b"mp3-bytes"
+    assert worker._local_storage_object_exists(
+        "course-media", "media/derived/audio/demo.mp3"
+    )
 
 
 def test_worker_never_assigns_course_cover_identity() -> None:

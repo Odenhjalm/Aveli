@@ -129,6 +129,24 @@ def test_settings_reject_cloud_runtime_with_local_database_url(monkeypatch):
         Settings(_env_file=None)
 
 
+def test_settings_local_mode_ignores_inherited_cloud_runtime_flags(monkeypatch):
+    _set_local_db_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://postgres:pw@127.0.0.1:5432/aveli_local",
+    )
+    monkeypatch.delenv("MCP_PRODUCTION_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PRODUCTION_SUPABASE_DB_URL", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.cloud_runtime is False
+    assert settings.mcp_workers_enabled is True
+
+
 @pytest.mark.anyio("asyncio")
 async def test_media_transcode_worker_enablement_follows_mcp_mode(monkeypatch):
     from app.services import media_transcode_worker as worker
@@ -513,6 +531,7 @@ async def test_lifespan_skips_background_workers_in_cloud_runtime(
     membership_start = AsyncMock()
     membership_stop = AsyncMock()
 
+    monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("FLY_APP_NAME", "aveli")
     monkeypatch.setattr(main.pool, "open", pool_open)
     monkeypatch.setattr(main.pool, "close", pool_close)

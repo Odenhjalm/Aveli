@@ -16,8 +16,11 @@ BASELINE_V2_DIR = ROOT_DIR / "backend" / "supabase" / "baseline_v2_slots"
 MANAGED_SCHEMAS = ("app", "auth", "storage")
 BASELINE_MODE_ENV = "BASELINE_MODE"
 DEFAULT_BASELINE_MODE = "V2"
+CLOUD_RUNTIME_ENV_KEYS = ("FLY_APP_NAME", "K_SERVICE", "AWS_EXECUTION_ENV", "DYNO")
 
-EXPECTED_V2_SCHEMA_HASH = "bd18f23efbc00a9c3afd79fe45ffedfd0dcf0bb2c2c7771a292c2ebe9098e6da"
+EXPECTED_V2_SCHEMA_HASH = (
+    "b8f481fa9b19240925f4a7482949d102d733467ba862bcff4201a968d3e0672a"
+)
 EXPECTED_V2_COUNTS = {
     "enums": 13,
     "tables": 30,
@@ -26,7 +29,7 @@ EXPECTED_V2_COUNTS = {
     "fks": 37,
     "constraints": 147,
     "triggers": 11,
-    "functions": 20,
+    "functions": 21,
 }
 EXPECTED_V2_SLOTS = (
     "V2_0001_foundation_enums.sql",
@@ -44,6 +47,7 @@ EXPECTED_V2_SLOTS = (
     "V2_0013_workers.sql",
     "V2_0014_media_asset_content_identity.sql",
     "V2_0015_media_worker_lifecycle_functions.sql",
+    "V2_0016_media_worker_failed_requeue.sql",
 )
 
 LEGACY_COLUMNS = ("role_v2", "is_admin", "course_step", "created_by", "is_published")
@@ -53,6 +57,7 @@ WORKER_FUNCTIONS = (
     "canonical_worker_increment_media_asset_attempts",
     "canonical_worker_lock_media_asset_for_processing",
     "canonical_worker_release_stale_media_asset_locks",
+    "canonical_worker_requeue_failed_media_asset",
     "canonical_worker_transition_media_asset",
 )
 
@@ -80,7 +85,9 @@ import psycopg  # noqa: E402
 
 
 def baseline_mode() -> str:
-    return str(os.environ.get(BASELINE_MODE_ENV) or DEFAULT_BASELINE_MODE).strip().upper()
+    return (
+        str(os.environ.get(BASELINE_MODE_ENV) or DEFAULT_BASELINE_MODE).strip().upper()
+    )
 
 
 def _database_url(database_url: str | None = None) -> str:
@@ -101,8 +108,16 @@ def _require_local_database(database_url: str) -> None:
         raise BaselineV2Error(
             f"V2 baseline bootstrap is local-only; DATABASE_URL host is {parsed.hostname!r}"
         )
-    if os.environ.get("FLY_APP_NAME") or os.environ.get("K_SERVICE"):
-        raise BaselineV2Error("cloud runtime flag detected during local V2 baseline bootstrap")
+    app_env = str(os.environ.get("APP_ENV") or "").strip().lower()
+    mcp_mode = str(os.environ.get("MCP_MODE") or "").strip().lower()
+    if app_env == "local" and mcp_mode == "local":
+        return
+    active_cloud_flags = [key for key in CLOUD_RUNTIME_ENV_KEYS if os.environ.get(key)]
+    if active_cloud_flags:
+        raise BaselineV2Error(
+            "cloud runtime flag detected during local V2 baseline bootstrap: "
+            + ", ".join(active_cloud_flags)
+        )
 
 
 def _fetchall(conn: psycopg.Connection, sql: str, params: tuple = ()) -> list[tuple]:
@@ -152,7 +167,9 @@ def _db_is_empty(conn: psycopg.Connection) -> bool:
 
 def _replay_v2(conn: psycopg.Connection) -> None:
     if not _db_is_empty(conn):
-        raise BaselineV2Error("refusing to replay V2 into a non-empty managed schema state")
+        raise BaselineV2Error(
+            "refusing to replay V2 into a non-empty managed schema state"
+        )
 
     for slot in _slot_paths():
         try:
@@ -415,7 +432,9 @@ def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
         """,
     )
     if runtime_media_relkind != "v":
-        failures.append(f"runtime_media relkind is {runtime_media_relkind!r}, expected 'v'")
+        failures.append(
+            f"runtime_media relkind is {runtime_media_relkind!r}, expected 'v'"
+        )
 
     payment_events_processed_at = _scalar(
         conn,
@@ -510,7 +529,7 @@ def main() -> int:
     try:
         status = ensure_v2_baseline()
     except Exception as exc:
-        print(f"BASELINE_V2_STATUS=FAIL")
+        print("BASELINE_V2_STATUS=FAIL")
         print(f"FAILURE={exc}")
         return 1
 

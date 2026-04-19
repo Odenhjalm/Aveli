@@ -610,13 +610,15 @@ async def get_lesson_content_surface_rows(
                 lcs.lesson_title,
                 lcs.position,
                 lcs.content_markdown,
-                lcs.lesson_media_id,
-                lcs.media_asset_id,
-                lcs.lesson_media_position
+                lm.id as lesson_media_id,
+                lm.media_asset_id,
+                lm.position as lesson_media_position
             from app.lesson_content_surface as lcs
+            left join app.lesson_media as lm
+              on lm.lesson_id = lcs.id
             where lcs.id = %s::uuid
-            order by lcs.lesson_media_position asc nulls last,
-                     lcs.lesson_media_id asc nulls last
+            order by lm.position asc nulls last,
+                     lm.id asc nulls last
             """,
             (lesson_id,),
         )

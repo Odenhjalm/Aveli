@@ -589,13 +589,32 @@ async def upload_lesson_image(
                 upsert=True,
                 cache_seconds=settings.media_public_cache_seconds,
             )
-            timeout = httpx.Timeout(15.0, read=None)
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.put(
-                    upload.url,
-                    headers=dict(upload.headers),
-                    content=payload,
-                )
+            logger.info(
+                "Supabase lesson image upload request started lesson_id=%s key=%s url=%s",
+                lesson_id_str,
+                upload.path,
+                storage_service.redact_http_url(upload.url),
+            )
+            async with httpx.AsyncClient(
+                timeout=storage_service.storage_http_timeout(),
+                limits=storage_service.storage_http_limits(),
+            ) as client:
+                try:
+                    response = await client.put(
+                        upload.url,
+                        headers=dict(upload.headers),
+                        content=payload,
+                    )
+                except httpx.HTTPError as exc:
+                    raise storage_service.StorageServiceError(
+                        "Failed to upload lesson image to Supabase Storage"
+                    ) from exc
+            logger.info(
+                "Supabase lesson image upload request completed lesson_id=%s key=%s status=%s",
+                lesson_id_str,
+                upload.path,
+                response.status_code,
+            )
             if response.status_code >= 400:
                 logger.warning(
                     "Supabase lesson image upload failed: lesson_id=%s status=%s key=%s",
@@ -610,7 +629,7 @@ async def upload_lesson_image(
             persisted_storage_path = upload.path
         except storage_service.StorageServiceError as exc:
             logger.warning(
-                "Supabase lesson image upload signing failed: lesson_id=%s error=%s",
+                "Supabase lesson image storage operation failed: lesson_id=%s error=%s",
                 lesson_id_str,
                 exc,
             )

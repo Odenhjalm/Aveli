@@ -1,8 +1,23 @@
 import pytest
+import httpx
 
 from app.services import storage_service as storage_module
-from app.services.storage_service import StorageObjectNotFoundError, StorageService
+from app.services.storage_service import (
+    StorageObjectNotFoundError,
+    StorageService,
+    StorageServiceError,
+)
 from app.utils.http_headers import build_content_disposition
+
+
+def _assert_fail_fast_storage_client(init: dict[str, object]) -> None:
+    timeout = init["kwargs"]["timeout"]
+    limits = init["kwargs"]["limits"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.connect == 5.0
+    assert timeout.read == 10.0
+    assert isinstance(limits, httpx.Limits)
+    assert limits.max_keepalive_connections == 0
 
 
 @pytest.mark.anyio("asyncio")
@@ -58,6 +73,7 @@ async def test_get_presigned_url_sets_content_disposition(monkeypatch):
     assert request["json"] == {"expiresIn": 120}
     assert request["headers"]["apikey"] == "service-role-key"
     assert request["headers"]["Authorization"] == "Bearer service-role-key"
+    _assert_fail_fast_storage_client(captured["init"])
 
 
 @pytest.mark.anyio("asyncio")
@@ -99,6 +115,42 @@ async def test_get_presigned_url_object_not_found_raises_typed_error(monkeypatch
             ttl=120,
             download=False,
         )
+
+
+@pytest.mark.anyio("asyncio")
+async def test_get_presigned_url_wraps_http_errors(monkeypatch):
+    captured: dict[str, dict[str, object]] = {}
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            captured["init"] = {"args": args, "kwargs": kwargs}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            raise httpx.ConnectTimeout("connect timed out")
+
+    monkeypatch.setattr(storage_module.httpx, "AsyncClient", DummyAsyncClient)
+
+    service = StorageService(
+        bucket="lesson_media",
+        supabase_url="https://example.supabase.co",
+        service_role_key="service-role-key",
+    )
+
+    with pytest.raises(StorageServiceError) as exc_info:
+        await service.get_presigned_url(
+            "course/foo.mp4",
+            ttl=120,
+            download=False,
+        )
+
+    assert isinstance(exc_info.value.__cause__, httpx.ConnectTimeout)
+    _assert_fail_fast_storage_client(captured["init"])
 
 
 @pytest.mark.anyio("asyncio")
@@ -154,6 +206,7 @@ async def test_create_upload_url_returns_put_headers(monkeypatch):
 
     request = captured["request"]
     assert request["headers"]["x-upsert"] == "true"
+    _assert_fail_fast_storage_client(captured["init"])
 
 
 def test_canonical_upload_bucket_uses_profile_media_bucket_for_profile_assets():
