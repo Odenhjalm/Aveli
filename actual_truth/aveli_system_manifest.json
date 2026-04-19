@@ -28,6 +28,19 @@
         "accepted_baseline_scope": "backend/supabase/baseline_v2_slots",
         "canonical_lock": "backend/supabase/baseline_v2_slots.lock.json",
         "schema_verification_owner": "backend/supabase/baseline_v2_slots.lock.json",
+        "canonical_schema_scope": "app_owned_schema_only",
+        "canonical_hash_scope": "app_schema_only",
+        "replay_owned_schemas": [
+            "app"
+        ],
+        "external_substrate_schemas": [
+            "auth",
+            "storage"
+        ],
+        "execution_profiles": {
+            "hosted_supabase": "verify_provider_owned_substrate_interface_only_then_replay_app_schema",
+            "local_dev": "replay_locked_minimal_substrate_then_replay_app_schema"
+        },
         "superseded_legacy_baseline": "backend/supabase/baseline_slots is archived legacy and non-authoritative",
         "onboarding_state": {
             "canonical_intermediate_state": "welcome_pending"

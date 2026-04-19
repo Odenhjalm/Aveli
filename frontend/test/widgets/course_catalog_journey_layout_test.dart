@@ -10,6 +10,7 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_catalog_page.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 
 CourseSummary _course({
   required String id,
@@ -18,6 +19,8 @@ CourseSummary _course({
   required int groupPosition,
   String courseGroupId = '',
   int? priceCents,
+  String? coverMediaId,
+  CourseCoverData? cover,
 }) {
   return CourseSummary(
     id: id,
@@ -25,8 +28,8 @@ CourseSummary _course({
     title: title,
     groupPosition: groupPosition,
     courseGroupId: courseGroupId,
-    coverMediaId: null,
-    cover: null,
+    coverMediaId: coverMediaId,
+    cover: cover,
     priceCents: priceCents,
     dripEnabled: false,
     dripIntervalDays: null,
@@ -292,6 +295,76 @@ void main() {
       );
     },
   );
+
+  testWidgets('renders premium discovery cover without enrollment state', (
+    tester,
+  ) async {
+    final view = tester.view;
+    view.physicalSize = const Size(1600, 1600);
+    view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      view.resetPhysicalSize();
+      view.resetDevicePixelRatio();
+    });
+
+    final previewCourses = <CourseSummary>[
+      _course(
+        id: 'premium-1',
+        slug: 'premium-course',
+        title: 'Premium Course',
+        groupPosition: 1,
+        courseGroupId: 'series:premium-course',
+        priceCents: 9900,
+        coverMediaId: 'media-1',
+        cover: const CourseCoverData(
+          mediaId: 'media-1',
+          state: 'ready',
+          resolvedUrl: 'https://cdn.test/catalog-premium-cover.jpg',
+        ),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'https://api.test',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          authControllerProvider.overrideWith(
+            (ref) => _FakeAuthController(const AuthState()),
+          ),
+          coursesProvider.overrideWith((ref) async => previewCourses),
+          courseProgressProvider.overrideWith(
+            (ref, request) async => const <String, double>{},
+          ),
+        ],
+        child: const MaterialApp(home: CourseCatalogPage()),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is NetworkImage &&
+            (widget.image as NetworkImage).url ==
+                'https://cdn.test/catalog-premium-cover.jpg',
+        description:
+            'Image.network(https://cdn.test/catalog-premium-cover.jpg)',
+      ),
+      findsOneWidget,
+    );
+    final exception = tester.takeException();
+    if (exception != null) {
+      expect(exception, isA<NetworkImageLoadException>());
+    }
+  });
 }
 
 class _FakeAuthController extends AuthController {

@@ -89,6 +89,12 @@ def main() -> int:
     baseline_dir = Path(args.baseline_dir)
     manifest = _load_manifest(manifest_path)
 
+    replay_ownership = manifest.get("replay_ownership") or {}
+    if replay_ownership.get("replay_owned_schemas") != ["app"]:
+        return _fail("manifest replay_owned_schemas must be ['app']")
+    if replay_ownership.get("external_substrate_schemas") != ["auth", "storage"]:
+        return _fail("manifest external_substrate_schemas must be ['auth', 'storage']")
+
     protected_min_slot = int(manifest.get("protected_min_slot", 1))
     protected_max_slot = int(manifest["protected_max_slot"])
     manifest_slots = list(manifest.get("slots") or [])
@@ -178,6 +184,22 @@ def main() -> int:
             return _fail(
                 f"accepted slot content changed: {manifest_entry['filename']} "
                 f"(expected {manifest_entry['sha256']}, got {current_entry['sha256']})"
+            )
+
+    for substrate_entry in manifest.get("local_dev_substrate_files") or []:
+        substrate_path = Path(str(substrate_entry["path"]))
+        if not substrate_path.is_file():
+            return _fail(f"local substrate file missing: {substrate_path}")
+        if substrate_path.name != substrate_entry["filename"]:
+            return _fail(
+                f"local substrate file renamed: expected {substrate_entry['filename']}, "
+                f"got {substrate_path.name}"
+            )
+        substrate_hash = _sha256(substrate_path)
+        if substrate_hash != substrate_entry["sha256"]:
+            return _fail(
+                f"local substrate content changed: {substrate_entry['filename']} "
+                f"(expected {substrate_entry['sha256']}, got {substrate_hash})"
             )
 
     append_only_entries = [item for item in current_entries if item["slot"] > protected_max_slot]

@@ -40,6 +40,11 @@ code editing, database mutation, or deployment execution begins.
 Baseline V2 is a clean conceptual rebaseline. The implementation target is full
 cutover, not append-only extension of the current authority model.
 
+Concrete Baseline V2 replay ownership is app-owned schema only. Hosted Supabase
+owns the physical `auth` and `storage` schemas; Baseline V2 verifies their
+required interfaces but does not replay-create them. Local development may
+provision locked minimal compatibility substrate before app-owned slot replay.
+
 This contract controls Baseline V2 planning only after acceptance. Until all
 later authority-freeze alignment batches are reviewed and accepted, existing
 repo files may still contain stale or conflicting statements. Those statements
@@ -121,7 +126,7 @@ surface between these classes without later accepted authority.
 Canonical write authority for Baseline V2 includes:
 
 - Identity and auth-subject authority:
-  - `auth.users` as external identity/credential substrate only.
+  - `auth.users` as external provider-owned identity/credential substrate only.
   - `app.auth_subjects` as Aveli auth subject, onboarding state, role, and
     app-entry subject authority.
   - `app.refresh_tokens`, `app.auth_events`, and `app.admin_bootstrap_state`
@@ -224,6 +229,9 @@ mutation is authorized by Baseline V2 authority freeze.
 
 Supabase Auth and Storage are external-compatible substrates. They do not own
 Aveli onboarding, profile, membership, course, media, or app-entry truth.
+Hosted Supabase physical `auth` and `storage` schemas are provider-owned and
+must not be recreated by Baseline V2 replay. The V2 lock owns only their
+required interface expectations.
 
 Backend composition may resolve and present read output, but it must remain
 subordinate to canonical write authority and projection/read authority.

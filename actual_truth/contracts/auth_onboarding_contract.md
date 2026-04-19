@@ -16,11 +16,10 @@ This contract composes with:
 
 ## 1. CONTRACT LAW
 
-- `auth.users` is the only identity and credential authority.
+- `auth.users` is the external identity and credential substrate.
 - `app.auth_subjects` is the canonical application subject authority for:
   - onboarding subject state
   - app-level role subject fields
-  - app-level admin subject fields
 - `app.profiles` is projection-only and non-authoritative.
 - `POST /auth/onboarding/create-profile` is the canonical onboarding-owned
   create-profile surface.
@@ -37,9 +36,9 @@ This contract composes with:
 ## 2. AUTHORITY MODEL
 
 - `auth.users` owns identity creation, authentication, credential truth,
-  canonical email identity, and canonical email-verification state.
-- `app.auth_subjects` owns `onboarding_state`, `role_v2`, `role`, and
-  `is_admin`.
+  canonical email identity, and canonical email-verification state as an
+  external substrate.
+- `app.auth_subjects` owns `onboarding_state` and `role`.
 - `app.profiles` remains projection-only and is governed by
   `profile_projection_contract.md`.
 - `POST /auth/onboarding/create-profile` owns onboarding-step execution for
@@ -232,8 +231,9 @@ All non-2xx responses on owned surfaces are governed only by
 
 - The first admin is established only through the operator-controlled bootstrap
   defined by `auth_onboarding_baseline_contract.md`.
-- No public app-runtime route exists for mutating `is_admin`.
-- After bootstrap, `is_admin` remains operator-controlled only.
+- No public app-runtime route exists for the first-admin bootstrap mutation.
+- After bootstrap, admin role authority remains operator-controlled except for
+  explicitly named admin-owned teacher-role mutation surfaces.
 
 ## 9. TEACHER ROLE BOUNDARY
 

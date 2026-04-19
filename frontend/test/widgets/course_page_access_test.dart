@@ -31,6 +31,7 @@ CourseDetailData _detail({
   required int groupPosition,
   String? coverMediaId,
   CourseCoverData? cover,
+  int? priceCents = 0,
 }) {
   return CourseDetailData(
     course: CourseSummary(
@@ -41,7 +42,7 @@ CourseDetailData _detail({
       courseGroupId: 'group-1',
       coverMediaId: coverMediaId,
       cover: cover,
-      priceCents: 0,
+      priceCents: priceCents,
       dripEnabled: false,
       dripIntervalDays: null,
     ),
@@ -189,6 +190,57 @@ void main() {
             (widget.image as NetworkImage).url ==
                 'https://cdn.test/course-cover.jpg',
         description: 'Image.network(https://cdn.test/course-cover.jpg)',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isA<NetworkImageLoadException>());
+  });
+
+  testWidgets('paid course page renders cover without enrollment state', (
+    tester,
+  ) async {
+    final detail = _detail(
+      courseId: 'course-paid-cover',
+      slug: 'paid-cover-course',
+      title: 'Paid Cover Course',
+      groupPosition: 1,
+      priceCents: 9900,
+      coverMediaId: 'media-1',
+      cover: const CourseCoverData(
+        mediaId: 'media-1',
+        state: 'ready',
+        resolvedUrl: 'https://cdn.test/paid-course-cover.jpg',
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              subscriptionsEnabled: true,
+            ),
+          ),
+          authOverride(),
+          courseDetailProvider.overrideWith((ref, slug) async => detail),
+          courseStateProvider.overrideWith((ref, courseId) async => null),
+        ],
+        child: const MaterialApp(home: CoursePage(slug: 'paid-cover-course')),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is NetworkImage &&
+            (widget.image as NetworkImage).url ==
+                'https://cdn.test/paid-course-cover.jpg',
+        description: 'Image.network(https://cdn.test/paid-course-cover.jpg)',
       ),
       findsOneWidget,
     );

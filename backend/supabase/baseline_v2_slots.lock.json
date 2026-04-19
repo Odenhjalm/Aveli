@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "baseline_id": "baseline_v2",
   "status": "CANONICAL",
   "baseline_dir": "backend/supabase/baseline_v2_slots",
@@ -12,16 +12,89 @@
   "protected_min_slot": 1,
   "protected_max_slot": 16,
   "hash_strategy": "sha256_lf_normalized_utf8",
+  "replay_ownership": {
+    "canonical_schema_scope": "app_owned_schema_only",
+    "replay_owned_schemas": [
+      "app"
+    ],
+    "external_substrate_schemas": [
+      "auth",
+      "storage"
+    ],
+    "provider_owned_objects": [
+      "auth.users",
+      "storage.buckets",
+      "storage.objects"
+    ],
+    "local_substrate_scope": "locked compatibility substrate outside the canonical slot set"
+  },
+  "execution_profiles": {
+    "local_dev": {
+      "name": "local_dev",
+      "substrate": "local_dev",
+      "substrate_action": "replay_locked_local_substrate_before_app_schema",
+      "app_schema_action": "replay_locked_slots"
+    },
+    "hosted_supabase": {
+      "name": "hosted_supabase",
+      "substrate": "hosted_supabase",
+      "substrate_action": "verify_provider_owned_interface_only",
+      "app_schema_action": "replay_locked_slots"
+    }
+  },
+  "substrate_interfaces": {
+    "auth.users": {
+      "ownership": "provider_owned_in_hosted_supabase",
+      "required_columns": [
+        "id",
+        "email",
+        "encrypted_password",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "storage.buckets": {
+      "ownership": "provider_owned_in_hosted_supabase",
+      "required_columns": [
+        "id",
+        "name",
+        "public"
+      ]
+    },
+    "storage.objects": {
+      "ownership": "provider_owned_in_hosted_supabase",
+      "required_columns": [
+        "id",
+        "bucket_id",
+        "name",
+        "metadata",
+        "created_at",
+        "updated_at"
+      ]
+    }
+  },
+  "local_dev_substrate_files": [
+    {
+      "filename": "minimal_auth_substrate.sql",
+      "path": "ops/sql/minimal_auth_substrate.sql",
+      "sha256": "d89cea8a1a77262ad6b0ac28385a936d97b786927061b4554da4176847147dba"
+    },
+    {
+      "filename": "minimal_storage_substrate.sql",
+      "path": "ops/sql/minimal_storage_substrate.sql",
+      "sha256": "6059e46163ad1c30792ffa6a33124bb615d62ae3de432f532755439a2f9ab2f7"
+    }
+  ],
   "schema_verification": {
-    "schema_hash_algorithm": "backend.bootstrap.baseline_v2.schema_fingerprint_v1",
-    "expected_schema_hash": "a6c8366c5040999f9132d80dd1b65965c6e6bf6e54207e36bd407c058e2e42c6",
+    "schema_scope": "app_owned_schema_only",
+    "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
+    "expected_schema_hash": "853cda5a01973374880668979131691d9f3dfd42335873feebb3c0c1e72fe73e",
     "expected_counts": {
       "enums": 13,
-      "tables": 30,
-      "app_tables": 27,
+      "tables": 27,
       "views": 5,
-      "fks": 37,
-      "constraints": 149,
+      "fks": 36,
+      "constraints": 136,
       "triggers": 11,
       "functions": 21
     },
@@ -131,13 +204,13 @@
       "slot": 11,
       "filename": "V2_0011_auth_session_and_subject_authority.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0011_auth_session_and_subject_authority.sql",
-      "sha256": "5491f7d8b33b8b242f92f601a8f61c827b85903fd6f75e080d14dca9dda1a537"
+      "sha256": "4e12f28c937fea3596161a184676efb6ea54ee9a8a7b0e74fb35443669a0ba4a"
     },
     {
       "slot": 12,
       "filename": "V2_0012_core_substrate_profiles_storage_referrals.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0012_core_substrate_profiles_storage_referrals.sql",
-      "sha256": "cfa82a9a2a9c4c7a51d80d3a0c45a86eb71aaa2f4571294fbac63a69766791fa"
+      "sha256": "19010be1b2926d2fe3c876b6320c4f81ec3b1415849709e7e240b1813427f59e"
     },
     {
       "slot": 13,

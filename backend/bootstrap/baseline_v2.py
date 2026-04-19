@@ -14,9 +14,15 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 BASELINE_V2_DIR = ROOT_DIR / "backend" / "supabase" / "baseline_v2_slots"
 BASELINE_V2_LOCK_FILE = ROOT_DIR / "backend" / "supabase" / "baseline_v2_slots.lock.json"
 
-MANAGED_SCHEMAS = ("app", "auth", "storage")
+REPLAY_OWNED_SCHEMAS = ("app",)
+EXTERNAL_SUBSTRATE_SCHEMAS = ("auth", "storage")
 BASELINE_MODE_ENV = "BASELINE_MODE"
 DEFAULT_BASELINE_MODE = "V2"
+BASELINE_PROFILE_ENV = "BASELINE_PROFILE"
+LOCAL_DEV_PROFILE = "local_dev"
+HOSTED_SUPABASE_PROFILE = "hosted_supabase"
+SUPPORTED_BASELINE_PROFILES = (LOCAL_DEV_PROFILE, HOSTED_SUPABASE_PROFILE)
+ALLOW_HOSTED_BASELINE_REPLAY_ENV = "ALLOW_HOSTED_BASELINE_REPLAY"
 CLOUD_RUNTIME_ENV_KEYS = ("FLY_APP_NAME", "K_SERVICE", "AWS_EXECUTION_ENV", "DYNO")
 PRODUCTION_ENV_VALUES = {"prod", "production", "live"}
 LOCAL_DATABASE_HOSTS = {"127.0.0.1", "localhost", "::1", "db", "host.docker.internal"}
@@ -46,6 +52,8 @@ def _load_v2_lock() -> dict[str, object]:
 
     if not isinstance(payload, dict):
         raise BaselineV2Error("V2 lock must contain a JSON object")
+    if payload.get("manifest_version") != 3:
+        raise BaselineV2Error("V2 lock manifest_version must be 3")
     if payload.get("baseline_dir") != "backend/supabase/baseline_v2_slots":
         raise BaselineV2Error("V2 lock baseline_dir must be backend/supabase/baseline_v2_slots")
     if payload.get("hash_strategy") != "sha256_lf_normalized_utf8":
@@ -75,43 +83,116 @@ def _lock_slots(payload: dict[str, object]) -> tuple[dict[str, object], ...]:
     return tuple(locked_slots)
 
 
+def _locked_file_entries(payload: dict[str, object], key: str) -> tuple[dict[str, object], ...]:
+    entries = payload.get(key)
+    if not isinstance(entries, list):
+        raise BaselineV2Error(f"V2 lock must contain {key}")
+
+    locked_entries: list[dict[str, object]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise BaselineV2Error(f"each {key} entry must be an object")
+        locked_entries.append(entry)
+
+    return tuple(locked_entries)
+
+
+def _verify_locked_file_entry(
+    entry: dict[str, object],
+    *,
+    label: str,
+    expected_parent: Path | None = None,
+) -> Path:
+    filename = entry.get("filename")
+    relative_path = entry.get("path")
+    expected_hash = entry.get("sha256")
+
+    if not isinstance(filename, str) or not filename:
+        raise BaselineV2Error(f"{label} is missing filename")
+    if not isinstance(relative_path, str) or not relative_path:
+        raise BaselineV2Error(f"{label} is missing path")
+    if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+        raise BaselineV2Error(f"{label} is missing sha256")
+
+    path = ROOT_DIR / relative_path
+    if expected_parent is not None and path.parent != expected_parent:
+        raise BaselineV2Error(f"{label} points outside expected directory: {relative_path}")
+    if path.name != filename:
+        raise BaselineV2Error(f"{label} filename mismatch: {filename} != {path.name}")
+    if not path.is_file():
+        raise BaselineV2Error(f"{label} missing on disk: {relative_path}")
+
+    actual_hash = _sha256_lf(path)
+    if actual_hash != expected_hash:
+        raise BaselineV2Error(
+            f"{label} hash mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+        )
+
+    return path
+
+
+def _verify_lock_model(payload: dict[str, object]) -> None:
+    ownership = payload.get("replay_ownership")
+    if not isinstance(ownership, dict):
+        raise BaselineV2Error("V2 lock must define replay_ownership")
+    if tuple(ownership.get("replay_owned_schemas", ())) != REPLAY_OWNED_SCHEMAS:
+        raise BaselineV2Error("V2 lock replay_owned_schemas must be ['app']")
+    if tuple(ownership.get("external_substrate_schemas", ())) != EXTERNAL_SUBSTRATE_SCHEMAS:
+        raise BaselineV2Error("V2 lock external_substrate_schemas must be ['auth', 'storage']")
+
+    profiles = payload.get("execution_profiles")
+    if not isinstance(profiles, dict):
+        raise BaselineV2Error("V2 lock must define execution_profiles")
+    for profile in SUPPORTED_BASELINE_PROFILES:
+        if profile not in profiles:
+            raise BaselineV2Error(f"V2 lock is missing execution profile {profile}")
+
+    substrate_interfaces = payload.get("substrate_interfaces")
+    if not isinstance(substrate_interfaces, dict):
+        raise BaselineV2Error("V2 lock must define substrate_interfaces")
+    for interface_name in ("auth.users", "storage.buckets", "storage.objects"):
+        interface = substrate_interfaces.get(interface_name)
+        if not isinstance(interface, dict):
+            raise BaselineV2Error(f"V2 lock is missing substrate interface {interface_name}")
+        columns = interface.get("required_columns")
+        if not isinstance(columns, list) or not columns:
+            raise BaselineV2Error(f"V2 lock substrate interface {interface_name} needs columns")
+
+
+def _local_substrate_paths_from_lock(payload: dict[str, object]) -> tuple[Path, ...]:
+    entries = _locked_file_entries(payload, "local_dev_substrate_files")
+    paths: list[Path] = []
+    for index, entry in enumerate(entries, start=1):
+        path = _verify_locked_file_entry(entry, label=f"local substrate file {index}")
+        paths.append(path)
+    return tuple(paths)
+
+
 def verify_v2_lock() -> dict[str, object]:
     payload = _load_v2_lock()
     locked_slots = _lock_slots(payload)
+    _verify_lock_model(payload)
 
     for entry in locked_slots:
         slot_number = entry["slot"]
-        filename = entry.get("filename")
-        relative_path = entry.get("path")
-        expected_hash = entry.get("sha256")
+        _verify_locked_file_entry(
+            entry,
+            label=f"V2 lock slot {slot_number}",
+            expected_parent=BASELINE_V2_DIR,
+        )
 
-        if not isinstance(filename, str) or not filename:
-            raise BaselineV2Error(f"V2 lock slot {slot_number} is missing filename")
-        if not isinstance(relative_path, str) or not relative_path:
-            raise BaselineV2Error(f"V2 lock slot {slot_number} is missing path")
-        if not isinstance(expected_hash, str) or len(expected_hash) != 64:
-            raise BaselineV2Error(f"V2 lock slot {slot_number} is missing sha256")
-
-        path = ROOT_DIR / relative_path
-        if path.parent != BASELINE_V2_DIR:
-            raise BaselineV2Error(f"V2 lock slot {slot_number} points outside V2 dir: {relative_path}")
-        if path.name != filename:
-            raise BaselineV2Error(
-                f"V2 lock slot {slot_number} filename mismatch: {filename} != {path.name}"
-            )
-        if not path.is_file():
-            raise BaselineV2Error(f"V2 lock slot {slot_number} missing on disk: {relative_path}")
-
-        actual_hash = _sha256_lf(path)
-        if actual_hash != expected_hash:
-            raise BaselineV2Error(
-                f"V2 lock slot {slot_number} hash mismatch for {filename}: "
-                f"expected {expected_hash}, got {actual_hash}"
-            )
+    _local_substrate_paths_from_lock(payload)
 
     verification = payload.get("schema_verification")
     if not isinstance(verification, dict):
         raise BaselineV2Error("V2 lock must contain schema_verification")
+    if verification.get("schema_scope") != "app_owned_schema_only":
+        raise BaselineV2Error("V2 lock schema_verification must use app_owned_schema_only")
+    if (
+        verification.get("schema_hash_algorithm")
+        != "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2"
+    ):
+        raise BaselineV2Error("V2 lock schema hash algorithm must be app_schema_fingerprint_v2")
     if not isinstance(verification.get("expected_schema_hash"), str):
         raise BaselineV2Error("V2 lock schema_verification must define expected_schema_hash")
     if not isinstance(verification.get("expected_counts"), dict):
@@ -150,6 +231,21 @@ def baseline_mode() -> str:
     return (
         str(os.environ.get(BASELINE_MODE_ENV) or DEFAULT_BASELINE_MODE).strip().upper()
     )
+
+
+def baseline_profile() -> str:
+    raw_profile = os.environ.get(BASELINE_PROFILE_ENV)
+    if raw_profile:
+        profile = raw_profile.strip().lower()
+    else:
+        profile = HOSTED_SUPABASE_PROFILE if _cloud_runtime_active() else LOCAL_DEV_PROFILE
+
+    if profile not in SUPPORTED_BASELINE_PROFILES:
+        raise BaselineV2Error(
+            f"unsupported {BASELINE_PROFILE_ENV}={profile!r}; "
+            f"allowed profiles are {', '.join(SUPPORTED_BASELINE_PROFILES)}"
+        )
+    return profile
 
 
 def _database_url(database_url: str | None = None) -> str:
@@ -218,6 +314,11 @@ def _slot_paths() -> tuple[Path, ...]:
     return tuple(ROOT_DIR / str(entry["path"]) for entry in _lock_slots(payload))
 
 
+def _local_substrate_paths() -> tuple[Path, ...]:
+    payload = verify_v2_lock()
+    return _local_substrate_paths_from_lock(payload)
+
+
 def _managed_schemas(conn: psycopg.Connection) -> list[str]:
     rows = _fetchall(
         conn,
@@ -227,7 +328,7 @@ def _managed_schemas(conn: psycopg.Connection) -> list[str]:
          where nspname = any(%s)
          order by nspname
         """,
-        (list(MANAGED_SCHEMAS),),
+        (list(REPLAY_OWNED_SCHEMAS),),
     )
     return [str(row[0]) for row in rows]
 
@@ -243,14 +344,40 @@ def _db_is_empty(conn: psycopg.Connection) -> bool:
     return _managed_schemas(conn) == []
 
 
-def _replay_v2(conn: psycopg.Connection) -> None:
+def _ensure_local_substrate(conn: psycopg.Connection) -> None:
+    for substrate_file in _local_substrate_paths():
+        conn.execute(substrate_file.read_text(encoding="utf-8"))
+
+
+def _hosted_replay_allowed() -> bool:
+    return str(os.environ.get(ALLOW_HOSTED_BASELINE_REPLAY_ENV) or "").strip() == "1"
+
+
+def _assert_replay_profile_allowed(profile: str) -> None:
+    if profile == LOCAL_DEV_PROFILE:
+        return
+    if profile == HOSTED_SUPABASE_PROFILE and _hosted_replay_allowed():
+        return
+    raise BaselineV2Error(
+        f"hosted Supabase replay requires {ALLOW_HOSTED_BASELINE_REPLAY_ENV}=1 "
+        f"and {BASELINE_PROFILE_ENV}={HOSTED_SUPABASE_PROFILE}"
+    )
+
+
+def _replay_v2(conn: psycopg.Connection, *, profile: str) -> None:
+    _assert_replay_profile_allowed(profile)
+
     if not _db_is_empty(conn):
         raise BaselineV2Error(
-            "refusing to replay V2 into a non-empty managed schema state"
+            "refusing to replay V2 into a non-empty app-owned schema state"
         )
 
     try:
         with conn.transaction():
+            if profile == LOCAL_DEV_PROFILE:
+                _ensure_local_substrate(conn)
+            else:
+                _verify_substrate_interface(conn)
             for slot in _slot_paths():
                 conn.execute(slot.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -277,7 +404,7 @@ def _schema_fingerprint(conn: psycopg.Connection) -> str:
             select n.nspname, c.relname, c.relkind
               from pg_class c
               join pg_namespace n on n.oid = c.relnamespace
-             where n.nspname in ('app', 'auth', 'storage')
+             where n.nspname = 'app'
                and c.relkind in ('r', 'v')
              order by 1, 2, 3
             """,
@@ -288,7 +415,7 @@ def _schema_fingerprint(conn: psycopg.Connection) -> str:
             select table_schema, table_name, column_name, ordinal_position,
                    is_nullable, data_type, udt_schema, udt_name, column_default
               from information_schema.columns
-             where table_schema in ('app', 'auth', 'storage')
+             where table_schema = 'app'
              order by table_schema, table_name, ordinal_position
             """,
         ),
@@ -300,7 +427,7 @@ def _schema_fingerprint(conn: psycopg.Connection) -> str:
               from pg_constraint con
               join pg_namespace n on n.oid = con.connamespace
               left join pg_class cls on cls.oid = con.conrelid
-             where n.nspname in ('app', 'auth', 'storage')
+             where n.nspname = 'app'
              order by 1, 2, 3
             """,
         ),
@@ -311,7 +438,7 @@ def _schema_fingerprint(conn: psycopg.Connection) -> str:
               from pg_trigger tg
               join pg_class cls on cls.oid = tg.tgrelid
               join pg_namespace n on n.oid = cls.relnamespace
-             where n.nspname in ('app', 'auth', 'storage')
+             where n.nspname = 'app'
                and not tg.tgisinternal
              order by 1, 2, 3
             """,
@@ -323,7 +450,7 @@ def _schema_fingerprint(conn: psycopg.Connection) -> str:
                    pg_get_function_result(p.oid)
               from pg_proc p
               join pg_namespace n on n.oid = p.pronamespace
-             where n.nspname in ('app', 'auth', 'storage')
+             where n.nspname = 'app'
              order by 1, 2, 3
             """,
         ),
@@ -332,7 +459,7 @@ def _schema_fingerprint(conn: psycopg.Connection) -> str:
             """
             select schemaname, viewname, definition
               from pg_views
-             where schemaname in ('app', 'auth', 'storage')
+             where schemaname = 'app'
              order by 1, 2
             """,
         ),
@@ -364,19 +491,6 @@ def _schema_counts(conn: psycopg.Connection) -> dict[str, int]:
                 select count(*)
                   from pg_class c
                   join pg_namespace n on n.oid = c.relnamespace
-                 where n.nspname in ('app', 'auth', 'storage')
-                   and c.relkind = 'r'
-                """,
-            )
-            or 0
-        ),
-        "app_tables": int(
-            _scalar(
-                conn,
-                """
-                select count(*)
-                  from pg_class c
-                  join pg_namespace n on n.oid = c.relnamespace
                  where n.nspname = 'app'
                    and c.relkind = 'r'
                 """,
@@ -390,7 +504,7 @@ def _schema_counts(conn: psycopg.Connection) -> dict[str, int]:
                 select count(*)
                   from pg_class c
                   join pg_namespace n on n.oid = c.relnamespace
-                 where n.nspname in ('app', 'auth', 'storage')
+                 where n.nspname = 'app'
                    and c.relkind = 'v'
                 """,
             )
@@ -403,7 +517,7 @@ def _schema_counts(conn: psycopg.Connection) -> dict[str, int]:
                 select count(*)
                   from pg_constraint con
                   join pg_namespace n on n.oid = con.connamespace
-                 where n.nspname in ('app', 'auth', 'storage')
+                 where n.nspname = 'app'
                    and con.contype = 'f'
                 """,
             )
@@ -416,7 +530,7 @@ def _schema_counts(conn: psycopg.Connection) -> dict[str, int]:
                 select count(*)
                   from pg_constraint con
                   join pg_namespace n on n.oid = con.connamespace
-                 where n.nspname in ('app', 'auth', 'storage')
+                 where n.nspname = 'app'
                 """,
             )
             or 0
@@ -450,6 +564,66 @@ def _schema_counts(conn: psycopg.Connection) -> dict[str, int]:
     }
 
 
+def _substrate_interfaces() -> dict[str, object]:
+    payload = verify_v2_lock()
+    interfaces = payload.get("substrate_interfaces")
+    if not isinstance(interfaces, dict):
+        raise BaselineV2Error("V2 lock substrate_interfaces is invalid")
+    return interfaces
+
+
+def _verify_substrate_interface(conn: psycopg.Connection) -> dict[str, object]:
+    failures: list[str] = []
+    observed: dict[str, object] = {}
+
+    for relation_name, interface in _substrate_interfaces().items():
+        if not isinstance(interface, dict):
+            raise BaselineV2Error(f"substrate interface {relation_name} is invalid")
+        if "." not in relation_name:
+            raise BaselineV2Error(f"substrate interface {relation_name} is not schema-qualified")
+
+        schema_name, table_name = relation_name.split(".", 1)
+        required_columns = tuple(
+            str(column) for column in interface.get("required_columns", ())
+        )
+        if not required_columns:
+            raise BaselineV2Error(f"substrate interface {relation_name} has no required columns")
+
+        table_exists = _scalar(conn, "select to_regclass(%s)::text", (relation_name,))
+        if not table_exists:
+            failures.append(f"{relation_name} is missing")
+            observed[relation_name] = {"present": False, "missing_columns": list(required_columns)}
+            continue
+
+        column_rows = _fetchall(
+            conn,
+            """
+            select column_name
+              from information_schema.columns
+             where table_schema = %s
+               and table_name = %s
+               and column_name = any(%s)
+             order by column_name
+            """,
+            (schema_name, table_name, list(required_columns)),
+        )
+        present_columns = {str(row[0]) for row in column_rows}
+        missing_columns = [column for column in required_columns if column not in present_columns]
+        if missing_columns:
+            failures.append(f"{relation_name} missing columns: {missing_columns!r}")
+
+        observed[relation_name] = {
+            "present": True,
+            "required_columns": list(required_columns),
+            "missing_columns": missing_columns,
+        }
+
+    if failures:
+        raise BaselineV2Error("Supabase substrate interface mismatch: " + "; ".join(failures))
+
+    return observed
+
+
 def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
     failures: list[str] = []
     verification = _schema_verification()
@@ -474,6 +648,7 @@ def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
         for function in verification.get("required_worker_functions", ())
     )
     expected_schema_hash = str(verification["expected_schema_hash"])
+    substrate_interface = _verify_substrate_interface(conn)
 
     counts = _schema_counts(conn)
     if counts != expected_counts:
@@ -483,10 +658,10 @@ def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
         conn,
         """
         select n.nspname, cls.relname, con.conname
-          from pg_constraint con
+         from pg_constraint con
           join pg_namespace n on n.oid = con.connamespace
           left join pg_class cls on cls.oid = con.conrelid
-         where n.nspname in ('app', 'auth', 'storage')
+         where n.nspname = 'app'
            and con.convalidated = false
          order by 1, 2, 3
         """,
@@ -499,7 +674,7 @@ def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
         """
         select table_schema, table_name, column_name
           from information_schema.columns
-          where table_schema in ('app', 'auth', 'storage')
+          where table_schema = 'app'
             and column_name = any(%s)
           order by 1, 2, 3
         """,
@@ -593,6 +768,7 @@ def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
     return {
         "schema_hash": schema_hash,
         "counts": counts,
+        "substrate_interface": substrate_interface,
         "runtime_media_relkind": runtime_media_relkind,
         "forbidden_columns": [item for item in forbidden_columns],
     }
@@ -604,12 +780,18 @@ def ensure_v2_baseline(database_url: str | None = None) -> dict[str, object]:
         raise BaselineV2Error(
             f"unsupported {BASELINE_MODE_ENV}={mode!r}; only {DEFAULT_BASELINE_MODE} is allowed"
         )
+    profile = baseline_profile()
 
     url = _database_url(database_url)
-    _require_local_database(url)
+    if profile == LOCAL_DEV_PROFILE:
+        _require_local_database(url)
+    else:
+        validate_runtime_database_url(url)
+        _assert_replay_profile_allowed(profile)
+
     with psycopg.connect(url, connect_timeout=5) as conn:
         if _db_is_empty(conn):
-            _replay_v2(conn)
+            _replay_v2(conn, profile=profile)
             state = "replayed"
         else:
             state = "verified"
@@ -618,6 +800,7 @@ def ensure_v2_baseline(database_url: str | None = None) -> dict[str, object]:
 
     return {
         "mode": mode,
+        "profile": profile,
         "state": state,
         **verification,
     }
@@ -629,6 +812,7 @@ def verify_v2_runtime(database_url: str | None = None) -> dict[str, object]:
         raise BaselineV2Error(
             f"unsupported {BASELINE_MODE_ENV}={mode!r}; only {DEFAULT_BASELINE_MODE} is allowed"
         )
+    profile = baseline_profile()
 
     verify_v2_lock()
     url = _database_url(database_url)
@@ -646,6 +830,7 @@ def verify_v2_runtime(database_url: str | None = None) -> dict[str, object]:
 
     return {
         "mode": mode,
+        "profile": profile,
         "state": "verified",
         **verification,
     }
@@ -661,6 +846,7 @@ def main() -> int:
 
     print("BASELINE_V2_STATUS=PASS")
     print(f"BASELINE_MODE={status['mode']}")
+    print(f"BASELINE_PROFILE={status['profile']}")
     print(f"BASELINE_STATE={status['state']}")
     print(f"SCHEMA_HASH={status['schema_hash']}")
     print(f"COUNTS={json.dumps(status['counts'], sort_keys=True)}")

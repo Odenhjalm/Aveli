@@ -10,8 +10,11 @@ Authority summary:
 
 - Baseline V2 is a clean conceptual rebaseline with full cutover as the
   implementation target.
-- Canonical local baseline evidence is `backend/supabase/baseline_v2_slots/`
-  and `backend/supabase/baseline_v2_slots.lock.json`.
+- Canonical Baseline V2 authority is `backend/supabase/baseline_v2_slots/`
+  plus `backend/supabase/baseline_v2_slots.lock.json`; replay-owned schema is
+  app-owned schema only.
+- Hosted Supabase `auth` and `storage` are provider-owned substrate interfaces,
+  not replay-owned baseline schema.
 - Superseded baseline slot chains are archived legacy evidence only.
 - Legacy migrations, historical launch reports, stale docs, local notes, and
   README text do not override accepted contracts.
@@ -97,7 +100,7 @@ The only valid backend startup entrypoint is `backend.bootstrap.run_server`.
 
 ## Baseline And Local DB Authority
 
-- Authoritative local DB source:
+- Authoritative local DB source: locked minimal local substrate followed by
   `backend/supabase/baseline_v2_slots/`.
 - Canonical baseline lock:
   `backend/supabase/baseline_v2_slots.lock.json`.
@@ -107,6 +110,9 @@ The only valid backend startup entrypoint is `backend.bootstrap.run_server`.
   `backend/scripts/ensure_db.sh`.
 - Materialize the accepted local baseline on native local Postgres with
   `backend/scripts/replay_v2.sh`.
+- The local replay profile provisions compatibility substrate before app-owned
+  slot replay. Hosted Supabase verification checks the provider substrate
+  interface and never recreates `auth` or `storage`.
 - Root `supabase/migrations/`, archived migrations, cloned cloud DB state, and
   historical reports are reference or tooling inputs only. They do not override
   baseline slots, the lockfile, or accepted contracts.

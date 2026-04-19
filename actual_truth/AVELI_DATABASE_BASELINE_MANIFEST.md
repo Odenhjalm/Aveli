@@ -37,16 +37,27 @@ These are the only schema source for database baseline truth.
 
 Rules:
 
-- Baseline V2 slots define accepted schema objects.
+- Baseline V2 slots define accepted app-owned schema objects only.
+- `auth` and `storage` are provider-owned substrate schemas in hosted Supabase
+  and are not replay-owned Baseline V2 schema.
 - The V2 lock file defines the accepted slot set, replay order,
-  LF-normalized SHA-256 slot hashes, and schema verification marker.
+  LF-normalized SHA-256 slot hashes, local substrate file hashes, execution
+  profiles, substrate interface expectations, and app-owned schema verification
+  marker.
 - `backend/supabase/migrations/` is not local baseline authority.
 - Legacy migrations, observed runtime schema, local DB drift, remote DB drift,
   tests, generated docs, and implementation code do not redefine baseline truth.
-- A clean replay of locked Baseline V2 slots is the only valid proof of baseline
-  correctness.
-- Any schema change requires an accepted Baseline V2 slot and a V2 lock update.
-- Accepted baseline slots must not be edited in place.
+- A clean replay of the selected Baseline V2 profile is the only valid proof of
+  baseline correctness.
+- `hosted_supabase` replay verifies provider-owned `auth` and `storage`
+  interfaces and replays only app-owned slots.
+- `local_dev` replay provisions locked minimal local substrate before app-owned
+  slots.
+- Any app-owned schema change requires an accepted Baseline V2 slot and a V2
+  lock update.
+- Accepted baseline slots are lock-protected and may be changed only by an
+  explicit authority/model correction that updates the V2 lock and contract
+  surface in the same change.
 
 If clean baseline replay and this manifest disagree:
 
@@ -201,11 +212,20 @@ Substrate rules:
 
 - `auth.users.id` may be referenced by application `user_id` fields only as a
   soft external reference unless a later contract explicitly changes this.
-  auth.users MUST NOT:
-- define onboarding_state
-- define role
-- define membership
-- define routing or access decisions
+- Hosted Supabase owns the physical `auth` and `storage` schemas. Baseline V2
+  MUST NOT create, drop, or physically normalize those schemas in hosted mode.
+- Local development may provision the locked minimal compatibility substrate
+  recorded in `backend/supabase/baseline_v2_slots.lock.json`; that substrate is
+  outside the canonical app-owned slot set.
+- The canonical schema hash applies only to app-owned schema.
+- Substrate verification is an interface check only: required relations and
+  columns must exist, but full provider physical definitions are not baseline
+  truth.
+- `auth.users` MUST NOT:
+  - define onboarding_state
+  - define role
+  - define membership
+  - define routing or access decisions
 - `storage.objects` and `storage.buckets` are physical storage substrate only.
 - Storage paths, signed URLs, object URLs, buckets, and object names must not
   become business truth or governed media truth.
@@ -335,9 +355,9 @@ Allowed values:
 
 - `learner`
 - `teacher`
+- `admin`
 
-`app.auth_subjects.role_v2` is canonical role truth.
-`app.auth_subjects.role` is a compatibility mirror and must equal `role_v2`.
+`app.auth_subjects.role` is canonical role truth.
 
 ## 5. Critical Invariants
 

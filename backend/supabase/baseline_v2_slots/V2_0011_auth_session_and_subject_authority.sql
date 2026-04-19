@@ -1,34 +1,3 @@
-create schema if not exists auth;
-
-create table auth.users (
-  id uuid not null default gen_random_uuid(),
-  email text not null,
-  encrypted_password text not null,
-  email_confirmed_at timestamptz,
-  confirmed_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-
-  constraint users_pkey primary key (id),
-
-  constraint users_email_key unique (email),
-
-  constraint users_email_not_blank_check
-    check (btrim(email) <> ''),
-
-  constraint users_encrypted_password_not_blank_check
-    check (btrim(encrypted_password) <> '')
-);
-
-create index users_email_lower_idx
-  on auth.users (lower(email));
-
-comment on table auth.users is
-  'Authentication identity and credential substrate only. Aveli role, onboarding, profile, membership, and media authority live in app-owned tables.';
-
-comment on column auth.users.email is
-  'Credential identity email. Product profile projection may read it but must not make it domain authority.';
-
 create table app.refresh_tokens (
   jti uuid not null,
   user_id uuid not null,

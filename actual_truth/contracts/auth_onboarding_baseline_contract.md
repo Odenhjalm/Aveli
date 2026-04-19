@@ -4,7 +4,8 @@
 
 ACTIVE
 
-This contract defines the exact physical baseline objects required for canonical Auth + Onboarding behavior.
+This contract defines the exact app-owned baseline objects and external substrate
+interfaces required for canonical Auth + Onboarding behavior.
 This contract composes with:
 
 - `auth_onboarding_contract.md`
@@ -13,10 +14,8 @@ This contract composes with:
 
 ## 1. REQUIRED OBJECTS
 
-The following physical objects are required:
+The following app-owned physical objects are required in canonical Baseline V2:
 
-- schema `auth`
-- table `auth.users`
 - table `app.auth_subjects`
 - table `app.profiles`
 - table `app.refresh_tokens`
@@ -24,24 +23,29 @@ The following physical objects are required:
 - table `app.admin_bootstrap_state`
 - function `app.bootstrap_first_admin(target_user_id uuid)`
 
+The following external substrate interface is required but not baseline-owned:
+
+- table/interface `auth.users`
+
 ## 2. REQUIRED OBJECT SEMANTICS
 
 ### `auth.users`
 
 - owns identity, credentials, and canonical email-verification truth
 - is external auth substrate, not business-domain projection
+- is provider-owned in hosted Supabase and MUST NOT be recreated by Baseline V2
+  hosted replay
+- may be provisioned only by the locked local-dev substrate when replaying a
+  local scratch database
 
 ### `app.auth_subjects`
 
 - is the canonical application subject authority for:
   - onboarding subject state
   - app-level role subject fields
-  - app-level admin subject fields
 - owns:
   - `onboarding_state`
-  - `role_v2`
   - `role`
-  - `is_admin`
 - valid onboarding state values for the ordinary/referral onboarding chain are:
   - `incomplete`
   - `welcome_pending`
@@ -102,7 +106,7 @@ Required event families:
 
 - is the only canonical mutation surface for establishing the first admin
 - is operator-controlled only
-- MUST set `app.auth_subjects.is_admin = true` for an existing `auth.users.id`
+- MUST set `app.auth_subjects.role = 'admin'` for an existing `auth.users.id`
 - MUST mark bootstrap as consumed in `app.admin_bootstrap_state`
 - MUST record `admin_bootstrap_consumed` in `app.auth_events`
 - MUST NOT be exposed as a public app-runtime route
@@ -150,4 +154,5 @@ The following are forbidden as Auth + Onboarding requirements:
 
 - Auth + Onboarding baseline truth is limited to the objects named in this contract.
 - `app.auth_subjects` remains the canonical application subject authority.
+- `auth.users` is required only as external identity substrate/interface.
 - Any implementation dependency outside this set is either optional by explicit contract or drift.

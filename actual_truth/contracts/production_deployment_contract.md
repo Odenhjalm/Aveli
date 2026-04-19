@@ -133,10 +133,14 @@ Backend runtime database authority:
 
 - The canonical baseline source is `backend/supabase/baseline_v2_slots/`.
 - The canonical baseline lock is `backend/supabase/baseline_v2_slots.lock.json`.
-- Public launch requires the canonical Baseline V2 slot chain to be applied and
-  verified against the intended production Supabase database target.
+- Public launch requires the canonical Baseline V2 hosted profile to apply the
+  app-owned slot chain and verify the hosted Supabase substrate interface
+  against the intended production Supabase database target.
+- Hosted production replay must not create or normalize provider-owned `auth`
+  or `storage` schema.
 - Public launch requires verification that the production schema matches the
-  accepted Baseline V2 authority for every launch-critical runtime surface.
+  accepted Baseline V2 app-owned schema hash and substrate interface for every
+  launch-critical runtime surface.
 - Legacy migration paths are not launch authority when baseline slots are the
   canonical truth.
 - `backend/supabase/migrations/` is legacy-only in this repository and must not
@@ -267,9 +271,8 @@ The production deployment contract is satisfied only when all are true:
 - `SUPABASE_PROJECT_REF`, `SUPABASE_URL`, production `DATABASE_URL`, and any
   production verification `SUPABASE_DB_URL` resolve to the same Supabase project.
 - Production runtime cannot fall back to local database configuration.
-- Baseline slots through `0038` are applied and verified against the intended
-  production Supabase project, unless a later accepted V2 slot authority
-  replaces that chain.
+- The current `backend/supabase/baseline_v2_slots.lock.json` hosted profile is
+  applied and verified against the intended production Supabase project.
 - Legacy migration paths do not define launch authority.
 - Minimum public, protected, media, payment, home-audio, profile/community
   media, and onboarding surfaces pass under the Baseline V2 freeze contract and

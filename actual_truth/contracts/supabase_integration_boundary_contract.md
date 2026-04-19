@@ -69,7 +69,15 @@ It operates under `SYSTEM_LAWS.md`, `auth_onboarding_contract.md`,
 - Canonical schema authority is `backend/supabase/baseline_v2_slots`.
 - Canonical slot order, slot hashes, and schema verification marker are owned by
   `backend/supabase/baseline_v2_slots.lock.json`.
-- No backend or frontend runtime behavior may depend on Supabase schema outside baseline.
+- Canonical Baseline V2 replay ownership is app-owned schema only.
+- The canonical schema hash covers app-owned schema only.
+- `auth` and `storage` are hosted Supabase provider-owned substrate schemas and
+  must be verified by interface checks, not recreated or physically normalized
+  by Baseline V2 replay.
+- `local_dev` may provision locked minimal auth/storage compatibility substrate
+  before app-owned slot replay; that substrate is outside the canonical slot set.
+- No backend or frontend runtime behavior may depend on Supabase schema outside
+  the locked app schema or the locked substrate interface.
 - Legacy migration artifacts may exist for reference, but they are never runtime authority.
 - External Supabase dependencies remain soft references only and must not become database-owned domain truth.
 

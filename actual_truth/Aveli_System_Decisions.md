@@ -139,7 +139,13 @@
 
 - `backend/supabase/baseline_v2_slots` is the canonical baseline source of truth.
 - `backend/supabase/baseline_v2_slots.lock.json` is the canonical slot order,
-  slot hash, and schema verification marker.
+  slot hash, substrate interface, execution profile, and app-owned schema
+  verification marker.
+- Baseline V2 slots are app-owned schema only.
+- Hosted Supabase owns physical `auth` and `storage`; production replay must
+  verify those substrate interfaces and must not create them.
+- Local development may replay only the locked minimal substrate recorded by
+  the V2 lock before app-owned schema replay.
 - Historical baseline slots and legacy DB state are archived reference-only inputs and MUST NOT redefine canonical media authority.
 
 ## Canonical Language Rules

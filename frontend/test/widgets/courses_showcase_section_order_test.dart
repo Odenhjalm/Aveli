@@ -10,6 +10,7 @@ import 'package:aveli/features/landing/application/landing_providers.dart'
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/widgets/courses_showcase_section.dart';
 
 import '../helpers/backend_asset_resolver_stub.dart';
@@ -106,12 +107,54 @@ void main() {
       }
     },
   );
+
+  testWidgets('showcase renders premium course cover without purchase state', (
+    tester,
+  ) async {
+    final courses = <CourseSummary>[
+      _course(
+        id: 'premium-cover',
+        title: 'Premium Cover',
+        groupPosition: 1,
+        coverMediaId: 'media-1',
+        cover: const CourseCoverData(
+          mediaId: 'media-1',
+          state: 'ready',
+          resolvedUrl: 'https://cdn.test/showcase-premium-cover.jpg',
+        ),
+        priceCents: 9900,
+      ),
+    ];
+
+    await _pumpShowcase(tester, courses: courses);
+    await tester.pump();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is NetworkImage &&
+            (widget.image as NetworkImage).url ==
+                'https://cdn.test/showcase-premium-cover.jpg',
+        description:
+            'Image.network(https://cdn.test/showcase-premium-cover.jpg)',
+      ),
+      findsOneWidget,
+    );
+    final exception = tester.takeException();
+    if (exception != null) {
+      expect(exception, isA<NetworkImageLoadException>());
+    }
+  });
 }
 
 CourseSummary _course({
   required String id,
   required String title,
   int groupPosition = 4,
+  String? coverMediaId,
+  CourseCoverData? cover,
+  int? priceCents,
 }) {
   return CourseSummary(
     id: id,
@@ -119,9 +162,9 @@ CourseSummary _course({
     title: title,
     groupPosition: groupPosition,
     courseGroupId: 'series:foundations-of-soulwisdom',
-    coverMediaId: null,
-    cover: null,
-    priceCents: null,
+    coverMediaId: coverMediaId,
+    cover: cover,
+    priceCents: priceCents,
     dripEnabled: false,
     dripIntervalDays: null,
   );

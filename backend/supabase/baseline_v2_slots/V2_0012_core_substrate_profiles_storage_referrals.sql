@@ -73,60 +73,6 @@ on app.profiles
 for each row
 execute function app.enforce_profile_avatar_projection_contract();
 
-create schema if not exists storage;
-
-create table storage.buckets (
-  id text not null,
-  name text not null,
-  public boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-
-  constraint buckets_pkey primary key (id),
-
-  constraint buckets_name_key unique (name),
-
-  constraint buckets_id_not_blank_check
-    check (btrim(id) <> ''),
-
-  constraint buckets_name_not_blank_check
-    check (btrim(name) <> '')
-);
-
-comment on table storage.buckets is
-  'Physical storage bucket substrate only. Storage objects and buckets do not own Aveli domain authority.';
-
-create table storage.objects (
-  id uuid not null default gen_random_uuid(),
-  bucket_id text not null,
-  name text not null,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  last_accessed_at timestamptz,
-
-  constraint objects_pkey primary key (id),
-
-  constraint objects_bucket_id_fkey
-    foreign key (bucket_id)
-    references storage.buckets (id)
-    on delete cascade,
-
-  constraint objects_bucket_name_key unique (bucket_id, name),
-
-  constraint objects_bucket_id_not_blank_check
-    check (btrim(bucket_id) <> ''),
-
-  constraint objects_name_not_blank_check
-    check (btrim(name) <> '')
-);
-
-create index objects_bucket_id_idx
-  on storage.objects (bucket_id);
-
-comment on table storage.objects is
-  'Physical storage object catalog only. Object presence can support verification but must not become media, ownership, access, or delivery authority.';
-
 create table app.media_resolution_failures (
   id uuid not null default gen_random_uuid(),
   lesson_media_id uuid,

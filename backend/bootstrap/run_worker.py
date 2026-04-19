@@ -35,6 +35,7 @@ def main() -> None:
     print(
         "[AVELI BASELINE] "
         f"BASELINE_MODE={baseline_status['mode']} "
+        f"BASELINE_PROFILE={baseline_status['profile']} "
         f"BASELINE_STATE={baseline_status['state']} "
         f"SCHEMA_HASH={baseline_status['schema_hash']}"
     )

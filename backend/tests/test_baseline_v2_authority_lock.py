@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 
@@ -23,10 +24,22 @@ def _load_lock() -> dict:
 def test_baseline_v2_lock_is_complete_ordered_and_lf_hashed() -> None:
     lock = _load_lock()
 
+    assert lock["manifest_version"] == 3
     assert lock["status"] == "CANONICAL"
     assert lock["baseline_dir"] == "backend/supabase/baseline_v2_slots"
     assert lock["hash_strategy"] == "sha256_lf_normalized_utf8"
+    assert lock["replay_ownership"]["replay_owned_schemas"] == ["app"]
+    assert lock["replay_ownership"]["external_substrate_schemas"] == ["auth", "storage"]
+    assert set(lock["execution_profiles"]) == {"local_dev", "hosted_supabase"}
+    assert lock["execution_profiles"]["hosted_supabase"]["substrate_action"] == (
+        "verify_provider_owned_interface_only"
+    )
+    assert lock["schema_verification"]["schema_scope"] == "app_owned_schema_only"
+    assert lock["schema_verification"]["schema_hash_algorithm"] == (
+        "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2"
+    )
     assert lock["schema_verification"]["expected_schema_hash"]
+    assert "app_tables" not in lock["schema_verification"]["expected_counts"]
 
     slots = lock["slots"]
     assert len(slots) == 16
@@ -43,6 +56,30 @@ def test_baseline_v2_lock_is_complete_ordered_and_lf_hashed() -> None:
         path = ROOT / entry["path"]
         assert path.name == entry["filename"]
         assert _sha256_lf(path) == entry["sha256"]
+
+    local_substrate_files = lock["local_dev_substrate_files"]
+    assert [entry["path"] for entry in local_substrate_files] == [
+        "ops/sql/minimal_auth_substrate.sql",
+        "ops/sql/minimal_storage_substrate.sql",
+    ]
+    for entry in local_substrate_files:
+        assert _sha256_lf(ROOT / entry["path"]) == entry["sha256"]
+
+
+def test_canonical_v2_slots_do_not_recreate_provider_owned_substrate() -> None:
+    lock = _load_lock()
+    provider_owned_ddl = (
+        r"create\s+schema\s+(if\s+not\s+exists\s+)?auth\b",
+        r"create\s+schema\s+(if\s+not\s+exists\s+)?storage\b",
+        r"create\s+table\s+(if\s+not\s+exists\s+)?auth\.",
+        r"create\s+table\s+(if\s+not\s+exists\s+)?storage\.",
+    )
+
+    for entry in lock["slots"]:
+        path = ROOT / entry["path"]
+        source = path.read_text(encoding="utf-8").lower()
+        for pattern in provider_owned_ddl:
+            assert re.search(pattern, source) is None, path.relative_to(ROOT).as_posix()
 
 
 def test_legacy_baseline_lock_is_archived_only() -> None:
@@ -113,6 +150,8 @@ def test_replay_v2_is_the_only_lock_driven_replay_entrypoint() -> None:
 
     assert "verify_v2_lock" in replay_v2
     assert 'export BASELINE_MODE="V2"' in replay_v2
+    assert 'export BASELINE_PROFILE="$requested_profile"' in replay_v2
+    assert "Hosted Supabase replay requires ALLOW_HOSTED_BASELINE_REPLAY=1" in replay_v2
     assert "BASELINE_MODE=${requested_mode} is not allowed" in replay_v2
     assert "backend.bootstrap.baseline_v2" in replay_v2
     assert "glob(" not in replay_v2

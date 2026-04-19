@@ -968,7 +968,7 @@ Codex MUST:
 
 - use LOCAL database only
 - NEVER use remote DB in execute or confirm mode unless explicitly instructed
-- use the deterministic replay of `backend/supabase/baseline_v2_slots` with `backend/supabase/baseline_v2_slots.lock.json` as the authoritative local DB source for MCP audit, testing, and verification
+- use the deterministic Baseline V2 local profile: locked local substrate first, then `backend/supabase/baseline_v2_slots` in `backend/supabase/baseline_v2_slots.lock.json` order
 - treat `supabase/migrations/` as production migration source only, not local verification DB authority
 
 If `DATABASE_URL` is missing or ambiguous:
@@ -1388,20 +1388,22 @@ This gate is mandatory for:
 
 A baseline replay is the only valid proof of baseline correctness.
 
-A valid replay MUST include:
+A valid Baseline V2 replay MUST include:
 
-1. minimal auth substrate
-   - schema `auth`
-   - table `auth.users` with required identity surface
+1. canonical app-owned schema replay
+   - `backend/supabase/baseline_v2_slots`
+   - `backend/supabase/baseline_v2_slots.lock.json`
+   - strict lock order
+   - schema hash over app-owned schema only
 
-2. baseline slots
-   - `0001` through latest accepted slot
-   - strict order
+2. substrate interface verification
+   - `auth.users` must exist with the required identity columns
+   - `storage.objects` and `storage.buckets` must exist with required storage columns
+   - hosted Supabase owns these physical schemas and they MUST NOT be replay-created
 
-3. minimal storage substrate if runtime depends on it
-   - schema `storage`
-   - `storage.objects`
-   - `storage.buckets`
+3. profile-specific substrate handling
+   - `hosted_supabase`: verify provider-owned substrate only; do not replay `auth` or `storage`
+   - `local_dev`: replay locked minimal substrate before app-owned schema replay
 
 ---
 
@@ -1509,7 +1511,7 @@ If system depends on external storage (`storage.objects`, `storage.buckets`):
 Codex MUST:
 
 1. detect storage dependency
-2. check storage schema presence
+2. check storage substrate interface presence
 3. provision minimal local substrate if required
 4. verify workers start cleanly
 

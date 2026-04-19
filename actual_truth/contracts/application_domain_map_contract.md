@@ -35,9 +35,10 @@ undifferentiated map.
    domain ownership unless a locked target decision overrides them for target
    topology.
 3. `backend/supabase/baseline_v2_slots/` and
-   `backend/supabase/baseline_v2_slots.lock.json` are the canonical local schema
-   authority and outrank legacy migrations for table existence, field existence,
-   and baseline-backed constraints.
+   `backend/supabase/baseline_v2_slots.lock.json` are the canonical app-owned
+   schema authority and substrate-interface authority. They outrank legacy
+   migrations for app-owned table existence, app-owned field existence,
+   baseline-backed constraints, and required external substrate interfaces.
 4. Mounted backend routes, backend auth logic, and backend services define the
    current runtime execution surfaces used to identify drift in repo current
    state.
@@ -50,10 +51,9 @@ undifferentiated map.
 ## VERIFIED CURRENT-STATE DOMAIN MAP
 
 - Authentication Identity: current contract and runtime repo evidence use
-  `auth.users` as identity and credential authority.
+  `auth.users` as external provider-owned identity and credential substrate.
 - Application Subject: current contract, baseline, and runtime repo evidence use
-  `app.auth_subjects` for `onboarding_state`, `role_v2`, `role`, and
-  `is_admin`.
+  `app.auth_subjects` for `onboarding_state` and `role`.
 - Onboarding: current completion authority is `POST /auth/onboarding/complete`
   writing `app.auth_subjects.onboarding_state`, but current runtime completion
   is still coupled to profile `display_name` presence.
@@ -76,7 +76,7 @@ undifferentiated map.
 - Invite: current repo truth still includes invite-token validation during auth
   registration and invite-shaped membership grants with source bucket
   `invite`.
-- Admin / Rights: current role and admin subject fields live on
+- Admin / Rights: current role and admin semantics live on
   `app.auth_subjects`, and backend permissions enforce teacher/admin checks on
   top of app-entry guards.
 - Media: current contract truth keeps media lifecycle and runtime media outside
@@ -86,8 +86,9 @@ undifferentiated map.
   compatibility token claims, profile projections, and entry-state outputs from
   source domains.
 - Baseline / Schema Evolution: `backend/supabase/baseline_v2_slots/` and
-  `backend/supabase/baseline_v2_slots.lock.json` are the canonical local schema
-  authority; `backend/supabase/migrations/` is legacy reference only.
+  `backend/supabase/baseline_v2_slots.lock.json` are the canonical app-owned
+  schema and substrate-interface authority; `backend/supabase/migrations/` is
+  legacy reference only.
 - Tasks / Readiness / Derived Documentation: task lists, manifests, readiness
   docs, and analysis notes exist only as non-authoritative derived artifacts.
 
@@ -125,7 +126,8 @@ undifferentiated map.
   may expose derived views only and must never become fallback authority.
 - Baseline / Schema Evolution: `backend/supabase/baseline_v2_slots/` and
   `backend/supabase/baseline_v2_slots.lock.json` remain the only canonical
-  baseline authority; legacy migrations remain historical residue only.
+  app-owned baseline and substrate-interface authority; legacy migrations
+  remain historical residue only.
 - Tasks / Readiness / Derived Documentation: derived docs may summarize the
   topology but must never own it.
 
@@ -135,8 +137,9 @@ undifferentiated map.
 
 Classification: `source authority`.
 
-Owns `auth.users`, credential truth, canonical email identity, authentication,
-and auth-token verification substrate.
+Owns identity semantics through external provider-owned `auth.users`, credential
+truth, canonical email identity, authentication, and auth-token verification
+substrate.
 
 Must not own onboarding state, application-subject role fields, admin fields,
 membership state, protected course access, profile projection semantics, or
@@ -150,7 +153,7 @@ may expose email read-only. No downstream domain may redefine identity truth.
 Classification: `source authority`.
 
 Owns `app.auth_subjects` as the canonical application subject substrate for
-`onboarding_state`, `role_v2`, `role`, and `is_admin`.
+`onboarding_state` and `role`.
 
 Must not own purchase truth, payment truth, referral identity, invite-token
 transport, protected course access, or post-auth routing outputs.
@@ -323,8 +326,8 @@ surfaces.
 Must not own onboarding completion, membership truth, purchase/payment truth,
 profile projection truth, or post-auth routing outputs.
 
-Relations: Post-Auth Entry Composition may expose `role_v2`, `role`, and
-`is_admin`, but exposure does not move authority out of this domain.
+Relations: Post-Auth Entry Composition may expose `role`, but exposure does not
+move authority out of this domain.
 
 ### Media
 
@@ -360,7 +363,7 @@ the projection is drift.
 
 Classification: `source authority`, `derived artifact`.
 
-Owns canonical local schema shape only through
+Owns canonical app-owned schema shape and substrate-interface expectations only through
 `backend/supabase/baseline_v2_slots/` and
 `backend/supabase/baseline_v2_slots.lock.json`.
 

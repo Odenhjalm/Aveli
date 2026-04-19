@@ -12,8 +12,11 @@ repository root.
 Authority summary:
 
 - Backend startup authority is `backend.bootstrap.run_server`.
-- Local baseline authority is `backend/supabase/baseline_v2_slots/` plus
-  `backend/supabase/baseline_v2_slots.lock.json`.
+- Baseline V2 authority is `backend/supabase/baseline_v2_slots/` plus
+  `backend/supabase/baseline_v2_slots.lock.json`; replay-owned schema is
+  app-owned schema only.
+- Hosted Supabase `auth` and `storage` are provider-owned substrate interfaces,
+  not replay-owned baseline schema.
 - Root or legacy migrations are reference/tooling inputs only unless a later
   accepted authority explicitly promotes them.
 - Stripe is a provider integration. Checkout, session, subscription, and
@@ -72,7 +75,7 @@ From the repository root, use the explicit interpreter entrypoint:
 
 ## Local DB Authority
 
-- Authoritative local DB source:
+- Authoritative local DB source: locked minimal local substrate followed by
   `backend/supabase/baseline_v2_slots/`.
 - Canonical baseline lock:
   `backend/supabase/baseline_v2_slots.lock.json`.
@@ -81,6 +84,9 @@ From the repository root, use the explicit interpreter entrypoint:
 - Ensure the native local database exists with `backend/scripts/ensure_db.sh`.
 - Materialize the accepted local baseline with
   `backend/scripts/replay_v2.sh`.
+- Local replay provisions compatibility substrate before app-owned slot replay.
+  Hosted Supabase verification checks provider substrate interfaces and never
+  recreates `auth` or `storage`.
 
 Cloud clones, legacy database state, root migrations, archived migrations, and
 interactive SQL output are reference or tooling inputs only. They do not

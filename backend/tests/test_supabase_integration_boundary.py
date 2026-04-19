@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -102,23 +103,31 @@ def test_supabase_boundary_contract_maps_infrastructure_only_responsibilities() 
 
 
 def test_baseline_keeps_supabase_external_dependencies_outside_canonical_domain_logic() -> None:
-    substrate_allowed_slots = {
-        "V2_0011_auth_session_and_subject_authority.sql",
-        "V2_0012_core_substrate_profiles_storage_referrals.sql",
-    }
     forbidden_everywhere = ("auth.uid(", "auth.role(")
-    forbidden_outside_substrate = ("auth.users", "storage.objects", "storage.buckets")
+    provider_owned_ddl = (
+        r"create\s+schema\s+(if\s+not\s+exists\s+)?auth\b",
+        r"create\s+schema\s+(if\s+not\s+exists\s+)?storage\b",
+        r"create\s+table\s+(if\s+not\s+exists\s+)?auth\.",
+        r"create\s+table\s+(if\s+not\s+exists\s+)?storage\.",
+    )
+    auth_users_reference_allowed_in = {
+        "V2_0011_auth_session_and_subject_authority.sql",
+    }
 
     for path in _baseline_v2_sql_paths():
         source = _read(path)
+        lowered = source.lower()
         for forbidden in forbidden_everywhere:
             assert forbidden not in source, f"{_repo_relative(path)} contains {forbidden!r}"
 
-        if path.name in substrate_allowed_slots:
-            continue
+        for pattern in provider_owned_ddl:
+            assert re.search(pattern, lowered) is None, f"{_repo_relative(path)} recreates substrate"
 
-        for forbidden in forbidden_outside_substrate:
+        for forbidden in ("storage.objects", "storage.buckets"):
             assert forbidden not in source, f"{_repo_relative(path)} contains {forbidden!r}"
+
+        if path.name not in auth_users_reference_allowed_in:
+            assert "auth.users" not in source, f"{_repo_relative(path)} contains auth.users"
 
 
 def test_frontend_runtime_has_no_direct_supabase_clients() -> None:
