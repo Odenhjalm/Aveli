@@ -1,18 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aveli/shared/utils/course_cover_contract.dart';
-
-const Set<String> _legacyCourseCoverFields = <String>{
-  'cover_url',
-  'coverUrl',
-  'resolved_cover_url',
-  'resolvedCoverUrl',
-  'signed_cover_url',
-  'signedCoverUrl',
-  'signed_cover_url_expires_at',
-  'signedCoverUrlExpiresAt',
-};
+import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
 
 String _requireString(Object? value, String fieldName) {
   switch (value) {
@@ -46,6 +37,15 @@ int? _optionalInt(Object? value, String fieldName) {
   }
 }
 
+List<Object?> _requireList(Object? value, String fieldName) {
+  switch (value) {
+    case final List items:
+      return List<Object?>.unmodifiable(items);
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
 Object? _field(Object? payload, String fieldName) {
   switch (payload) {
     case final Map<Object?, Object?> data when data.containsKey(fieldName):
@@ -54,86 +54,6 @@ Object? _field(Object? payload, String fieldName) {
       throw StateError('Missing required field: $fieldName');
     default:
       throw StateError('Invalid landing payload for $fieldName');
-  }
-}
-
-void _rejectLegacyCourseCoverFields(Object? payload, String context) {
-  if (payload case final Map data) {
-    for (final field in _legacyCourseCoverFields) {
-      if (data.containsKey(field)) {
-        throw StateError('Invalid course cover field in $context');
-      }
-    }
-  }
-}
-
-Map<String, dynamic> _requireStringKeyedMap(Object? value, String fieldName) {
-  switch (value) {
-    case final Map<Object?, Object?> data:
-      final mapped = <String, dynamic>{};
-      for (final entry in data.entries) {
-        final key = entry.key;
-        if (key is! String) {
-          throw StateError('Invalid field type for $fieldName');
-        }
-        mapped[key] = entry.value;
-      }
-      return mapped;
-    default:
-      throw StateError('Invalid field type for $fieldName');
-  }
-}
-
-CourseCoverData? _optionalCourseCover(Object? value, String fieldName) {
-  if (value == null) return null;
-  return CourseCoverData.fromJson(_requireStringKeyedMap(value, fieldName));
-}
-
-@immutable
-class LandingCourseCard {
-  const LandingCourseCard({
-    required this.id,
-    required this.slug,
-    required this.title,
-    required this.groupPosition,
-    required this.coverMediaId,
-    required this.cover,
-    required this.priceAmountCents,
-    required this.shortDescription,
-  });
-
-  final String id;
-  final String slug;
-  final String title;
-  final int groupPosition;
-  final String? coverMediaId;
-  final CourseCoverData? cover;
-  final int? priceAmountCents;
-  final String? shortDescription;
-
-  factory LandingCourseCard.fromResponse(Object? payload) {
-    _rejectLegacyCourseCoverFields(payload, 'landing course');
-    return LandingCourseCard(
-      id: _requireString(_field(payload, 'id'), 'id'),
-      slug: _requireString(_field(payload, 'slug'), 'slug'),
-      title: _requireString(_field(payload, 'title'), 'title'),
-      groupPosition:
-          _optionalInt(_field(payload, 'group_position'), 'group_position') ??
-          0,
-      coverMediaId: _optionalString(
-        _field(payload, 'cover_media_id'),
-        'cover_media_id',
-      ),
-      cover: _optionalCourseCover(_field(payload, 'cover'), 'cover'),
-      priceAmountCents: _optionalInt(
-        _field(payload, 'price_amount_cents'),
-        'price_amount_cents',
-      ),
-      shortDescription: _optionalString(
-        _field(payload, 'short_description'),
-        'short_description',
-      ),
-    );
   }
 }
 
@@ -206,29 +126,71 @@ class LandingSection<T> {
   bool get isEmpty => items.isEmpty;
 }
 
-Future<T> _unsupportedLandingRuntime<T>() {
-  return Future<T>.error(
-    UnsupportedError('Landing edge is inert in mounted runtime'),
-  );
+LandingSection<T> _sectionFromResponse<T>(
+  Object? payload,
+  T Function(Object? payload) parseItem,
+) {
+  final items = _requireList(
+    _field(payload, 'items'),
+    'items',
+  ).map(parseItem).toList(growable: false);
+  return LandingSection<T>(items: items);
 }
 
-final introCoursesProvider = FutureProvider<LandingSection<LandingCourseCard>>((
+LandingSection<CourseSummary> landingCourseSectionFromResponse(
+  Object? payload,
+) {
+  return _sectionFromResponse(payload, CourseSummary.fromResponse);
+}
+
+Future<LandingSection<T>> _fetchLandingSection<T>(
+  Ref ref,
+  String path,
+  LandingSection<T> Function(Object? payload) parseSection,
+) async {
+  final client = ref.watch(apiClientProvider);
+  try {
+    final response = await client.raw.get<Object?>(path);
+    return parseSection(response.data);
+  } catch (error, stackTrace) {
+    throw AppFailure.from(error, stackTrace);
+  }
+}
+
+final introCoursesProvider = FutureProvider<LandingSection<CourseSummary>>((
   ref,
 ) {
-  return _unsupportedLandingRuntime();
+  return _fetchLandingSection(
+    ref,
+    '/landing/intro-courses',
+    landingCourseSectionFromResponse,
+  );
 });
 
-final popularCoursesProvider =
-    FutureProvider<LandingSection<LandingCourseCard>>((ref) {
-      return _unsupportedLandingRuntime();
-    });
+final popularCoursesProvider = FutureProvider<LandingSection<CourseSummary>>((
+  ref,
+) {
+  return _fetchLandingSection(
+    ref,
+    '/landing/popular-courses',
+    landingCourseSectionFromResponse,
+  );
+});
 
 final teachersProvider = FutureProvider<LandingSection<LandingTeacher>>((ref) {
-  return _unsupportedLandingRuntime();
+  return _fetchLandingSection(
+    ref,
+    '/landing/teachers',
+    (payload) => _sectionFromResponse(payload, LandingTeacher.fromResponse),
+  );
 });
 
 final recentServicesProvider = FutureProvider<LandingSection<LandingService>>((
   ref,
 ) {
-  return _unsupportedLandingRuntime();
+  return _fetchLandingSection(
+    ref,
+    '/landing/services',
+    (payload) => _sectionFromResponse(payload, LandingService.fromResponse),
+  );
 });

@@ -61,11 +61,13 @@ def _landing_course(*, cover: dict | None) -> dict:
         "id": COURSE_ID,
         "slug": "course-1",
         "title": "Course 1",
+        "course_group_id": COURSE_GROUP_ID,
         "group_position": 1,
         "cover_media_id": MEDIA_ID,
         "cover": cover,
         "price_amount_cents": 0,
-        "short_description": "Landing",
+        "drip_enabled": False,
+        "drip_interval_days": None,
     }
 
 
@@ -908,12 +910,7 @@ async def test_landing_popular_courses_uses_canonical_cover_shape(
     monkeypatch,
 ):
     async def fake_list_popular_courses():
-        return [
-            {
-                **_landing_course(cover=_resolved_cover_payload()),
-                "short_description": "Popular",
-            }
-        ]
+        return [_landing_course(cover=_resolved_cover_payload())]
 
     monkeypatch.setattr(
         landing_routes.models,
@@ -934,7 +931,7 @@ async def test_landing_intro_courses_returns_null_cover_without_placeholder(
     monkeypatch,
 ):
     async def fake_list_intro_courses():
-        return [{**_landing_course(cover=None), "short_description": "Intro"}]
+        return [_landing_course(cover=None)]
 
     monkeypatch.setattr(
         landing_routes.models,
@@ -950,9 +947,9 @@ async def test_landing_intro_courses_returns_null_cover_without_placeholder(
     assert "resolved_cover_url" not in body["items"][0]
 
 
-async def test_landing_course_card_schema_rejects_legacy_parallel_cover_shape():
+async def test_landing_course_schema_rejects_legacy_parallel_cover_shape():
     with pytest.raises(ValidationError):
-        schemas.LandingCourseCard(
+        schemas.Course(
             **{
                 **_landing_course(cover=_resolved_cover_payload()),
                 "resolved_cover_url": LEGACY_URL,
@@ -1001,14 +998,14 @@ async def test_course_route_response_rejects_legacy_fields_before_filtering():
         )
 
 
-async def test_landing_routes_are_unmounted_in_canonical_app():
+async def test_landing_routes_are_mounted_in_canonical_app():
     app_paths = {route.path for route in app.routes}
     landing_router_paths = {route.path for route in landing_routes.router.routes}
 
     assert "/landing/intro-courses" in landing_router_paths
     assert "/landing/popular-courses" in landing_router_paths
-    assert "/landing/intro-courses" not in app_paths
-    assert "/landing/popular-courses" not in app_paths
+    assert "/landing/intro-courses" in app_paths
+    assert "/landing/popular-courses" in app_paths
 
 
 async def test_studio_courses_list_response_uses_canonical_cover_shape(

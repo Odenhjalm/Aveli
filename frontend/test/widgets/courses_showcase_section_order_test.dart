@@ -29,10 +29,7 @@ Future<void> _pumpShowcase(
         ),
         mediaRepositoryProvider.overrideWithValue(_MockMediaRepository()),
         landing.popularCoursesProvider.overrideWith(
-          (ref) async =>
-              const landing.LandingSection<landing.LandingCourseCard>(
-                items: [],
-              ),
+          (ref) async => const landing.LandingSection<CourseSummary>(items: []),
         ),
         coursesProvider.overrideWith((ref) => Future.value(courses)),
       ],

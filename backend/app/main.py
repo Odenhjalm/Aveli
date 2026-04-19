@@ -55,6 +55,7 @@ from .routes import (
     email_verification,
     entry_state,
     home,
+    landing,
     logs_mcp,
     media_control_plane_mcp,
     netlify_observability_mcp,
@@ -224,6 +225,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(referrals.router)
     app.include_router(admin.router)
     app.include_router(home.router)
+    app.include_router(landing.router)
     app.include_router(playback.router)
     app.include_router(profile_avatar.router)
     app.include_router(courses.router)

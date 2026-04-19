@@ -215,6 +215,7 @@ async def list_public_course_discovery(
     *,
     search: str | None = None,
     limit: int | None = None,
+    group_position: int | None = None,
 ) -> Sequence[CourseRow]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -222,6 +223,9 @@ async def list_public_course_discovery(
         pattern = f"%{search}%"
         clauses.append("(cds.title ilike %s or cds.slug ilike %s)")
         params.extend([pattern, pattern])
+    if group_position is not None:
+        clauses.append("cds.group_position = %s")
+        params.append(int(group_position))
 
     limit_sql = "limit %s" if limit is not None else ""
     if limit is not None:

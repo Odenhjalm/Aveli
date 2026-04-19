@@ -313,12 +313,14 @@ async def list_public_courses(
     *,
     search: str | None = None,
     limit: int | None = None,
+    group_position: int | None = None,
 ) -> Sequence[dict[str, Any]]:
     rows = [
         dict(row)
         for row in await courses_repo.list_public_course_discovery(
             search=search,
             limit=limit,
+            group_position=group_position,
         )
     ]
     await attach_course_cover_read_contract(rows)

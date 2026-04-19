@@ -124,13 +124,12 @@ class CoursesShowcaseSection extends ConsumerWidget {
     final loading = useLandingContractsOnly
         ? popularAsync.isLoading
         : isInitialAllCoursesLoad || isWaitingForPopularFallback;
-    final popular =
-        popularAsync.valueOrNull?.items ?? const <landing.LandingCourseCard>[];
+    final popular = popularAsync.valueOrNull?.items ?? const <CourseSummary>[];
     final allCourses = allCoursesAsync.valueOrNull ?? const <CourseSummary>[];
     final items = useLandingContractsOnly
         ? popular
         : hasAllCoursesValue
-        ? _mapCourseSummaries(allCourses)
+        ? allCourses
         : popular;
     final visible = _sortCoursesForDisplay(items);
 
@@ -271,36 +270,17 @@ class CoursesShowcaseSection extends ConsumerWidget {
     );
   }
 
-  static List<landing.LandingCourseCard> _sortCoursesForDisplay(
-    List<landing.LandingCourseCard> courses,
+  static List<CourseSummary> _sortCoursesForDisplay(
+    List<CourseSummary> courses,
   ) {
     if (courses.length < 2) return courses;
     courses.sort(_compareCourses);
     return courses;
   }
 
-  static List<landing.LandingCourseCard> _mapCourseSummaries(
-    List<CourseSummary> courses,
-  ) {
-    return courses
-        .map((course) {
-          return landing.LandingCourseCard(
-            id: course.id,
-            title: course.title,
-            slug: course.slug,
-            groupPosition: course.groupPosition,
-            coverMediaId: course.coverMediaId,
-            cover: course.cover,
-            priceAmountCents: course.priceCents,
-            shortDescription: null,
-          );
-        })
-        .toList(growable: false);
-  }
-
   static Widget _buildLayout(
     BuildContext context,
-    List<landing.LandingCourseCard> items, {
+    List<CourseSummary> items, {
     required MediaRepository mediaRepository,
     required CoursesShowcaseLayout layout,
     CoursesShowcaseDesktop? desktop,
@@ -393,7 +373,7 @@ class _HorizontalPagedCourseGrid extends StatefulWidget {
     required this.introBadgeVariant,
   });
 
-  final List<landing.LandingCourseCard> items;
+  final List<CourseSummary> items;
   final int pageSize;
   final SliverGridDelegateWithFixedCrossAxisCount gridDelegate;
   final MediaRepository mediaRepository;
@@ -518,7 +498,7 @@ class _HorizontalPagedCourseGridState extends State<_HorizontalPagedCourseGrid>
   Widget build(BuildContext context) {
     final items = widget.items;
     // Keep the incoming order intact so rebuilds and pagination stay stable.
-    final slots = items.cast<landing.LandingCourseCard?>();
+    final slots = items.cast<CourseSummary?>();
     final pages = (slots.length / widget.pageSize).ceil().clamp(1, 9999);
     if (pages <= 1) {
       return GridView.builder(
@@ -671,7 +651,7 @@ class _RightPeekClipper extends CustomClipper<Rect> {
 // ---- Section item widgets (glass style) ----
 
 class _CourseTileGlass extends StatelessWidget {
-  final landing.LandingCourseCard course;
+  final CourseSummary course;
   final int index;
   final MediaRepository mediaRepository;
   final Gradient? ctaGradient;
@@ -689,10 +669,10 @@ class _CourseTileGlass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = course.title;
-    final desc = course.shortDescription ?? '';
+    const desc = '';
     final slug = course.slug;
     final isIntro = course.groupPosition == 0;
-    final priceCents = course.priceAmountCents;
+    final priceCents = course.priceCents;
     final courseCoverImageUrlFuture = Future<String?>.value(
       courseCoverResolvedUrl(course.cover),
     );
@@ -892,7 +872,7 @@ class _CourseTileGlass extends StatelessWidget {
 
 String _normalizedCourseValue(String value) => value.trim().toLowerCase();
 
-int _compareCourses(landing.LandingCourseCard a, landing.LandingCourseCard b) {
+int _compareCourses(CourseSummary a, CourseSummary b) {
   final levelCompare = a.groupPosition.compareTo(b.groupPosition);
   if (levelCompare != 0) {
     return levelCompare;

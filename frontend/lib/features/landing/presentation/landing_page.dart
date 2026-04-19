@@ -10,6 +10,7 @@ import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -45,7 +46,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
   bool _loading = true;
   List<LandingTeacher> _teachers = const <LandingTeacher>[];
   List<LandingService> _services = const <LandingService>[];
-  List<LandingCourseCard> _introCourses = const <LandingCourseCard>[];
+  List<CourseSummary> _introCourses = const <CourseSummary>[];
 
   List<LandingTeacher> get _teacherItems => _teachers;
   List<LandingService> get _serviceItems => _services;

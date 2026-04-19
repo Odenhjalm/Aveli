@@ -15,6 +15,7 @@ import 'package:aveli/data/models/service.dart';
 import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/auth/presentation/login_page.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
@@ -198,9 +199,8 @@ List<Override> _commonOverrides(AuthState authState) {
     homeFeedProvider.overrideWith((ref) => Future.value(const <Activity>[])),
     homeServicesProvider.overrideWith((ref) => Future.value(const <Service>[])),
     landing.popularCoursesProvider.overrideWith(
-      (ref) => Future.value(
-        const landing.LandingSection<landing.LandingCourseCard>(items: []),
-      ),
+      (ref) =>
+          Future.value(const landing.LandingSection<CourseSummary>(items: [])),
     ),
     communityServicesProvider.overrideWith(
       (ref) => Future.value(const <Service>[]),

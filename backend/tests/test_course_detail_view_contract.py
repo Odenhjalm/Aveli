@@ -202,9 +202,11 @@ async def test_list_public_courses_reads_public_discovery_surface(monkeypatch):
         *,
         search: str | None = None,
         limit: int | None = None,
+        group_position: int | None = None,
     ):
         assert search == "course"
         assert limit == 5
+        assert group_position is None
         return [_course_payload(cover=None)]
 
     async def fake_attach_course_cover_read_contract(courses):

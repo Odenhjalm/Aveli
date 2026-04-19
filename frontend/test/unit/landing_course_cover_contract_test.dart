@@ -3,92 +3,88 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart';
 
 void main() {
-  test('landing course card parses canonical cover shape', () {
-    final card = LandingCourseCard.fromResponse(const {
-      'id': 'course-1',
-      'slug': 'course-one',
-      'title': 'Kurs ett',
-      'group_position': 1,
-      'cover_media_id': 'media-1',
-      'cover': {
-        'media_id': 'media-1',
-        'state': 'ready',
-        'resolved_url': 'https://cdn.test/cover.jpg',
-      },
-      'price_amount_cents': 9900,
-      'short_description': 'Kort beskrivning',
+  test('landing course section parses canonical course cover shape', () {
+    final section = landingCourseSectionFromResponse({
+      'items': [_canonicalCourse(cover: _canonicalCover)],
     });
+    final card = section.items.single;
 
-    expect(card.coverMediaId, 'media-1');
+    expect(card.coverMediaId, '33333333-3333-3333-3333-333333333333');
     expect(card.cover?.resolvedUrl, 'https://cdn.test/cover.jpg');
   });
 
-  test('landing course card accepts canonical null cover', () {
-    final card = LandingCourseCard.fromResponse(const {
-      'id': 'course-1',
-      'slug': 'course-one',
-      'title': 'Kurs ett',
-      'group_position': 1,
-      'cover_media_id': 'media-1',
-      'cover': null,
-      'price_amount_cents': 9900,
-      'short_description': null,
+  test('landing course section accepts canonical null cover', () {
+    final section = landingCourseSectionFromResponse({
+      'items': [_canonicalCourse(cover: null)],
     });
+    final card = section.items.single;
 
-    expect(card.coverMediaId, 'media-1');
+    expect(card.coverMediaId, '33333333-3333-3333-3333-333333333333');
     expect(card.cover, isNull);
   });
 
-  test('landing course card rejects legacy resolved cover url shape', () {
+  test('landing course section rejects legacy resolved cover url shape', () {
     expect(
-      () => LandingCourseCard.fromResponse(const {
-        'id': 'course-1',
-        'slug': 'course-one',
-        'title': 'Kurs ett',
-        'group_position': 1,
-        'resolved_cover_url': 'https://cdn.test/cover.jpg',
-        'price_amount_cents': 9900,
-        'short_description': null,
+      () => landingCourseSectionFromResponse({
+        'items': [
+          {
+            ..._canonicalCourse(cover: null),
+            'resolved_cover_url': 'https://cdn.test/cover.jpg',
+          },
+        ],
       }),
       throwsStateError,
     );
   });
 
-  test('landing course card rejects mixed legacy cover fields', () {
+  test('landing course section rejects mixed legacy cover fields', () {
     expect(
-      () => LandingCourseCard.fromResponse(const {
-        'id': 'course-1',
-        'slug': 'course-one',
-        'title': 'Kurs ett',
-        'group_position': 1,
-        'cover_media_id': 'media-1',
-        'cover': null,
-        'resolvedCoverUrl': 'https://cdn.test/cover.jpg',
-        'price_amount_cents': 9900,
-        'short_description': null,
+      () => landingCourseSectionFromResponse({
+        'items': [
+          {
+            ..._canonicalCourse(cover: null),
+            'resolvedCoverUrl': 'https://cdn.test/cover.jpg',
+          },
+        ],
       }),
       throwsStateError,
     );
   });
 
-  test('landing course card rejects non-canonical cover object fields', () {
+  test('landing course section rejects non-canonical cover object fields', () {
     expect(
-      () => LandingCourseCard.fromResponse(const {
-        'id': 'course-1',
-        'slug': 'course-one',
-        'title': 'Kurs ett',
-        'group_position': 1,
-        'cover_media_id': 'media-1',
-        'cover': {
-          'media_id': 'media-1',
-          'state': 'ready',
-          'resolved_url': 'https://cdn.test/cover.jpg',
-          'playback_object_path': 'media/derived/cover/course.jpg',
-        },
-        'price_amount_cents': 9900,
-        'short_description': null,
+      () => landingCourseSectionFromResponse({
+        'items': [
+          _canonicalCourse(
+            cover: {
+              ..._canonicalCover,
+              'playback_object_path': 'media/derived/cover/course.jpg',
+            },
+          ),
+        ],
       }),
       throwsStateError,
     );
   });
+}
+
+const _canonicalCover = {
+  'media_id': '33333333-3333-3333-3333-333333333333',
+  'state': 'ready',
+  'resolved_url': 'https://cdn.test/cover.jpg',
+};
+
+Map<String, Object?> _canonicalCourse({required Object? cover}) {
+  return {
+    'id': '11111111-1111-1111-1111-111111111111',
+    'slug': 'course-one',
+    'title': 'Kurs ett',
+    'course_group_id': '22222222-2222-2222-2222-222222222222',
+    'group_position': 1,
+    'cover_media_id': '33333333-3333-3333-3333-333333333333',
+    'cover': cover,
+    'price_amount_cents': 9900,
+    'drip_enabled': false,
+    'drip_interval_days': null,
+  };
 }

@@ -221,7 +221,7 @@ class _FeedSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _SectionCard(
-      title: 'Gemensam vagg',
+      title: 'Gemensam vägg',
       trailing: TextButton(
         onPressed: () => context.goNamed(AppRoute.community),
         child: const Text('Visa allt'),
@@ -297,7 +297,7 @@ class _ServicesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _SectionCard(
-      title: 'Tjanster',
+      title: 'Tjänster',
       trailing: TextButton(
         onPressed: () => context.goNamed(
           AppRoute.community,

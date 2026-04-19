@@ -5,26 +5,22 @@ from .. import models, schemas
 router = APIRouter(prefix="/landing", tags=["landing"])
 
 
-@router.get(
-    "/intro-courses",
-    response_model=schemas.LandingCourseSectionResponse,
-)
+def _course_list_response(rows) -> schemas.CourseListResponse:
+    return schemas.CourseListResponse(
+        items=[schemas.Course(**row) for row in rows]
+    )
+
+
+@router.get("/intro-courses", response_model=schemas.CourseListResponse)
 async def intro_courses():
     rows = await models.list_intro_courses()
-    return schemas.LandingCourseSectionResponse(
-        items=[schemas.LandingCourseCard(**row) for row in rows]
-    )
+    return _course_list_response(rows)
 
 
-@router.get(
-    "/popular-courses",
-    response_model=schemas.LandingCourseSectionResponse,
-)
+@router.get("/popular-courses", response_model=schemas.CourseListResponse)
 async def popular_courses():
     rows = await models.list_popular_courses()
-    return schemas.LandingCourseSectionResponse(
-        items=[schemas.LandingCourseCard(**row) for row in rows]
-    )
+    return _course_list_response(rows)
 
 
 @router.get(

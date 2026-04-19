@@ -8,36 +8,91 @@ from app import db
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-def auth_header(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
-
-
-async def register_user(client, email: str, password: str, display_name: str) -> tuple[str, str]:
-    register_resp = await client.post(
-        "/auth/register",
-        json={
-            "email": email,
-            "password": password,
-            "display_name": display_name,
-        },
-    )
-    assert register_resp.status_code == 201, register_resp.text
-    tokens = register_resp.json()
-    me_resp = await client.get("/profiles/me", headers=auth_header(tokens["access_token"]))
-    assert me_resp.status_code == 200, me_resp.text
-    return tokens["access_token"], me_resp.json()["user_id"]
-
-
-async def promote_to_teacher(user_id: str) -> None:
+async def insert_teacher(email: str, display_name: str) -> str:
+    user_id = str(uuid.uuid4())
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
-                UPDATE app.auth_subjects
-                   SET role = 'teacher'
-                 WHERE user_id = %s
+                INSERT INTO auth.users (
+                    id,
+                    email,
+                    encrypted_password,
+                    created_at,
+                    updated_at
+                )
+                VALUES (%s::uuid, %s, 'test-hash', now(), now())
                 """,
-                (user_id,),
+                (user_id, email.strip().lower()),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.auth_subjects (
+                    user_id,
+                    email,
+                    role,
+                    onboarding_state
+                )
+                VALUES (%s::uuid, %s, 'teacher', 'completed')
+                """,
+                (user_id, email.strip().lower()),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.profiles (user_id, display_name, bio, created_at, updated_at)
+                VALUES (%s::uuid, %s, null, now(), now())
+                """,
+                (user_id, display_name),
+            )
+            await conn.commit()
+    return user_id
+
+
+async def insert_course(*, teacher_id: str, slug: str, title: str, sellable: bool) -> None:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO app.courses (
+                    teacher_id,
+                    title,
+                    slug,
+                    course_group_id,
+                    group_position,
+                    visibility,
+                    content_ready,
+                    price_amount_cents,
+                    stripe_product_id,
+                    active_stripe_price_id,
+                    sellable,
+                    drip_enabled,
+                    drip_interval_days
+                )
+                VALUES (
+                    %s::uuid,
+                    %s,
+                    %s,
+                    %s::uuid,
+                    1,
+                    'public',
+                    true,
+                    9900,
+                    %s,
+                    %s,
+                    %s,
+                    false,
+                    null
+                )
+                """,
+                (
+                    teacher_id,
+                    title,
+                    slug,
+                    str(uuid.uuid4()),
+                    f"prod_{slug}",
+                    f"price_{slug}",
+                    sellable,
+                ),
             )
             await conn.commit()
 
@@ -45,7 +100,12 @@ async def promote_to_teacher(user_id: str) -> None:
 async def cleanup_user(user_id: str) -> None:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute("DELETE FROM auth.users WHERE id = %s", (user_id,))
+            await cur.execute("DELETE FROM app.profiles WHERE user_id = %s::uuid", (user_id,))
+            await cur.execute(
+                "DELETE FROM app.auth_subjects WHERE user_id = %s::uuid",
+                (user_id,),
+            )
+            await cur.execute("DELETE FROM auth.users WHERE id = %s::uuid", (user_id,))
             await conn.commit()
 
 
@@ -56,61 +116,54 @@ async def cleanup_course(slug: str) -> None:
             await conn.commit()
 
 
-async def test_landing_popular_courses_excludes_example_com(async_client):
-    password = "Passw0rd!"
-
+async def test_landing_popular_courses_uses_canonical_discovery(async_client):
     real_slug = f"popular-real-{uuid.uuid4().hex[:8]}"
     test_slug = f"popular-test-{uuid.uuid4().hex[:8]}"
 
-    real_token, real_id = await register_user(
-        async_client,
+    real_id = await insert_teacher(
         f"popular_real_{uuid.uuid4().hex[:8]}@example.org",
-        password,
         "Real Teacher",
     )
-    test_token, test_id = await register_user(
-        async_client,
+    test_id = await insert_teacher(
         f"popular_test_{uuid.uuid4().hex[:8]}@example.com",
-        password,
         "Test Teacher",
     )
-    await promote_to_teacher(real_id)
-    await promote_to_teacher(test_id)
 
     try:
-        real_course_resp = await async_client.post(
-            "/studio/courses",
-            json={
-                "title": "Real Popular Course",
-                "slug": real_slug,
-                "description": "Real course for popularity listing test",
-                "is_published": True,
-                "is_free_intro": True,
-                "price_amount_cents": 0,
-            },
-            headers=auth_header(real_token),
+        await insert_course(
+            teacher_id=real_id,
+            slug=real_slug,
+            title="Real Popular Course",
+            sellable=True,
         )
-        assert real_course_resp.status_code == 200, real_course_resp.text
-
-        test_course_resp = await async_client.post(
-            "/studio/courses",
-            json={
-                "title": "Test Popular Course",
-                "slug": test_slug,
-                "description": "Example.com course should be filtered",
-                "is_published": True,
-                "is_free_intro": True,
-                "price_amount_cents": 0,
-            },
-            headers=auth_header(test_token),
+        await insert_course(
+            teacher_id=test_id,
+            slug=test_slug,
+            title="Non-discoverable Popular Course",
+            sellable=False,
         )
-        assert test_course_resp.status_code == 200, test_course_resp.text
 
         resp = await async_client.get("/landing/popular-courses")
         assert resp.status_code == 200, resp.text
-        slugs = {item.get("slug") for item in (resp.json().get("items") or [])}
+        items = resp.json().get("items") or []
+        slugs = {item.get("slug") for item in items}
         assert real_slug in slugs
         assert test_slug not in slugs
+        real_item = next(item for item in items if item.get("slug") == real_slug)
+        assert set(real_item) == {
+            "id",
+            "slug",
+            "title",
+            "course_group_id",
+            "group_position",
+            "cover_media_id",
+            "cover",
+            "price_amount_cents",
+            "drip_enabled",
+            "drip_interval_days",
+        }
+        assert "resolved_cover_url" not in real_item
+        assert "cover_url" not in real_item
     finally:
         await cleanup_course(real_slug)
         await cleanup_course(test_slug)

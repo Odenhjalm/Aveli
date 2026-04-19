@@ -478,59 +478,11 @@ async def list_courses(
 
 
 async def list_intro_courses(limit: int = 5) -> Iterable[dict]:
-    return await _list_landing_courses(limit=limit, intro_only=True)
+    return await courses_service.list_public_courses(limit=limit, group_position=0)
 
 
 async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
-    return await _list_landing_courses(limit=limit, intro_only=False)
-
-
-async def _list_landing_courses(
-    *,
-    limit: int,
-    intro_only: bool,
-) -> Iterable[dict]:
-    clauses = []
-    params: list[Any] = []
-
-    clauses.append("c.visibility = 'public'::app.course_visibility")
-
-    if intro_only:
-        clauses.append("c.group_position = 0")
-
-    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    order_sql = (
-        "ORDER BY c.updated_at DESC"
-        if intro_only
-        else "ORDER BY c.group_position ASC, c.updated_at DESC"
-    )
-
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                f"""
-                SELECT
-                    c.id,
-                    c.slug,
-                    c.title,
-                    c.group_position,
-                    c.price_amount_cents,
-                    c.cover_media_id,
-                    cpc.short_description,
-                    NULL::jsonb AS cover
-                FROM app.courses c
-                LEFT JOIN app.course_public_content cpc
-                  ON cpc.course_id = c.id
-                {where_sql}
-                {order_sql}
-                LIMIT %s
-                """,
-                [*params, limit],
-            )
-            rows = await cur.fetchall()
-            normalized_rows = [dict(row) for row in rows]
-            await courses_service.attach_course_cover_read_contract(normalized_rows)
-            return normalized_rows
+    return await courses_service.list_public_courses(limit=limit)
 
 
 async def list_teachers(limit: int = 20) -> Iterable[dict]:

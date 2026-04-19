@@ -11,6 +11,7 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
@@ -121,10 +122,7 @@ Future<void> _pumpDashboard(WidgetTester tester) async {
         homeServicesProvider.overrideWith((ref) async => const <Service>[]),
         coursesProvider.overrideWith((ref) async => const []),
         landing.popularCoursesProvider.overrideWith(
-          (ref) async =>
-              const landing.LandingSection<landing.LandingCourseCard>(
-                items: [],
-              ),
+          (ref) async => const landing.LandingSection<CourseSummary>(items: []),
         ),
       ],
       child: MaterialApp.router(routerConfig: router),

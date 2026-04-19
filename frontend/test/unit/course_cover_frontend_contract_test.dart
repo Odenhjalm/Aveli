@@ -82,28 +82,26 @@ void main() {
       );
     });
 
-    test(
-      'landing providers are inert instead of a separate cover authority',
-      () {
-        final source = File(
-          'lib/features/landing/application/landing_providers.dart',
-        ).readAsStringSync();
+    test('landing providers read the canonical landing discovery edge', () {
+      final source = File(
+        'lib/features/landing/application/landing_providers.dart',
+      ).readAsStringSync();
 
-        expect(source, contains('_unsupportedLandingRuntime'));
-        expect(source, contains('Landing edge is inert in mounted runtime'));
-        expect(source, isNot(contains('/landing/popular-courses')));
-        expect(source, isNot(contains('/landing/intro-courses')));
-        expect(source, isNot(contains('ApiClient')));
-      },
-    );
+      expect(source, contains('apiClientProvider'));
+      expect(source, contains('/landing/popular-courses'));
+      expect(source, contains('/landing/intro-courses'));
+      expect(source, contains('CourseSummary.fromResponse'));
+      expect(source, contains('landingCourseSectionFromResponse'));
+      expect(source, isNot(contains('_unsupportedLandingRuntime')));
+      expect(source, isNot(contains('Landing edge is inert')));
+    });
 
     test('showcase maps course summaries without alternate cover fields', () {
       final source = File(
         'lib/shared/widgets/courses_showcase_section.dart',
       ).readAsStringSync();
 
-      expect(source, contains('coverMediaId: course.coverMediaId'));
-      expect(source, contains('cover: course.cover'));
+      expect(source, isNot(contains('LandingCourseCard')));
       expect(source, isNot(contains('resolvedCoverUrl')));
     });
   });
@@ -121,7 +119,6 @@ const _activeCourseCoverConsumerPaths = <String>[
 
 const _courseCoverParserPaths = <String>[
   'lib/features/courses/data/courses_repository.dart',
-  'lib/features/landing/application/landing_providers.dart',
 ];
 
 const _courseCoverRenderingPaths = <String>[
