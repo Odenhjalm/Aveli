@@ -826,13 +826,16 @@ class CoursePricingResponse(BaseModel):
 
 
 class LandingCourseCard(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     slug: str
     title: str
     group_position: int
+    cover_media_id: UUID | None = None
+    cover: ResolvedMedia | None = None
     price_amount_cents: int | None = None
     short_description: str | None = None
-    resolved_cover_url: str | None = None
 
 
 class LandingCourseSectionResponse(BaseModel):

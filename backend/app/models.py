@@ -515,8 +515,9 @@ async def _list_landing_courses(
                     c.title,
                     c.group_position,
                     c.price_amount_cents,
+                    c.cover_media_id,
                     cpc.short_description,
-                    NULL::text AS resolved_cover_url
+                    NULL::jsonb AS cover
                 FROM app.courses c
                 LEFT JOIN app.course_public_content cpc
                   ON cpc.course_id = c.id
@@ -527,7 +528,9 @@ async def _list_landing_courses(
                 [*params, limit],
             )
             rows = await cur.fetchall()
-            return rows
+            normalized_rows = [dict(row) for row in rows]
+            await courses_service.attach_course_cover_read_contract(normalized_rows)
+            return normalized_rows
 
 
 async def list_teachers(limit: int = 20) -> Iterable[dict]:

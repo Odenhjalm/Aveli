@@ -35,6 +35,7 @@ async def test_course_cover_read_contract_emits_backend_authored_media_only(
             "course_id": course_id,
             "media_asset_id": media_asset_id,
             "media_type": "image",
+            "purpose": "course_cover",
             "playback_object_path": "media/derived/cover/example.jpg",
             "playback_format": "jpg",
             "state": "ready",
@@ -65,7 +66,7 @@ async def test_course_cover_read_contract_emits_backend_authored_media_only(
     assert "signed_cover_url_expires_at" not in row
 
 
-async def test_course_cover_read_contract_uses_placeholder_without_runtime_row(
+async def test_course_cover_read_contract_uses_null_without_runtime_row(
     monkeypatch,
 ) -> None:
     course_id = str(uuid4())
@@ -93,8 +94,4 @@ async def test_course_cover_read_contract_uses_placeholder_without_runtime_row(
 
     await courses_service.attach_course_cover_read_contract(row)
 
-    assert row["cover"] == {
-        "media_id": media_id,
-        "state": "placeholder",
-        "resolved_url": None,
-    }
+    assert row["cover"] is None

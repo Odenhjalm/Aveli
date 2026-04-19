@@ -83,8 +83,8 @@ Lesson content read context may additionally include:
     "cover_media_id": "uuid | null",
     "cover": {
       "media_id": "string",
-      "state": "string",
-      "resolved_url": "string | null"
+      "state": "ready",
+      "resolved_url": "string"
     },
     "price_amount_cents": 123,
     "drip_enabled": true,
@@ -108,6 +108,9 @@ Rules:
 - `content_markdown` is forbidden
 - `lesson_media` is forbidden
 - access does not require enrollment
+- `cover` MUST be `null` when no contract-valid resolved course-cover object exists
+- Placeholder cover objects with `resolved_url = null` are forbidden
+- Course-cover objects may be emitted only for ready image course-cover assets with nonblank playback object path and `playback_format = jpg`
 
 ## 6. CONTENT READ CONTRACT
 

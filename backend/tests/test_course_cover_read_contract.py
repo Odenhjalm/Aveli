@@ -7,6 +7,7 @@ import pytest
 
 from app import permissions
 from app.main import app
+from app.routes import landing as landing_routes
 from app.routes import studio as studio_routes
 from app.services import courses_service
 
@@ -53,18 +54,34 @@ def _course(*, cover_media_id: str | None = MEDIA_ID) -> dict:
     }
 
 
+def _landing_course(*, cover: dict | None) -> dict:
+    return {
+        "id": COURSE_ID,
+        "slug": "course-1",
+        "title": "Course 1",
+        "group_position": 1,
+        "cover_media_id": MEDIA_ID,
+        "cover": cover,
+        "price_amount_cents": 0,
+        "short_description": "Landing",
+    }
+
+
 def _runtime_row(
     *,
     state: str = "ready",
     path: str = DERIVED_PATH,
     media_type: str = "image",
+    purpose: str = "course_cover",
+    playback_format: str = "jpg",
 ) -> dict:
     return {
         "course_id": COURSE_ID,
         "media_asset_id": MEDIA_ID,
         "media_type": media_type,
+        "purpose": purpose,
         "playback_object_path": path,
-        "playback_format": "jpg",
+        "playback_format": playback_format,
         "state": state,
     }
 
@@ -74,6 +91,7 @@ def _course_cover_pipeline_asset(
     media_type: str = "image",
     purpose: str = "course_cover",
     state: str = "ready",
+    playback_format: str = "jpg",
     original_object_path: str | None = None,
     playback_object_path: str | None = "__DEFAULT__",
 ) -> dict:
@@ -89,6 +107,7 @@ def _course_cover_pipeline_asset(
         "original_object_path": original_object_path
         or f"media/source/cover/courses/{COURSE_ID}/source.png",
         "playback_object_path": exact_playback_object_path,
+        "playback_format": playback_format,
     }
 
 
@@ -207,6 +226,10 @@ async def test_validate_course_cover_assignment_rejects_non_id_inputs(
         (
             _course_cover_pipeline_asset(playback_object_path=""),
             "cover_media_id is missing ready media output",
+        ),
+        (
+            _course_cover_pipeline_asset(playback_format="png"),
+            "cover_media_id ready media output must be jpg",
         ),
         (
             _course_cover_pipeline_asset(
@@ -351,7 +374,7 @@ async def test_update_course_rejects_wrong_teacher_before_cover_assignment(
         )
 
 
-async def test_resolve_course_cover_uploaded_asset_returns_placeholder(monkeypatch):
+async def test_resolve_course_cover_uploaded_asset_returns_null(monkeypatch):
     async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
         return _runtime_row(state="uploaded")
 
@@ -367,14 +390,10 @@ async def test_resolve_course_cover_uploaded_asset_returns_placeholder(monkeypat
         cover_media_id=MEDIA_ID,
     )
 
-    assert cover == {
-        "media_id": MEDIA_ID,
-        "state": "uploaded",
-        "resolved_url": None,
-    }
+    assert cover is None
 
 
-async def test_resolve_course_cover_missing_asset_returns_placeholder(monkeypatch):
+async def test_resolve_course_cover_missing_asset_returns_null(monkeypatch):
     async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
         return None
 
@@ -390,11 +409,7 @@ async def test_resolve_course_cover_missing_asset_returns_placeholder(monkeypatc
         cover_media_id=MEDIA_ID,
     )
 
-    assert cover == {
-        "media_id": MEDIA_ID,
-        "state": "placeholder",
-        "resolved_url": None,
-    }
+    assert cover is None
 
 
 async def test_resolve_course_cover_missing_derived_bytes_never_returns_ready(monkeypatch):
@@ -415,11 +430,45 @@ async def test_resolve_course_cover_missing_derived_bytes_never_returns_ready(mo
         cover_media_id=MEDIA_ID,
     )
 
-    assert cover == {
-        "media_id": MEDIA_ID,
-        "state": "missing",
-        "resolved_url": None,
-    }
+    assert cover is None
+
+
+async def test_resolve_course_cover_non_jpg_format_returns_null(monkeypatch):
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row(playback_format="png")
+
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
+        raising=True,
+    )
+
+    cover = await courses_service.resolve_course_cover(
+        course_id=COURSE_ID,
+        cover_media_id=MEDIA_ID,
+    )
+
+    assert cover is None
+
+
+async def test_resolve_course_cover_wrong_purpose_returns_null(monkeypatch):
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row(purpose="profile_media")
+
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
+        raising=True,
+    )
+
+    cover = await courses_service.resolve_course_cover(
+        course_id=COURSE_ID,
+        cover_media_id=MEDIA_ID,
+    )
+
+    assert cover is None
 
 
 async def test_resolve_course_cover_logs_contract_violation(monkeypatch, caplog):
@@ -439,11 +488,7 @@ async def test_resolve_course_cover_logs_contract_violation(monkeypatch, caplog)
             cover_media_id=MEDIA_ID,
         )
 
-    assert cover == {
-        "media_id": MEDIA_ID,
-        "state": "processing",
-        "resolved_url": None,
-    }
+    assert cover is None
     assert "COURSE_COVER_RESOLVED_ASSET_NOT_READY" in caplog.text
 
 
@@ -485,7 +530,7 @@ async def test_attach_course_cover_read_contract_drops_cover_when_no_cover_media
     await courses_service.attach_course_cover_read_contract(row)
 
     assert "cover_url" not in row
-    assert "cover" not in row
+    assert row["cover"] is None
 
 
 async def test_fetch_course_includes_cover_when_cover_media_id_resolves(monkeypatch):
@@ -582,6 +627,120 @@ async def test_courses_list_response_includes_cover_when_present(async_client, m
     assert "cover_url" not in body["items"][0]
 
 
+async def test_courses_list_response_returns_null_cover_for_invalid_cover(
+    async_client,
+    monkeypatch,
+):
+    async def fake_list_public_courses(**kwargs):
+        return [{**_course(), "cover": None}]
+
+    async def fake_attach(rows):
+        return None
+
+    monkeypatch.setattr(
+        courses_service,
+        "list_public_courses",
+        fake_list_public_courses,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service,
+        "attach_course_cover_read_contract",
+        fake_attach,
+        raising=True,
+    )
+
+    response = await async_client.get("/courses")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["items"][0]["cover_media_id"] == MEDIA_ID
+    assert body["items"][0]["cover"] is None
+    assert "resolved_cover_url" not in body["items"][0]
+    assert "cover_url" not in body["items"][0]
+
+
+async def test_courses_list_exposes_premium_cover_without_purchase(
+    async_client,
+    monkeypatch,
+):
+    async def fake_list_public_courses(**kwargs):
+        return [
+            {
+                **_course(),
+                "price_amount_cents": 9900,
+                "cover": _resolved_cover_payload(),
+            }
+        ]
+
+    async def fake_attach(rows):
+        return None
+
+    monkeypatch.setattr(
+        courses_service,
+        "list_public_courses",
+        fake_list_public_courses,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service,
+        "attach_course_cover_read_contract",
+        fake_attach,
+        raising=True,
+    )
+
+    response = await async_client.get("/courses")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["items"][0]["price_amount_cents"] == 9900
+    assert body["items"][0]["cover"] == _resolved_cover_payload()
+
+
+async def test_landing_popular_courses_uses_canonical_cover_shape(
+    monkeypatch,
+):
+    async def fake_list_popular_courses():
+        return [
+            {
+                **_landing_course(cover=_resolved_cover_payload()),
+                "short_description": "Popular",
+            }
+        ]
+
+    monkeypatch.setattr(
+        landing_routes.models,
+        "list_popular_courses",
+        fake_list_popular_courses,
+        raising=True,
+    )
+
+    response = await landing_routes.popular_courses()
+    body = response.model_dump(mode="json")
+    assert body["items"][0]["cover_media_id"] == MEDIA_ID
+    assert body["items"][0]["cover"] == _resolved_cover_payload()
+    assert "resolved_cover_url" not in body["items"][0]
+    assert "cover_url" not in body["items"][0]
+
+
+async def test_landing_intro_courses_returns_null_cover_without_placeholder(
+    monkeypatch,
+):
+    async def fake_list_intro_courses():
+        return [{**_landing_course(cover=None), "short_description": "Intro"}]
+
+    monkeypatch.setattr(
+        landing_routes.models,
+        "list_intro_courses",
+        fake_list_intro_courses,
+        raising=True,
+    )
+
+    response = await landing_routes.intro_courses()
+    body = response.model_dump(mode="json")
+    assert body["items"][0]["cover_media_id"] == MEDIA_ID
+    assert body["items"][0]["cover"] is None
+    assert "resolved_cover_url" not in body["items"][0]
+
+
 async def test_studio_courses_list_response_uses_canonical_cover_shape(
     async_client,
     monkeypatch,
@@ -625,18 +784,18 @@ async def test_studio_course_detail_response_uses_canonical_cover_shape(
 ):
     app.dependency_overrides[permissions.require_teacher] = lambda: {"id": TEACHER_ID}
 
-    async def fake_fetch_course(*, course_id: str | None = None, slug: str | None = None):
+    async def fake_get_course_for_teacher_or_404(course_id: str, teacher_id: str):
         assert course_id == COURSE_ID
-        assert slug is None
+        assert teacher_id == TEACHER_ID
         return {**_course(), "cover": _resolved_cover_payload()}
 
     async def fake_apply_course_read_contract(courses):
         return None
 
     monkeypatch.setattr(
-        studio_routes.courses_service,
-        "fetch_course",
-        fake_fetch_course,
+        studio_routes.studio_authority,
+        "get_course_for_teacher_or_404",
+        fake_get_course_for_teacher_or_404,
         raising=True,
     )
     monkeypatch.setattr(

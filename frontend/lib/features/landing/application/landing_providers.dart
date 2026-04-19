@@ -89,22 +89,19 @@ class LandingCourseCard {
   final CourseCoverData? cover;
   final int? priceAmountCents;
   final String? shortDescription;
-  String? get resolvedCoverUrl => cover?.resolvedUrl;
 
   factory LandingCourseCard.fromResponse(Object? payload) {
     return LandingCourseCard(
       id: _requireString(_field(payload, 'id'), 'id'),
       slug: _requireString(_field(payload, 'slug'), 'slug'),
       title: _requireString(_field(payload, 'title'), 'title'),
-      groupPosition: _optionalInt(
-            _field(payload, 'group_position'),
-            'group_position',
-          ) ??
+      groupPosition:
+          _optionalInt(_field(payload, 'group_position'), 'group_position') ??
           0,
-      coverMediaId: _optionalString(switch (payload) {
-        final Map<Object?, Object?> data => data['cover_media_id'],
-        _ => null,
-      }, 'cover_media_id'),
+      coverMediaId: _optionalString(
+        _field(payload, 'cover_media_id'),
+        'cover_media_id',
+      ),
       cover: _optionalCourseCover(_field(payload, 'cover'), 'cover'),
       priceAmountCents: _optionalInt(
         _field(payload, 'price_amount_cents'),

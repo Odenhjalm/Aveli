@@ -12,6 +12,7 @@ _RUNTIME_MEDIA_COLUMNS = """
     rm.course_id,
     rm.media_asset_id,
     rm.media_type::text as media_type,
+    ma.purpose::text as purpose,
     rm.playback_object_path,
     rm.playback_format,
     rm.state::text as state
@@ -39,6 +40,8 @@ async def list_runtime_media_for_asset(
             select
               {_RUNTIME_MEDIA_COLUMNS}
             from app.runtime_media as rm
+            join app.media_assets as ma
+              on ma.id = rm.media_asset_id
             where rm.media_asset_id = %s::uuid
             order by rm.lesson_media_id asc
             limit %s
@@ -60,8 +63,11 @@ async def get_course_cover_runtime_media(
             select
               {_RUNTIME_MEDIA_COLUMNS}
             from app.runtime_media as rm
+            join app.media_assets as ma
+              on ma.id = rm.media_asset_id
             where rm.course_id = %s::uuid
               and rm.media_asset_id = %s::uuid
+              and ma.purpose = 'course_cover'::app.media_purpose
               and rm.lesson_media_id is null
               and rm.lesson_id is null
             limit 1
@@ -82,6 +88,8 @@ async def get_home_player_runtime_media(
             select
               {_RUNTIME_MEDIA_COLUMNS}
             from app.runtime_media as rm
+            join app.media_assets as ma
+              on ma.id = rm.media_asset_id
             where rm.media_asset_id = %s::uuid
               and rm.lesson_media_id is null
               and rm.lesson_id is null
@@ -104,6 +112,8 @@ async def get_profile_runtime_media(
             select
               {_RUNTIME_MEDIA_COLUMNS}
             from app.runtime_media as rm
+            join app.media_assets as ma
+              on ma.id = rm.media_asset_id
             where rm.media_asset_id = %s::uuid
               and rm.lesson_media_id is null
               and rm.lesson_id is null
@@ -127,6 +137,8 @@ async def get_lesson_runtime_media(
             select
               {_RUNTIME_MEDIA_COLUMNS}
             from app.runtime_media as rm
+            join app.media_assets as ma
+              on ma.id = rm.media_asset_id
             where rm.lesson_id = %s::uuid
               and rm.media_asset_id = %s::uuid
               and rm.lesson_media_id is not null
@@ -151,6 +163,8 @@ async def list_runtime_media_for_lesson(
             select
               {_RUNTIME_MEDIA_COLUMNS}
             from app.runtime_media as rm
+            join app.media_assets as ma
+              on ma.id = rm.media_asset_id
             where rm.lesson_id = %s::uuid
             order by rm.lesson_media_id asc
             limit %s

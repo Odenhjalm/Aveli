@@ -18,6 +18,9 @@ Field rules:
 - `cover` MUST be present and MUST be `{ media_id, state, resolved_url } | null`
 - `cover_media_id` MUST precede `cover` when both fields are serialized in the same surface
 - If no resolved cover object is available, `cover` MUST be `null`
+- Placeholder cover objects are forbidden
+- `cover.resolved_url` MUST NOT be `null` when `cover` is an object
+- `cover` may be an object only when the backend has verified `state = ready`, `media_type = image`, `purpose = course_cover`, a nonblank playback object path, and `playback_format = jpg`
 - Field omission is forbidden for `cover_media_id` and `cover`
 
 ## TRANSPORT CONSTRAINTS

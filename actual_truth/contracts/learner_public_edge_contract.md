@@ -27,6 +27,9 @@ Field rules:
 - All listed fields MUST be present in the response
 - `cover_media_id: UUID | null`
 - `cover` MUST be present and MUST be `{ media_id, state, resolved_url } | null`
+- `cover` MUST be `null` when no contract-valid resolved cover object exists
+- Placeholder cover objects are forbidden
+- `cover.resolved_url` MUST NOT be `null` when `cover` is an object
 - No additional cover fields may be emitted
 
 `CourseDetailResponse` serialized field order:

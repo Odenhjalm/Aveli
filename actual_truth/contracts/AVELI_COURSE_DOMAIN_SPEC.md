@@ -405,6 +405,9 @@ cover: { media_id, state, resolved_url } | null
 
 If no resolved cover object is available, `cover` MUST be `null`. Field
 omission is forbidden for declared cover fields.
+Placeholder cover objects are forbidden. When `cover` is an object, it MUST
+represent a contract-valid ready course-cover image and `resolved_url` MUST be a
+nonblank backend-authored delivery URL.
 
 Learner/public lesson content media output MUST contain a media item array, and
 each item MUST contain the governed `media` field.

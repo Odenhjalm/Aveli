@@ -692,7 +692,7 @@ class _CourseTileGlass extends StatelessWidget {
     final slug = course.slug;
     final isIntro = course.groupPosition == 0;
     final priceCents = course.priceAmountCents;
-    final coverUrlFuture = Future<String?>.value(course.resolvedCoverUrl);
+    final coverUrlFuture = Future<String?>.value(course.cover?.resolvedUrl);
     final priceLabel = priceCents == null
         ? 'Pris saknas'
         : formatCoursePriceFromOre(

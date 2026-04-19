@@ -21,6 +21,30 @@ void main() {
         '/api/files/public-media/course-cover.png',
       );
     });
+
+    test('accepts canonical null cover without fallback authority', () {
+      final summary = CourseSummary.fromResponse(
+        _coursePayload(cover: null, coverMediaId: 'media-1'),
+      );
+
+      expect(summary.coverMediaId, 'media-1');
+      expect(summary.cover, isNull);
+    });
+
+    test('rejects placeholder cover objects', () {
+      expect(
+        () => CourseSummary.fromResponse(
+          _coursePayload(
+            cover: const {
+              'media_id': 'media-1',
+              'state': 'uploaded',
+              'resolved_url': null,
+            },
+          ),
+        ),
+        throwsStateError,
+      );
+    });
   });
 
   group('CoursesRepository.fetchCourseState', () {
@@ -112,24 +136,30 @@ CoursesRepository _repository(_RecordingAdapter adapter) {
   return CoursesRepository(client: client);
 }
 
-Map<String, Object?> _coursePayload({String slug = 'aveli-course'}) {
+Map<String, Object?> _coursePayload({
+  String slug = 'aveli-course',
+  String? coverMediaId = 'media-1',
+  Object? cover = _defaultCover,
+}) {
   return {
     'id': 'course-1',
     'slug': slug,
     'title': 'Aveli 101',
     'group_position': 0,
     'course_group_id': 'group-1',
-    'cover_media_id': 'media-1',
-    'cover': {
-      'media_id': 'media-1',
-      'state': 'ready',
-      'resolved_url': '/api/files/public-media/course-cover.png',
-    },
+    'cover_media_id': coverMediaId,
+    'cover': cover,
     'price_amount_cents': 0,
     'drip_enabled': false,
     'drip_interval_days': null,
   };
 }
+
+const Map<String, Object?> _defaultCover = {
+  'media_id': 'media-1',
+  'state': 'ready',
+  'resolved_url': '/api/files/public-media/course-cover.png',
+};
 
 Map<String, Object?> _accessPayload({
   String courseId = 'course-1',

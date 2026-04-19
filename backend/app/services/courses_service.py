@@ -750,14 +750,6 @@ def _normalize_cover_media_id(value: Any) -> str | None:
     return normalized or None
 
 
-def _course_cover_placeholder(*, media_id: str | None, state: str) -> dict[str, Any]:
-    return {
-        "media_id": media_id,
-        "state": state,
-        "resolved_url": None,
-    }
-
-
 def _canonical_course_cover_source_prefix(course_id: str) -> str:
     return (
         Path("media") / "source" / "cover" / "courses" / course_id
@@ -794,6 +786,7 @@ def _require_course_cover_asset_contract(
     media_type = str(asset.get("media_type") or "").strip().lower()
     purpose = str(asset.get("purpose") or "").strip().lower()
     state = str(asset.get("state") or "").strip().lower()
+    playback_format = str(asset.get("playback_format") or "").strip().lower()
     original_object_path = (
         str(asset.get("original_object_path") or "").strip().lstrip("/")
     )
@@ -813,6 +806,8 @@ def _require_course_cover_asset_contract(
         raise ValueError("cover_media_id must reference ready media")
     if not playback_object_path:
         raise ValueError("cover_media_id is missing ready media output")
+    if playback_format != "jpg":
+        raise ValueError("cover_media_id ready media output must be jpg")
     if not playback_object_path.startswith(
         _canonical_course_cover_derived_prefix(course_id)
     ):
@@ -827,8 +822,17 @@ def _course_cover_payload_from_ready_asset(
     asset: Mapping[str, Any],
 ) -> dict[str, Any] | None:
     state = str(asset.get("state") or "").strip().lower()
+    media_type = str(asset.get("media_type") or "").strip().lower()
+    purpose = str(asset.get("purpose") or "").strip().lower()
     playback_object_path = str(asset.get("playback_object_path") or "").strip()
-    if state != "ready" or not playback_object_path:
+    playback_format = str(asset.get("playback_format") or "").strip().lower()
+    if (
+        state != "ready"
+        or media_type != "image"
+        or purpose != "course_cover"
+        or not playback_object_path
+        or playback_format != "jpg"
+    ):
         return None
     resolved_url = storage_service.get_storage_service(
         settings.media_public_bucket
@@ -869,13 +873,13 @@ async def _resolve_course_cover_runtime_media(
     *,
     course_id: str,
     media_id: str,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     runtime_row = await runtime_media_repo.get_course_cover_runtime_media(
         course_id=course_id,
         media_asset_id=media_id,
     )
     if runtime_row is None:
-        return _course_cover_placeholder(media_id=media_id, state="placeholder")
+        return None
 
     asset_state = str(runtime_row.get("state") or "").strip().lower() or "placeholder"
     if asset_state != "ready":
@@ -884,10 +888,12 @@ async def _resolve_course_cover_runtime_media(
             media_id,
             asset_state,
         )
-        return _course_cover_placeholder(media_id=media_id, state=asset_state)
+        return None
 
     asset_media_type = str(runtime_row.get("media_type") or "").strip().lower()
+    asset_purpose = str(runtime_row.get("purpose") or "").strip().lower()
     storage_path = str(runtime_row.get("playback_object_path") or "").strip()
+    playback_format = str(runtime_row.get("playback_format") or "").strip().lower()
 
     if asset_media_type != "image":
         logger.error(
@@ -895,7 +901,15 @@ async def _resolve_course_cover_runtime_media(
             media_id,
             asset_media_type or "<missing>",
         )
-        return _course_cover_placeholder(media_id=media_id, state="invalid")
+        return None
+
+    if asset_purpose != "course_cover":
+        logger.error(
+            "COURSE_COVER_RESOLVED_ASSET_INVALID_PURPOSE media_id=%s purpose=%s",
+            media_id,
+            asset_purpose or "<missing>",
+        )
+        return None
 
     if not storage_path:
         logger.error(
@@ -903,11 +917,26 @@ async def _resolve_course_cover_runtime_media(
             media_id,
             storage_path or "<missing>",
         )
-        return _course_cover_placeholder(media_id=media_id, state="missing")
+        return None
+
+    if playback_format != "jpg":
+        logger.error(
+            "COURSE_COVER_RESOLVED_FORMAT_INVALID media_id=%s playback_format=%s",
+            media_id,
+            playback_format or "<missing>",
+        )
+        return None
 
     resolved_url = storage_service.get_storage_service(
         settings.media_public_bucket
     ).public_url(storage_path)
+    if not str(resolved_url or "").strip():
+        logger.error(
+            "COURSE_COVER_RESOLVED_URL_MISSING media_id=%s path=%s",
+            media_id,
+            storage_path,
+        )
+        return None
     return {
         "media_id": media_id,
         "state": "ready",
@@ -922,10 +951,14 @@ def _course_cover_payload(
 ) -> dict[str, Any] | None:
     if cover is None:
         return None
+    state = str(cover.get("state") or "").strip().lower()
+    resolved_url = str(cover.get("resolved_url") or "").strip()
+    if state != "ready" or not resolved_url:
+        return None
     return {
         "media_id": media_id,
-        "state": cover.get("state"),
-        "resolved_url": cover.get("resolved_url"),
+        "state": "ready",
+        "resolved_url": resolved_url,
     }
 
 
@@ -962,7 +995,7 @@ async def attach_course_cover_read_contract(
         row.pop("signed_cover_url_expires_at", None)
         media_id = _normalize_cover_media_id(row.get("cover_media_id"))
         if media_id is None:
-            row.pop("cover", None)
+            row["cover"] = None
             continue
         row["cover"] = _course_cover_payload(
             media_id=media_id,

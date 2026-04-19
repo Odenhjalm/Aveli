@@ -28,7 +28,10 @@ Future<void> _pumpShowcase(
         ),
         mediaRepositoryProvider.overrideWithValue(_MockMediaRepository()),
         landing.popularCoursesProvider.overrideWith(
-          (ref) async => const landing.LandingSectionState(items: []),
+          (ref) async =>
+              const landing.LandingSection<landing.LandingCourseCard>(
+                items: [],
+              ),
         ),
         coursesProvider.overrideWith((ref) => Future.value(courses)),
       ],
@@ -40,7 +43,6 @@ Future<void> _pumpShowcase(
               child: CoursesShowcaseSection(
                 title: 'Utforska kurser',
                 includeOuterChrome: false,
-                includeStudioCourses: false,
                 showHeroBadge: false,
               ),
             ),
