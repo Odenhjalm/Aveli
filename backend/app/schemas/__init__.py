@@ -528,6 +528,21 @@ class ResolvedMedia(BaseModel):
     resolved_url: str | None = None
 
 
+class CourseCoverMedia(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_id: UUID
+    state: Literal["ready"]
+    resolved_url: str = Field(min_length=1)
+
+    @field_validator("resolved_url")
+    @classmethod
+    def _validate_resolved_url(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("course cover resolved_url must be nonblank")
+        return value
+
+
 class HomeAudioItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -805,7 +820,7 @@ class Course(BaseModel):
     course_group_id: UUID
     group_position: int
     cover_media_id: UUID | None = None
-    cover: ResolvedMedia | None = None
+    cover: CourseCoverMedia | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool
     drip_interval_days: Optional[int]
@@ -833,7 +848,7 @@ class LandingCourseCard(BaseModel):
     title: str
     group_position: int
     cover_media_id: UUID | None = None
-    cover: ResolvedMedia | None = None
+    cover: CourseCoverMedia | None = None
     price_amount_cents: int | None = None
     short_description: str | None = None
 

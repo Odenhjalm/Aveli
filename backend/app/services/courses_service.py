@@ -43,6 +43,18 @@ _LEARNER_MEDIA_TYPES = frozenset({"audio", "image", "video", "document"})
 _LEARNER_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
 )
+_COURSE_COVER_FORBIDDEN_PUBLIC_FIELDS = frozenset(
+    {
+        "cover_url",
+        "coverUrl",
+        "resolved_cover_url",
+        "resolvedCoverUrl",
+        "signed_cover_url",
+        "signedCoverUrl",
+        "signed_cover_url_expires_at",
+        "signedCoverUrlExpiresAt",
+    }
+)
 
 
 class LessonContentPreconditionRequired(Exception):
@@ -89,6 +101,22 @@ def _validate_course_drip_configuration(
 def _reject_legacy_cover_url_write(payload: Mapping[str, Any]) -> None:
     if "cover_url" in payload:
         raise ValueError("cover_url is deprecated")
+
+
+def strip_legacy_course_cover_output_fields(row: dict[str, Any]) -> None:
+    for field in _COURSE_COVER_FORBIDDEN_PUBLIC_FIELDS:
+        row.pop(field, None)
+
+
+def reject_legacy_course_cover_output_fields(row: Mapping[str, Any]) -> None:
+    forbidden = sorted(
+        field for field in _COURSE_COVER_FORBIDDEN_PUBLIC_FIELDS if field in row
+    )
+    if forbidden:
+        raise ValueError(
+            "legacy course cover public fields are forbidden: "
+            + ", ".join(forbidden)
+        )
 
 
 def _course_requires_stripe_mapping(course: Mapping[str, Any]) -> bool:
@@ -990,9 +1018,7 @@ async def attach_course_cover_read_contract(
         return
 
     for row in rows:
-        row.pop("cover_url", None)
-        row.pop("signed_cover_url", None)
-        row.pop("signed_cover_url_expires_at", None)
+        strip_legacy_course_cover_output_fields(row)
         media_id = _normalize_cover_media_id(row.get("cover_media_id"))
         if media_id is None:
             row["cover"] = None

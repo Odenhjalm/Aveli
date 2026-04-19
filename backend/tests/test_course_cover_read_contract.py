@@ -4,9 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
-from app import permissions
+from app import permissions, schemas
 from app.main import app
+from app.routes import courses as courses_routes
 from app.routes import landing as landing_routes
 from app.routes import studio as studio_routes
 from app.services import courses_service
@@ -64,6 +66,21 @@ def _landing_course(*, cover: dict | None) -> dict:
         "cover": cover,
         "price_amount_cents": 0,
         "short_description": "Landing",
+    }
+
+
+def _detail_row(
+    *,
+    cover_media_id: str | None = MEDIA_ID,
+    price_amount_cents: int | None = 0,
+) -> dict:
+    return {
+        **_course(cover_media_id=cover_media_id),
+        "price_amount_cents": price_amount_cents,
+        "short_description": "Detail",
+        "lesson_id": "55555555-5555-5555-5555-555555555555",
+        "lesson_title": "Lesson 1",
+        "lesson_position": 1,
     }
 
 
@@ -452,9 +469,58 @@ async def test_resolve_course_cover_non_jpg_format_returns_null(monkeypatch):
     assert cover is None
 
 
+async def test_resolve_course_cover_wrong_media_type_returns_null(monkeypatch):
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row(media_type="audio")
+
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
+        raising=True,
+    )
+
+    cover = await courses_service.resolve_course_cover(
+        course_id=COURSE_ID,
+        cover_media_id=MEDIA_ID,
+    )
+
+    assert cover is None
+
+
 async def test_resolve_course_cover_wrong_purpose_returns_null(monkeypatch):
     async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
         return _runtime_row(purpose="profile_media")
+
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
+        raising=True,
+    )
+
+    cover = await courses_service.resolve_course_cover(
+        course_id=COURSE_ID,
+        cover_media_id=MEDIA_ID,
+    )
+
+    assert cover is None
+
+
+async def test_resolve_course_cover_blank_storage_url_returns_null(monkeypatch):
+    class BlankUrlStorageService:
+        def public_url(self, path: str) -> str:
+            return ""
+
+    monkeypatch.setattr(
+        courses_service.storage_service,
+        "get_storage_service",
+        lambda bucket: BlankUrlStorageService(),
+        raising=True,
+    )
+
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row()
 
     monkeypatch.setattr(
         courses_service.runtime_media_repo,
@@ -695,6 +761,149 @@ async def test_courses_list_exposes_premium_cover_without_purchase(
     assert body["items"][0]["cover"] == _resolved_cover_payload()
 
 
+async def test_course_detail_by_slug_uses_canonical_cover_contract(
+    async_client,
+    monkeypatch,
+):
+    _install_storage(monkeypatch)
+
+    async def fake_fetch_detail_rows(*, course_id: str | None = None, slug: str | None = None):
+        assert course_id is None
+        assert slug == "course-1"
+        return [_detail_row()]
+
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        assert course_id == COURSE_ID
+        assert media_asset_id == MEDIA_ID
+        return _runtime_row()
+
+    monkeypatch.setattr(
+        courses_service,
+        "fetch_public_course_detail_rows",
+        fake_fetch_detail_rows,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
+        raising=True,
+    )
+
+    response = await async_client.get("/courses/by-slug/course-1")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["course"]["cover_media_id"] == MEDIA_ID
+    assert body["course"]["cover"] == _resolved_cover_payload()
+    assert "resolved_cover_url" not in body["course"]
+    assert "cover_url" not in body["course"]
+
+
+async def test_course_detail_by_id_returns_null_cover_for_non_ready_media(
+    async_client,
+    monkeypatch,
+):
+    async def fake_fetch_detail_rows(*, course_id: str | None = None, slug: str | None = None):
+        assert course_id == COURSE_ID
+        assert slug is None
+        return [_detail_row()]
+
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row(state="processing")
+
+    monkeypatch.setattr(
+        courses_service,
+        "fetch_public_course_detail_rows",
+        fake_fetch_detail_rows,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
+        raising=True,
+    )
+
+    response = await async_client.get(f"/courses/{COURSE_ID}")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["course"]["cover_media_id"] == MEDIA_ID
+    assert body["course"]["cover"] is None
+    assert "resolved_cover_url" not in body["course"]
+
+
+async def test_premium_course_detail_exposes_cover_without_purchase_gate(
+    async_client,
+    monkeypatch,
+):
+    _install_storage(monkeypatch)
+
+    async def fake_fetch_detail_rows(*, course_id: str | None = None, slug: str | None = None):
+        assert slug == "premium-course"
+        return [_detail_row(price_amount_cents=9900)]
+
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row()
+
+    async def fail_access_lookup(*args, **kwargs):
+        raise AssertionError("public course detail cover must not require purchase state")
+
+    monkeypatch.setattr(
+        courses_service,
+        "fetch_public_course_detail_rows",
+        fake_fetch_detail_rows,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service,
+        "read_canonical_course_state",
+        fail_access_lookup,
+        raising=True,
+    )
+
+    response = await async_client.get("/courses/by-slug/premium-course")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["course"]["price_amount_cents"] == 9900
+    assert body["course"]["cover"] == _resolved_cover_payload()
+
+
+async def test_courses_me_uses_same_canonical_cover_contract(monkeypatch):
+    _install_storage(monkeypatch)
+
+    async def fake_list_my_courses(user_id: str):
+        assert user_id == TEACHER_ID
+        return [_course()]
+
+    async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
+        return _runtime_row()
+
+    monkeypatch.setattr(
+        courses_service,
+        "list_my_courses",
+        fake_list_my_courses,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.runtime_media_repo,
+        "get_course_cover_runtime_media",
+        fake_get_runtime_media,
+        raising=True,
+    )
+
+    response = await courses_routes.my_courses({"id": TEACHER_ID})
+    body = response.model_dump(mode="json")
+    assert body["items"][0]["cover_media_id"] == MEDIA_ID
+    assert body["items"][0]["cover"] == _resolved_cover_payload()
+    assert "resolved_cover_url" not in body["items"][0]
+
+
 async def test_landing_popular_courses_uses_canonical_cover_shape(
     monkeypatch,
 ):
@@ -739,6 +948,67 @@ async def test_landing_intro_courses_returns_null_cover_without_placeholder(
     assert body["items"][0]["cover_media_id"] == MEDIA_ID
     assert body["items"][0]["cover"] is None
     assert "resolved_cover_url" not in body["items"][0]
+
+
+async def test_landing_course_card_schema_rejects_legacy_parallel_cover_shape():
+    with pytest.raises(ValidationError):
+        schemas.LandingCourseCard(
+            **{
+                **_landing_course(cover=_resolved_cover_payload()),
+                "resolved_cover_url": LEGACY_URL,
+            }
+        )
+
+
+async def test_course_schema_rejects_legacy_parallel_cover_shape():
+    with pytest.raises(ValidationError):
+        schemas.Course(
+            **{
+                **_course(),
+                "cover": _resolved_cover_payload(),
+                "resolved_cover_url": LEGACY_URL,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "cover",
+    [
+        {"media_id": MEDIA_ID, "state": "uploaded", "resolved_url": LEGACY_URL},
+        {"media_id": MEDIA_ID, "state": "ready", "resolved_url": None},
+        {"media_id": MEDIA_ID, "state": "ready", "resolved_url": "   "},
+        {
+            "media_id": MEDIA_ID,
+            "state": "ready",
+            "resolved_url": LEGACY_URL,
+            "playback_object_path": DERIVED_PATH,
+        },
+    ],
+)
+async def test_course_schema_rejects_non_canonical_cover_objects(cover):
+    with pytest.raises(ValidationError):
+        schemas.Course(**{**_course(), "cover": cover})
+
+
+async def test_course_route_response_rejects_legacy_fields_before_filtering():
+    with pytest.raises(ValueError, match="legacy course cover public fields"):
+        courses_routes._course_response(
+            {
+                **_course(),
+                "cover": _resolved_cover_payload(),
+                "resolved_cover_url": LEGACY_URL,
+            }
+        )
+
+
+async def test_landing_routes_are_unmounted_in_canonical_app():
+    app_paths = {route.path for route in app.routes}
+    landing_router_paths = {route.path for route in landing_routes.router.routes}
+
+    assert "/landing/intro-courses" in landing_router_paths
+    assert "/landing/popular-courses" in landing_router_paths
+    assert "/landing/intro-courses" not in app_paths
+    assert "/landing/popular-courses" not in app_paths
 
 
 async def test_studio_courses_list_response_uses_canonical_cover_shape(
@@ -883,6 +1153,30 @@ async def test_course_cover_runtime_sources_do_not_reintroduce_legacy_url_fields
     root = Path(__file__).resolve().parents[1]
     source = (root / "app/services/courses_service.py").read_text(encoding="utf-8")
 
-    assert 'row.pop("cover_url", None)' in source
-    assert 'row.pop("signed_cover_url", None)' in source
-    assert 'row.pop("signed_cover_url_expires_at", None)' in source
+    assert "_COURSE_COVER_FORBIDDEN_PUBLIC_FIELDS" in source
+    assert "strip_legacy_course_cover_output_fields(row)" in source
+    assert "reject_legacy_course_cover_output_fields(course)" in (
+        root / "app/routes/courses.py"
+    ).read_text(encoding="utf-8")
+    assert "reject_legacy_course_cover_output_fields(course)" in (
+        root / "app/services/courses_read_service.py"
+    ).read_text(encoding="utf-8")
+
+
+async def test_active_backend_read_sources_do_not_reintroduce_legacy_cover_shapes():
+    root = Path(__file__).resolve().parents[1]
+    active_sources = [
+        root / "app/routes/courses.py",
+        root / "app/routes/landing.py",
+        root / "app/services/courses_read_service.py",
+        root / "app/repositories/runtime_media.py",
+        root / "app/models.py",
+        root / "app/schemas/__init__.py",
+    ]
+
+    for path in active_sources:
+        source = path.read_text(encoding="utf-8")
+        assert "resolved_cover_url" not in source
+        assert "resolvedCoverUrl" not in source
+        assert "_course_cover_placeholder" not in source
+        assert "cover_url" not in source

@@ -12,6 +12,7 @@ import 'package:aveli/features/landing/application/landing_providers.dart'
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
@@ -692,7 +693,9 @@ class _CourseTileGlass extends StatelessWidget {
     final slug = course.slug;
     final isIntro = course.groupPosition == 0;
     final priceCents = course.priceAmountCents;
-    final coverUrlFuture = Future<String?>.value(course.cover?.resolvedUrl);
+    final courseCoverImageUrlFuture = Future<String?>.value(
+      courseCoverResolvedUrl(course.cover),
+    );
     final priceLabel = priceCents == null
         ? 'Pris saknas'
         : formatCoursePriceFromOre(
@@ -782,14 +785,15 @@ class _CourseTileGlass extends StatelessWidget {
                                   color: Colors.white.withValues(alpha: 0.32),
                                 ),
                                 FutureBuilder<String?>(
-                                  future: coverUrlFuture,
+                                  future: courseCoverImageUrlFuture,
                                   builder: (context, snapshot) {
-                                    final coverUrl = snapshot.data;
-                                    if (coverUrl == null || coverUrl.isEmpty) {
+                                    final courseCoverImageUrl = snapshot.data;
+                                    if (courseCoverImageUrl == null ||
+                                        courseCoverImageUrl.isEmpty) {
                                       return const SizedBox.shrink();
                                     }
                                     return Image.network(
-                                      coverUrl,
+                                      courseCoverImageUrl,
                                       fit: BoxFit.cover,
                                       filterQuality: SafeMedia.filterQuality(
                                         full: FilterQuality.high,

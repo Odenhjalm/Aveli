@@ -53,4 +53,42 @@ void main() {
       throwsStateError,
     );
   });
+
+  test('landing course card rejects mixed legacy cover fields', () {
+    expect(
+      () => LandingCourseCard.fromResponse(const {
+        'id': 'course-1',
+        'slug': 'course-one',
+        'title': 'Kurs ett',
+        'group_position': 1,
+        'cover_media_id': 'media-1',
+        'cover': null,
+        'resolvedCoverUrl': 'https://cdn.test/cover.jpg',
+        'price_amount_cents': 9900,
+        'short_description': null,
+      }),
+      throwsStateError,
+    );
+  });
+
+  test('landing course card rejects non-canonical cover object fields', () {
+    expect(
+      () => LandingCourseCard.fromResponse(const {
+        'id': 'course-1',
+        'slug': 'course-one',
+        'title': 'Kurs ett',
+        'group_position': 1,
+        'cover_media_id': 'media-1',
+        'cover': {
+          'media_id': 'media-1',
+          'state': 'ready',
+          'resolved_url': 'https://cdn.test/cover.jpg',
+          'playback_object_path': 'media/derived/cover/course.jpg',
+        },
+        'price_amount_cents': 9900,
+        'short_description': null,
+      }),
+      throwsStateError,
+    );
+  });
 }

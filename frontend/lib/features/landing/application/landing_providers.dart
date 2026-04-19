@@ -3,6 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 
+const Set<String> _legacyCourseCoverFields = <String>{
+  'cover_url',
+  'coverUrl',
+  'resolved_cover_url',
+  'resolvedCoverUrl',
+  'signed_cover_url',
+  'signedCoverUrl',
+  'signed_cover_url_expires_at',
+  'signedCoverUrlExpiresAt',
+};
+
 String _requireString(Object? value, String fieldName) {
   switch (value) {
     case final String text when text.trim().isNotEmpty:
@@ -43,6 +54,16 @@ Object? _field(Object? payload, String fieldName) {
       throw StateError('Missing required field: $fieldName');
     default:
       throw StateError('Invalid landing payload for $fieldName');
+  }
+}
+
+void _rejectLegacyCourseCoverFields(Object? payload, String context) {
+  if (payload case final Map data) {
+    for (final field in _legacyCourseCoverFields) {
+      if (data.containsKey(field)) {
+        throw StateError('Invalid course cover field in $context');
+      }
+    }
   }
 }
 
@@ -91,6 +112,7 @@ class LandingCourseCard {
   final String? shortDescription;
 
   factory LandingCourseCard.fromResponse(Object? payload) {
+    _rejectLegacyCourseCoverFields(payload, 'landing course');
     return LandingCourseCard(
       id: _requireString(_field(payload, 'id'), 'id'),
       slug: _requireString(_field(payload, 'slug'), 'slug'),

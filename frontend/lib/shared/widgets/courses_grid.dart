@@ -6,6 +6,7 @@ import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -42,7 +43,9 @@ class CoursesGrid extends StatelessWidget {
           ),
           itemBuilder: (_, i) {
             final c = courses[i];
-            final coverUrlFuture = Future<String?>.value(c.cover?.resolvedUrl);
+            final courseCoverImageUrlFuture = Future<String?>.value(
+              courseCoverResolvedUrl(c.cover),
+            );
             final title = c.title;
             final id = c.id;
             final pct = (progress?[id] ?? 0.0).clamp(0.0, 1.0);
@@ -76,15 +79,15 @@ class CoursesGrid extends StatelessWidget {
                   ),
                 );
 
-                Widget buildCover(String? coverUrl) {
+                Widget buildCover(String? imageUrl) {
                   final placeholder = gradientFallback();
-                  if (coverUrl != null && coverUrl.isNotEmpty) {
+                  if (imageUrl != null && imageUrl.isNotEmpty) {
                     return Stack(
                       fit: StackFit.expand,
                       children: [
                         placeholder,
                         Image.network(
-                          coverUrl,
+                          imageUrl,
                           fit: BoxFit.cover,
                           filterQuality: SafeMedia.filterQuality(
                             full: FilterQuality.high,
@@ -95,7 +98,7 @@ class CoursesGrid extends StatelessWidget {
                           errorBuilder: (_, err, stack) {
                             ImageErrorLogger.log(
                               source: 'CoursesGrid/CoverURL',
-                              url: coverUrl,
+                              url: imageUrl,
                               error: err,
                               stackTrace: stack,
                             );
@@ -111,7 +114,7 @@ class CoursesGrid extends StatelessWidget {
                 return ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: FutureBuilder<String?>(
-                    future: coverUrlFuture,
+                    future: courseCoverImageUrlFuture,
                     builder: (context, snapshot) {
                       return Stack(
                         fit: StackFit.expand,

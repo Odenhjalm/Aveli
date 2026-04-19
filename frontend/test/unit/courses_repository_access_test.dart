@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 
 void main() {
@@ -44,6 +45,88 @@ void main() {
         ),
         throwsStateError,
       );
+    });
+
+    test('rejects legacy alternate cover fields', () {
+      expect(
+        () => CourseSummary.fromResponse(
+          _coursePayload(
+            cover: null,
+            extra: const {
+              'resolved_cover_url': 'https://cdn.test/legacy-cover.jpg',
+            },
+          ),
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('rejects mixed canonical cover objects with legacy fields', () {
+      expect(
+        () => CourseSummary.fromResponse(
+          _coursePayload(
+            cover: const {
+              'media_id': 'media-1',
+              'state': 'ready',
+              'resolved_url': '/api/files/public-media/course-cover.png',
+              'playback_object_path': 'media/derived/cover/course.jpg',
+            },
+          ),
+        ),
+        throwsStateError,
+      );
+    });
+  });
+
+  group('CoursesRepository course cover reads', () {
+    test('fetchPublishedCourses maps canonical cover from /courses', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'items': [_coursePayload()],
+            },
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      final courses = await repo.fetchPublishedCourses();
+
+      expect(courses, hasLength(1));
+      expect(courses.single.cover?.mediaId, 'media-1');
+      expect(
+        courses.single.cover?.resolvedUrl,
+        '/api/files/public-media/course-cover.png',
+      );
+      expect(adapter.requestsFor('/courses'), hasLength(1));
+    });
+
+    test('myEnrolledCourses maps canonical cover from /courses/me', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/me') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'items': [_coursePayload()],
+            },
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      final courses = await repo.myEnrolledCourses();
+
+      expect(courses, hasLength(1));
+      expect(courses.single.cover?.mediaId, 'media-1');
+      expect(
+        courses.single.cover?.resolvedUrl,
+        '/api/files/public-media/course-cover.png',
+      );
+      expect(adapter.requestsFor('/courses/me'), hasLength(1));
     });
   });
 
@@ -124,6 +207,35 @@ void main() {
       expect(adapter.requestsFor('/courses/by-slug/$slug'), hasLength(1));
       expect(adapter.requestsFor('/courses/course-1/access'), isEmpty);
     });
+
+    test('detail rejects legacy alternate cover fields', () async {
+      const slug = 'legacy-course';
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/by-slug/$slug') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'course': _coursePayload(
+                slug: slug,
+                cover: null,
+                extra: const {
+                  'resolved_cover_url': 'https://cdn.test/legacy-cover.jpg',
+                },
+              ),
+              'lessons': const [],
+            },
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      await expectLater(
+        repo.fetchCourseDetailBySlug(slug),
+        throwsA(isA<AppFailure>()),
+      );
+      expect(adapter.requestsFor('/courses/by-slug/$slug'), hasLength(1));
+    });
   });
 }
 
@@ -140,6 +252,7 @@ Map<String, Object?> _coursePayload({
   String slug = 'aveli-course',
   String? coverMediaId = 'media-1',
   Object? cover = _defaultCover,
+  Map<String, Object?> extra = const {},
 }) {
   return {
     'id': 'course-1',
@@ -152,6 +265,7 @@ Map<String, Object?> _coursePayload({
     'price_amount_cents': 0,
     'drip_enabled': false,
     'drip_interval_days': null,
+    ...extra,
   };
 }
 

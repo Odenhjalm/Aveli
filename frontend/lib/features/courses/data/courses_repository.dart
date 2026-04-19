@@ -5,6 +5,17 @@ import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
+const Set<String> _legacyCourseCoverFields = <String>{
+  'cover_url',
+  'coverUrl',
+  'resolved_cover_url',
+  'resolvedCoverUrl',
+  'signed_cover_url',
+  'signedCoverUrl',
+  'signed_cover_url_expires_at',
+  'signedCoverUrlExpiresAt',
+};
+
 Object? _requiredField(Object? payload, String fieldName) {
   switch (payload) {
     case final Map data when data.containsKey(fieldName):
@@ -13,6 +24,16 @@ Object? _requiredField(Object? payload, String fieldName) {
       throw StateError('Missing required field: $fieldName');
     default:
       throw StateError('Invalid payload for $fieldName');
+  }
+}
+
+void _rejectLegacyCourseCoverFields(Object? payload, String context) {
+  if (payload case final Map data) {
+    for (final field in _legacyCourseCoverFields) {
+      if (data.containsKey(field)) {
+        throw StateError('Invalid course cover field in $context');
+      }
+    }
   }
 }
 
@@ -388,6 +409,7 @@ class CourseSummary {
   bool get isIntroCourse => groupPosition == 0;
 
   factory CourseSummary.fromResponse(Object? payload) {
+    _rejectLegacyCourseCoverFields(payload, 'course');
     return CourseSummary(
       id: _requireString(_requiredField(payload, 'id'), 'id'),
       slug: _requireString(_requiredField(payload, 'slug'), 'slug'),
@@ -509,10 +531,7 @@ class LessonMediaItem {
         'media_type',
       ),
       state: _requireString(_requiredField(payload, 'state'), 'state'),
-      media: _optionalResolvedMedia(
-        _requiredField(payload, 'media'),
-        'media',
-      ),
+      media: _optionalResolvedMedia(_requiredField(payload, 'media'), 'media'),
     );
   }
 }

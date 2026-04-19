@@ -9,6 +9,7 @@ import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/payments/presentation/paywall_prompt.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -36,8 +37,8 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         body: Center(child: Text(_friendlyError(error))),
       ),
       data: (detail) {
-        final coverUrlFuture = Future<String?>.value(
-          detail.course.cover?.resolvedUrl,
+        final courseCoverImageUrlFuture = Future<String?>.value(
+          courseCoverResolvedUrl(detail.course.cover),
         );
         final courseStateAsync = ref.watch(
           courseStateProvider(detail.course.id),
@@ -45,7 +46,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         return _CourseContent(
           detail: detail,
           courseStateAsync: courseStateAsync,
-          coverUrlFuture: coverUrlFuture,
+          courseCoverImageUrlFuture: courseCoverImageUrlFuture,
           onEnroll: () => _handleEnroll(detail),
           onOpenLesson: _openLesson,
           enrollState: ref.watch(enrollProvider(detail.course.id)),
@@ -120,7 +121,7 @@ class _CourseContent extends StatelessWidget {
   const _CourseContent({
     required this.detail,
     required this.courseStateAsync,
-    required this.coverUrlFuture,
+    required this.courseCoverImageUrlFuture,
     required this.onEnroll,
     required this.onOpenLesson,
     required this.enrollState,
@@ -129,7 +130,7 @@ class _CourseContent extends StatelessWidget {
 
   final CourseDetailData detail;
   final AsyncValue<CourseAccessData?> courseStateAsync;
-  final Future<String?> coverUrlFuture;
+  final Future<String?> courseCoverImageUrlFuture;
   final VoidCallback onEnroll;
   final ValueChanged<String> onOpenLesson;
   final AsyncValue<CourseAccessData?> enrollState;
@@ -191,10 +192,10 @@ class _CourseContent extends StatelessWidget {
       body: ListView(
         children: [
           FutureBuilder<String?>(
-            future: coverUrlFuture,
+            future: courseCoverImageUrlFuture,
             builder: (context, snapshot) {
-              final coverUrl = snapshot.data;
-              if (coverUrl == null || coverUrl.isEmpty) {
+              final courseCoverImageUrl = snapshot.data;
+              if (courseCoverImageUrl == null || courseCoverImageUrl.isEmpty) {
                 return const SizedBox.shrink();
               }
               return Column(
@@ -204,7 +205,10 @@ class _CourseContent extends StatelessWidget {
                     child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 720),
-                        child: Image.network(coverUrl, fit: BoxFit.contain),
+                        child: Image.network(
+                          courseCoverImageUrl,
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                   ),

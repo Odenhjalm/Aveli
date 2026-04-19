@@ -12,6 +12,7 @@ import 'package:aveli/features/courses/presentation/course_journey_layout.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
@@ -595,7 +596,9 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final theme = Theme.of(context);
     final radius = BorderRadius.circular(16);
     final slug = course.slug.trim();
-    final coverUrlFuture = Future<String?>.value(course.cover?.resolvedUrl);
+    final courseCoverImageUrlFuture = Future<String?>.value(
+      courseCoverResolvedUrl(course.cover),
+    );
     final isIntro = course.isIntroCourse;
     final priceLabel = course.priceCents == null
         ? 'Pris saknas'
@@ -651,14 +654,15 @@ class _IntroMiniCourseCard extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.18),
                         ),
                         child: FutureBuilder<String?>(
-                          future: coverUrlFuture,
+                          future: courseCoverImageUrlFuture,
                           builder: (context, snapshot) {
-                            final coverUrl = snapshot.data;
-                            if (coverUrl == null || coverUrl.isEmpty) {
+                            final courseCoverImageUrl = snapshot.data;
+                            if (courseCoverImageUrl == null ||
+                                courseCoverImageUrl.isEmpty) {
                               return const SizedBox.shrink();
                             }
                             return Image.network(
-                              coverUrl,
+                              courseCoverImageUrl,
                               fit: BoxFit.cover,
                               filterQuality: SafeMedia.filterQuality(
                                 full: FilterQuality.high,
@@ -748,7 +752,9 @@ class _JourneyCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final slug = course.slug.trim();
-    final coverUrlFuture = Future<String?>.value(course.cover?.resolvedUrl);
+    final courseCoverImageUrlFuture = Future<String?>.value(
+      courseCoverResolvedUrl(course.cover),
+    );
 
     final radius = BorderRadius.circular(18);
     final isIntro = course.isIntroCourse;
@@ -806,14 +812,15 @@ class _JourneyCourseCard extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.18),
                         ),
                         child: FutureBuilder<String?>(
-                          future: coverUrlFuture,
+                          future: courseCoverImageUrlFuture,
                           builder: (context, snapshot) {
-                            final coverUrl = snapshot.data;
-                            if (coverUrl == null || coverUrl.isEmpty) {
+                            final courseCoverImageUrl = snapshot.data;
+                            if (courseCoverImageUrl == null ||
+                                courseCoverImageUrl.isEmpty) {
                               return const SizedBox.shrink();
                             }
                             return Image.network(
-                              coverUrl,
+                              courseCoverImageUrl,
                               fit: BoxFit.cover,
                               filterQuality: SafeMedia.filterQuality(
                                 full: FilterQuality.high,
