@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = ROOT / "actual_truth" / "contracts" / "supabase_integration_boundary_contract.md"
-BASELINE_V2_DIR = ROOT / "backend" / "supabase" / "baseline_v2_slots"
+BASELINE_V2_LOCK_PATH = ROOT / "backend" / "supabase" / "baseline_v2_slots.lock.json"
 AUTH_PATH = ROOT / "backend" / "app" / "auth.py"
 MODELS_PATH = ROOT / "backend" / "app" / "models.py"
 PROFILES_REPO_PATH = ROOT / "backend" / "app" / "repositories" / "profiles.py"
@@ -64,6 +65,11 @@ def _iter_code_files(root: Path) -> list[Path]:
     )
 
 
+def _baseline_v2_sql_paths() -> list[Path]:
+    lock = json.loads(BASELINE_V2_LOCK_PATH.read_text(encoding="utf-8"))
+    return [ROOT / entry["path"] for entry in lock["slots"]]
+
+
 def test_supabase_boundary_contract_maps_infrastructure_only_responsibilities() -> None:
     contract = _read(CONTRACT_PATH)
 
@@ -76,6 +82,8 @@ def test_supabase_boundary_contract_maps_infrastructure_only_responsibilities() 
         "`app.memberships` owns app-access truth",
         "`app.course_enrollments` owns protected course-content access truth",
         "Canonical schema authority is `backend/supabase/baseline_v2_slots`",
+        "Canonical slot order, slot hashes, and schema verification marker are owned by",
+        "`backend/supabase/baseline_v2_slots.lock.json`",
         "Frontend must use backend APIs only",
     )
     legacy_slot_dir = "/".join(("backend", "supabase", "baseline" + "_slots"))
@@ -101,7 +109,7 @@ def test_baseline_keeps_supabase_external_dependencies_outside_canonical_domain_
     forbidden_everywhere = ("auth.uid(", "auth.role(")
     forbidden_outside_substrate = ("auth.users", "storage.objects", "storage.buckets")
 
-    for path in sorted(BASELINE_V2_DIR.glob("*.sql")):
+    for path in _baseline_v2_sql_paths():
         source = _read(path)
         for forbidden in forbidden_everywhere:
             assert forbidden not in source, f"{_repo_relative(path)} contains {forbidden!r}"

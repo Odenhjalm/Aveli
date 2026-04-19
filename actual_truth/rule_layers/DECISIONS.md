@@ -544,7 +544,9 @@ RULE_ID: DECISIONS_0091
 SOURCE_FILE: Aveli_System_Decisions.md:122
 CATEGORY: DECISIONS
 EXACT TEXT:
-- `backend/supabase/baseline_slots` is the canonical baseline source of truth.
+- `backend/supabase/baseline_v2_slots` is the canonical baseline source of truth.
+- `backend/supabase/baseline_v2_slots.lock.json` is the canonical slot order,
+  slot hash, and schema verification marker.
 
 RULE_ID: DECISIONS_0092
 SOURCE_FILE: Aveli_System_Decisions.md:123

@@ -12,8 +12,8 @@ repository root.
 Authority summary:
 
 - Backend startup authority is `backend.bootstrap.run_server`.
-- Local baseline authority is `backend/supabase/baseline_slots/` plus
-  `backend/supabase/baseline_slots.lock.json`.
+- Local baseline authority is `backend/supabase/baseline_v2_slots/` plus
+  `backend/supabase/baseline_v2_slots.lock.json`.
 - Root or legacy migrations are reference/tooling inputs only unless a later
   accepted authority explicitly promotes them.
 - Stripe is a provider integration. Checkout, session, subscription, and
@@ -73,14 +73,14 @@ From the repository root, use the explicit interpreter entrypoint:
 ## Local DB Authority
 
 - Authoritative local DB source:
-  `backend/supabase/baseline_slots/`.
+  `backend/supabase/baseline_v2_slots/`.
 - Canonical baseline lock:
-  `backend/supabase/baseline_slots.lock.json`.
+  `backend/supabase/baseline_v2_slots.lock.json`.
 - Canonical native local target:
   `postgresql://postgres:postgres@127.0.0.1:5432/aveli_local`.
 - Ensure the native local database exists with `backend/scripts/ensure_db.sh`.
 - Materialize the accepted local baseline with
-  `backend/scripts/replay_baseline.sh`.
+  `backend/scripts/replay_v2.sh`.
 
 Cloud clones, legacy database state, root migrations, archived migrations, and
 interactive SQL output are reference or tooling inputs only. They do not

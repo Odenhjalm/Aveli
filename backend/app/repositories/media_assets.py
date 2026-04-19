@@ -74,6 +74,33 @@ def _decorate_media_asset_row(row: dict[str, Any] | None) -> dict[str, Any] | No
     return normalized
 
 
+def _required_ready_text(value: Any, field_name: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise RuntimeError(f"canonical worker ready transition requires {field_name}")
+    return text
+
+
+def _require_course_cover_ready_asset(
+    *,
+    media_id: str,
+    asset: dict[str, Any],
+    playback_object_path: str,
+    playback_format: str,
+) -> None:
+    media_type = str(asset.get("media_type") or "").strip().lower()
+    purpose = str(asset.get("purpose") or "").strip().lower()
+    if media_type != "image":
+        raise RuntimeError("course cover ready requires image media")
+    if purpose != "course_cover":
+        raise RuntimeError("course cover ready requires purpose course_cover")
+    if not str(media_id or "").strip():
+        raise RuntimeError("course cover ready requires media_id")
+    _required_ready_text(playback_object_path, "playback_object_path")
+    if _required_ready_text(playback_format, "playback_format") != "jpg":
+        raise RuntimeError("course cover ready requires playback_format jpg")
+
+
 def _canonical_storage_bucket_for_access(row: dict[str, Any]) -> str | None:
     playback_object_path = (
         str(row.get("playback_object_path") or "").strip().lstrip("/")
@@ -415,28 +442,28 @@ async def mark_media_asset_ready_from_worker(
     playback_storage_bucket: str | None = None,
 ) -> dict[str, Any] | None:
     del duration_seconds, codec, playback_storage_bucket
+    resolved_playback_object_path = _required_ready_text(
+        playback_object_path,
+        "playback_object_path",
+    )
+    resolved_playback_format = _required_ready_text(
+        playback_format,
+        "playback_format",
+    )
     media_asset = await get_media_asset(media_id)
     if media_asset is None:
         return None
 
     current_state = str(media_asset.get("state") or "").strip().lower()
-    if current_state == "ready":
-        return media_asset
-    if current_state == "uploaded":
-        media_asset = await _call_canonical_worker_transition(
-            media_id,
-            target_state="processing",
-        )
-        current_state = str((media_asset or {}).get("state") or "").strip().lower()
     if current_state != "processing":
         raise RuntimeError(
-            "canonical worker ready transition requires uploaded or processing state"
+            "canonical worker ready transition requires processing state"
         )
     return await _call_canonical_worker_transition(
         media_id,
         target_state="ready",
-        playback_object_path=playback_object_path,
-        playback_format=playback_format,
+        playback_object_path=resolved_playback_object_path,
+        playback_format=resolved_playback_format,
     )
 
 
@@ -448,10 +475,30 @@ async def mark_course_cover_ready_from_worker(
     playback_format: str | None = None,
     codec: str | None = None,
 ) -> dict[str, Any]:
-    del playback_storage_bucket, playback_format, codec
+    del playback_storage_bucket, codec
+    resolved_playback_object_path = _required_ready_text(
+        playback_object_path,
+        "playback_object_path",
+    )
+    resolved_playback_format = _required_ready_text(
+        playback_format,
+        "playback_format",
+    )
+    if resolved_playback_format != "jpg":
+        raise RuntimeError("course cover ready requires playback_format jpg")
+    asset = await get_course_cover_pipeline_asset(media_id)
+    if asset is None:
+        return {"updated": False}
+    _require_course_cover_ready_asset(
+        media_id=media_id,
+        asset=asset,
+        playback_object_path=resolved_playback_object_path,
+        playback_format=resolved_playback_format,
+    )
     updated = await mark_media_asset_ready_from_worker(
         media_id=media_id,
-        playback_object_path=playback_object_path,
+        playback_object_path=resolved_playback_object_path,
+        playback_format=resolved_playback_format,
     )
     return {"updated": updated is not None}
 

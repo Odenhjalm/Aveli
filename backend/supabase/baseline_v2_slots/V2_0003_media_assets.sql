@@ -33,11 +33,26 @@ create table app.media_assets (
       playback_format is null
       or btrim(playback_format) <> ''
     ),
+  constraint media_assets_ready_playback_format_check
+    check (
+      state <> 'ready'::app.media_state
+      or (
+        playback_format is not null
+        and btrim(playback_format) <> ''
+      )
+    ),
   constraint media_assets_audio_ready_playback_format_check
     check (
       media_type <> 'audio'::app.media_type
       or state <> 'ready'::app.media_state
       or playback_format = 'mp3'
+    ),
+  constraint media_assets_course_cover_ready_playback_format_check
+    check (
+      purpose <> 'course_cover'::app.media_purpose
+      or media_type <> 'image'::app.media_type
+      or state <> 'ready'::app.media_state
+      or playback_format = 'jpg'
     ),
   constraint media_assets_pending_upload_no_playback_check
     check (

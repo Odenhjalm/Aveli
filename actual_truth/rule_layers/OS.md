@@ -2535,13 +2535,13 @@ RULE_ID: OS_0421
 SOURCE_FILE: codex/AVELI_OPERATING_SYSTEM.md:812
 CATEGORY: OS
 EXACT TEXT:
-cd backend
+cd <repo root>
 
 RULE_ID: OS_0422
 SOURCE_FILE: codex/AVELI_OPERATING_SYSTEM.md:813
 CATEGORY: OS
 EXACT TEXT:
-poetry run uvicorn app.main:app --host 127.0.0.1 --port 8080
+python -m backend.bootstrap.run_server
 
 RULE_ID: OS_0423
 SOURCE_FILE: codex/AVELI_OPERATING_SYSTEM.md:816

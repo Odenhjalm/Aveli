@@ -67,6 +67,8 @@ It operates under `SYSTEM_LAWS.md`, `auth_onboarding_contract.md`,
 ## 4. BASELINE LAW
 
 - Canonical schema authority is `backend/supabase/baseline_v2_slots`.
+- Canonical slot order, slot hashes, and schema verification marker are owned by
+  `backend/supabase/baseline_v2_slots.lock.json`.
 - No backend or frontend runtime behavior may depend on Supabase schema outside baseline.
 - Legacy migration artifacts may exist for reference, but they are never runtime authority.
 - External Supabase dependencies remain soft references only and must not become database-owned domain truth.

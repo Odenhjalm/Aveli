@@ -86,6 +86,168 @@ async def test_mark_media_asset_ready_passthrough_is_removed():
         )
 
 
+async def test_mark_media_asset_ready_from_worker_requires_processing_state(monkeypatch):
+    async def fake_get_media_asset(_: str):
+        return {
+            "id": str(uuid.uuid4()),
+            "media_type": "image",
+            "purpose": "course_cover",
+            "original_object_path": "media/source/cover/courses/course-1/source.png",
+            "playback_object_path": None,
+            "playback_format": None,
+            "state": "uploaded",
+        }
+
+    async def fail_transition(*args, **kwargs):
+        raise AssertionError("ready helper must not promote uploaded media")
+
+    monkeypatch.setattr(media_assets_repo, "get_media_asset", fake_get_media_asset)
+    monkeypatch.setattr(
+        media_assets_repo,
+        "_call_canonical_worker_transition",
+        fail_transition,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="ready transition requires processing state",
+    ):
+        await media_assets_repo.mark_media_asset_ready_from_worker(
+            media_id=str(uuid.uuid4()),
+            playback_object_path="media/derived/cover/courses/course-1/source.jpg",
+            playback_format="jpg",
+        )
+
+
+async def test_mark_course_cover_ready_from_worker_requires_playback_format():
+    with pytest.raises(
+        RuntimeError,
+        match="ready transition requires playback_format",
+    ):
+        await media_assets_repo.mark_course_cover_ready_from_worker(
+            media_id=str(uuid.uuid4()),
+            playback_object_path="media/derived/cover/courses/course-1/source.jpg",
+            playback_format=None,
+        )
+
+
+async def test_mark_course_cover_ready_from_worker_requires_jpg_format():
+    with pytest.raises(
+        RuntimeError,
+        match="course cover ready requires playback_format jpg",
+    ):
+        await media_assets_repo.mark_course_cover_ready_from_worker(
+            media_id=str(uuid.uuid4()),
+            playback_object_path="media/derived/cover/courses/course-1/source.png",
+            playback_format="png",
+        )
+
+
+async def test_mark_course_cover_ready_from_worker_rejects_wrong_media_type(
+    monkeypatch,
+):
+    async def fake_get_course_cover_pipeline_asset(_: str):
+        return {
+            "id": str(uuid.uuid4()),
+            "media_type": "audio",
+            "purpose": "course_cover",
+            "original_object_path": "media/source/cover/courses/course-1/source.png",
+            "playback_object_path": None,
+            "playback_format": None,
+            "state": "processing",
+        }
+
+    monkeypatch.setattr(
+        media_assets_repo,
+        "get_course_cover_pipeline_asset",
+        fake_get_course_cover_pipeline_asset,
+    )
+
+    with pytest.raises(RuntimeError, match="course cover ready requires image media"):
+        await media_assets_repo.mark_course_cover_ready_from_worker(
+            media_id=str(uuid.uuid4()),
+            playback_object_path="media/derived/cover/courses/course-1/source.jpg",
+            playback_format="jpg",
+        )
+
+
+async def test_mark_course_cover_ready_from_worker_rejects_wrong_purpose(
+    monkeypatch,
+):
+    async def fake_get_course_cover_pipeline_asset(_: str):
+        return {
+            "id": str(uuid.uuid4()),
+            "media_type": "image",
+            "purpose": "profile_media",
+            "original_object_path": "media/source/profile-avatar/user-1/avatar.png",
+            "playback_object_path": None,
+            "playback_format": None,
+            "state": "processing",
+        }
+
+    monkeypatch.setattr(
+        media_assets_repo,
+        "get_course_cover_pipeline_asset",
+        fake_get_course_cover_pipeline_asset,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="course cover ready requires purpose course_cover",
+    ):
+        await media_assets_repo.mark_course_cover_ready_from_worker(
+            media_id=str(uuid.uuid4()),
+            playback_object_path="media/derived/cover/courses/course-1/source.jpg",
+            playback_format="jpg",
+        )
+
+
+async def test_mark_course_cover_ready_from_worker_preserves_jpg_format(
+    monkeypatch,
+):
+    media_id = str(uuid.uuid4())
+    calls: dict[str, object] = {}
+
+    async def fake_get_course_cover_pipeline_asset(_: str):
+        return {
+            "id": media_id,
+            "media_type": "image",
+            "purpose": "course_cover",
+            "original_object_path": "media/source/cover/courses/course-1/source.png",
+            "playback_object_path": None,
+            "playback_format": None,
+            "state": "processing",
+        }
+
+    async def fake_mark_ready(**kwargs):
+        calls["ready"] = kwargs
+        return {"id": kwargs["media_id"], "state": "ready"}
+
+    monkeypatch.setattr(
+        media_assets_repo,
+        "get_course_cover_pipeline_asset",
+        fake_get_course_cover_pipeline_asset,
+    )
+    monkeypatch.setattr(
+        media_assets_repo,
+        "mark_media_asset_ready_from_worker",
+        fake_mark_ready,
+    )
+
+    result = await media_assets_repo.mark_course_cover_ready_from_worker(
+        media_id=media_id,
+        playback_object_path="media/derived/cover/courses/course-1/source.jpg",
+        playback_format="jpg",
+    )
+
+    assert result == {"updated": True}
+    assert calls["ready"] == {
+        "media_id": media_id,
+        "playback_object_path": "media/derived/cover/courses/course-1/source.jpg",
+        "playback_format": "jpg",
+    }
+
+
 async def test_get_media_asset_access_derives_public_cover_bucket(monkeypatch):
     async def fake_get_media_asset(_: str):
         return {

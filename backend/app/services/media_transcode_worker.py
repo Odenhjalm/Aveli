@@ -458,25 +458,92 @@ def _media_kind_requires_preview(kind: str) -> bool:
     return kind in {"image", "video"}
 
 
+def _normalized_content_type(value: str | None) -> str | None:
+    content_type = str(value or "").strip().lower()
+    if not content_type:
+        return None
+    return content_type.split(";", 1)[0].strip() or None
+
+
+def _local_storage_object_metadata(
+    bucket: str | None,
+    object_path: str,
+) -> storage_service.StorageObjectMetadata | None:
+    if not _local_storage_enabled():
+        return None
+    try:
+        candidate = _local_storage_object_path(bucket, object_path)
+    except storage_service.StorageServiceError:
+        return None
+    if not candidate.is_file() or candidate.stat().st_size <= 0:
+        return None
+    suffix = candidate.suffix.lower()
+    content_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".mp3": "audio/mpeg",
+        ".mp4": "video/mp4",
+        ".pdf": "application/pdf",
+    }.get(suffix)
+    return storage_service.StorageObjectMetadata(
+        path=object_path,
+        content_type=content_type,
+        size_bytes=candidate.stat().st_size,
+    )
+
+
+async def _inspect_storage_object(
+    *,
+    storage: storage_service.StorageService,
+    object_path: str,
+) -> storage_service.StorageObjectMetadata | None:
+    normalized_path = str(object_path or "").strip().lstrip("/")
+    if not normalized_path:
+        return None
+    local_metadata = _local_storage_object_metadata(storage.bucket, normalized_path)
+    if local_metadata is not None:
+        return local_metadata
+    inspect_object = getattr(storage, "inspect_object", None)
+    if not callable(inspect_object):
+        raise storage_service.StorageServiceError(
+            "Storage object inspection is unavailable"
+        )
+    try:
+        return await inspect_object(
+            normalized_path,
+            ttl=settings.media_playback_url_ttl_seconds,
+        )
+    except storage_service.StorageObjectNotFoundError:
+        return None
+
+
 async def _storage_object_exists(
     *,
     storage: storage_service.StorageService,
     object_path: str,
 ) -> bool:
-    normalized_path = str(object_path or "").strip().lstrip("/")
-    if not normalized_path:
-        return False
-    if _local_storage_object_exists(storage.bucket, normalized_path):
-        return True
-    try:
-        await storage.get_presigned_url(
-            normalized_path,
-            ttl=settings.media_playback_url_ttl_seconds,
-            download=False,
+    return (
+        await _inspect_storage_object(storage=storage, object_path=object_path)
+    ) is not None
+
+
+async def _verify_storage_ready_object(
+    *,
+    storage: storage_service.StorageService,
+    object_path: str,
+    expected_content_type: str | None,
+) -> None:
+    metadata = await _inspect_storage_object(storage=storage, object_path=object_path)
+    if metadata is None:
+        raise RuntimeError("Ready verification failed: playback object is missing")
+    if metadata.size_bytes is not None and metadata.size_bytes <= 0:
+        raise RuntimeError("Ready verification failed: playback object is empty")
+    expected = _normalized_content_type(expected_content_type)
+    actual = _normalized_content_type(metadata.content_type)
+    if expected is not None and actual != expected:
+        raise RuntimeError(
+            "Ready verification failed: playback content_type mismatch"
         )
-    except storage_service.StorageObjectNotFoundError:
-        return False
-    return True
 
 
 async def _verify_ready_contract(
@@ -484,6 +551,7 @@ async def _verify_ready_contract(
     asset: dict,
     playback_storage: storage_service.StorageService,
     playback_object_path: str,
+    playback_format: str,
     playback_content_type: str | None,
     duration_seconds: int | None,
     preview_storage: storage_service.StorageService | None = None,
@@ -498,19 +566,31 @@ async def _verify_ready_contract(
             "Ready verification failed: content_type metadata is missing"
         )
 
+    if not str(playback_format or "").strip():
+        raise RuntimeError("Ready verification failed: playback_format is missing")
+
     if kind in {"audio", "video"} and duration_seconds is None:
         raise RuntimeError("Ready verification failed: duration metadata is missing")
 
-    if not await _storage_object_exists(
+    await _verify_storage_ready_object(
         storage=playback_storage,
         object_path=playback_object_path,
-    ):
-        raise RuntimeError("Ready verification failed: playback object is missing")
+        expected_content_type=playback_content_type,
+    )
 
     resolved_preview_storage = preview_storage or playback_storage
     resolved_preview_path = preview_object_path or playback_object_path
     if _media_kind_requires_preview(kind):
-        if not await _storage_object_exists(
+        if (
+            resolved_preview_storage.bucket != playback_storage.bucket
+            or resolved_preview_path != playback_object_path
+        ):
+            await _verify_storage_ready_object(
+                storage=resolved_preview_storage,
+                object_path=resolved_preview_path,
+                expected_content_type=playback_content_type,
+            )
+        elif not await _storage_object_exists(
             storage=resolved_preview_storage,
             object_path=resolved_preview_path,
         ):
@@ -831,6 +911,7 @@ async def _transcode_audio_asset(
         asset=asset,
         playback_storage=source_storage,
         playback_object_path=output_path,
+        playback_format="mp3",
         playback_content_type="audio/mpeg",
         duration_seconds=duration,
     )
@@ -904,6 +985,7 @@ async def _transcode_cover_asset(
         asset=asset,
         playback_storage=public_storage,
         playback_object_path=output_path,
+        playback_format="jpg",
         playback_content_type="image/jpeg",
         duration_seconds=None,
         preview_storage=public_storage,
@@ -984,6 +1066,7 @@ async def _transcode_profile_media_image_asset(
         asset=asset,
         playback_storage=public_storage,
         playback_object_path=output_path,
+        playback_format="jpg",
         playback_content_type="image/jpeg",
         duration_seconds=None,
         preview_storage=public_storage,

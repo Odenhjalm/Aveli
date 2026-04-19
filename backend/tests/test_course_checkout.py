@@ -99,6 +99,7 @@ async def _create_course(
     price_amount_cents: int | None,
     *,
     group_position: int = 1,
+    checkout_ready: bool = False,
 ) -> str:
     response = await async_client.post(
         "/studio/courses",
@@ -114,7 +115,30 @@ async def _create_course(
         },
     )
     assert response.status_code == 200, response.text
-    return str(response.json()["id"])
+    course_id = str(response.json()["id"])
+    if checkout_ready:
+        await _mark_course_checkout_ready(course_id)
+    return course_id
+
+
+async def _mark_course_checkout_ready(course_id: str) -> None:
+    product_id = f"prod_checkout_ready_{uuid.uuid4().hex}"
+    price_id = f"price_checkout_ready_{uuid.uuid4().hex}"
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.courses
+                   SET visibility = 'public'::app.course_visibility,
+                       content_ready = true,
+                       stripe_product_id = %s,
+                       active_stripe_price_id = %s,
+                       sellable = true
+                 WHERE id = %s
+                """,
+                (product_id, price_id, course_id),
+            )
+            await conn.commit()
 
 
 def _install_course_stripe_fakes(
@@ -125,11 +149,8 @@ def _install_course_stripe_fakes(
 ) -> dict[str, object]:
     captured_session: dict[str, object] = {}
 
-    def fake_product_create(**kwargs):
-        return {"id": f"prod_checkout_test_{uuid.uuid4().hex}"}
-
-    def fake_price_create(**kwargs):
-        return {"id": f"price_checkout_test_{uuid.uuid4().hex}"}
+    def fail_stripe_entity_create(**kwargs):
+        raise AssertionError("course create/update must not create Stripe entities")
 
     def fake_customer_create(**kwargs):
         return {"id": f"cus_checkout_test_{uuid.uuid4().hex}"}
@@ -142,8 +163,8 @@ def _install_course_stripe_fakes(
             "payment_intent": payment_intent,
         }
 
-    monkeypatch.setattr("stripe.Product.create", fake_product_create)
-    monkeypatch.setattr("stripe.Price.create", fake_price_create)
+    monkeypatch.setattr("stripe.Product.create", fail_stripe_entity_create)
+    monkeypatch.setattr("stripe.Price.create", fail_stripe_entity_create)
     monkeypatch.setattr("stripe.Customer.create", fake_customer_create)
     monkeypatch.setattr("stripe.checkout.Session.create", fake_session_create)
     monkeypatch.setattr(settings, "checkout_success_url", "https://checkout.test/success")
@@ -253,6 +274,7 @@ async def test_course_checkout_success(async_client, monkeypatch):
             slug,
             1500,
             group_position=1,
+            checkout_ready=True,
         )
 
         response = await async_client.post(
@@ -303,6 +325,7 @@ async def test_step2_course_checkout_uses_canonical_sellable_flow(async_client, 
             slug,
             1900,
             group_position=2,
+            checkout_ready=True,
         )
 
         response = await async_client.post(
@@ -339,6 +362,7 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
             slug,
             1500,
             group_position=1,
+            checkout_ready=True,
         )
 
         checkout_response = await async_client.post(
@@ -426,6 +450,7 @@ async def test_payment_intent_webhook_does_not_settle_checkout_backed_purchase(
             slug,
             1500,
             group_position=1,
+            checkout_ready=True,
         )
 
         checkout_response = await async_client.post(
@@ -493,6 +518,7 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
             slug,
             1500,
             group_position=1,
+            checkout_ready=True,
         )
 
         checkout_response = await async_client.post(

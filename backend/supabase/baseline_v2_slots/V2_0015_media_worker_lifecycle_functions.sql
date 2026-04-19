@@ -104,13 +104,19 @@ begin
         raise exception 'ready media requires playback_object_path';
       end if;
 
+      if p_playback_format is null or btrim(p_playback_format) = '' then
+        raise exception 'ready media requires playback_format';
+      end if;
+
       if v_asset.media_type = 'audio'::app.media_type
-         and p_playback_format is distinct from 'mp3' then
+         and btrim(p_playback_format) <> 'mp3' then
         raise exception 'ready audio media requires playback_format mp3';
       end if;
 
-      if p_playback_format is not null and btrim(p_playback_format) = '' then
-        raise exception 'playback_format must not be blank when provided';
+      if v_asset.purpose = 'course_cover'::app.media_purpose
+         and v_asset.media_type = 'image'::app.media_type
+         and btrim(p_playback_format) <> 'jpg' then
+        raise exception 'ready course cover media requires playback_format jpg';
       end if;
 
       update app.media_assets

@@ -23,10 +23,15 @@ def test_ensure_v2_baseline_rejects_unsupported_mode(monkeypatch) -> None:
 
 
 def test_v2_slot_order_is_explicit_and_complete() -> None:
-    assert baseline_v2.EXPECTED_V2_SLOTS == tuple(
-        path.name
-        for path in sorted(Path("backend/supabase/baseline_v2_slots").glob("V2_*.sql"))
+    lock = baseline_v2.verify_v2_lock()
+    locked_filenames = tuple(
+        str(entry["filename"]) for entry in lock["slots"]  # type: ignore[index]
     )
+    actual_filenames = tuple(
+        path.name for path in sorted(Path("backend/supabase/baseline_v2_slots").glob("V2_*.sql"))
+    )
+
+    assert locked_filenames == actual_filenames
 
 
 def test_v2_local_bootstrap_allows_inherited_cloud_flags(monkeypatch) -> None:
@@ -50,9 +55,21 @@ def test_v2_non_local_bootstrap_rejects_cloud_flags(monkeypatch) -> None:
         )
 
 
+def test_v2_runtime_rejects_local_database_in_cloud(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+
+    with pytest.raises(baseline_v2.BaselineV2Error, match="local host"):
+        baseline_v2.validate_runtime_database_url(
+            "postgresql://postgres:postgres@127.0.0.1:5432/aveli_local"
+        )
+
+
 def test_run_server_invokes_v2_baseline_gate() -> None:
     source = Path("backend/bootstrap/run_server.py").read_text(encoding="utf-8")
 
-    assert "ensure_v2_baseline()" in source
+    assert "ensure_runtime_execution_ready()" in source
+    assert "verify_v2_runtime()" in source
+    assert "ensure_v2_baseline()" not in source
     assert "BASELINE_MODE=" in source
     assert "SCHEMA_HASH=" in source

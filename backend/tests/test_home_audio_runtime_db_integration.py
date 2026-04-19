@@ -375,9 +375,14 @@ async def _insert_media_asset(
 
     if state == "ready":
         assert ready_path is not None
+        await media_assets_repo._call_canonical_worker_transition(
+            media_asset_id,
+            target_state="processing",
+        )
         await media_assets_repo.mark_media_asset_ready_from_worker(
             media_id=media_asset_id,
             playback_object_path=ready_path,
+            playback_format="mp3",
         )
 
 

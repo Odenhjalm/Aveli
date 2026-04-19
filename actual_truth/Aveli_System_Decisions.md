@@ -137,8 +137,10 @@
 
 ## Baseline Truth Rule
 
-- `backend/supabase/baseline_slots` is the canonical baseline source of truth.
-- Historical baseline slots and legacy DB state are reference-only inputs and MUST NOT redefine canonical media authority.
+- `backend/supabase/baseline_v2_slots` is the canonical baseline source of truth.
+- `backend/supabase/baseline_v2_slots.lock.json` is the canonical slot order,
+  slot hash, and schema verification marker.
+- Historical baseline slots and legacy DB state are archived reference-only inputs and MUST NOT redefine canonical media authority.
 
 ## Canonical Language Rules
 

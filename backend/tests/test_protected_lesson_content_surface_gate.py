@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
 
+from backend.bootstrap import baseline_v2
 from app.routes import courses as course_routes
 from app.services import courses_service
 
@@ -18,9 +18,12 @@ LESSON_ID = "33333333-3333-3333-3333-333333333333"
 
 
 def test_lesson_content_surface_sql_is_projection_not_access_authority():
-    sql = Path(
-        "backend/supabase/baseline_v2_slots/V2_0010_read_projections.sql"
-    ).read_text()
+    sql = ""
+    for path in baseline_v2._slot_paths():
+        if path.name == "V2_0010_read_projections.sql":
+            sql = path.read_text(encoding="utf-8")
+            break
+    assert sql, "Baseline V2 lock does not contain V2_0010_read_projections.sql"
 
     assert "create view app.lesson_content_surface" in sql
     assert "lc.content_markdown" in sql

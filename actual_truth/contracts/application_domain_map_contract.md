@@ -17,10 +17,11 @@ This contract separates:
 - domain drift that must be resolved
 
 For this document, verified current-state topology means the repo state proven by
-the active contracts in `actual_truth/contracts/`, canonical baseline authority
-in `backend/supabase/baseline_slots/`, and mounted backend/runtime repo evidence
-only where needed to describe current drift. It is not a claim about remote
-runtime state outside inspected repo evidence.
+the active contracts in `actual_truth/contracts/`, canonical Baseline V2
+authority in `backend/supabase/baseline_v2_slots/` and
+`backend/supabase/baseline_v2_slots.lock.json`, and mounted backend/runtime repo
+evidence only where needed to describe current drift. It is not a claim about
+remote runtime state outside inspected repo evidence.
 
 This contract does not merge current-state truth and target-state truth into one
 undifferentiated map.
@@ -33,9 +34,10 @@ undifferentiated map.
 2. Active contracts in `actual_truth/contracts/` define active contract law for
    domain ownership unless a locked target decision overrides them for target
    topology.
-3. `backend/supabase/baseline_slots/` is the canonical local schema authority
-   and outranks legacy migrations for table existence, field existence, and
-   baseline-backed constraints.
+3. `backend/supabase/baseline_v2_slots/` and
+   `backend/supabase/baseline_v2_slots.lock.json` are the canonical local schema
+   authority and outrank legacy migrations for table existence, field existence,
+   and baseline-backed constraints.
 4. Mounted backend routes, backend auth logic, and backend services define the
    current runtime execution surfaces used to identify drift in repo current
    state.
@@ -83,9 +85,9 @@ undifferentiated map.
 - Runtime Projections: current runtime builds derived current-user context,
   compatibility token claims, profile projections, and entry-state outputs from
   source domains.
-- Baseline / Schema Evolution: `backend/supabase/baseline_slots/` is the
-  canonical local schema authority; `backend/supabase/migrations/` is legacy
-  reference only.
+- Baseline / Schema Evolution: `backend/supabase/baseline_v2_slots/` and
+  `backend/supabase/baseline_v2_slots.lock.json` are the canonical local schema
+  authority; `backend/supabase/migrations/` is legacy reference only.
 - Tasks / Readiness / Derived Documentation: task lists, manifests, readiness
   docs, and analysis notes exist only as non-authoritative derived artifacts.
 
@@ -121,9 +123,9 @@ undifferentiated map.
   profile projection as media truth.
 - Runtime Projections: projections, compositions, and compatibility artifacts
   may expose derived views only and must never become fallback authority.
-- Baseline / Schema Evolution: `backend/supabase/baseline_slots/` remains the
-  only canonical baseline authority; legacy migrations remain historical residue
-  only.
+- Baseline / Schema Evolution: `backend/supabase/baseline_v2_slots/` and
+  `backend/supabase/baseline_v2_slots.lock.json` remain the only canonical
+  baseline authority; legacy migrations remain historical residue only.
 - Tasks / Readiness / Derived Documentation: derived docs may summarize the
   topology but must never own it.
 
@@ -359,7 +361,8 @@ the projection is drift.
 Classification: `source authority`, `derived artifact`.
 
 Owns canonical local schema shape only through
-`backend/supabase/baseline_slots/`.
+`backend/supabase/baseline_v2_slots/` and
+`backend/supabase/baseline_v2_slots.lock.json`.
 
 Must not let legacy migrations, stale columns, or non-baseline schema residue
 redefine domain ownership.

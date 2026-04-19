@@ -968,7 +968,7 @@ Codex MUST:
 
 - use LOCAL database only
 - NEVER use remote DB in execute or confirm mode unless explicitly instructed
-- use the deterministic replay of `backend/supabase/baseline_slots` as the authoritative local DB source for MCP audit, testing, and verification
+- use the deterministic replay of `backend/supabase/baseline_v2_slots` with `backend/supabase/baseline_v2_slots.lock.json` as the authoritative local DB source for MCP audit, testing, and verification
 - treat `supabase/migrations/` as production migration source only, not local verification DB authority
 
 If `DATABASE_URL` is missing or ambiguous:

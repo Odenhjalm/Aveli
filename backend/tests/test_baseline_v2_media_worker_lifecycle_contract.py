@@ -93,6 +93,34 @@ def _insert_media_asset(conn: psycopg.Connection, *, media_id: str) -> None:
     )
 
 
+def _insert_course_cover_asset(conn: psycopg.Connection, *, media_id: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO app.media_assets (
+          id,
+          media_type,
+          purpose,
+          original_object_path,
+          ingest_format,
+          file_size,
+          content_hash_algorithm,
+          content_hash
+        )
+        VALUES (
+          %s::uuid,
+          'image'::app.media_type,
+          'course_cover'::app.media_purpose,
+          'media/source/cover/courses/course-1/source.png',
+          'png',
+          4,
+          'sha256',
+          repeat('b', 64)
+        )
+        """,
+        (media_id,),
+    )
+
+
 def _transition(
     conn: psycopg.Connection,
     media_id: str,
@@ -203,7 +231,7 @@ async def test_media_lifecycle_mutations_are_db_function_owned():
         assert str(relocked["state"]) == "processing"
 
         with pytest.raises(
-            psycopg.Error, match="ready audio media requires playback_format mp3"
+            psycopg.Error, match="ready media requires playback_format"
         ):
             _transition(
                 conn,
@@ -223,6 +251,56 @@ async def test_media_lifecycle_mutations_are_db_function_owned():
         assert str(ready["state"]) == "ready"
         assert ready["playback_object_path"] == "media/derived/source.mp3"
         assert ready["playback_format"] == "mp3"
+
+
+async def test_course_cover_ready_requires_jpg_playback_identity():
+    with _baseline_v2_connection() as conn:
+        media_id = str(uuid4())
+        _insert_course_cover_asset(conn, media_id=media_id)
+        _transition(conn, media_id, "uploaded")
+        conn.execute(
+            """
+            SELECT app.canonical_worker_lock_media_asset_for_processing(%s::uuid)
+            """,
+            (media_id,),
+        )
+
+        with pytest.raises(
+            psycopg.Error,
+            match="ready media requires playback_format",
+        ):
+            _transition(
+                conn,
+                media_id,
+                "ready",
+                playback_object_path="media/derived/cover/courses/course-1/source.jpg",
+                playback_format=None,
+            )
+
+        with pytest.raises(
+            psycopg.Error,
+            match="ready course cover media requires playback_format jpg",
+        ):
+            _transition(
+                conn,
+                media_id,
+                "ready",
+                playback_object_path="media/derived/cover/courses/course-1/source.jpg",
+                playback_format="png",
+            )
+
+        ready = _transition(
+            conn,
+            media_id,
+            "ready",
+            playback_object_path="media/derived/cover/courses/course-1/source.jpg",
+            playback_format="jpg",
+        )
+        assert str(ready["state"]) == "ready"
+        assert ready["playback_object_path"] == (
+            "media/derived/cover/courses/course-1/source.jpg"
+        )
+        assert ready["playback_format"] == "jpg"
 
 
 async def test_media_worker_failed_transition_carries_error_and_retry():
@@ -252,7 +330,7 @@ async def test_media_worker_failed_transition_carries_error_and_retry():
         assert failed["processing_locked_at"] is None
 
 
-async def test_media_worker_requeues_failed_asset_without_resetting_attempt_history():
+async def test_media_worker_failed_requeue_is_forbidden():
     with _baseline_v2_connection() as conn:
         media_id = str(uuid4())
         _insert_media_asset(conn, media_id=media_id)
@@ -282,19 +360,21 @@ async def test_media_worker_requeues_failed_asset_without_resetting_attempt_hist
                 (media_id,),
             )
 
-        requeued = conn.execute(
-            """
-            SELECT *
-            FROM app.canonical_worker_requeue_failed_media_asset(%s::uuid)
-            """,
+        with pytest.raises(
+            psycopg.Error,
+            match="failed media requeue is not authorized",
+        ):
+            conn.execute(
+                """
+                SELECT *
+                FROM app.canonical_worker_requeue_failed_media_asset(%s::uuid)
+                """,
+                (media_id,),
+            )
+
+        row = conn.execute(
+            "SELECT state::text AS state FROM app.media_assets WHERE id = %s::uuid",
             (media_id,),
         ).fetchone()
-
-        assert requeued is not None
-        assert str(requeued["state"]) == "uploaded"
-        assert requeued["error_message"] is None
-        assert requeued["processing_locked_at"] is None
-        assert requeued["next_retry_at"] is None
-        assert requeued["playback_object_path"] is None
-        assert requeued["playback_format"] is None
-        assert int(requeued["processing_attempts"]) == 1
+        assert row is not None
+        assert row["state"] == "failed"

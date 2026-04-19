@@ -1,5 +1,8 @@
 {
   "manifest_version": 1,
+  "status": "ARCHIVED_LEGACY_NON_AUTHORITATIVE",
+  "superseded_by": "backend/supabase/baseline_v2_slots.lock.json",
+  "runtime_replay_allowed": false,
   "protected_min_slot": 1,
   "protected_max_slot": 12,
   "baseline_dir": "backend/supabase/baseline_slots",

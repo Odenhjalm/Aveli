@@ -256,6 +256,10 @@ async def _create_lesson_audio_source(
                     )
                     await conn.commit()
         else:
+            await media_assets_repo._call_canonical_worker_transition(
+                str(asset["id"]),
+                target_state="processing",
+            )
             await media_assets_repo.mark_media_asset_ready_from_worker(
                 media_id=str(asset["id"]),
                 playback_object_path=(
@@ -316,6 +320,10 @@ async def _create_home_audio_asset(
                     )
                     await conn.commit()
         else:
+            await media_assets_repo._call_canonical_worker_transition(
+                str(asset["id"]),
+                target_state="processing",
+            )
             await media_assets_repo.mark_media_asset_ready_from_worker(
                 media_id=str(asset["id"]),
                 playback_object_path=f"media/derived/audio/home/{uuid.uuid4().hex}.mp3",

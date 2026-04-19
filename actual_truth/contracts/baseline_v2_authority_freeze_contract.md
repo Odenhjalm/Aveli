@@ -2,11 +2,15 @@
 
 ## STATUS
 
-PROPOSED CONTROLLING AUTHORITY FOR BASELINE V2 PLANNING.
+ACCEPTED BASELINE V2 PLANNING AUTHORITY.
 
-This contract is created by the approved Batch 1 authority-freeze execution for
-Baseline V2. After review and acceptance, this file becomes the controlling
-Baseline V2 planning authority for later authority-freeze alignment work.
+Concrete database baseline authority is now owned by
+`actual_truth/AVELI_DATABASE_BASELINE_MANIFEST.md` and
+`backend/supabase/baseline_v2_slots.lock.json`.
+
+This contract was created by the approved Batch 1 authority-freeze execution for
+Baseline V2. It remains the controlling Baseline V2 planning authority, but it
+does not supersede the canonical V2 lock or database baseline manifest.
 
 This contract cross-references and must be reconciled with:
 
@@ -336,6 +340,6 @@ Implementation planning may not begin until all of the following are true:
   backend read composition.
 - Swedish user-facing copy compliance is documented as a gate.
 - Generated operator prompt compliance is documented as a gate.
-- Runtime code, SQL, baseline slots, lockfile, database state, and runtime state
-  remain untouched during authority-freeze alignment unless a later task
+- Database state, replay, deploy, and runtime state remain untouched during
+  authority-freeze alignment unless a later task
   explicitly authorizes a different scope.

@@ -118,7 +118,27 @@ async def _create_course(async_client, headers: dict[str, str], slug: str, price
         },
     )
     assert response.status_code == 200, response.text
-    return str(response.json()["id"])
+    course_id = str(response.json()["id"])
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.courses
+                   SET visibility = 'public'::app.course_visibility,
+                       content_ready = true,
+                       stripe_product_id = %s,
+                       active_stripe_price_id = %s,
+                       sellable = true
+                 WHERE id = %s
+                """,
+                (
+                    f"prod_webhook_ready_{uuid.uuid4().hex}",
+                    f"price_webhook_ready_{uuid.uuid4().hex}",
+                    course_id,
+                ),
+            )
+            await conn.commit()
+    return course_id
 
 
 async def _login_user(async_client, email: str, password: str) -> dict[str, str]:
@@ -253,11 +273,8 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
     course_id = None
     captured_session: dict[str, object] = {}
 
-    def fake_product_create(**kwargs):
-        return {"id": f"prod_webhook_test_{uuid.uuid4().hex}"}
-
-    def fake_price_create(**kwargs):
-        return {"id": f"price_webhook_test_{uuid.uuid4().hex}"}
+    def fail_stripe_entity_create(**kwargs):
+        raise AssertionError("course create/update must not create Stripe entities")
 
     def fake_customer_create(**kwargs):
         return {"id": "cus_canonical"}
@@ -270,8 +287,8 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
             "payment_intent": "pi_canonical",
         }
 
-    monkeypatch.setattr("stripe.Product.create", fake_product_create)
-    monkeypatch.setattr("stripe.Price.create", fake_price_create)
+    monkeypatch.setattr("stripe.Product.create", fail_stripe_entity_create)
+    monkeypatch.setattr("stripe.Price.create", fail_stripe_entity_create)
     monkeypatch.setattr("stripe.Customer.create", fake_customer_create)
     monkeypatch.setattr("stripe.checkout.Session.create", fake_checkout_create)
 

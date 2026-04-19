@@ -1854,6 +1854,28 @@ async def upsert_course_public_content(
     return schemas.CoursePublicContent(**public_content)
 
 
+@course_lesson_router.post("/courses/{course_id}/publish", response_model=schemas.Course)
+async def publish_course(course_id: str, current: TeacherEntryUser):
+    try:
+        row = await courses_service.publish_course(
+            course_id,
+            teacher_id=str(current["id"]),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Kunde inte publicera kursen",
+        ) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Kursen hittades inte")
+    await _apply_course_read_contract(row)
+    return _course_response(row)
+
+
 @course_lesson_router.patch("/courses/{course_id}", response_model=schemas.Course)
 async def update_course(
     course_id: str,

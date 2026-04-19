@@ -30,21 +30,22 @@ schema intent, table ownership, enum values, domain authority, or write safety.
 
 Canonical schema authority is:
 
-- `backend/supabase/baseline_slots/`
-- `backend/supabase/baseline_slots.lock.json`
+- `backend/supabase/baseline_v2_slots/`
+- `backend/supabase/baseline_v2_slots.lock.json`
 
 These are the only schema source for database baseline truth.
 
 Rules:
 
-- Baseline slots define accepted schema objects and append-only evolution.
-- The lock file defines the accepted baseline slot set and slot hashes.
+- Baseline V2 slots define accepted schema objects.
+- The V2 lock file defines the accepted slot set, replay order,
+  LF-normalized SHA-256 slot hashes, and schema verification marker.
 - `backend/supabase/migrations/` is not local baseline authority.
 - Legacy migrations, observed runtime schema, local DB drift, remote DB drift,
   tests, generated docs, and implementation code do not redefine baseline truth.
-- A clean replay of locked baseline slots is the only valid proof of baseline
+- A clean replay of locked Baseline V2 slots is the only valid proof of baseline
   correctness.
-- Any schema change requires a new append-only baseline slot and a lock update.
+- Any schema change requires an accepted Baseline V2 slot and a V2 lock update.
 - Accepted baseline slots must not be edited in place.
 
 If clean baseline replay and this manifest disagree:
@@ -59,18 +60,17 @@ If observed DB state and this manifest disagree:
 
 ## 2A. Baseline V2 Authority Freeze Overlay
 
-Baseline V2 planning is controlled by
+Baseline V2 planning input is controlled by
 `actual_truth/contracts/baseline_v2_authority_freeze_contract.md`.
 
-Baseline V2 is a clean conceptual rebaseline with full cutover as the
-implementation target. The current accepted baseline slot evidence remains
-`backend/supabase/baseline_slots/` plus
-`backend/supabase/baseline_slots.lock.json`, currently accepted through slot
-`0038`, unless later accepted V2 slot authority replaces that scope.
+Baseline V2 is now the accepted database baseline authority for implementation
+and verification. The superseded legacy baseline chain is archived historical
+evidence only and must not be used for runtime, replay, deployment, or
+verification authority.
 
-This overlay does not edit accepted slots in place and does not authorize SQL,
-baseline slot generation, lockfile edits, runtime code edits, DB mutation, or
-runtime mutation.
+This authority update does not authorize DB mutation, replay, deploy, or runtime
+mutation. It authorizes only the repository-visible authority, lock, and
+verification ownership change recorded here.
 
 Baseline V2 authority interpretation:
 
@@ -504,9 +504,9 @@ Required handling:
 2. stop downstream implementation
 3. do not normalize around the mismatch
 4. do not add fallback behavior
-5. repair only through append-only baseline evolution
-6. update `backend/supabase/baseline_slots.lock.json`
-7. prove correctness by clean baseline replay
+5. repair only through accepted Baseline V2 evolution
+6. update `backend/supabase/baseline_v2_slots.lock.json`
+7. prove correctness by clean Baseline V2 replay
 
 Drift classes:
 
@@ -537,11 +537,11 @@ Expected manifest truth:
 - `welcome_pending`
 - `completed`
 
-Accepted baseline evidence:
+Accepted Baseline V2 evidence:
 
-- slot `0038_auth_subjects_welcome_pending_onboarding_state.sql` repairs the
-  accepted baseline constraint to include `welcome_pending`
-- `backend/supabase/baseline_slots.lock.json` includes slot `0038`
+- `V2_0001_foundation_enums.sql` defines `welcome_pending`
+- `V2_0002_auth_subjects.sql` materializes auth-subject onboarding authority
+- `backend/supabase/baseline_v2_slots.lock.json` includes both slots
 
 Runtime interpretation:
 
@@ -565,7 +565,7 @@ Expected manifest truth:
 Observed audit evidence:
 
 - table exists in current DB
-- table exists in baseline slot `0021`
+- table exists in Baseline V2 slot `V2_0009_runtime_support_inert.sql`
 - accepted paused/inert contract authority is tracked
 
 Impact:
@@ -586,10 +586,10 @@ Required outcome:
 
 No schema change is allowed without:
 
-1. an append-only baseline slot in `backend/supabase/baseline_slots/`
-2. an updated `backend/supabase/baseline_slots.lock.json`
+1. an accepted Baseline V2 slot in `backend/supabase/baseline_v2_slots/`
+2. an updated `backend/supabase/baseline_v2_slots.lock.json`
 3. an explicit authority classification in this manifest or a manifest update
-4. clean baseline replay proof
+4. clean Baseline V2 replay proof
 5. verification that observed DB schema matches this manifest
 
 Forbidden execution paths:
@@ -605,9 +605,9 @@ Valid execution order for any future schema repair:
 
 1. identify manifest mismatch
 2. classify drift
-3. create append-only baseline slot
-4. update lock file
-5. replay baseline from scratch
+3. create accepted Baseline V2 slot
+4. update V2 lock file
+5. replay Baseline V2 from scratch
 6. verify schema, constraints, enums, functions, triggers, views, and policies
 7. verify runtime readiness only after baseline replay is valid
 
@@ -616,8 +616,8 @@ Valid execution order for any future schema repair:
 This manifest is valid only if all of the following hold:
 
 - `actual_truth/AVELI_DATABASE_BASELINE_MANIFEST.md` exists
-- `backend/supabase/baseline_slots/` exists
-- `backend/supabase/baseline_slots.lock.json` exists
+- `backend/supabase/baseline_v2_slots/` exists
+- `backend/supabase/baseline_v2_slots.lock.json` exists
 - `app.livekit_webhook_jobs` is explicitly marked `STATE: PAUSED`
 - `app.onboarding_state` includes `welcome_pending`
 - projection relations are not classified as canonical write authority

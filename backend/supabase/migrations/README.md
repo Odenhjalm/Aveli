@@ -2,8 +2,8 @@
 
 This directory is a non-authoritative historical reference surface.
 
-- Canonical local verification DB authority is `backend/supabase/baseline_slots/`.
-- Locked canonical baseline scope is recorded in `backend/supabase/baseline_slots.lock.json`.
+- Canonical local verification DB authority is `backend/supabase/baseline_v2_slots/`.
+- Locked canonical baseline scope is recorded in `backend/supabase/baseline_v2_slots.lock.json`.
 - Production release migration tooling must not read from this directory.
 - `backend/scripts/apply_supabase_migrations.sh` treats this directory as legacy-only and ignores it.
 

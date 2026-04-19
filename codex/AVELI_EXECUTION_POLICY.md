@@ -83,7 +83,7 @@ Codex MUST:
 
 Codex MUST assume:
 
-- auth schema is canonical via baseline_slots
+- auth schema is canonical via Baseline V2 lock
 - app.profiles must match active backend usage
 - no partial schema allowed
 
@@ -115,12 +115,13 @@ Codex MUST NOT:
 
 Canonical DB authority:
 
-backend/supabase/baseline_slots
+backend/supabase/baseline_v2_slots
+backend/supabase/baseline_v2_slots.lock.json
 
 Codex MUST:
 
-- treat baseline_slots as truth
-- align DB schema to baseline_slots
+- treat Baseline V2 locked slots as truth
+- align DB schema to Baseline V2 locked slots
 - replay baseline when mismatch detected
 
 Codex MUST NOT:

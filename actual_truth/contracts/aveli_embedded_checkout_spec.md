@@ -75,10 +75,9 @@ Frontend surfaces:
 
 Baseline/support surfaces:
 
-- `backend/supabase/baseline_slots/0029_canonical_purchase_substrate_foundation.sql`
-- `backend/supabase/baseline_slots/0034_payment_events_webhook_idempotency_support.sql`
-- `backend/supabase/baseline_slots/0036_restore_billing_logs.sql`
-- `backend/supabase/baseline_slots/0037_memberships_referral_source_alignment.sql`
+- `backend/supabase/baseline_v2_slots/V2_0008_commerce_membership.sql`
+- `backend/supabase/baseline_v2_slots/V2_0012_core_substrate_profiles_storage_referrals.sql`
+- `backend/supabase/baseline_v2_slots.lock.json`
 
 ## 3. Missing Pieces And Drift
 

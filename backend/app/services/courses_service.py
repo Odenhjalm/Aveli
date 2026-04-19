@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import hashlib
+import re
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from uuid import UUID, uuid4
@@ -30,6 +31,10 @@ from . import storage_service
 logger = logging.getLogger(__name__)
 _CANONICAL_COURSE_STRIPE_CURRENCY = "sek"
 _COURSE_DELETE_BLOCKED_DETAIL = "Course delete blocked by dependent rows"
+_LESSON_MEDIA_TOKEN_PATTERN = re.compile(
+    r"!(image|audio|video|document)\(([A-Za-z0-9_-]+(?:-[A-Za-z0-9_-]+)*)\)",
+    re.IGNORECASE,
+)
 
 _HOME_AUDIO_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
@@ -93,15 +98,46 @@ def _course_requires_stripe_mapping(course: Mapping[str, Any]) -> bool:
 
 def _is_course_sellable_subject(course: Mapping[str, Any]) -> bool:
     teacher_id = str(course.get("teacher_id") or "").strip()
-    amount_cents = int(course.get("price_amount_cents") or 0)
+    visibility = str(course.get("visibility") or "").strip()
+    content_ready = course.get("content_ready") is True
+    try:
+        amount_cents = int(course.get("price_amount_cents") or 0)
+    except (TypeError, ValueError):
+        return False
     stripe_product_id = str(course.get("stripe_product_id") or "").strip()
     active_price_id = str(course.get("active_stripe_price_id") or "").strip()
     return (
         bool(teacher_id)
+        and visibility == "public"
+        and content_ready
         and amount_cents > 0
         and bool(stripe_product_id)
         and bool(active_price_id)
     )
+
+
+def _course_publish_product_idempotency_key(course_id: str) -> str:
+    return f"course:{course_id}:product"
+
+
+def _course_publish_price_idempotency_key(
+    *,
+    course_id: str,
+    product_id: str,
+    amount_cents: int,
+) -> str:
+    return (
+        f"course:{course_id}:price:"
+        f"{product_id}:{amount_cents}:{_CANONICAL_COURSE_STRIPE_CURRENCY}"
+    )
+
+
+def _referenced_lesson_media_ids(markdown: str) -> set[str]:
+    return {
+        str(match.group(2) or "").strip()
+        for match in _LESSON_MEDIA_TOKEN_PATTERN.finditer(markdown)
+        if str(match.group(2) or "").strip()
+    }
 
 
 def _require_stripe_for_course_mapping() -> None:
@@ -116,20 +152,24 @@ async def _stripe_create_course_product(
     course: Mapping[str, Any],
     *,
     teacher_id: str,
+    idempotency_key: str | None = None,
 ) -> str:
     course_id = str(course.get("id") or "").strip()
     title = str(course.get("title") or "").strip() or "Course"
+    create_kwargs: dict[str, Any] = {
+        "name": title,
+        "metadata": {
+            "course_id": course_id,
+            "teacher_id": teacher_id,
+            "type": "course",
+        },
+    }
+    if idempotency_key:
+        create_kwargs["idempotency_key"] = idempotency_key
 
     try:
         product = await run_in_threadpool(
-            lambda: stripe.Product.create(
-                name=title,
-                metadata={
-                    "course_id": course_id,
-                    "teacher_id": teacher_id,
-                    "type": "course",
-                },
-            )
+            lambda: stripe.Product.create(**create_kwargs)
         )
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise RuntimeError("Failed to create Stripe product for course") from exc
@@ -140,15 +180,32 @@ async def _stripe_create_course_product(
     return product_id
 
 
-async def _stripe_create_course_price(*, product_id: str, amount_cents: int) -> str:
+async def _stripe_retrieve_course_product(product_id: str) -> Mapping[str, Any]:
     try:
-        price = await run_in_threadpool(
-            lambda: stripe.Price.create(
-                product=product_id,
-                unit_amount=amount_cents,
-                currency=_CANONICAL_COURSE_STRIPE_CURRENCY,
-            )
-        )
+        product = await run_in_threadpool(lambda: stripe.Product.retrieve(product_id))
+    except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
+        raise RuntimeError("Failed to load Stripe product for course") from exc
+    if not isinstance(product, Mapping):
+        raise RuntimeError("Stripe returned an invalid course product payload")
+    return product
+
+
+async def _stripe_create_course_price(
+    *,
+    product_id: str,
+    amount_cents: int,
+    idempotency_key: str | None = None,
+) -> str:
+    create_kwargs: dict[str, Any] = {
+        "product": product_id,
+        "unit_amount": amount_cents,
+        "currency": _CANONICAL_COURSE_STRIPE_CURRENCY,
+    }
+    if idempotency_key:
+        create_kwargs["idempotency_key"] = idempotency_key
+
+    try:
+        price = await run_in_threadpool(lambda: stripe.Price.create(**create_kwargs))
     except stripe.error.StripeError as exc:  # type: ignore[attr-defined]
         raise RuntimeError("Failed to create Stripe price for course") from exc
 
@@ -944,15 +1001,7 @@ async def create_course(
             create_payload["cover_media_id"] = None
     row = await courses_repo.create_course(create_payload)
     course = dict(row)
-    try:
-        ensured = await ensure_course_stripe_mapping(
-            str(course["id"]),
-            normalized_teacher_id,
-        )
-    except RuntimeError:
-        await courses_repo.delete_course(str(course["id"]))
-        raise
-    return dict(ensured)
+    return course
 
 
 async def update_course(
@@ -993,29 +1042,10 @@ async def update_course(
         drip_interval_days=drip_interval_days,
     )
 
-    previous_values = {
-        key: existing_course[key]
-        for key in patch.keys()
-        if key in existing_course
-    }
     row = await courses_repo.update_course(course_id, patch)
     if row is None:
         return None
-    course = dict(row)
-
-    should_refresh_mapping = bool(
-        {"price_amount_cents"} & set(patch.keys())
-    )
-    if not should_refresh_mapping:
-        return course
-
-    try:
-        ensured = await ensure_course_stripe_mapping(course_id, normalized_teacher_id)
-    except RuntimeError:
-        if previous_values:
-            await courses_repo.update_course(course_id, previous_values)
-        raise
-    return dict(ensured)
+    return dict(row)
 
 
 async def delete_course(course_id: str, teacher_id: str | None = None) -> bool:
@@ -1036,6 +1066,294 @@ async def delete_course(course_id: str, teacher_id: str | None = None) -> bool:
             status_code=status.HTTP_409_CONFLICT,
             detail=_COURSE_DELETE_BLOCKED_DETAIL,
         ) from exc
+
+
+def _publish_validation_error(message: str) -> None:
+    raise ValueError(message)
+
+
+def _validate_publish_lesson_order(lessons: Sequence[Mapping[str, Any]]) -> None:
+    positions: list[int] = []
+    for lesson in lessons:
+        title = str(lesson.get("lesson_title") or "").strip()
+        if not title:
+            _publish_validation_error("Lektion saknar titel")
+        try:
+            position = int(lesson.get("position"))
+        except (TypeError, ValueError):
+            _publish_validation_error("Lektionernas ordning är ogiltig")
+        if position <= 0:
+            _publish_validation_error("Lektionernas ordning är ogiltig")
+        positions.append(position)
+
+    expected = list(range(1, len(positions) + 1))
+    if sorted(positions) != expected:
+        _publish_validation_error("Lektionernas ordning är ogiltig")
+
+
+def _validate_referenced_lesson_media_ready(
+    *,
+    markdown: str,
+    media_rows: Sequence[Mapping[str, Any]],
+) -> None:
+    referenced_ids = _referenced_lesson_media_ids(markdown)
+    if not referenced_ids:
+        return
+
+    rows_by_id = {
+        str(row.get("id") or "").strip(): row
+        for row in media_rows
+        if str(row.get("id") or "").strip()
+    }
+    for lesson_media_id in referenced_ids:
+        row = rows_by_id.get(lesson_media_id)
+        if row is None:
+            _publish_validation_error("Lektionens mediareferenser är ogiltiga")
+        state = str(row.get("state") or "").strip().lower()
+        if state != "ready":
+            _publish_validation_error("Lektionens media är inte redo")
+
+
+async def _derive_course_content_ready(course_id: str) -> bool:
+    lessons = [
+        dict(row)
+        for row in await courses_repo.list_course_publish_lessons(course_id)
+    ]
+    if not lessons:
+        _publish_validation_error("Kursen saknar lektioner")
+
+    _validate_publish_lesson_order(lessons)
+
+    for lesson in lessons:
+        lesson_id = str(lesson.get("id") or "").strip()
+        if not lesson_id:
+            _publish_validation_error("Kursens lektionsstruktur är ogiltig")
+        if str(lesson.get("course_id") or "").strip() != course_id:
+            _publish_validation_error("Kursens lektionsstruktur är ogiltig")
+        if lesson.get("has_content") is not True:
+            _publish_validation_error("Lektion saknar innehåll")
+
+        content_markdown = str(lesson.get("content_markdown") or "")
+        if not content_markdown.strip():
+            _publish_validation_error("Lektion saknar innehåll")
+
+        media_rows = list(await list_lesson_media(lesson_id))
+        lesson_media_kinds, media_url_aliases = (
+            lesson_content_utils.build_lesson_media_write_contract(media_rows)
+        )
+        try:
+            normalized_markdown = (
+                lesson_content_utils.normalize_lesson_markdown_for_storage(
+                    content_markdown,
+                    lesson_media_kinds=lesson_media_kinds,
+                    media_url_aliases=media_url_aliases,
+                )
+            )
+        except ValueError as exc:
+            raise ValueError("Lektionens mediareferenser är ogiltiga") from exc
+
+        if normalized_markdown != content_markdown:
+            _publish_validation_error("Lektionens innehåll är inte normaliserat")
+        _validate_referenced_lesson_media_ready(
+            markdown=content_markdown,
+            media_rows=media_rows,
+        )
+
+    return True
+
+
+async def _validate_course_publish_readiness(
+    course: Mapping[str, Any],
+    *,
+    teacher_id: str,
+) -> int:
+    course_id = str(course.get("id") or "").strip()
+    if not course_id:
+        _publish_validation_error("Kursen hittades inte")
+
+    if str(course.get("teacher_id") or "").strip() != teacher_id:
+        raise PermissionError("Du saknar behörighet att publicera kursen")
+    if not await courses_repo.is_course_owner(course_id, teacher_id):
+        raise PermissionError("Du saknar behörighet att publicera kursen")
+
+    title = str(course.get("title") or "").strip()
+    if not title:
+        _publish_validation_error("Kursen saknar titel")
+    slug = str(course.get("slug") or "").strip()
+    if not slug:
+        _publish_validation_error("Kursen saknar slug")
+    existing_slug_course = await courses_repo.get_course(slug=slug)
+    if (
+        existing_slug_course is not None
+        and str(existing_slug_course.get("id") or "").strip() != course_id
+    ):
+        _publish_validation_error("Kursens slug används redan")
+
+    if not str(course.get("course_group_id") or "").strip():
+        _publish_validation_error("Kursens struktur är ogiltig")
+    try:
+        group_position = int(course.get("group_position"))
+    except (TypeError, ValueError):
+        _publish_validation_error("Kursens struktur är ogiltig")
+    if group_position < 0:
+        _publish_validation_error("Kursens struktur är ogiltig")
+
+    try:
+        _validate_course_drip_configuration(
+            drip_enabled=bool(course.get("drip_enabled")),
+            drip_interval_days=course.get("drip_interval_days"),
+        )
+    except ValueError as exc:
+        raise ValueError("Kursens droppinställningar är ogiltiga") from exc
+
+    cover_media_id = course.get("cover_media_id")
+    if cover_media_id is not None:
+        try:
+            await _validate_course_cover_assignment(
+                course_id=course_id,
+                cover_media_id=cover_media_id,
+            )
+        except ValueError as exc:
+            raise ValueError("Kursens omslagsbild är ogiltig") from exc
+
+    try:
+        amount_cents = int(course.get("price_amount_cents") or 0)
+    except (TypeError, ValueError):
+        _publish_validation_error("Kursen saknar giltigt pris")
+    if amount_cents <= 0:
+        _publish_validation_error("Kursen saknar giltigt pris")
+
+    await _derive_course_content_ready(course_id)
+    return amount_cents
+
+
+def _validate_publish_stripe_product(
+    product: Mapping[str, Any],
+    *,
+    expected_product_id: str,
+    course_id: str,
+    teacher_id: str,
+) -> None:
+    product_id = str(product.get("id") or "").strip()
+    if product_id != expected_product_id:
+        raise RuntimeError("Course Stripe product mapping is inconsistent")
+    if product.get("active") is False:
+        raise RuntimeError("Course Stripe product is inactive")
+
+    metadata = product.get("metadata") or {}
+    if not isinstance(metadata, Mapping):
+        raise RuntimeError("Course Stripe product metadata is invalid")
+    if (
+        str(metadata.get("course_id") or "").strip() != course_id
+        or str(metadata.get("teacher_id") or "").strip() != teacher_id
+        or str(metadata.get("type") or "").strip() != "course"
+    ):
+        raise RuntimeError("Course Stripe product metadata is inconsistent")
+
+
+def _publish_stripe_price_matches(
+    price: Mapping[str, Any],
+    *,
+    product_id: str,
+    amount_cents: int,
+) -> bool:
+    mapped_product_id = str(price.get("product") or "").strip()
+    if mapped_product_id != product_id:
+        raise RuntimeError("Course Stripe price mapping is inconsistent")
+    unit_amount = price.get("unit_amount")
+    currency = str(price.get("currency") or "").strip().lower()
+    is_active = bool(price.get("active", True))
+    return (
+        is_active
+        and unit_amount == amount_cents
+        and currency == _CANONICAL_COURSE_STRIPE_CURRENCY
+    )
+
+
+async def _resolve_publish_stripe_mapping(
+    course: Mapping[str, Any],
+    *,
+    teacher_id: str,
+    amount_cents: int,
+) -> tuple[str, str]:
+    course_id = str(course.get("id") or "").strip()
+    product_id = str(course.get("stripe_product_id") or "").strip() or None
+    active_price_id = str(course.get("active_stripe_price_id") or "").strip() or None
+
+    _require_stripe_for_course_mapping()
+
+    if active_price_id and not product_id:
+        raise RuntimeError("Course Stripe mapping is incomplete")
+
+    if product_id:
+        product = await _stripe_retrieve_course_product(product_id)
+        _validate_publish_stripe_product(
+            product,
+            expected_product_id=product_id,
+            course_id=course_id,
+            teacher_id=teacher_id,
+        )
+    else:
+        product_id = await _stripe_create_course_product(
+            course,
+            teacher_id=teacher_id,
+            idempotency_key=_course_publish_product_idempotency_key(course_id),
+        )
+
+    if active_price_id:
+        price = await _stripe_retrieve_price(active_price_id)
+        if _publish_stripe_price_matches(
+            price,
+            product_id=product_id,
+            amount_cents=amount_cents,
+        ):
+            return product_id, active_price_id
+
+    price_id = await _stripe_create_course_price(
+        product_id=product_id,
+        amount_cents=amount_cents,
+        idempotency_key=_course_publish_price_idempotency_key(
+            course_id=course_id,
+            product_id=product_id,
+            amount_cents=amount_cents,
+        ),
+    )
+    return product_id, price_id
+
+
+async def publish_course(
+    course_id: str,
+    *,
+    teacher_id: str | None = None,
+) -> dict[str, Any] | None:
+    normalized_course_id = str(course_id or "").strip()
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_course_id:
+        raise ValueError("Kursen hittades inte")
+    if not normalized_teacher_id:
+        raise PermissionError("Du saknar behörighet att publicera kursen")
+
+    course = await courses_repo.get_course_publish_subject(normalized_course_id)
+    if course is None:
+        return None
+
+    amount_cents = await _validate_course_publish_readiness(
+        course,
+        teacher_id=normalized_teacher_id,
+    )
+    product_id, price_id = await _resolve_publish_stripe_mapping(
+        course,
+        teacher_id=normalized_teacher_id,
+        amount_cents=amount_cents,
+    )
+    updated = await courses_repo.publish_course_state(
+        normalized_course_id,
+        stripe_product_id=product_id,
+        active_stripe_price_id=price_id,
+    )
+    if updated is None:
+        raise RuntimeError("Course publish state could not be persisted")
+    return dict(updated)
 
 
 async def refresh_course_sellability(course_id: str) -> dict[str, Any] | None:
@@ -1061,81 +1379,8 @@ async def refresh_course_sellability(course_id: str) -> dict[str, Any] | None:
 
 
 async def ensure_course_stripe_mapping(course_id: str, teacher_id: str) -> dict[str, Any]:
-    normalized_course_id = str(course_id or "").strip()
-    normalized_teacher_id = str(teacher_id or "").strip()
-    if not normalized_course_id:
-        raise ValueError("course_id is required")
-    if not normalized_teacher_id:
-        raise PermissionError("Course owner required")
-    if not await courses_repo.is_course_owner(normalized_course_id, normalized_teacher_id):
-        raise PermissionError("Not course owner")
-
-    course = await courses_repo.get_course(course_id=normalized_course_id)
-    if course is None:
-        raise LookupError("course not found")
-    if not _course_requires_stripe_mapping(course):
-        refreshed = await refresh_course_sellability(normalized_course_id)
-        return dict(refreshed) if refreshed is not None else dict(course)
-
-    _require_stripe_for_course_mapping()
-
-    amount_cents = int(course.get("price_amount_cents") or 0)
-    product_id = str(course.get("stripe_product_id") or "").strip() or None
-    active_price_id = str(course.get("active_stripe_price_id") or "").strip() or None
-
-    if active_price_id and not product_id:
-        raise RuntimeError("Course Stripe mapping is incomplete")
-
-    if product_id is None:
-        product_id = await _stripe_create_course_product(
-            course,
-            teacher_id=normalized_teacher_id,
-        )
-
-    desired_price_id = active_price_id
-    if active_price_id:
-        price = await _stripe_retrieve_price(active_price_id)
-        mapped_product_id = str(price.get("product") or "").strip()
-        if mapped_product_id != product_id:
-            raise RuntimeError("Course Stripe mapping is inconsistent")
-
-        unit_amount = price.get("unit_amount")
-        currency = str(price.get("currency") or "").strip().lower()
-        is_active = bool(price.get("active", True))
-        if (
-            not is_active
-            or unit_amount != amount_cents
-            or currency != _CANONICAL_COURSE_STRIPE_CURRENCY
-        ):
-            desired_price_id = await _stripe_create_course_price(
-                product_id=product_id,
-                amount_cents=amount_cents,
-            )
-    else:
-        desired_price_id = await _stripe_create_course_price(
-            product_id=product_id,
-            amount_cents=amount_cents,
-        )
-
-    if desired_price_id is None:
-        raise RuntimeError("Course Stripe price mapping could not be resolved")
-
-    if (
-        str(course.get("stripe_product_id") or "").strip() == product_id
-        and str(course.get("active_stripe_price_id") or "").strip() == desired_price_id
-    ):
-        refreshed = await refresh_course_sellability(normalized_course_id)
-        return dict(refreshed) if refreshed is not None else dict(course)
-
-    updated = await courses_repo.update_course_stripe_mapping(
-        normalized_course_id,
-        stripe_product_id=product_id,
-        active_stripe_price_id=desired_price_id,
-    )
-    if updated is None:
-        raise RuntimeError("Course Stripe mapping could not be persisted")
-    refreshed = await refresh_course_sellability(normalized_course_id)
-    return dict(refreshed) if refreshed is not None else dict(updated)
+    del course_id, teacher_id
+    raise RuntimeError("Kursens Stripe-koppling hanteras endast via publicering")
 
 
 async def create_lesson(*args: Any, **kwargs: Any) -> dict[str, Any]:

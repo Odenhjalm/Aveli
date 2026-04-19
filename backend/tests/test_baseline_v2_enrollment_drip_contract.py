@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -16,16 +17,14 @@ from psycopg.rows import dict_row
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-BASELINE_V2_SLOTS_DIR = ROOT_DIR / "supabase" / "baseline_v2_slots"
-BASELINE_V2_SLOT_FILES = [
-    "V2_0001_foundation_enums.sql",
-    "V2_0002_auth_subjects.sql",
-    "V2_0003_media_assets.sql",
-    "V2_0004_courses_and_public_content.sql",
-    "V2_0005_lessons_content_and_access.sql",
-    "V2_0013_workers.sql",
-]
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = BACKEND_DIR.parent
+BASELINE_V2_LOCK_PATH = BACKEND_DIR / "supabase" / "baseline_v2_slots.lock.json"
+
+
+def _baseline_v2_slot_paths() -> list[Path]:
+    lock = json.loads(BASELINE_V2_LOCK_PATH.read_text(encoding="utf-8"))
+    return [ROOT_DIR / entry["path"] for entry in lock["slots"]]
 
 
 def _admin_conninfo() -> str:
@@ -70,8 +69,8 @@ def _baseline_v2_connection():
 
 def _apply_baseline_v2_slots(conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
-        for filename in BASELINE_V2_SLOT_FILES:
-            cur.execute((BASELINE_V2_SLOTS_DIR / filename).read_text(encoding="utf-8"))
+        for path in _baseline_v2_slot_paths():
+            cur.execute(path.read_text(encoding="utf-8"))
 
 
 def _insert_auth_subject(conn: psycopg.Connection, user_id: str, *, role: str) -> None:

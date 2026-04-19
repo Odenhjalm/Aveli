@@ -25,7 +25,10 @@
         "controlling_planning_authority": "actual_truth/contracts/baseline_v2_authority_freeze_contract.md",
         "interpretation": "clean_conceptual_rebaseline",
         "implementation_target": "full_cutover",
-        "accepted_baseline_scope": "backend/supabase/baseline_slots through 0038 unless later V2 slot authority replaces it",
+        "accepted_baseline_scope": "backend/supabase/baseline_v2_slots",
+        "canonical_lock": "backend/supabase/baseline_v2_slots.lock.json",
+        "schema_verification_owner": "backend/supabase/baseline_v2_slots.lock.json",
+        "superseded_legacy_baseline": "backend/supabase/baseline_slots is archived legacy and non-authoritative",
         "onboarding_state": {
             "canonical_intermediate_state": "welcome_pending"
         },

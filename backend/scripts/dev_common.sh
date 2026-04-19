@@ -5,7 +5,7 @@ DEV_COMMON_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 DEV_COMMON_DIR="$(cd "$(dirname "$DEV_COMMON_PATH")" && pwd)"
 BACKEND_DIR="$(cd "$DEV_COMMON_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$BACKEND_DIR/.." && pwd)"
-LOCK_FILE="$BACKEND_DIR/supabase/baseline_slots.lock.json"
+LOCK_FILE="$BACKEND_DIR/supabase/baseline_v2_slots.lock.json"
 AUTH_SUBSTRATE_SQL="$ROOT_DIR/ops/sql/minimal_auth_substrate.sql"
 STORAGE_SUBSTRATE_SQL="$ROOT_DIR/ops/sql/minimal_storage_substrate.sql"
 

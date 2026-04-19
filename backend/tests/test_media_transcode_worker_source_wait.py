@@ -396,6 +396,15 @@ async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeyp
             calls["derived_cache_seconds"] = cache_seconds
             return DummyUpload()
 
+        async def inspect_object(self, path, *, ttl):
+            calls["inspect_path"] = path
+            calls["inspect_ttl"] = ttl
+            return worker.storage_service.StorageObjectMetadata(
+                path=path,
+                content_type="audio/mpeg",
+                size_bytes=9,
+            )
+
     async def fake_download_to_file(url, destination):
         calls["download_url"] = url
         calls["download_destination"] = destination
@@ -509,6 +518,137 @@ def test_worker_never_assigns_course_cover_identity() -> None:
     assert "set_course_cover" not in source
 
 
+@pytest.mark.anyio("asyncio")
+async def test_ready_verification_rejects_missing_storage_proof() -> None:
+    class DummyStorage:
+        bucket = "public-media"
+
+        async def inspect_object(self, path, *, ttl):
+            raise worker.storage_service.StorageObjectNotFoundError("missing")
+
+    with pytest.raises(RuntimeError, match="playback object is missing"):
+        await worker._verify_ready_contract(
+            asset={"media_type": "image", "purpose": "course_cover"},
+            playback_storage=DummyStorage(),
+            playback_object_path="media/derived/cover/courses/course-1/source.jpg",
+            playback_format="jpg",
+            playback_content_type="image/jpeg",
+            duration_seconds=None,
+        )
+
+
+@pytest.mark.anyio("asyncio")
+async def test_course_cover_image_transcode_marks_ready_with_jpg_format(
+    monkeypatch,
+) -> None:
+    calls: dict[str, object] = {}
+
+    class DummySigned:
+        url = "https://example.invalid/source"
+
+    class DummyUpload:
+        url = "https://example.invalid/upload"
+        headers = {"content-type": "image/jpeg"}
+
+    class DummyStorage:
+        def __init__(self, bucket: str):
+            self.bucket = bucket
+
+        async def get_presigned_url(self, path, **kwargs):
+            calls.setdefault("presigned_paths", []).append(path)
+            calls.setdefault("presigned_kwargs", []).append(kwargs)
+            return DummySigned()
+
+        async def create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+            calls["upload_path"] = path
+            calls["upload_content_type"] = content_type
+            calls["upload_upsert"] = upsert
+            calls["upload_cache_seconds"] = cache_seconds
+            return DummyUpload()
+
+        async def inspect_object(self, path, *, ttl):
+            calls.setdefault("inspect_paths", []).append(path)
+            calls.setdefault("inspect_ttls", []).append(ttl)
+            return worker.storage_service.StorageObjectMetadata(
+                path=path,
+                content_type="image/jpeg",
+                size_bytes=8,
+            )
+
+        async def delete_object(self, path):
+            calls["deleted_path"] = path
+
+    def fake_get_storage_service(bucket):
+        calls.setdefault("storage_buckets", []).append(bucket)
+        return DummyStorage(bucket)
+
+    async def fake_download_to_file(url, destination):
+        calls["download_url"] = url
+        calls["download_destination"] = destination
+        destination.write_bytes(b"png-bytes")
+
+    async def fake_consume_attempt():
+        calls["attempt_consumed"] = True
+
+    async def fake_run_ffmpeg_cover(input_path, output_path):
+        calls["ffmpeg_input"] = input_path
+        calls["ffmpeg_output"] = output_path
+        output_path.write_bytes(b"\xff\xd8jpeg\xff\xd9")
+
+    async def fake_upload_file(url, source, headers):
+        calls["uploaded_url"] = url
+        calls["uploaded_source"] = source
+        calls["uploaded_headers"] = headers
+
+    async def fake_mark_course_cover_ready_from_worker(**kwargs):
+        calls["mark_ready"] = kwargs
+        return {"updated": True}
+
+    monkeypatch.setattr(
+        worker.storage_service,
+        "get_storage_service",
+        fake_get_storage_service,
+    )
+    monkeypatch.setattr(worker, "_download_to_file", fake_download_to_file)
+    monkeypatch.setattr(worker, "_run_ffmpeg_cover", fake_run_ffmpeg_cover)
+    monkeypatch.setattr(worker, "_upload_file", fake_upload_file)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "mark_course_cover_ready_from_worker",
+        fake_mark_course_cover_ready_from_worker,
+    )
+
+    await worker._transcode_cover_asset(
+        {
+            "id": "course-cover-1",
+            "media_type": "image",
+            "purpose": "course_cover",
+            "original_object_path": "media/source/cover/courses/course-1/source.png",
+        },
+        fake_consume_attempt,
+    )
+
+    assert calls["storage_buckets"] == [
+        worker.settings.media_source_bucket,
+        worker.settings.media_public_bucket,
+    ]
+    assert calls["attempt_consumed"] is True
+    assert calls["upload_path"] == "media/derived/cover/courses/course-1/source.jpg"
+    assert calls["upload_content_type"] == "image/jpeg"
+    assert calls["uploaded_source"] == calls["ffmpeg_output"]
+    assert calls["inspect_paths"] == [
+        "media/derived/cover/courses/course-1/source.jpg",
+        "media/derived/cover/courses/course-1/source.jpg",
+    ]
+    assert calls["mark_ready"] == {
+        "media_id": "course-cover-1",
+        "playback_object_path": "media/derived/cover/courses/course-1/source.jpg",
+        "playback_storage_bucket": worker.settings.media_public_bucket,
+        "playback_format": "jpg",
+        "codec": "jpeg",
+    }
+
+
 def test_profile_media_output_path_preserves_subject_scope() -> None:
     assert (
         worker._derive_profile_media_output_path(
@@ -576,6 +716,15 @@ async def test_profile_media_image_transcode_marks_ready_through_worker(
             calls["upload_upsert"] = upsert
             calls["upload_cache_seconds"] = cache_seconds
             return DummyUpload()
+
+        async def inspect_object(self, path, *, ttl):
+            calls.setdefault("inspect_paths", []).append(path)
+            calls.setdefault("inspect_ttls", []).append(ttl)
+            return worker.storage_service.StorageObjectMetadata(
+                path=path,
+                content_type="image/jpeg",
+                size_bytes=8,
+            )
 
         async def delete_object(self, path):
             calls["deleted_path"] = path

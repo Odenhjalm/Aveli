@@ -25,10 +25,9 @@ course-access law, or media law.
   not by local developer defaults, legacy migration state, or ad hoc scripts.
 - Production deployment planning is invalid while this contract conflicts with
   `actual_truth/contracts/baseline_v2_authority_freeze_contract.md`.
-- Production launch is blocked unless the canonical baseline slot chain
-  accepted through `0038`, or a later accepted V2 slot authority that replaces
-  that chain, has been applied to the intended production Supabase database
-  target and verified against the contract set.
+- Production launch is blocked unless the canonical Baseline V2 slot chain has
+  been applied to the intended production Supabase database target and verified
+  against the contract set.
 - Production launch is blocked unless backend runtime, worker runtime, public
   courses, auth/onboarding, membership, course access, media, and payment
   surfaces pass their launch gates.
@@ -132,22 +131,21 @@ Backend runtime database authority:
 
 ## 5. BASELINE REQUIREMENT
 
-- The canonical baseline source is `backend/supabase/baseline_slots/`.
-- The canonical baseline lock is `backend/supabase/baseline_slots.lock.json`.
-- Public launch requires the accepted baseline slot chain through `0038` to be
-  applied and verified against the intended production Supabase database target,
-  unless and until a later accepted V2 slot authority replaces that chain.
+- The canonical baseline source is `backend/supabase/baseline_v2_slots/`.
+- The canonical baseline lock is `backend/supabase/baseline_v2_slots.lock.json`.
+- Public launch requires the canonical Baseline V2 slot chain to be applied and
+  verified against the intended production Supabase database target.
 - Public launch requires verification that the production schema matches the
-  accepted baseline authority through `0038`, or the later accepted V2
-  replacement authority, for every launch-critical runtime surface.
+  accepted Baseline V2 authority for every launch-critical runtime surface.
 - Legacy migration paths are not launch authority when baseline slots are the
   canonical truth.
 - `backend/supabase/migrations/` is legacy-only in this repository and must not
   redefine production launch authority.
 - Archive migration paths and historical launch reports are reference evidence
   only and cannot override the baseline slot chain.
-- Accepted baseline slots and `backend/supabase/baseline_slots.lock.json` are
-  evidence for launch authority; this contract does not authorize editing them.
+- Accepted Baseline V2 slots and `backend/supabase/baseline_v2_slots.lock.json`
+  are evidence for launch authority; this contract does not authorize editing
+  them.
 
 ## 6. RUNTIME LAUNCH GATES
 

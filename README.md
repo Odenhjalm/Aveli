@@ -10,10 +10,9 @@ Authority summary:
 
 - Baseline V2 is a clean conceptual rebaseline with full cutover as the
   implementation target.
-- Canonical local baseline evidence is `backend/supabase/baseline_slots/` and
-  `backend/supabase/baseline_slots.lock.json`.
-- Accepted current baseline scope is through `0038` unless later accepted V2
-  slot authority replaces that chain.
+- Canonical local baseline evidence is `backend/supabase/baseline_v2_slots/`
+  and `backend/supabase/baseline_v2_slots.lock.json`.
+- Superseded baseline slot chains are archived legacy evidence only.
 - Legacy migrations, historical launch reports, stale docs, local notes, and
   README text do not override accepted contracts.
 - LiveKit surfaces may exist in the repository, but LiveKit runtime is
@@ -99,15 +98,15 @@ The only valid backend startup entrypoint is `backend.bootstrap.run_server`.
 ## Baseline And Local DB Authority
 
 - Authoritative local DB source:
-  `backend/supabase/baseline_slots/`.
+  `backend/supabase/baseline_v2_slots/`.
 - Canonical baseline lock:
-  `backend/supabase/baseline_slots.lock.json`.
+  `backend/supabase/baseline_v2_slots.lock.json`.
 - Canonical native local target:
   `postgresql://postgres:postgres@127.0.0.1:5432/aveli_local`.
 - Ensure the native local database exists with
   `backend/scripts/ensure_db.sh`.
 - Materialize the accepted local baseline on native local Postgres with
-  `backend/scripts/replay_baseline.sh`.
+  `backend/scripts/replay_v2.sh`.
 - Root `supabase/migrations/`, archived migrations, cloned cloud DB state, and
   historical reports are reference or tooling inputs only. They do not override
   baseline slots, the lockfile, or accepted contracts.

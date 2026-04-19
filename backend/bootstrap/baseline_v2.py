@@ -12,58 +12,120 @@ from backend.bootstrap.load_env import load_env
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 BASELINE_V2_DIR = ROOT_DIR / "backend" / "supabase" / "baseline_v2_slots"
+BASELINE_V2_LOCK_FILE = ROOT_DIR / "backend" / "supabase" / "baseline_v2_slots.lock.json"
 
 MANAGED_SCHEMAS = ("app", "auth", "storage")
 BASELINE_MODE_ENV = "BASELINE_MODE"
 DEFAULT_BASELINE_MODE = "V2"
 CLOUD_RUNTIME_ENV_KEYS = ("FLY_APP_NAME", "K_SERVICE", "AWS_EXECUTION_ENV", "DYNO")
-
-EXPECTED_V2_SCHEMA_HASH = (
-    "b8f481fa9b19240925f4a7482949d102d733467ba862bcff4201a968d3e0672a"
-)
-EXPECTED_V2_COUNTS = {
-    "enums": 13,
-    "tables": 30,
-    "app_tables": 27,
-    "views": 5,
-    "fks": 37,
-    "constraints": 147,
-    "triggers": 11,
-    "functions": 21,
-}
-EXPECTED_V2_SLOTS = (
-    "V2_0001_foundation_enums.sql",
-    "V2_0002_auth_subjects.sql",
-    "V2_0003_media_assets.sql",
-    "V2_0004_courses_and_public_content.sql",
-    "V2_0005_lessons_content_and_access.sql",
-    "V2_0006_media_placement_and_home_audio.sql",
-    "V2_0007_profile_media.sql",
-    "V2_0008_commerce_membership.sql",
-    "V2_0009_runtime_support_inert.sql",
-    "V2_0010_read_projections.sql",
-    "V2_0011_auth_session_and_subject_authority.sql",
-    "V2_0012_core_substrate_profiles_storage_referrals.sql",
-    "V2_0013_workers.sql",
-    "V2_0014_media_asset_content_identity.sql",
-    "V2_0015_media_worker_lifecycle_functions.sql",
-    "V2_0016_media_worker_failed_requeue.sql",
-)
-
-LEGACY_COLUMNS = ("role_v2", "is_admin", "course_step", "created_by", "is_published")
-WORKER_FUNCTIONS = (
-    "canonical_worker_advance_course_enrollment_drip",
-    "canonical_worker_defer_media_asset_processing",
-    "canonical_worker_increment_media_asset_attempts",
-    "canonical_worker_lock_media_asset_for_processing",
-    "canonical_worker_release_stale_media_asset_locks",
-    "canonical_worker_requeue_failed_media_asset",
-    "canonical_worker_transition_media_asset",
-)
+PRODUCTION_ENV_VALUES = {"prod", "production", "live"}
+LOCAL_DATABASE_HOSTS = {"127.0.0.1", "localhost", "::1", "db", "host.docker.internal"}
 
 
 class BaselineV2Error(RuntimeError):
     """Raised when the local DB is not an empty or valid Baseline V2 state."""
+
+
+def _lf_normalized_sql_bytes(path: Path) -> bytes:
+    source = path.read_text(encoding="utf-8")
+    normalized = source.replace("\r\n", "\n").replace("\r", "\n")
+    return normalized.encode("utf-8")
+
+
+def _sha256_lf(path: Path) -> str:
+    return hashlib.sha256(_lf_normalized_sql_bytes(path)).hexdigest()
+
+
+def _load_v2_lock() -> dict[str, object]:
+    try:
+        payload = json.loads(BASELINE_V2_LOCK_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise BaselineV2Error(f"missing V2 lock file: {BASELINE_V2_LOCK_FILE}") from exc
+    except json.JSONDecodeError as exc:
+        raise BaselineV2Error(f"invalid V2 lock JSON: {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise BaselineV2Error("V2 lock must contain a JSON object")
+    if payload.get("baseline_dir") != "backend/supabase/baseline_v2_slots":
+        raise BaselineV2Error("V2 lock baseline_dir must be backend/supabase/baseline_v2_slots")
+    if payload.get("hash_strategy") != "sha256_lf_normalized_utf8":
+        raise BaselineV2Error("V2 lock hash_strategy must be sha256_lf_normalized_utf8")
+
+    return payload
+
+
+def _lock_slots(payload: dict[str, object]) -> tuple[dict[str, object], ...]:
+    slots = payload.get("slots")
+    if not isinstance(slots, list) or not slots:
+        raise BaselineV2Error("V2 lock must contain a non-empty slots list")
+
+    locked_slots: list[dict[str, object]] = []
+    for entry in slots:
+        if not isinstance(entry, dict):
+            raise BaselineV2Error("each V2 lock slot entry must be an object")
+        locked_slots.append(entry)
+
+    expected_sequence = list(range(1, len(locked_slots) + 1))
+    actual_sequence = [int(entry.get("slot", -1)) for entry in locked_slots]
+    if actual_sequence != expected_sequence:
+        raise BaselineV2Error(
+            f"V2 lock slot sequence mismatch: expected {expected_sequence}, got {actual_sequence}"
+        )
+
+    return tuple(locked_slots)
+
+
+def verify_v2_lock() -> dict[str, object]:
+    payload = _load_v2_lock()
+    locked_slots = _lock_slots(payload)
+
+    for entry in locked_slots:
+        slot_number = entry["slot"]
+        filename = entry.get("filename")
+        relative_path = entry.get("path")
+        expected_hash = entry.get("sha256")
+
+        if not isinstance(filename, str) or not filename:
+            raise BaselineV2Error(f"V2 lock slot {slot_number} is missing filename")
+        if not isinstance(relative_path, str) or not relative_path:
+            raise BaselineV2Error(f"V2 lock slot {slot_number} is missing path")
+        if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+            raise BaselineV2Error(f"V2 lock slot {slot_number} is missing sha256")
+
+        path = ROOT_DIR / relative_path
+        if path.parent != BASELINE_V2_DIR:
+            raise BaselineV2Error(f"V2 lock slot {slot_number} points outside V2 dir: {relative_path}")
+        if path.name != filename:
+            raise BaselineV2Error(
+                f"V2 lock slot {slot_number} filename mismatch: {filename} != {path.name}"
+            )
+        if not path.is_file():
+            raise BaselineV2Error(f"V2 lock slot {slot_number} missing on disk: {relative_path}")
+
+        actual_hash = _sha256_lf(path)
+        if actual_hash != expected_hash:
+            raise BaselineV2Error(
+                f"V2 lock slot {slot_number} hash mismatch for {filename}: "
+                f"expected {expected_hash}, got {actual_hash}"
+            )
+
+    verification = payload.get("schema_verification")
+    if not isinstance(verification, dict):
+        raise BaselineV2Error("V2 lock must contain schema_verification")
+    if not isinstance(verification.get("expected_schema_hash"), str):
+        raise BaselineV2Error("V2 lock schema_verification must define expected_schema_hash")
+    if not isinstance(verification.get("expected_counts"), dict):
+        raise BaselineV2Error("V2 lock schema_verification must define expected_counts")
+
+    return payload
+
+
+def _schema_verification() -> dict[str, object]:
+    payload = verify_v2_lock()
+    verification = payload["schema_verification"]
+    if not isinstance(verification, dict):
+        raise BaselineV2Error("V2 lock schema_verification is invalid")
+    return verification
 
 
 def _prepare_site_packages() -> None:
@@ -100,10 +162,30 @@ def _database_url(database_url: str | None = None) -> str:
     return value
 
 
-def _require_local_database(database_url: str) -> None:
+def _parse_postgresql_database_url(database_url: str):
     parsed = urlsplit(database_url)
     if parsed.scheme not in {"postgresql", "postgres"}:
         raise BaselineV2Error(f"DATABASE_URL must be PostgreSQL, got {parsed.scheme!r}")
+    if not parsed.hostname:
+        raise BaselineV2Error("DATABASE_URL must include a hostname")
+    return parsed
+
+
+def _cloud_runtime_active() -> bool:
+    app_env = str(os.environ.get("APP_ENV") or "").strip().lower()
+    return app_env in PRODUCTION_ENV_VALUES or any(os.environ.get(key) for key in CLOUD_RUNTIME_ENV_KEYS)
+
+
+def validate_runtime_database_url(database_url: str) -> None:
+    parsed = _parse_postgresql_database_url(database_url)
+    if _cloud_runtime_active() and parsed.hostname in LOCAL_DATABASE_HOSTS:
+        raise BaselineV2Error(
+            "runtime DATABASE_URL points to a local host while production/cloud runtime is active"
+        )
+
+
+def _require_local_database(database_url: str) -> None:
+    parsed = _parse_postgresql_database_url(database_url)
     if parsed.hostname != "127.0.0.1":
         raise BaselineV2Error(
             f"V2 baseline bootstrap is local-only; DATABASE_URL host is {parsed.hostname!r}"
@@ -132,12 +214,8 @@ def _scalar(conn: psycopg.Connection, sql: str, params: tuple = ()) -> object:
 
 
 def _slot_paths() -> tuple[Path, ...]:
-    actual = tuple(path.name for path in sorted(BASELINE_V2_DIR.glob("V2_*.sql")))
-    if actual != EXPECTED_V2_SLOTS:
-        raise BaselineV2Error(
-            f"Baseline V2 slot order mismatch: expected {EXPECTED_V2_SLOTS!r}, got {actual!r}"
-        )
-    return tuple(BASELINE_V2_DIR / name for name in EXPECTED_V2_SLOTS)
+    payload = verify_v2_lock()
+    return tuple(ROOT_DIR / str(entry["path"]) for entry in _lock_slots(payload))
 
 
 def _managed_schemas(conn: psycopg.Connection) -> list[str]:
@@ -171,13 +249,12 @@ def _replay_v2(conn: psycopg.Connection) -> None:
             "refusing to replay V2 into a non-empty managed schema state"
         )
 
-    for slot in _slot_paths():
-        try:
-            conn.execute(slot.read_text(encoding="utf-8"))
-            conn.commit()
-        except Exception as exc:
-            conn.rollback()
-            raise BaselineV2Error(f"V2 replay failed in {slot.name}: {exc}") from exc
+    try:
+        with conn.transaction():
+            for slot in _slot_paths():
+                conn.execute(slot.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise BaselineV2Error(f"V2 replay failed atomically: {exc}") from exc
 
 
 def _schema_fingerprint(conn: psycopg.Connection) -> str:
@@ -375,9 +452,32 @@ def _schema_counts(conn: psycopg.Connection) -> dict[str, int]:
 
 def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
     failures: list[str] = []
+    verification = _schema_verification()
+    expected_counts = {
+        str(key): int(value)
+        for key, value in dict(verification["expected_counts"]).items()
+    }
+    forbidden_legacy_columns = tuple(
+        str(column) for column in verification.get("forbidden_legacy_columns", ())
+    )
+    expected_relations = dict(verification.get("expected_relations", {}))
+    runtime_media_expectation = dict(expected_relations.get("app.runtime_media", {}))
+    expected_runtime_media_relkind = str(runtime_media_expectation.get("relkind", "v"))
+    required_triggers = tuple(
+        dict(item) for item in verification.get("required_triggers", ())
+    )
+    forbidden_columns = tuple(
+        dict(item) for item in verification.get("forbidden_columns", ())
+    )
+    expected_worker_functions = tuple(
+        str(function)
+        for function in verification.get("required_worker_functions", ())
+    )
+    expected_schema_hash = str(verification["expected_schema_hash"])
+
     counts = _schema_counts(conn)
-    if counts != EXPECTED_V2_COUNTS:
-        failures.append(f"count mismatch: expected {EXPECTED_V2_COUNTS}, got {counts}")
+    if counts != expected_counts:
+        failures.append(f"count mismatch: expected {expected_counts}, got {counts}")
 
     invalid_constraints = _fetchall(
         conn,
@@ -399,27 +499,32 @@ def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
         """
         select table_schema, table_name, column_name
           from information_schema.columns
-         where table_schema in ('app', 'auth', 'storage')
-           and column_name = any(%s)
-         order by 1, 2, 3
+          where table_schema in ('app', 'auth', 'storage')
+            and column_name = any(%s)
+          order by 1, 2, 3
         """,
-        (list(LEGACY_COLUMNS),),
+        (list(forbidden_legacy_columns),),
     )
     if legacy_columns:
         failures.append(f"legacy columns present: {legacy_columns!r}")
 
-    media_owner_id = _scalar(
-        conn,
-        """
-        select count(*)
-          from information_schema.columns
-         where table_schema = 'app'
-           and table_name = 'media_assets'
-           and column_name = 'owner_id'
-        """,
-    )
-    if media_owner_id:
-        failures.append("media_assets.owner_id is present")
+    for forbidden_column in forbidden_columns:
+        column_schema = str(forbidden_column.get("schema", ""))
+        column_table = str(forbidden_column.get("table", ""))
+        column_name = str(forbidden_column.get("column", ""))
+        column_count = _scalar(
+            conn,
+            """
+            select count(*)
+              from information_schema.columns
+             where table_schema = %s
+               and table_name = %s
+               and column_name = %s
+            """,
+            (column_schema, column_table, column_name),
+        )
+        if column_count:
+            failures.append(f"{column_schema}.{column_table}.{column_name} is present")
 
     runtime_media_relkind = _scalar(
         conn,
@@ -431,41 +536,34 @@ def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
            and c.relname = 'runtime_media'
         """,
     )
-    if runtime_media_relkind != "v":
+    if runtime_media_relkind != expected_runtime_media_relkind:
         failures.append(
-            f"runtime_media relkind is {runtime_media_relkind!r}, expected 'v'"
+            f"runtime_media relkind is {runtime_media_relkind!r}, "
+            f"expected {expected_runtime_media_relkind!r}"
         )
 
-    payment_events_processed_at = _scalar(
-        conn,
-        """
-        select count(*)
-          from information_schema.columns
-         where table_schema = 'app'
-           and table_name = 'payment_events'
-           and column_name = 'processed_at'
-        """,
-    )
-    if payment_events_processed_at:
-        failures.append("payment_events.processed_at is present")
+    for trigger in required_triggers:
+        trigger_schema = str(trigger.get("schema", ""))
+        trigger_table = str(trigger.get("table", ""))
+        trigger_name = str(trigger.get("trigger", ""))
+        trigger_count = _scalar(
+            conn,
+            """
+            select count(*)
+              from pg_trigger tg
+              join pg_class cls on cls.oid = tg.tgrelid
+              join pg_namespace n on n.oid = cls.relnamespace
+             where n.nspname = %s
+               and cls.relname = %s
+               and tg.tgname = %s
+               and not tg.tgisinternal
+            """,
+            (trigger_schema, trigger_table, trigger_name),
+        )
+        if trigger_count != 1:
+            failures.append(f"{trigger_schema}.{trigger_table}.{trigger_name} trigger is missing")
 
-    media_lifecycle_trigger_count = _scalar(
-        conn,
-        """
-        select count(*)
-          from pg_trigger tg
-          join pg_class cls on cls.oid = tg.tgrelid
-          join pg_namespace n on n.oid = cls.relnamespace
-         where n.nspname = 'app'
-           and cls.relname = 'media_assets'
-           and tg.tgname = 'media_assets_lifecycle_contract'
-           and not tg.tgisinternal
-        """,
-    )
-    if media_lifecycle_trigger_count != 1:
-        failures.append("media_assets_lifecycle_contract trigger is missing")
-
-    worker_functions = [
+    observed_worker_functions = [
         str(row[0])
         for row in _fetchall(
             conn,
@@ -474,19 +572,19 @@ def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
               from pg_proc p
               join pg_namespace n on n.oid = p.pronamespace
              where n.nspname = 'app'
-               and p.proname = any(%s)
-             order by 1
+                and p.proname = any(%s)
+              order by 1
             """,
-            (list(WORKER_FUNCTIONS),),
+            (list(expected_worker_functions),),
         )
     ]
-    if tuple(worker_functions) != WORKER_FUNCTIONS:
-        failures.append(f"worker functions mismatch: {worker_functions!r}")
+    if tuple(observed_worker_functions) != expected_worker_functions:
+        failures.append(f"worker functions mismatch: {observed_worker_functions!r}")
 
     schema_hash = _schema_fingerprint(conn)
-    if schema_hash != EXPECTED_V2_SCHEMA_HASH:
+    if schema_hash != expected_schema_hash:
         failures.append(
-            f"schema hash mismatch: expected {EXPECTED_V2_SCHEMA_HASH}, got {schema_hash}"
+            f"schema hash mismatch: expected {expected_schema_hash}, got {schema_hash}"
         )
 
     if failures:
@@ -496,7 +594,7 @@ def _verify_v2_schema(conn: psycopg.Connection) -> dict[str, object]:
         "schema_hash": schema_hash,
         "counts": counts,
         "runtime_media_relkind": runtime_media_relkind,
-        "payment_events_processed_at": bool(payment_events_processed_at),
+        "forbidden_columns": [item for item in forbidden_columns],
     }
 
 
@@ -521,6 +619,34 @@ def ensure_v2_baseline(database_url: str | None = None) -> dict[str, object]:
     return {
         "mode": mode,
         "state": state,
+        **verification,
+    }
+
+
+def verify_v2_runtime(database_url: str | None = None) -> dict[str, object]:
+    mode = baseline_mode()
+    if mode != DEFAULT_BASELINE_MODE:
+        raise BaselineV2Error(
+            f"unsupported {BASELINE_MODE_ENV}={mode!r}; only {DEFAULT_BASELINE_MODE} is allowed"
+        )
+
+    verify_v2_lock()
+    url = _database_url(database_url)
+    validate_runtime_database_url(url)
+    with psycopg.connect(
+        url,
+        connect_timeout=5,
+        options="-c default_transaction_read_only=on",
+    ) as conn:
+        if _db_is_empty(conn):
+            raise BaselineV2Error(
+                "Baseline V2 runtime schema is empty; runtime startup will not replay"
+            )
+        verification = _verify_v2_schema(conn)
+
+    return {
+        "mode": mode,
+        "state": "verified",
         **verification,
     }
 

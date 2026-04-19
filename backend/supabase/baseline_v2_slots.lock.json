@@ -1,0 +1,167 @@
+{
+  "manifest_version": 2,
+  "baseline_id": "baseline_v2",
+  "status": "CANONICAL",
+  "baseline_dir": "backend/supabase/baseline_v2_slots",
+  "lock_file": "backend/supabase/baseline_v2_slots.lock.json",
+  "supersedes": [
+    "backend/supabase/baseline_slots",
+    "backend/supabase/baseline_slots.lock.json",
+    "backend/supabase/ACTIVE_BASELINE"
+  ],
+  "protected_min_slot": 1,
+  "protected_max_slot": 16,
+  "hash_strategy": "sha256_lf_normalized_utf8",
+  "schema_verification": {
+    "schema_hash_algorithm": "backend.bootstrap.baseline_v2.schema_fingerprint_v1",
+    "expected_schema_hash": "a6c8366c5040999f9132d80dd1b65965c6e6bf6e54207e36bd407c058e2e42c6",
+    "expected_counts": {
+      "enums": 13,
+      "tables": 30,
+      "app_tables": 27,
+      "views": 5,
+      "fks": 37,
+      "constraints": 149,
+      "triggers": 11,
+      "functions": 21
+    },
+    "forbidden_legacy_columns": [
+      "role_v2",
+      "is_admin",
+      "course_step",
+      "created_by",
+      "is_published"
+    ],
+    "forbidden_columns": [
+      {
+        "schema": "app",
+        "table": "media_assets",
+        "column": "owner_id"
+      },
+      {
+        "schema": "app",
+        "table": "payment_events",
+        "column": "processed_at"
+      }
+    ],
+    "expected_relations": {
+      "app.runtime_media": {
+        "relkind": "v"
+      }
+    },
+    "required_triggers": [
+      {
+        "schema": "app",
+        "table": "media_assets",
+        "trigger": "media_assets_lifecycle_contract"
+      }
+    ],
+    "required_worker_functions": [
+      "canonical_worker_advance_course_enrollment_drip",
+      "canonical_worker_defer_media_asset_processing",
+      "canonical_worker_increment_media_asset_attempts",
+      "canonical_worker_lock_media_asset_for_processing",
+      "canonical_worker_release_stale_media_asset_locks",
+      "canonical_worker_requeue_failed_media_asset",
+      "canonical_worker_transition_media_asset"
+    ]
+  },
+  "slots": [
+    {
+      "slot": 1,
+      "filename": "V2_0001_foundation_enums.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0001_foundation_enums.sql",
+      "sha256": "bec74d76a409f4d960f92d4b4f2f6c3ea1e6111b43f6a38ea06dc9d7d184534f"
+    },
+    {
+      "slot": 2,
+      "filename": "V2_0002_auth_subjects.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0002_auth_subjects.sql",
+      "sha256": "5b1696ee8531d877f32328694b89a03e68394dff267b988ef0465f0bd0d3cb57"
+    },
+    {
+      "slot": 3,
+      "filename": "V2_0003_media_assets.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0003_media_assets.sql",
+      "sha256": "e3b0d4f0490e40f1c3f866ee8de5bccd8c3c23b513a45a4becbc6d339b157ada"
+    },
+    {
+      "slot": 4,
+      "filename": "V2_0004_courses_and_public_content.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0004_courses_and_public_content.sql",
+      "sha256": "9e93cd8514487bfe208ef9d341060dfac789a37a6cbcf1a0fb7ee3f3edf938cd"
+    },
+    {
+      "slot": 5,
+      "filename": "V2_0005_lessons_content_and_access.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0005_lessons_content_and_access.sql",
+      "sha256": "227a4b3a1ccb135a00ac1845efd5a3b8e8d807e1360af4313cdb3145446d029a"
+    },
+    {
+      "slot": 6,
+      "filename": "V2_0006_media_placement_and_home_audio.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0006_media_placement_and_home_audio.sql",
+      "sha256": "b19f4ce0a86969cf11c221ec44849dd9a7518e266b355be4e2e004933f9b925c"
+    },
+    {
+      "slot": 7,
+      "filename": "V2_0007_profile_media.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0007_profile_media.sql",
+      "sha256": "43fff3a840d41001e00135ec1b45c9b8e21b5e54bbb1480e32c2314dc90e4ac2"
+    },
+    {
+      "slot": 8,
+      "filename": "V2_0008_commerce_membership.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0008_commerce_membership.sql",
+      "sha256": "f28a431025605c1aad36b46e2c6a451fe55b8dd41429aea33b43e6424fc21bc4"
+    },
+    {
+      "slot": 9,
+      "filename": "V2_0009_runtime_support_inert.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0009_runtime_support_inert.sql",
+      "sha256": "32da9b38d3d8005481f9b8031899cffbcbf030df7f82e60707b048f81a5d5a0a"
+    },
+    {
+      "slot": 10,
+      "filename": "V2_0010_read_projections.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0010_read_projections.sql",
+      "sha256": "97548c0b77da58eb82cd941936a646305c06be57879dd290c1147b354663e74a"
+    },
+    {
+      "slot": 11,
+      "filename": "V2_0011_auth_session_and_subject_authority.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0011_auth_session_and_subject_authority.sql",
+      "sha256": "5491f7d8b33b8b242f92f601a8f61c827b85903fd6f75e080d14dca9dda1a537"
+    },
+    {
+      "slot": 12,
+      "filename": "V2_0012_core_substrate_profiles_storage_referrals.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0012_core_substrate_profiles_storage_referrals.sql",
+      "sha256": "cfa82a9a2a9c4c7a51d80d3a0c45a86eb71aaa2f4571294fbac63a69766791fa"
+    },
+    {
+      "slot": 13,
+      "filename": "V2_0013_workers.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0013_workers.sql",
+      "sha256": "d23221fc997c74a2847b36a7f86719e20cffce419fb209ce8726d5f1ffd7eb66"
+    },
+    {
+      "slot": 14,
+      "filename": "V2_0014_media_asset_content_identity.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0014_media_asset_content_identity.sql",
+      "sha256": "9a43f5d8db6acf8084bb2ec12209a793e84e0d5e6da12dc93fdce8ff529bc697"
+    },
+    {
+      "slot": 15,
+      "filename": "V2_0015_media_worker_lifecycle_functions.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0015_media_worker_lifecycle_functions.sql",
+      "sha256": "89a929da0e794af860e43e69ccbc8de20517580d6b435da841788f2d1f98ec73"
+    },
+    {
+      "slot": 16,
+      "filename": "V2_0016_media_worker_failed_requeue.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0016_media_worker_failed_requeue.sql",
+      "sha256": "7c926a424747359718f4e5077660057947e661d94df46d7affbb8a4a26780884"
+    }
+  ]
+}

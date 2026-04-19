@@ -263,11 +263,11 @@ backend_port="${BACKEND_PORT:-$(pick_free_port)}"
 backend_url="${QA_API_BASE_URL:-http://127.0.0.1:${backend_port}}"
 backend_pid=""
 
-( cd "$BACKEND_DIR"
-  "$AVELI_BACKEND_PYTHON" -m uvicorn app.main:app --host 127.0.0.1 --port "${backend_port}" >/tmp/backend_uvicorn.log 2>&1 &
-  echo $! >/tmp/backend_uvicorn.pid
+( cd "$ROOT_DIR"
+  PORT="${backend_port}" "$AVELI_BACKEND_PYTHON" -m backend.bootstrap.run_server >/tmp/backend_bootstrap.log 2>&1 &
+  echo $! >/tmp/backend_bootstrap.pid
 )
-backend_pid="$(cat /tmp/backend_uvicorn.pid || true)"
+backend_pid="$(cat /tmp/backend_bootstrap.pid || true)"
 trap '[[ -n "${backend_pid:-}" ]] && kill "$backend_pid" >/dev/null 2>&1 || true' EXIT
 
 # wait for ready
@@ -280,7 +280,7 @@ for _ in {1..30}; do
   sleep 1
 done
 if [[ "$ready" != "true" ]]; then
-  echo "verify_all: FAIL (backend smoke: not ready) (see /tmp/backend_uvicorn.log)" >&2
+  echo "verify_all: FAIL (backend smoke: not ready) (see /tmp/backend_bootstrap.log)" >&2
   exit 1
 fi
 
@@ -288,7 +288,7 @@ if (cd "$BACKEND_DIR" && QA_BASE_URL="$backend_url" QA_API_BASE_URL="$backend_ur
   backend_smoke_status="PASS"
 else
   backend_smoke_status="FAIL"
-  echo "verify_all: FAIL (backend smoke) (see /tmp/backend_uvicorn.log)" >&2
+  echo "verify_all: FAIL (backend smoke) (see /tmp/backend_bootstrap.log)" >&2
   exit 1
 fi
 

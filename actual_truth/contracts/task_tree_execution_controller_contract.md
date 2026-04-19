@@ -33,8 +33,8 @@ The controller may reason only from the following repo-visible authorities:
    - `actual_truth/contracts/ratifications/T02_create_profile_surface_decision.md`
    - `actual_truth/contracts/ratifications/T03_application_subject_naming_decision.md`
 4. active contracts in `actual_truth/contracts/`
-5. canonical baseline authority in `backend/supabase/baseline_slots/` and
-   `backend/supabase/baseline_slots.lock.json`
+5. canonical baseline authority in `backend/supabase/baseline_v2_slots/` and
+   `backend/supabase/baseline_v2_slots.lock.json`
 6. materialized DAG files in
    `actual_truth/DETERMINED_TASKS/onboarding_domain_alignment/`, including:
    - `DAG_SUMMARY.md`

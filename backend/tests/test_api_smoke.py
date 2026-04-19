@@ -120,11 +120,8 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
 
     captured_session: dict[str, object] = {}
 
-    def fake_product_create(**_):
-        return {"id": f"prod_test_{uuid.uuid4().hex}"}
-
-    def fake_price_create(**_):
-        return {"id": f"price_test_{uuid.uuid4().hex}"}
+    def fail_stripe_entity_create(**_):
+        raise AssertionError("course create/update must not create Stripe entities")
 
     def fake_customer_create(**_):
         return {"id": "cus_test"}
@@ -144,8 +141,8 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
             "data": {"object": body},
         }
 
-    monkeypatch.setattr("stripe.Product.create", fake_product_create)
-    monkeypatch.setattr("stripe.Price.create", fake_price_create)
+    monkeypatch.setattr("stripe.Product.create", fail_stripe_entity_create)
+    monkeypatch.setattr("stripe.Price.create", fail_stripe_entity_create)
     monkeypatch.setattr("stripe.Customer.create", fake_customer_create)
     monkeypatch.setattr("stripe.checkout.Session.create", fake_checkout_create)
     monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
@@ -179,6 +176,25 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
         )
         assert course_resp.status_code == 200, course_resp.text
         course_id = course_resp.json()["id"]
+        async with db.pool.connection() as conn:  # type: ignore
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    """
+                    UPDATE app.courses
+                       SET visibility = 'public'::app.course_visibility,
+                           content_ready = true,
+                           stripe_product_id = %s,
+                           active_stripe_price_id = %s,
+                           sellable = true
+                     WHERE id = %s
+                    """,
+                    (
+                        f"prod_smoke_{uuid.uuid4().hex}",
+                        f"price_smoke_{uuid.uuid4().hex}",
+                        course_id,
+                    ),
+                )
+                await conn.commit()
 
         checkout_resp = await async_client.post(
             "/api/checkout/create",

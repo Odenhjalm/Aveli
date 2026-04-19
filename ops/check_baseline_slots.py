@@ -9,19 +9,17 @@ import sys
 from pathlib import Path
 
 
-SLOT_RE = re.compile(r"^(?P<slot>\d{4})_(?P<label>.+)\.sql$")
+SLOT_RE = re.compile(r"^V2_(?P<slot>\d{4})_(?P<label>.+)\.sql$")
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    source = path.read_text(encoding="utf-8")
+    normalized = source.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _fail(message: str) -> int:
-    print(f"baseline-freeze: FAIL - {message}", file=sys.stderr)
+    print(f"baseline-v2-lock: FAIL - {message}", file=sys.stderr)
     return 1
 
 
@@ -71,19 +69,19 @@ def _scan_baseline_dir(baseline_dir: Path) -> list[dict]:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Verify that protected baseline slots remain immutable and that only "
-            "append-only additions above the protected range are present."
+            "Verify that the canonical Baseline V2 lock exactly matches the "
+            "checked-in V2 slot files using LF-normalized SHA-256 hashes."
         )
     )
     parser.add_argument(
         "--manifest",
-        default="backend/supabase/baseline_slots.lock.json",
-        help="Path to the checked-in lock manifest.",
+        default="backend/supabase/baseline_v2_slots.lock.json",
+        help="Path to the checked-in Baseline V2 lock manifest.",
     )
     parser.add_argument(
         "--baseline-dir",
-        default="backend/supabase/baseline_slots",
-        help="Directory containing baseline slot SQL files.",
+        default="backend/supabase/baseline_v2_slots",
+        help="Directory containing Baseline V2 slot SQL files.",
     )
     args = parser.parse_args()
 
@@ -190,7 +188,7 @@ def main() -> int:
     append_only_count = len(append_only_entries)
     highest_slot = max(current_slots) if current_slots else protected_max_slot
     print(
-        "baseline-freeze: PASS - protected slots "
+        "baseline-v2-lock: PASS - protected slots "
         f"{protected_min_slot:04d}-{protected_max_slot:04d} unchanged; "
         f"accepted replay slots: {len(manifest_sequence)}; "
         f"append-only additions detected: {append_only_count}; "

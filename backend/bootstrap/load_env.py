@@ -2,6 +2,10 @@ import os
 from pathlib import Path
 
 
+PRODUCTION_ENV_VALUES = {"prod", "production", "live"}
+CLOUD_RUNTIME_ENV_KEYS = ("FLY_APP_NAME", "K_SERVICE", "AWS_EXECUTION_ENV", "DYNO")
+
+
 def parse_env_file(path: Path) -> dict:
     env = {}
     if not path.exists():
@@ -22,6 +26,11 @@ def parse_env_file(path: Path) -> dict:
     return env
 
 
+def cloud_runtime_active() -> bool:
+    app_env = str(os.getenv("APP_ENV") or "").strip().lower()
+    return app_env in PRODUCTION_ENV_VALUES or any(os.getenv(key) for key in CLOUD_RUNTIME_ENV_KEYS)
+
+
 def load_env():
     if os.getenv("AVELI_ENV_LOADED") == "1":
         return
@@ -33,31 +42,37 @@ def load_env():
 
     env_file = env_local if env_local.exists() else env_default
 
-    if not env_file.exists():
-        raise RuntimeError(f"Missing env file: {env_file}")
+    if env_file.exists():
+        env_vars = parse_env_file(env_file)
+        env_source = str(env_file)
 
-    env_vars = parse_env_file(env_file)
+        # Load into process env ONLY if not already set
+        for key, value in env_vars.items():
+            if key not in os.environ:
+                os.environ[key] = value
+    else:
+        env_source = "process environment"
 
-    # Load into process env ONLY if not already set
-    for key, value in env_vars.items():
-        if key not in os.environ:
-            os.environ[key] = value
+    if cloud_runtime_active():
+        if not os.getenv("APP_ENV"):
+            raise RuntimeError("APP_ENV is missing in runtime environment")
+        if not os.getenv("DATABASE_URL"):
+            raise RuntimeError("DATABASE_URL is missing in runtime environment")
+    else:
+        required = {
+            "APP_ENV": "local",
+            "MCP_MODE": "local",
+            "DATABASE_URL": "postgresql://postgres:postgres@127.0.0.1:5432/aveli_local",
+        }
 
-    # 🔒 HARD GUARDRAILS
-    required = {
-        "APP_ENV": "local",
-        "MCP_MODE": "local",
-        "DATABASE_URL": "postgresql://postgres:postgres@127.0.0.1:5432/aveli_local",
-    }
+        for key, expected in required.items():
+            actual = os.getenv(key)
+            if actual is None:
+                raise RuntimeError(f"{key} is missing in environment")
+            if key != "DATABASE_URL" and actual.lower() != expected:
+                raise RuntimeError(f"{key} must be '{expected}', got '{actual}'")
 
-    for key, expected in required.items():
-        actual = os.getenv(key)
-        if actual is None:
-            raise RuntimeError(f"{key} is missing in environment")
-        if key != "DATABASE_URL" and actual.lower() != expected:
-            raise RuntimeError(f"{key} must be '{expected}', got '{actual}'")
-
-    print(f"[AVELI ENV] Loaded from: {env_file}")
+    print(f"[AVELI ENV] Loaded from: {env_source}")
     print(f"[AVELI ENV] APP_ENV={os.getenv('APP_ENV')}")
     print(f"[AVELI ENV] MCP_MODE={os.getenv('MCP_MODE')}")
 

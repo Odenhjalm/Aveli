@@ -18,6 +18,8 @@ _COURSE_COLUMNS = """
     c.title,
     c.course_group_id,
     c.group_position,
+    c.visibility,
+    c.content_ready,
     c.price_amount_cents,
     c.stripe_product_id,
     c.active_stripe_price_id,
@@ -108,6 +110,35 @@ async def get_course_pricing_by_slug(slug: str) -> dict[str, Any] | None:
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (slug,))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_course_publish_subject(course_id: str) -> dict[str, Any] | None:
+    query = """
+        select
+            c.id,
+            c.teacher_id,
+            c.slug,
+            c.title,
+            c.course_group_id,
+            c.group_position,
+            c.visibility,
+            c.content_ready,
+            c.price_amount_cents,
+            c.stripe_product_id,
+            c.active_stripe_price_id,
+            c.sellable,
+            c.drip_enabled,
+            c.drip_interval_days,
+            c.cover_media_id
+        from app.courses as c
+        where c.id = %s::uuid
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
             row = await cur.fetchone()
     return dict(row) if row else None
 
@@ -400,12 +431,47 @@ async def update_course_stripe_mapping(
     return await get_course(course_id=course_id)
 
 
+async def publish_course_state(
+    course_id: str,
+    *,
+    stripe_product_id: str,
+    active_stripe_price_id: str,
+) -> CourseRow | None:
+    query = """
+        update app.courses
+        set content_ready = true,
+            visibility = 'public'::app.course_visibility,
+            stripe_product_id = %s,
+            active_stripe_price_id = %s,
+            sellable = true
+        where id = %s::uuid
+        returning id
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                query,
+                (
+                    stripe_product_id,
+                    active_stripe_price_id,
+                    course_id,
+                ),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        return None
+    return await get_course(course_id=course_id)
+
+
 async def get_course_sellability_subject(course_id: str) -> dict[str, Any] | None:
     query = """
         select
             c.id,
             c.teacher_id,
             c.group_position,
+            c.visibility,
+            c.content_ready,
             c.price_amount_cents,
             c.stripe_product_id,
             c.active_stripe_price_id,
@@ -634,6 +700,28 @@ async def list_studio_course_lessons(course_id: str) -> Sequence[LessonRow]:
             l.lesson_title,
             l.position
         from app.lessons as l
+        where l.course_id = %s::uuid
+        order by l.position asc, l.id asc
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def list_course_publish_lessons(course_id: str) -> Sequence[dict[str, Any]]:
+    query = """
+        select
+            l.id,
+            l.course_id,
+            l.lesson_title,
+            l.position,
+            lc.lesson_id is not null as has_content,
+            lc.content_markdown
+        from app.lessons as l
+        left join app.lesson_contents as lc
+          on lc.lesson_id = l.id
         where l.course_id = %s::uuid
         order by l.position asc, l.id asc
     """

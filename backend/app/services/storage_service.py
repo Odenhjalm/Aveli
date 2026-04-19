@@ -69,6 +69,38 @@ class PresignedUpload:
     expires_in: int
 
 
+@dataclass(slots=True)
+class StorageObjectMetadata:
+    path: str
+    content_type: str | None
+    size_bytes: int | None
+
+
+def _normalize_content_type(value: str | None) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return None
+    return normalized.split(";", 1)[0].strip() or None
+
+
+def _response_size_bytes(response: httpx.Response) -> int | None:
+    content_range = str(response.headers.get("content-range") or "").strip()
+    if "/" in content_range:
+        total = content_range.rsplit("/", 1)[-1].strip()
+        if total and total != "*":
+            try:
+                return int(total)
+            except ValueError:
+                pass
+    content_length = str(response.headers.get("content-length") or "").strip()
+    if content_length:
+        try:
+            return int(content_length)
+        except ValueError:
+            return None
+    return None
+
+
 class StorageService:
     def __init__(
         self,
@@ -210,6 +242,57 @@ class StorageService:
         else:
             absolute_url = signed_path
         return PresignedUrl(url=absolute_url, expires_in=expires_in, headers=headers)
+
+    async def inspect_object(self, path: str, *, ttl: int = 60) -> StorageObjectMetadata:
+        if not path:
+            raise StorageServiceError("storage path is required")
+
+        normalized_path = path.lstrip("/")
+        signed = await self.get_presigned_url(
+            normalized_path,
+            ttl=ttl,
+            download=False,
+        )
+
+        async with httpx.AsyncClient(
+            timeout=storage_http_timeout(),
+            limits=storage_http_limits(),
+        ) as client:
+            try:
+                response = await client.head(signed.url)
+                if response.status_code in {405, 501}:
+                    response = await client.get(
+                        signed.url,
+                        headers={"Range": "bytes=0-0"},
+                    )
+            except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+                logger.warning(
+                    "Supabase Storage inspection failed bucket=%s path=%s error=%s",
+                    self._bucket,
+                    normalized_path,
+                    exc,
+                )
+                raise StorageServiceError("Failed to inspect storage object") from exc
+
+        logger.info(
+            "Supabase Storage inspection completed bucket=%s path=%s status=%s",
+            self._bucket,
+            normalized_path,
+            response.status_code,
+        )
+        if response.status_code == 404:
+            raise StorageObjectNotFoundError("Supabase Storage object not found")
+        if response.status_code >= 400:
+            raise StorageServiceError(
+                f"Supabase Storage inspection failed with status {response.status_code}",
+                status_code=response.status_code,
+            )
+
+        return StorageObjectMetadata(
+            path=normalized_path,
+            content_type=_normalize_content_type(response.headers.get("content-type")),
+            size_bytes=_response_size_bytes(response),
+        )
 
     async def create_upload_url(
         self,
