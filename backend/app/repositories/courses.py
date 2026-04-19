@@ -16,6 +16,7 @@ _COURSE_COLUMNS = """
     c.id,
     c.slug,
     c.title,
+    c.teacher_id,
     c.course_group_id,
     c.group_position,
     c.visibility,
@@ -33,12 +34,15 @@ _PUBLIC_DISCOVERY_COLUMNS = """
     cds.id,
     cds.slug,
     cds.title,
+    c.teacher_id,
+    nullif(btrim(p.display_name), '') as teacher_display_name,
     cds.course_group_id,
     cds.group_position,
     cds.price_amount_cents,
     cds.drip_enabled,
     cds.drip_interval_days,
-    cds.cover_media_id
+    cds.cover_media_id,
+    c.sellable
 """
 
 _MEDIA_ORIGINAL_NAME_SQL = """
@@ -179,12 +183,27 @@ async def list_courses(
     return [dict(row) for row in rows]
 
 
+_PUBLIC_DISCOVERABLE_COURSE_SQL = """
+    c.content_ready is true
+    and (
+      c.sellable is true
+      or (
+        c.sellable is false
+        and coalesce(c.price_amount_cents, 0) <= 0
+      )
+    )
+"""
+
+
 async def list_public_courses(
     *,
     search: str | None = None,
     limit: int | None = None,
 ) -> Sequence[CourseRow]:
-    clauses = ["c.sellable is true"]
+    clauses = [
+        "c.visibility = 'public'::app.course_visibility",
+        _PUBLIC_DISCOVERABLE_COURSE_SQL,
+    ]
     params: list[Any] = []
     if search:
         pattern = f"%{search}%"
@@ -236,7 +255,9 @@ async def list_public_course_discovery(
         from app.course_discovery_surface as cds
         join app.courses as c
           on c.id = cds.id
-        where c.sellable is true
+        left join app.profiles as p
+          on p.user_id = c.teacher_id
+        where {_PUBLIC_DISCOVERABLE_COURSE_SQL}
         {"and " + " and ".join(clauses) if clauses else ""}
         order by cds.slug asc
         {limit_sql}
@@ -284,17 +305,20 @@ async def get_public_course_detail_rows(
         clauses.append("cd.slug = %s")
         params.append(slug)
 
-    query = """
+    query = f"""
         select
             cd.id,
             cd.slug,
             cd.title,
+            c.teacher_id,
+            nullif(btrim(p.display_name), '') as teacher_display_name,
             cd.course_group_id,
             cd.group_position,
             cd.cover_media_id,
             cd.price_amount_cents,
             cd.drip_enabled,
             cd.drip_interval_days,
+            c.sellable,
             cd.short_description,
             cd.lesson_id,
             cd.lesson_title,
@@ -302,10 +326,12 @@ async def get_public_course_detail_rows(
         from app.course_detail_surface as cd
         join app.courses as c
           on c.id = cd.id
-        where c.sellable is true
-          and {where_sql}
+        left join app.profiles as p
+          on p.user_id = c.teacher_id
+        where {_PUBLIC_DISCOVERABLE_COURSE_SQL}
+          and {" and ".join(clauses)}
         order by cd.lesson_position asc nulls last, cd.lesson_id asc nulls last
-    """.format(where_sql=" and ".join(clauses))
+    """
 
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]

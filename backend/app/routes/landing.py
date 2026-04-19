@@ -1,13 +1,39 @@
 from fastapi import APIRouter
 
 from .. import models, schemas
+from ..services import courses_service
 
 router = APIRouter(prefix="/landing", tags=["landing"])
 
+_CANONICAL_COURSE_FIELDS = (
+    "id",
+    "slug",
+    "title",
+    "teacher",
+    "course_group_id",
+    "group_position",
+    "cover_media_id",
+    "cover",
+    "price_amount_cents",
+    "drip_enabled",
+    "drip_interval_days",
+    "required_enrollment_source",
+    "enrollable",
+    "purchasable",
+)
+
 
 def _course_list_response(rows) -> schemas.CourseListResponse:
+    normalized_rows = [dict(row) for row in rows]
+    courses_service.attach_course_access_model(normalized_rows)
+    courses_service.attach_course_teacher_read_contract(normalized_rows)
     return schemas.CourseListResponse(
-        items=[schemas.Course(**row) for row in rows]
+        items=[
+            schemas.Course(
+                **{field: row.get(field) for field in _CANONICAL_COURSE_FIELDS}
+            )
+            for row in normalized_rows
+        ]
     )
 
 

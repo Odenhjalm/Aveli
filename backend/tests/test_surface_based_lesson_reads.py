@@ -87,7 +87,6 @@ async def test_read_protected_lesson_content_surface_uses_surface_rows_and_runti
             "media_asset_id": MEDIA_ASSET_ID,
             "position": 3,
             "media_type": "audio",
-            "kind": "audio",
             "state": "ready",
             "media": {
                 "media_id": MEDIA_ASSET_ID,
@@ -96,6 +95,69 @@ async def test_read_protected_lesson_content_surface_uses_surface_rows_and_runti
             },
         }
     ]
+
+
+async def test_read_protected_lesson_content_surface_filters_non_ready_media(
+    monkeypatch,
+) -> None:
+    async def _fake_get_surface_rows(*, lesson_id: str, user_id: str):
+        assert lesson_id == LESSON_ID
+        assert user_id == USER_ID
+        return [
+            {
+                "id": LESSON_ID,
+                "course_id": COURSE_ID,
+                "lesson_title": "Lesson",
+                "position": 1,
+                "content_markdown": "# Surface content",
+                "lesson_media_id": LESSON_MEDIA_ID,
+                "media_asset_id": MEDIA_ASSET_ID,
+                "lesson_media_position": 3,
+            }
+        ]
+
+    class _Resolution:
+        media_type = "audio"
+        media_state = "processing"
+        media_asset_id = MEDIA_ASSET_ID
+        is_playable = False
+        playback_mode = courses_service.LessonMediaPlaybackMode.NONE
+
+    async def _fake_resolve_lesson_media(lesson_media_id: str, *, emit_logs: bool = False):
+        assert lesson_media_id == LESSON_MEDIA_ID
+        assert emit_logs is False
+        return _Resolution()
+
+    async def _fake_playback(*, lesson_media_id: str, user_id: str):
+        raise AssertionError("non-ready media must not be signed")
+
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "get_lesson_content_surface_rows",
+        _fake_get_surface_rows,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.canonical_media_resolver,
+        "resolve_lesson_media",
+        _fake_resolve_lesson_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service.lesson_playback_service,
+        "resolve_lesson_media_playback",
+        _fake_playback,
+        raising=True,
+    )
+
+    result = await courses_service.read_protected_lesson_content_surface(
+        LESSON_ID,
+        user_id=USER_ID,
+    )
+
+    assert result is not None
+    assert result["lesson"]["content_markdown"] == "# Surface content"
+    assert result["media"] == []
 
 
 async def test_lesson_detail_uses_surface_based_content_and_structure(monkeypatch):

@@ -106,6 +106,17 @@ These fields do not alter lesson, content, media, progression, or access
 meaning. Their monetization and ownership authority remains governed by the
 active course monetization and commerce contracts.
 
+Public course read composition may project teacher display data as:
+
+```text
+teacher = { user_id, display_name } | null
+```
+
+`teacher.user_id` is derived from `app.courses.teacher_id`.
+`teacher.display_name` is derived from `app.profiles.display_name`.
+Frontend surfaces MUST NOT infer teacher identity or synthesize teacher display
+data from unrelated profile, landing, community, or auth surfaces.
+
 ### Public Course Content Field
 
 `app.course_public_content.short_description` is sibling public course content.

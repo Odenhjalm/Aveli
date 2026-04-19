@@ -78,13 +78,75 @@ def _if_match_contains_etag(if_match: str | None, expected_etag: str) -> bool:
     return expected_etag in {candidate.strip() for candidate in value.split(",")}
 
 
+def _normalized_course_price_amount(course: Mapping[str, Any]) -> int | None:
+    try:
+        return int(course.get("price_amount_cents") or 0)
+    except (TypeError, ValueError):
+        return None
+
+
 def _course_expected_source(course: Mapping[str, Any] | None) -> str | None:
     if not course:
         return None
-    amount_cents = int(course.get("price_amount_cents") or 0)
-    if bool(course.get("sellable")) or amount_cents > 0:
+    amount_cents = _normalized_course_price_amount(course)
+    if amount_cents is None:
+        return None
+    sellable = course.get("sellable")
+    if sellable is True:
         return "purchase"
-    return "intro_enrollment"
+    if sellable is False and amount_cents <= 0:
+        return "intro_enrollment"
+    return None
+
+
+def build_course_access_model(course: Mapping[str, Any] | None) -> dict[str, Any]:
+    expected_source = _course_expected_source(course)
+    return {
+        "required_enrollment_source": expected_source,
+        "enrollable": expected_source == "intro_enrollment",
+        "purchasable": expected_source == "purchase",
+    }
+
+
+def attach_course_access_model(
+    courses: dict[str, Any] | list[dict[str, Any]] | None,
+) -> None:
+    if courses is None:
+        return
+    rows = [courses] if isinstance(courses, dict) else courses
+    for row in rows:
+        row.update(build_course_access_model(row))
+
+
+def _course_teacher_payload(course: Mapping[str, Any]) -> dict[str, Any] | None:
+    existing = course.get("teacher")
+    if isinstance(existing, Mapping):
+        return dict(existing)
+
+    teacher_id = course.get("teacher_id")
+    if teacher_id is None:
+        return None
+
+    display_name = course.get("teacher_display_name")
+    if isinstance(display_name, str):
+        display_name = display_name.strip() or None
+    elif display_name is not None:
+        display_name = None
+
+    return {
+        "user_id": teacher_id,
+        "display_name": display_name,
+    }
+
+
+def attach_course_teacher_read_contract(
+    courses: dict[str, Any] | list[dict[str, Any]] | None,
+) -> None:
+    if courses is None:
+        return
+    rows = [courses] if isinstance(courses, dict) else courses
+    for row in rows:
+        row["teacher"] = _course_teacher_payload(row)
 
 
 def _validate_course_drip_configuration(
@@ -261,6 +323,8 @@ async def fetch_course(
     row = await courses_repo.get_course(course_id=course_id, slug=slug)
     course = dict(row) if row else None
     if course is not None:
+        attach_course_access_model(course)
+        attach_course_teacher_read_contract(course)
         await attach_course_cover_read_contract(course)
     return course
 
@@ -305,6 +369,8 @@ async def list_courses(
             search=search,
         )
     ]
+    attach_course_access_model(rows)
+    attach_course_teacher_read_contract(rows)
     await attach_course_cover_read_contract(rows)
     return rows
 
@@ -323,6 +389,8 @@ async def list_public_courses(
             group_position=group_position,
         )
     ]
+    attach_course_access_model(rows)
+    attach_course_teacher_read_contract(rows)
     await attach_course_cover_read_contract(rows)
     return rows
 
@@ -332,16 +400,21 @@ async def fetch_public_course_detail_rows(
     course_id: str | None = None,
     slug: str | None = None,
 ) -> Sequence[dict[str, Any]]:
-    return list(
+    rows = list(
         await courses_repo.get_public_course_detail_rows(
             course_id=course_id,
             slug=slug,
         )
     )
+    attach_course_access_model(rows)
+    attach_course_teacher_read_contract(rows)
+    return rows
 
 
 async def list_my_courses(user_id: str) -> Sequence[dict[str, Any]]:
     rows = [dict(row) for row in await courses_repo.list_my_courses(str(user_id))]
+    attach_course_access_model(rows)
+    attach_course_teacher_read_contract(rows)
     await attach_course_cover_read_contract(rows)
     return rows
 
@@ -426,41 +499,42 @@ async def read_protected_lesson_content_surface(
             normalized_lesson_media_id,
             emit_logs=False,
         )
+        if (
+            not resolution.is_playable
+            or resolution.playback_mode != LessonMediaPlaybackMode.PIPELINE_ASSET
+            or not resolution.media_asset_id
+            or resolution.media_state != "ready"
+        ):
+            continue
+
         media_type = _normalized_surface_media_type(resolution.media_type)
         media_state = _normalized_surface_media_state(resolution.media_state)
-        item = {
-            "id": lesson_media_id,
-            "lesson_id": row["id"],
-            "media_asset_id": row.get("media_asset_id"),
-            "position": row.get("lesson_media_position") or 0,
-            "media_type": media_type,
-            "kind": media_type,
-            "state": media_state,
-            "media": None,
-        }
-
-        if (
-            resolution.is_playable
-            and resolution.playback_mode == LessonMediaPlaybackMode.PIPELINE_ASSET
-            and resolution.media_asset_id
-        ):
-            playback = await lesson_playback_service.resolve_lesson_media_playback(
-                lesson_media_id=normalized_lesson_media_id,
-                user_id=normalized_user_id,
+        playback = await lesson_playback_service.resolve_lesson_media_playback(
+            lesson_media_id=normalized_lesson_media_id,
+            user_id=normalized_user_id,
+        )
+        resolved_url = str(playback.get("resolved_url") or "").strip()
+        if not resolved_url:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Canonical media composition is unavailable",
             )
-            resolved_url = str(playback.get("resolved_url") or "").strip()
-            if not resolved_url:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Canonical media composition is unavailable",
-                )
-            item["media"] = {
-                "media_id": str(resolution.media_asset_id),
-                "state": media_state,
-                "resolved_url": resolved_url,
-            }
 
-        media_rows.append(item)
+        media_rows.append(
+            {
+                "id": lesson_media_id,
+                "lesson_id": row["id"],
+                "media_asset_id": str(resolution.media_asset_id),
+                "position": row.get("lesson_media_position") or 0,
+                "media_type": media_type,
+                "state": media_state,
+                "media": {
+                    "media_id": str(resolution.media_asset_id),
+                    "state": media_state,
+                    "resolved_url": resolved_url,
+                },
+            }
+        )
 
     return {
         "lesson": lesson,
@@ -1614,10 +1688,13 @@ def _canonical_course_state_payload(
     enrollment: Mapping[str, Any] | None,
     expected_source: str | None,
 ) -> dict[str, Any]:
+    access_model = build_course_access_model(course)
     return {
         "course_id": str(course.get("id") or ""),
         "group_position": int(course.get("group_position") or 0),
         "required_enrollment_source": expected_source,
+        "enrollable": bool(access_model["enrollable"]),
+        "purchasable": bool(access_model["purchasable"]),
         "enrollment": dict(enrollment) if enrollment is not None else None,
     }
 
@@ -1715,7 +1792,7 @@ async def create_intro_course_enrollment(
     if course is None:
         raise LookupError("course not found")
 
-    if _course_expected_source(course) != "intro_enrollment":
+    if build_course_access_model(course)["enrollable"] is not True:
         raise PermissionError("purchase enrollment required")
 
     enrollment = await courses_repo.create_course_enrollment(

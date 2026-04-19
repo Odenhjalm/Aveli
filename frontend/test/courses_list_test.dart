@@ -25,9 +25,9 @@ class _CoursesListView extends ConsumerWidget {
 
 void main() {
   testWidgets('renders provided course summaries', (tester) async {
-    const fakeCourses = <CourseSummary>[
-      CourseSummary(id: '1', title: 'Intro to Tarot'),
-      CourseSummary(id: '2', title: 'Meditation 101'),
+    final fakeCourses = <CourseSummary>[
+      _course(id: '1', title: 'Intro to Tarot'),
+      _course(id: '2', title: 'Meditation 101'),
     ];
 
     await tester.pumpWidget(
@@ -44,4 +44,26 @@ void main() {
     expect(find.text('Intro to Tarot'), findsOneWidget);
     expect(find.text('Meditation 101'), findsOneWidget);
   });
+}
+
+CourseSummary _course({required String id, required String title}) {
+  return CourseSummary(
+    id: id,
+    slug: id,
+    title: title,
+    teacher: const CourseTeacherData(
+      userId: 'teacher-1',
+      displayName: 'Aveli Teacher',
+    ),
+    groupPosition: 1,
+    courseGroupId: 'group-1',
+    coverMediaId: null,
+    cover: null,
+    priceCents: 9900,
+    dripEnabled: false,
+    dripIntervalDays: null,
+    requiredEnrollmentSource: 'purchase',
+    enrollable: false,
+    purchasable: true,
+  );
 }

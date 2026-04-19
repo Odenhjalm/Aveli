@@ -15,6 +15,7 @@ COURSE_ID = "11111111-1111-1111-1111-111111111111"
 COURSE_GROUP_ID = "22222222-2222-2222-2222-222222222222"
 COVER_MEDIA_ID = "33333333-3333-3333-3333-333333333333"
 LESSON_ID = "44444444-4444-4444-4444-444444444444"
+TEACHER_ID = "66666666-6666-6666-6666-666666666666"
 
 
 def _course_payload(*, cover: dict | None) -> dict:
@@ -22,6 +23,10 @@ def _course_payload(*, cover: dict | None) -> dict:
         "id": COURSE_ID,
         "slug": "course-1",
         "title": "Course 1",
+        "teacher": {
+            "user_id": TEACHER_ID,
+            "display_name": "Aveli Teacher",
+        },
         "course_group_id": COURSE_GROUP_ID,
         "group_position": 0,
         "cover_media_id": COVER_MEDIA_ID,
@@ -29,6 +34,9 @@ def _course_payload(*, cover: dict | None) -> dict:
         "price_amount_cents": None,
         "drip_enabled": False,
         "drip_interval_days": None,
+        "required_enrollment_source": "intro_enrollment",
+        "enrollable": True,
+        "purchasable": False,
     }
 
 
@@ -93,6 +101,7 @@ async def test_course_detail_http_shape_contains_cover_and_null_sibling_content(
         "id",
         "slug",
         "title",
+        "teacher",
         "course_group_id",
         "group_position",
         "cover_media_id",
@@ -100,6 +109,9 @@ async def test_course_detail_http_shape_contains_cover_and_null_sibling_content(
         "price_amount_cents",
         "drip_enabled",
         "drip_interval_days",
+        "required_enrollment_source",
+        "enrollable",
+        "purchasable",
     }
     assert body["lessons"] == [
         {
@@ -108,6 +120,10 @@ async def test_course_detail_http_shape_contains_cover_and_null_sibling_content(
             "position": 1,
         }
     ]
+    assert body["course"]["teacher"] == {
+        "user_id": TEACHER_ID,
+        "display_name": "Aveli Teacher",
+    }
     assert set(body["lessons"][0].keys()) == {"id", "lesson_title", "position"}
     for forbidden_key in (
         "lesson_content",
@@ -207,7 +223,7 @@ async def test_list_public_courses_reads_public_discovery_surface(monkeypatch):
         assert search == "course"
         assert limit == 5
         assert group_position is None
-        return [_course_payload(cover=None)]
+        return [{**_course_payload(cover=None), "sellable": False}]
 
     async def fake_attach_course_cover_read_contract(courses):
         rows = [courses] if isinstance(courses, dict) else list(courses)
@@ -235,10 +251,13 @@ async def test_list_public_courses_reads_public_discovery_surface(monkeypatch):
 
     rows = await courses_service.list_public_courses(search="course", limit=5)
 
-    assert rows == [_course_payload(cover=None)]
+    assert len(rows) == 1
+    assert rows[0]["id"] == COURSE_ID
+    assert rows[0]["enrollable"] is True
+    assert rows[0]["purchasable"] is False
 
 
-async def test_read_course_detail_composes_cover_and_null_short_description(monkeypatch):
+async def test_read_course_detail_composes_teacher_cover_and_short_description(monkeypatch):
     async def fail_fetch_course(*, course_id: str | None = None, slug: str | None = None):
         raise AssertionError("raw course reads must not back public course detail")
 
@@ -256,14 +275,20 @@ async def test_read_course_detail_composes_cover_and_null_short_description(monk
         return [
             {
                 **_course_payload(cover=None),
-                "short_description": None,
+                "sellable": False,
+                "teacher_id": TEACHER_ID,
+                "teacher_display_name": "Aveli Teacher",
+                "short_description": "Backend-authored course description",
                 "lesson_id": LESSON_ID,
                 "lesson_title": "Lesson 1",
                 "lesson_position": 1,
             },
             {
                 **_course_payload(cover=None),
-                "short_description": None,
+                "sellable": False,
+                "teacher_id": TEACHER_ID,
+                "teacher_display_name": "Aveli Teacher",
+                "short_description": "Backend-authored course description",
                 "lesson_id": "55555555-5555-5555-5555-555555555555",
                 "lesson_title": "Lesson 2",
                 "lesson_position": 2,
@@ -305,7 +330,11 @@ async def test_read_course_detail_composes_cover_and_null_short_description(monk
 
     assert detail is not None
     payload = detail.model_dump(mode="json")
-    assert payload["short_description"] is None
+    assert payload["short_description"] == "Backend-authored course description"
+    assert payload["course"]["teacher"] == {
+        "user_id": TEACHER_ID,
+        "display_name": "Aveli Teacher",
+    }
     assert payload["course"]["cover"] == _cover_payload()
     assert payload["lessons"] == [
         {"id": LESSON_ID, "lesson_title": "Lesson 1", "position": 1},

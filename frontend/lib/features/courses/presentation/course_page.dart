@@ -139,13 +139,17 @@ class _CourseContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final course = detail.course;
+    final teacherName = course.teacher?.displayName;
+    final shortDescription = detail.shortDescription;
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final courseState = courseStateAsync.valueOrNull;
     final hasEnrollment = courseState?.hasEnrollment == true;
     final currentUnlockPosition =
         courseState?.enrollment?.currentUnlockPosition;
-    final isIntroCourse = course.isIntroCourse;
+    final canEnroll =
+        !hasEnrollment &&
+        (courseState?.enrollable == true || course.enrollable);
     final lessons = _visibleCourseLessons(detail.lessons);
     final unlockedLessons = lessons
         .where(
@@ -163,7 +167,7 @@ class _CourseContent extends StatelessWidget {
         onPressed: () => onOpenLesson(unlockedLessons.first.id),
         child: const Text('Fortsätt kursen'),
       );
-    } else if (isIntroCourse && !hasEnrollment) {
+    } else if (canEnroll) {
       primaryCta = ElevatedButton(
         onPressed: isEnrolling ? null : onEnroll,
         child: isEnrolling
@@ -231,6 +235,14 @@ class _CourseContent extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+                if (teacherName != null) ...[
+                  const SizedBox(height: 8),
+                  Text('Lärare: $teacherName', style: t.bodyMedium),
+                ],
+                if (shortDescription != null) ...[
+                  const SizedBox(height: 12),
+                  Text(shortDescription, style: t.bodyLarge),
+                ],
                 const SizedBox(height: 12),
                 if (primaryCta != null)
                   SizedBox(width: double.infinity, child: primaryCta),

@@ -21,11 +21,18 @@ CourseSummary _course({
   int? priceCents,
   String? coverMediaId,
   CourseCoverData? cover,
+  bool? enrollable,
+  bool? purchasable,
 }) {
+  final isFreeIntro = groupPosition == 0;
   return CourseSummary(
     id: id,
     slug: slug,
     title: title,
+    teacher: const CourseTeacherData(
+      userId: 'teacher-1',
+      displayName: 'Aveli Teacher',
+    ),
     groupPosition: groupPosition,
     courseGroupId: courseGroupId,
     coverMediaId: coverMediaId,
@@ -33,6 +40,11 @@ CourseSummary _course({
     priceCents: priceCents,
     dripEnabled: false,
     dripIntervalDays: null,
+    requiredEnrollmentSource: (enrollable ?? isFreeIntro)
+        ? 'intro_enrollment'
+        : 'purchase',
+    enrollable: enrollable ?? isFreeIntro,
+    purchasable: purchasable ?? !isFreeIntro,
   );
 }
 

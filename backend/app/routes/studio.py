@@ -75,6 +75,7 @@ _CANONICAL_COURSE_FIELDS = (
     "id",
     "slug",
     "title",
+    "teacher",
     "course_group_id",
     "group_position",
     "cover_media_id",
@@ -82,6 +83,9 @@ _CANONICAL_COURSE_FIELDS = (
     "price_amount_cents",
     "drip_enabled",
     "drip_interval_days",
+    "required_enrollment_source",
+    "enrollable",
+    "purchasable",
 )
 
 
@@ -574,7 +578,10 @@ async def _apply_course_read_contract(
 
 
 def _canonical_course_payload(course: Dict[str, Any]) -> Dict[str, Any]:
-    return {field: course.get(field) for field in _CANONICAL_COURSE_FIELDS}
+    normalized = dict(course)
+    courses_service.attach_course_access_model(normalized)
+    courses_service.attach_course_teacher_read_contract(normalized)
+    return {field: normalized.get(field) for field in _CANONICAL_COURSE_FIELDS}
 
 
 def _course_response(course: Dict[str, Any]) -> schemas.Course:

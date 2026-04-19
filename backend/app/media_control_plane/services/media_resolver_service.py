@@ -213,7 +213,7 @@ class MediaResolverService:
                   rm.lesson_id,
                   rm.media_asset_id,
                   rm.media_type::text as media_type,
-                  'ready'::text as media_state,
+                  rm.state::text as media_state,
                   rm.playback_object_path,
                   rm.playback_format,
                   %s::text as storage_bucket
@@ -277,24 +277,6 @@ class MediaResolverService:
                 course_id=course_id,
             )
 
-        if content_type is None:
-            return RuntimeMediaResolution(
-                lesson_media_id=lesson_media_id,
-                lesson_id=lesson_id,
-                media_asset_id=media_asset_id,
-                media_type=media_type,
-                content_type=None,
-                media_state=media_state,
-                storage_bucket=None,
-                storage_path=None,
-                is_playable=False,
-                playback_mode=RuntimeMediaPlaybackMode.NONE,
-                failure_reason=RuntimeMediaResolutionReason.INVALID_CONTENT_TYPE,
-                failure_detail="runtime_media playback_format is invalid or missing",
-                runtime_media_id=runtime_media_id,
-                course_id=course_id,
-            )
-
         if media_state != "ready":
             return RuntimeMediaResolution(
                 lesson_media_id=lesson_media_id,
@@ -309,6 +291,24 @@ class MediaResolverService:
                 playback_mode=RuntimeMediaPlaybackMode.NONE,
                 failure_reason=RuntimeMediaResolutionReason.ASSET_NOT_READY,
                 failure_detail=f"media_asset state is {media_state or 'unknown'}",
+                runtime_media_id=runtime_media_id,
+                course_id=course_id,
+            )
+
+        if content_type is None:
+            return RuntimeMediaResolution(
+                lesson_media_id=lesson_media_id,
+                lesson_id=lesson_id,
+                media_asset_id=media_asset_id,
+                media_type=media_type,
+                content_type=None,
+                media_state=media_state,
+                storage_bucket=None,
+                storage_path=None,
+                is_playable=False,
+                playback_mode=RuntimeMediaPlaybackMode.NONE,
+                failure_reason=RuntimeMediaResolutionReason.INVALID_CONTENT_TYPE,
+                failure_detail="runtime_media playback_format is invalid or missing",
                 runtime_media_id=runtime_media_id,
                 course_id=course_id,
             )

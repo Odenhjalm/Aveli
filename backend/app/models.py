@@ -478,7 +478,8 @@ async def list_courses(
 
 
 async def list_intro_courses(limit: int = 5) -> Iterable[dict]:
-    return await courses_service.list_public_courses(limit=limit, group_position=0)
+    rows = await courses_service.list_public_courses()
+    return [row for row in rows if row.get("enrollable") is True][:limit]
 
 
 async def list_popular_courses(limit: int = 6) -> Iterable[dict]:

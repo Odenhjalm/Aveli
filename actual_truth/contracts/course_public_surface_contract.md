@@ -78,6 +78,10 @@ Lesson content read context may additionally include:
     "id": "uuid",
     "slug": "string",
     "title": "string",
+    "teacher": {
+      "user_id": "uuid",
+      "display_name": "string | null"
+    },
     "course_group_id": "uuid",
     "step": "intro | step1 | step2 | step3",
     "cover_media_id": "uuid | null",
@@ -111,6 +115,10 @@ Rules:
 - `cover` MUST be `null` when no contract-valid resolved course-cover object exists
 - Placeholder cover objects with `resolved_url = null` are forbidden
 - Course-cover objects may be emitted only for ready image course-cover assets with nonblank playback object path and `playback_format = jpg`
+- `teacher` MUST be present and MUST be `{ user_id, display_name } | null`
+- `teacher.user_id` is derived from `app.courses.teacher_id`
+- `teacher.display_name` is derived from `app.profiles.display_name`
+- Frontend MUST NOT infer or synthesize teacher display data
 
 ## 6. CONTENT READ CONTRACT
 

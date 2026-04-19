@@ -32,12 +32,21 @@ CourseDetailData _detail({
   String? coverMediaId,
   CourseCoverData? cover,
   int? priceCents = 0,
+  bool? enrollable,
+  bool? purchasable,
+  String? shortDescription = 'Backendbeskriven kurs för startklara elever.',
 }) {
+  final isFreeIntro =
+      groupPosition == 0 && (priceCents == null || priceCents == 0);
   return CourseDetailData(
     course: CourseSummary(
       id: courseId,
       slug: slug,
       title: title,
+      teacher: const CourseTeacherData(
+        userId: 'teacher-1',
+        displayName: 'Aveli Teacher',
+      ),
       groupPosition: groupPosition,
       courseGroupId: 'group-1',
       coverMediaId: coverMediaId,
@@ -45,10 +54,16 @@ CourseDetailData _detail({
       priceCents: priceCents,
       dripEnabled: false,
       dripIntervalDays: null,
+      requiredEnrollmentSource: (enrollable ?? isFreeIntro)
+          ? 'intro_enrollment'
+          : 'purchase',
+      enrollable: enrollable ?? isFreeIntro,
+      purchasable: purchasable ?? !isFreeIntro,
     ),
     lessons: const [
       LessonSummary(id: 'lesson-1', lessonTitle: 'Lesson 1', position: 1),
     ],
+    shortDescription: shortDescription,
   );
 }
 
@@ -56,12 +71,14 @@ CourseAccessData _enrolledState(String courseId) {
   return CourseAccessData(
     courseId: courseId,
     groupPosition: 0,
-    requiredEnrollmentSource: null,
+    requiredEnrollmentSource: 'intro_enrollment',
+    enrollable: true,
+    purchasable: false,
     enrollment: CourseEnrollmentRecord(
       id: 'enrollment-1',
       userId: 'user-1',
       courseId: courseId,
-      source: 'manual',
+      source: 'intro_enrollment',
       grantedAt: DateTime.utc(2024, 1, 1),
       dripStartedAt: DateTime.utc(2024, 1, 1),
       currentUnlockPosition: 1,
@@ -86,7 +103,9 @@ void main() {
       courseId: 'course-intro',
       slug: 'intro-course',
       title: 'Intro Course',
-      groupPosition: 0,
+      groupPosition: 2,
+      enrollable: true,
+      purchasable: false,
     );
 
     await tester.pumpWidget(
@@ -109,6 +128,78 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Starta introduktion'), findsOneWidget);
+  });
+
+  testWidgets('course detail renders backend teacher and description', (
+    tester,
+  ) async {
+    final detail = _detail(
+      courseId: 'course-detail',
+      slug: 'detail-course',
+      title: 'Detail Course',
+      groupPosition: 0,
+      shortDescription: 'En tydlig kursbeskrivning från backend.',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              subscriptionsEnabled: true,
+            ),
+          ),
+          authOverride(),
+          courseDetailProvider.overrideWith((ref, slug) async => detail),
+          courseStateProvider.overrideWith((ref, courseId) async => null),
+        ],
+        child: const MaterialApp(home: CoursePage(slug: 'detail-course')),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Lärare: Aveli Teacher'), findsOneWidget);
+    expect(
+      find.text('En tydlig kursbeskrivning från backend.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sellable position-zero courses do not show enrollment CTA', (
+    tester,
+  ) async {
+    final detail = _detail(
+      courseId: 'course-paid-zero',
+      slug: 'paid-zero-course',
+      title: 'Paid Zero Course',
+      groupPosition: 0,
+      priceCents: 9900,
+      enrollable: false,
+      purchasable: true,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              subscriptionsEnabled: true,
+            ),
+          ),
+          authOverride(),
+          courseDetailProvider.overrideWith((ref, slug) async => detail),
+          courseStateProvider.overrideWith((ref, courseId) async => null),
+        ],
+        child: const MaterialApp(home: CoursePage(slug: 'paid-zero-course')),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Starta introduktion'), findsNothing);
   });
 
   testWidgets('enrolled learners continue with unlocked lessons', (

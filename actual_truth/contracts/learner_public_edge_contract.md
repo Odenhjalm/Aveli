@@ -14,6 +14,7 @@ This contract defines no domain ownership, public-surface semantic ownership, me
 - `id`
 - `slug`
 - `title`
+- `teacher`
 - `course_group_id`
 - `step`
 - `cover_media_id`
@@ -25,6 +26,9 @@ This contract defines no domain ownership, public-surface semantic ownership, me
 Field rules:
 
 - All listed fields MUST be present in the response
+- `teacher` MUST be serialized as `{ user_id, display_name } | null`
+- `teacher.user_id` MUST be backend-authored from canonical course ownership
+- `teacher.display_name` MUST be backend-authored from profile projection data
 - `cover_media_id: UUID | null`
 - `cover` MUST be present and MUST be `{ media_id, state, resolved_url } | null`
 - `cover` MUST be `null` when no contract-valid resolved cover object exists

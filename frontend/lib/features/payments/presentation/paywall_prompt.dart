@@ -27,7 +27,7 @@ class PaywallPrompt extends ConsumerWidget {
         courseId: courseId,
         courseTitle: course?.title,
         coursePrice: course?.priceCents,
-        courseIsIntro: course?.isIntroCourse,
+        courseIsPurchasable: course?.purchasable,
         courseSlug: course?.slug,
         isAuthenticated: isAuthenticated,
       ),
@@ -53,7 +53,7 @@ class _PaywallBody extends ConsumerStatefulWidget {
     required this.courseId,
     this.courseTitle,
     this.coursePrice,
-    this.courseIsIntro,
+    this.courseIsPurchasable,
     this.courseSlug,
     required this.isAuthenticated,
   });
@@ -61,7 +61,7 @@ class _PaywallBody extends ConsumerStatefulWidget {
   final String courseId;
   final String? courseTitle;
   final int? coursePrice;
-  final bool? courseIsIntro;
+  final bool? courseIsPurchasable;
   final String? courseSlug;
   final bool isAuthenticated;
 
@@ -114,7 +114,7 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final priceLabel =
-        widget.coursePrice != null && widget.courseIsIntro != true
+        widget.coursePrice != null && widget.courseIsPurchasable == true
         ? formatCoursePriceFromOre(
             amountOre: widget.coursePrice!,
             debugContext: widget.courseSlug == null
@@ -165,6 +165,7 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
                         onPressed:
                             widget.isAuthenticated &&
                                 widget.courseSlug != null &&
+                                widget.courseIsPurchasable == true &&
                                 !_startingCheckout
                             ? _startCourseCheckout
                             : null,

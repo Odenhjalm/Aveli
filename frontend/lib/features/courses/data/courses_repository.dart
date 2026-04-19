@@ -99,6 +99,19 @@ CourseCoverData? _optionalCourseCover(Object? value, String fieldName) {
   }
 }
 
+CourseTeacherData? _optionalCourseTeacher(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final Map<String, dynamic> data:
+      return CourseTeacherData.fromResponse(data);
+    case final Map data:
+      return CourseTeacherData.fromResponse(Map<String, dynamic>.from(data));
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
 DateTime _requireDateTime(Object? value, String fieldName) {
   final raw = _requireString(value, fieldName);
   return DateTime.parse(raw);
@@ -245,10 +258,15 @@ class CoursesRepository {
 }
 
 class CourseDetailData {
-  const CourseDetailData({required this.course, required this.lessons});
+  const CourseDetailData({
+    required this.course,
+    required this.lessons,
+    required this.shortDescription,
+  });
 
   final CourseSummary course;
   final List<LessonSummary> lessons;
+  final String? shortDescription;
 
   factory CourseDetailData.fromResponse(Object? payload) {
     final lessons =
@@ -260,6 +278,10 @@ class CourseDetailData {
     return CourseDetailData(
       course: CourseSummary.fromResponse(_requiredField(payload, 'course')),
       lessons: lessons,
+      shortDescription: _optionalString(
+        _requiredField(payload, 'short_description'),
+        'short_description',
+      ),
     );
   }
 }
@@ -313,12 +335,16 @@ class CourseAccessData {
     required this.courseId,
     required this.groupPosition,
     required this.requiredEnrollmentSource,
+    required this.enrollable,
+    required this.purchasable,
     required this.enrollment,
   });
 
   final String courseId;
   final int groupPosition;
   final String? requiredEnrollmentSource;
+  final bool enrollable;
+  final bool purchasable;
   final CourseEnrollmentRecord? enrollment;
 
   bool get hasEnrollment => enrollment != null;
@@ -337,6 +363,14 @@ class CourseAccessData {
       requiredEnrollmentSource: _optionalString(
         _requiredField(payload, 'required_enrollment_source'),
         'required_enrollment_source',
+      ),
+      enrollable: _requireBool(
+        _requiredField(payload, 'enrollable'),
+        'enrollable',
+      ),
+      purchasable: _requireBool(
+        _requiredField(payload, 'purchasable'),
+        'purchasable',
       ),
       enrollment: enrollmentPayload == null
           ? null
@@ -386,6 +420,7 @@ class CourseSummary {
     required this.id,
     required this.slug,
     required this.title,
+    required this.teacher,
     required this.groupPosition,
     required this.courseGroupId,
     required this.coverMediaId,
@@ -393,11 +428,15 @@ class CourseSummary {
     required this.priceCents,
     required this.dripEnabled,
     required this.dripIntervalDays,
+    required this.requiredEnrollmentSource,
+    required this.enrollable,
+    required this.purchasable,
   });
 
   final String id;
   final String slug;
   final String title;
+  final CourseTeacherData? teacher;
   final int groupPosition;
   final String courseGroupId;
   final String? coverMediaId;
@@ -405,8 +444,11 @@ class CourseSummary {
   final int? priceCents;
   final bool dripEnabled;
   final int? dripIntervalDays;
+  final String? requiredEnrollmentSource;
+  final bool enrollable;
+  final bool purchasable;
 
-  bool get isIntroCourse => groupPosition == 0;
+  bool get isIntroCourse => enrollable && !purchasable;
 
   factory CourseSummary.fromResponse(Object? payload) {
     _rejectLegacyCourseCoverFields(payload, 'course');
@@ -414,6 +456,10 @@ class CourseSummary {
       id: _requireString(_requiredField(payload, 'id'), 'id'),
       slug: _requireString(_requiredField(payload, 'slug'), 'slug'),
       title: _requireString(_requiredField(payload, 'title'), 'title'),
+      teacher: _optionalCourseTeacher(
+        _requiredField(payload, 'teacher'),
+        'teacher',
+      ),
       groupPosition: _requireGroupPosition(
         _requiredField(payload, 'group_position'),
         'group_position',
@@ -438,6 +484,35 @@ class CourseSummary {
       dripIntervalDays: _optionalInt(
         _requiredField(payload, 'drip_interval_days'),
         'drip_interval_days',
+      ),
+      requiredEnrollmentSource: _optionalString(
+        _requiredField(payload, 'required_enrollment_source'),
+        'required_enrollment_source',
+      ),
+      enrollable: _requireBool(
+        _requiredField(payload, 'enrollable'),
+        'enrollable',
+      ),
+      purchasable: _requireBool(
+        _requiredField(payload, 'purchasable'),
+        'purchasable',
+      ),
+    );
+  }
+}
+
+class CourseTeacherData {
+  const CourseTeacherData({required this.userId, required this.displayName});
+
+  final String userId;
+  final String? displayName;
+
+  factory CourseTeacherData.fromResponse(Object? payload) {
+    return CourseTeacherData(
+      userId: _requireString(_requiredField(payload, 'user_id'), 'user_id'),
+      displayName: _optionalString(
+        _requiredField(payload, 'display_name'),
+        'display_name',
       ),
     );
   }

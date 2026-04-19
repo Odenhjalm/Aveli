@@ -543,6 +543,23 @@ class CourseCoverMedia(BaseModel):
         return value
 
 
+class CourseTeacher(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: UUID
+    display_name: str | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def _validate_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("course teacher display_name must be nonblank")
+        return normalized
+
+
 class HomeAudioItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -817,6 +834,7 @@ class Course(BaseModel):
     id: UUID
     slug: str
     title: str
+    teacher: CourseTeacher | None
     course_group_id: UUID
     group_position: int
     cover_media_id: UUID | None = None
@@ -824,6 +842,9 @@ class Course(BaseModel):
     price_amount_cents: int | None = None
     drip_enabled: bool
     drip_interval_days: Optional[int]
+    required_enrollment_source: Literal["purchase", "intro_enrollment"] | None
+    enrollable: bool
+    purchasable: bool
 
 
 class CoursePricingResponse(BaseModel):
@@ -940,7 +961,9 @@ class CourseAccessStateResponse(BaseModel):
 
     course_id: UUID
     group_position: int
-    required_enrollment_source: str | None = None
+    required_enrollment_source: Literal["purchase", "intro_enrollment"] | None = None
+    enrollable: bool
+    purchasable: bool
     enrollment: CourseEnrollmentRecord | None = None
 
 

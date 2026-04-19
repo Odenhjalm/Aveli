@@ -47,12 +47,16 @@ def _course(*, cover_media_id: str | None = MEDIA_ID) -> dict:
         "id": COURSE_ID,
         "slug": "course-1",
         "title": "Course 1",
+        "teacher": {"user_id": TEACHER_ID, "display_name": "Aveli Teacher"},
         "course_group_id": COURSE_GROUP_ID,
         "group_position": 1,
         "cover_media_id": cover_media_id,
         "price_amount_cents": 0,
         "drip_enabled": False,
         "drip_interval_days": None,
+        "required_enrollment_source": "intro_enrollment",
+        "enrollable": True,
+        "purchasable": False,
     }
 
 
@@ -61,6 +65,7 @@ def _landing_course(*, cover: dict | None) -> dict:
         "id": COURSE_ID,
         "slug": "course-1",
         "title": "Course 1",
+        "teacher": {"user_id": TEACHER_ID, "display_name": "Aveli Teacher"},
         "course_group_id": COURSE_GROUP_ID,
         "group_position": 1,
         "cover_media_id": MEDIA_ID,
@@ -68,6 +73,9 @@ def _landing_course(*, cover: dict | None) -> dict:
         "price_amount_cents": 0,
         "drip_enabled": False,
         "drip_interval_days": None,
+        "required_enrollment_source": "intro_enrollment",
+        "enrollable": True,
+        "purchasable": False,
     }
 
 

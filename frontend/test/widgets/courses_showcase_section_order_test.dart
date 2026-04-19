@@ -152,11 +152,18 @@ CourseSummary _course({
   String? coverMediaId,
   CourseCoverData? cover,
   int? priceCents,
+  bool? enrollable,
+  bool? purchasable,
 }) {
+  final isFreeIntro = groupPosition == 0;
   return CourseSummary(
     id: id,
     slug: 'foundations-of-soulwisdom',
     title: title,
+    teacher: const CourseTeacherData(
+      userId: 'teacher-1',
+      displayName: 'Aveli Teacher',
+    ),
     groupPosition: groupPosition,
     courseGroupId: 'series:foundations-of-soulwisdom',
     coverMediaId: coverMediaId,
@@ -164,5 +171,10 @@ CourseSummary _course({
     priceCents: priceCents,
     dripEnabled: false,
     dripIntervalDays: null,
+    requiredEnrollmentSource: (enrollable ?? isFreeIntro)
+        ? 'intro_enrollment'
+        : 'purchase',
+    enrollable: enrollable ?? isFreeIntro,
+    purchasable: purchasable ?? !isFreeIntro,
   );
 }

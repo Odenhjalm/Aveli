@@ -154,6 +154,7 @@ async def test_landing_popular_courses_uses_canonical_discovery(async_client):
             "id",
             "slug",
             "title",
+            "teacher",
             "course_group_id",
             "group_position",
             "cover_media_id",
@@ -161,6 +162,16 @@ async def test_landing_popular_courses_uses_canonical_discovery(async_client):
             "price_amount_cents",
             "drip_enabled",
             "drip_interval_days",
+            "required_enrollment_source",
+            "enrollable",
+            "purchasable",
+        }
+        assert real_item["required_enrollment_source"] == "purchase"
+        assert real_item["enrollable"] is False
+        assert real_item["purchasable"] is True
+        assert real_item["teacher"] == {
+            "user_id": real_id,
+            "display_name": "Real Teacher",
         }
         assert "resolved_cover_url" not in real_item
         assert "cover_url" not in real_item

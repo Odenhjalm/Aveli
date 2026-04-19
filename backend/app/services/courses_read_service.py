@@ -9,6 +9,7 @@ _CANONICAL_COURSE_FIELDS = (
     "id",
     "slug",
     "title",
+    "teacher",
     "course_group_id",
     "group_position",
     "cover_media_id",
@@ -16,12 +17,18 @@ _CANONICAL_COURSE_FIELDS = (
     "price_amount_cents",
     "drip_enabled",
     "drip_interval_days",
+    "required_enrollment_source",
+    "enrollable",
+    "purchasable",
 )
 
 
 def _canonical_course_payload(course: Mapping[str, Any]) -> dict[str, Any]:
     courses_service.reject_legacy_course_cover_output_fields(course)
-    return {field: course.get(field) for field in _CANONICAL_COURSE_FIELDS}
+    normalized = dict(course)
+    courses_service.attach_course_access_model(normalized)
+    courses_service.attach_course_teacher_read_contract(normalized)
+    return {field: normalized.get(field) for field in _CANONICAL_COURSE_FIELDS}
 
 
 def _compose_course_detail_view(

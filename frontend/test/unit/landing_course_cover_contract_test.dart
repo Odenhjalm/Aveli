@@ -79,6 +79,10 @@ Map<String, Object?> _canonicalCourse({required Object? cover}) {
     'id': '11111111-1111-1111-1111-111111111111',
     'slug': 'course-one',
     'title': 'Kurs ett',
+    'teacher': const {
+      'user_id': '44444444-4444-4444-4444-444444444444',
+      'display_name': 'Aveli Teacher',
+    },
     'course_group_id': '22222222-2222-2222-2222-222222222222',
     'group_position': 1,
     'cover_media_id': '33333333-3333-3333-3333-333333333333',
@@ -86,5 +90,8 @@ Map<String, Object?> _canonicalCourse({required Object? cover}) {
     'price_amount_cents': 9900,
     'drip_enabled': false,
     'drip_interval_days': null,
+    'required_enrollment_source': 'purchase',
+    'enrollable': false,
+    'purchasable': true,
   };
 }

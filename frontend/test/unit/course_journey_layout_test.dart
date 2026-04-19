@@ -79,10 +79,15 @@ CourseSummary _course({
   required String courseGroupId,
   required int groupPosition,
 }) {
+  final isFreeIntro = groupPosition == 0;
   return CourseSummary(
     id: id,
     slug: slug,
     title: title,
+    teacher: const CourseTeacherData(
+      userId: 'teacher-1',
+      displayName: 'Aveli Teacher',
+    ),
     groupPosition: groupPosition,
     courseGroupId: courseGroupId,
     coverMediaId: null,
@@ -90,5 +95,8 @@ CourseSummary _course({
     priceCents: null,
     dripEnabled: false,
     dripIntervalDays: null,
+    requiredEnrollmentSource: isFreeIntro ? 'intro_enrollment' : 'purchase',
+    enrollable: isFreeIntro,
+    purchasable: !isFreeIntro,
   );
 }

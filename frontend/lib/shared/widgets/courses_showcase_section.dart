@@ -671,7 +671,7 @@ class _CourseTileGlass extends StatelessWidget {
     final title = course.title;
     const desc = '';
     final slug = course.slug;
-    final isIntro = course.groupPosition == 0;
+    final isIntro = course.isIntroCourse;
     final priceCents = course.priceCents;
     final courseCoverImageUrlFuture = Future<String?>.value(
       courseCoverResolvedUrl(course.cover),

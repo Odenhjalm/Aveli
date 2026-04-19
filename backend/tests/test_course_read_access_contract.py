@@ -23,6 +23,9 @@ class _FakeCursor:
     async def fetchone(self) -> dict[str, object] | None:
         return {"exists": 1}
 
+    async def fetchall(self) -> list[dict[str, object]]:
+        return []
+
 
 class _FakeConnection:
     def __init__(self, cursor: _FakeCursor) -> None:
@@ -34,7 +37,8 @@ class _FakeConnection:
     async def __aexit__(self, exc_type, exc, tb) -> bool:
         return False
 
-    def cursor(self):
+    def cursor(self, *args, **kwargs):
+        del args, kwargs
         return _FakeCursorContext(self._cursor)
 
 
@@ -70,3 +74,39 @@ async def test_is_course_owner_uses_canonical_teacher_id(monkeypatch):
     assert "created_by" not in query
     assert "group_position" not in query
     assert params == ("course-1", "teacher-1")
+
+
+async def test_public_discovery_query_only_exposes_actionable_courses(monkeypatch):
+    cursor = _FakeCursor()
+    monkeypatch.setattr(courses_repo, "pool", _FakePool(cursor), raising=True)
+
+    await courses_repo.list_public_course_discovery()
+
+    assert len(cursor.executed) == 1
+    query, params = cursor.executed[0]
+    assert "c.content_ready is true" in query
+    assert "c.sellable is true" in query
+    assert "c.sellable is false" in query
+    assert "coalesce(c.price_amount_cents, 0) <= 0" in query
+    assert "c.teacher_id" in query
+    assert "p.display_name" in query
+    assert "left join app.profiles as p on p.user_id = c.teacher_id" in query
+    assert params == ()
+
+
+async def test_public_course_detail_query_only_exposes_actionable_courses(monkeypatch):
+    cursor = _FakeCursor()
+    monkeypatch.setattr(courses_repo, "pool", _FakePool(cursor), raising=True)
+
+    await courses_repo.get_public_course_detail_rows(course_id="course-1")
+
+    assert len(cursor.executed) == 1
+    query, params = cursor.executed[0]
+    assert "c.content_ready is true" in query
+    assert "c.sellable is true" in query
+    assert "c.sellable is false" in query
+    assert "coalesce(c.price_amount_cents, 0) <= 0" in query
+    assert "c.teacher_id" in query
+    assert "p.display_name" in query
+    assert "left join app.profiles as p on p.user_id = c.teacher_id" in query
+    assert params == ("course-1",)

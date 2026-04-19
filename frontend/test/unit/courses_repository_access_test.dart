@@ -61,6 +61,49 @@ void main() {
       );
     });
 
+    test('does not infer intro access from group position', () {
+      final sellablePositionZero = CourseSummary.fromResponse(
+        _coursePayload(
+          priceCents: 9900,
+          groupPosition: 0,
+          requiredEnrollmentSource: 'purchase',
+          enrollable: false,
+          purchasable: true,
+        ),
+      );
+      final freeNonZero = CourseSummary.fromResponse(
+        _coursePayload(
+          priceCents: 0,
+          groupPosition: 2,
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
+        ),
+      );
+
+      expect(sellablePositionZero.isIntroCourse, isFalse);
+      expect(freeNonZero.isIntroCourse, isTrue);
+    });
+
+    test('preserves backend-authored teacher identity', () {
+      final summary = CourseSummary.fromResponse(_coursePayload());
+
+      expect(summary.teacher, isNotNull);
+      expect(summary.teacher!.userId, 'teacher-1');
+      expect(summary.teacher!.displayName, 'Aveli Teacher');
+    });
+
+    test(
+      'rejects alternate teacher fields without canonical teacher object',
+      () {
+        final payload = _coursePayload(
+          extra: const {'teacher_display_name': 'Aveli Teacher'},
+        )..remove('teacher');
+
+        expect(() => CourseSummary.fromResponse(payload), throwsStateError);
+      },
+    );
+
     test('rejects mixed canonical cover objects with legacy fields', () {
       expect(
         () => CourseSummary.fromResponse(
@@ -144,7 +187,9 @@ void main() {
 
       expect(state.courseId, 'course-1');
       expect(state.groupPosition, 0);
-      expect(state.requiredEnrollmentSource, isNull);
+      expect(state.requiredEnrollmentSource, 'purchase');
+      expect(state.enrollable, isFalse);
+      expect(state.purchasable, isTrue);
       expect(state.hasEnrollment, isTrue);
       expect(state.enrollment!.source, 'purchase');
       expect(state.enrollment!.currentUnlockPosition, 1);
@@ -171,6 +216,8 @@ void main() {
 
       expect(state.courseId, 'course-2');
       expect(state.requiredEnrollmentSource, 'purchase');
+      expect(state.enrollable, isFalse);
+      expect(state.purchasable, isTrue);
       expect(state.hasEnrollment, isFalse);
       expect(state.enrollment, isNull);
       expect(adapter.requestsFor('/courses/course-2/access'), hasLength(1));
@@ -190,6 +237,7 @@ void main() {
                 {'id': 'lesson-2', 'lesson_title': 'Second', 'position': 2},
                 {'id': 'lesson-1', 'lesson_title': 'First', 'position': 1},
               ],
+              'short_description': 'Backend-authored course description',
             },
           );
         }
@@ -200,6 +248,8 @@ void main() {
       final detail = await repo.fetchCourseDetailBySlug(slug);
 
       expect(detail.course.slug, slug);
+      expect(detail.course.teacher?.displayName, 'Aveli Teacher');
+      expect(detail.shortDescription, 'Backend-authored course description');
       expect(
         detail.lessons.map((lesson) => lesson.lessonTitle),
         orderedEquals(['First', 'Second']),
@@ -223,6 +273,7 @@ void main() {
                 },
               ),
               'lessons': const [],
+              'short_description': null,
             },
           );
         }
@@ -252,19 +303,28 @@ Map<String, Object?> _coursePayload({
   String slug = 'aveli-course',
   String? coverMediaId = 'media-1',
   Object? cover = _defaultCover,
+  int groupPosition = 0,
+  int? priceCents = 0,
+  String? requiredEnrollmentSource = 'intro_enrollment',
+  bool enrollable = true,
+  bool purchasable = false,
   Map<String, Object?> extra = const {},
 }) {
   return {
     'id': 'course-1',
     'slug': slug,
     'title': 'Aveli 101',
-    'group_position': 0,
+    'teacher': const {'user_id': 'teacher-1', 'display_name': 'Aveli Teacher'},
+    'group_position': groupPosition,
     'course_group_id': 'group-1',
     'cover_media_id': coverMediaId,
     'cover': cover,
-    'price_amount_cents': 0,
+    'price_amount_cents': priceCents,
     'drip_enabled': false,
     'drip_interval_days': null,
+    'required_enrollment_source': requiredEnrollmentSource,
+    'enrollable': enrollable,
+    'purchasable': purchasable,
     ...extra,
   };
 }
@@ -278,12 +338,16 @@ const Map<String, Object?> _defaultCover = {
 Map<String, Object?> _accessPayload({
   String courseId = 'course-1',
   Object? enrollment = _defaultEnrollment,
-  String? requiredEnrollmentSource,
+  String? requiredEnrollmentSource = 'purchase',
+  bool enrollable = false,
+  bool purchasable = true,
 }) {
   return {
     'course_id': courseId,
     'group_position': 0,
     'required_enrollment_source': requiredEnrollmentSource,
+    'enrollable': enrollable,
+    'purchasable': purchasable,
     'enrollment': enrollment,
   };
 }
