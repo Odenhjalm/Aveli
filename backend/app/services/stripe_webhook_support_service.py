@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 
 import stripe
 from starlette.concurrency import run_in_threadpool
 
+from ..db import pool
 from .. import stripe_mode
 from ..repositories import orders as orders_repo
 from ..repositories import payments as payments_repo
 from ..repositories import teachers as teachers_repo
-from ..services import checkout_service
+from ..services import checkout_service, stripe_webhook_course_service
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,12 @@ async def handle_payment_intent_succeeded(payload: dict[str, object]) -> None:
     await checkout_service.handle_payment_intent_succeeded(payload)
 
 
-async def handle_refund_event(event_type: str, payload: dict[str, object]) -> None:
+async def handle_refund_event(
+    event_type: str,
+    payload: dict[str, object],
+    *,
+    conn: object | None = None,
+) -> None:
     payment_intent_id: str | None = None
     if event_type == "payment_intent.canceled":
         intent_value = payload.get("id")
@@ -33,31 +40,55 @@ async def handle_refund_event(event_type: str, payload: dict[str, object]) -> No
         logger.info("Refund event missing payment intent id: event=%s", event_type)
         return
 
-    order = await orders_repo.get_order_by_payment_intent(payment_intent_id)
-    if not order:
-        logger.info(
-            "Refund event could not match order by payment intent: %s",
+    async def _execute(active_conn: object) -> None:
+        order = await orders_repo.get_order_by_payment_intent(
             payment_intent_id,
+            conn=active_conn,
         )
+        if not order:
+            logger.info(
+                "Refund event could not match order by payment intent: %s",
+                payment_intent_id,
+            )
+            return
+
+        refunded_order = await orders_repo.mark_order_refunded(
+            order["id"],
+            payment_intent=payment_intent_id,
+            conn=active_conn,
+        )
+        if not refunded_order:
+            return
+
+        if refunded_order.get("course_id"):
+            await stripe_webhook_course_service.revoke_paid_order_access(
+                order=refunded_order,
+                conn=active_conn,
+            )
+
+        await payments_repo.record_payment(
+            order_id=refunded_order["id"],
+            provider="stripe",
+            provider_reference=payment_intent_id,
+            status="refunded",
+            amount_cents=int(refunded_order.get("amount_cents") or 0),
+            currency=(refunded_order.get("currency") or "sek").lower(),
+            metadata={"event": event_type},
+            payload=payload,
+            conn=active_conn,
+        )
+
+    if conn is not None:
+        await _execute(conn)
         return
 
-    refunded_order = await orders_repo.mark_order_refunded(
-        order["id"],
-        payment_intent=payment_intent_id,
-    )
-    if not refunded_order:
-        return
-
-    await payments_repo.record_payment(
-        order_id=refunded_order["id"],
-        provider="stripe",
-        provider_reference=payment_intent_id,
-        status="refunded",
-        amount_cents=int(refunded_order.get("amount_cents") or 0),
-        currency=(refunded_order.get("currency") or "sek").lower(),
-        metadata={"event": event_type},
-        payload=payload,
-    )
+    async with pool.connection() as active_conn:  # type: ignore[attr-defined]
+        try:
+            await _execute(active_conn)
+            await active_conn.commit()
+        except Exception:
+            await active_conn.rollback()
+            raise
 
 
 async def handle_connect_event(

@@ -51,7 +51,7 @@ async def test_read_canonical_lesson_access_does_not_allow_membership_to_substit
         return {
             "course": {"id": COURSE_ID},
             "enrollment": None,
-            "expected_source": "purchase",
+            "required_enrollment_source": "purchase",
             "can_access": False,
         }
 
@@ -101,7 +101,7 @@ async def test_read_canonical_lesson_access_respects_current_unlock_position(
                 "source": "purchase",
                 "current_unlock_position": 2,
             },
-            "expected_source": "purchase",
+            "required_enrollment_source": "purchase",
             "can_access": True,
         }
 
@@ -145,7 +145,7 @@ async def test_lesson_detail_denies_before_media_or_structure_reads(monkeypatch)
                 "source": "purchase",
                 "current_unlock_position": 1,
             },
-            "expected_source": "purchase",
+            "required_enrollment_source": "purchase",
             "current_unlock_position": 1,
             "can_access": False,
         }
@@ -198,7 +198,7 @@ async def test_lesson_detail_missing_lesson_uses_swedish_safe_error(
             "lesson": None,
             "course": None,
             "enrollment": None,
-            "expected_source": None,
+            "required_enrollment_source": None,
             "current_unlock_position": 0,
             "can_access": False,
         }
@@ -232,7 +232,7 @@ async def test_lesson_detail_denies_admin_without_course_enrollment(monkeypatch)
             },
             "course": {"id": COURSE_ID},
             "enrollment": None,
-            "expected_source": "purchase",
+            "required_enrollment_source": "purchase",
             "current_unlock_position": 0,
             "can_access": False,
         }

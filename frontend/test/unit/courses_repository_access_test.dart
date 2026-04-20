@@ -199,7 +199,7 @@ void main() {
       expect(state.requiredEnrollmentSource, 'purchase');
       expect(state.enrollable, isFalse);
       expect(state.purchasable, isTrue);
-      expect(state.hasEnrollment, isTrue);
+      expect(state.canAccess, isTrue);
       expect(state.enrollment!.source, 'purchase');
       expect(state.enrollment!.currentUnlockPosition, 1);
       expect(adapter.requestsFor('/courses/course-1/access'), hasLength(1));
@@ -214,6 +214,7 @@ void main() {
               courseId: 'course-2',
               enrollment: null,
               requiredEnrollmentSource: 'purchase',
+              canAccess: false,
             ),
           );
         }
@@ -227,9 +228,32 @@ void main() {
       expect(state.requiredEnrollmentSource, 'purchase');
       expect(state.enrollable, isFalse);
       expect(state.purchasable, isTrue);
-      expect(state.hasEnrollment, isFalse);
+      expect(state.canAccess, isFalse);
       expect(state.enrollment, isNull);
       expect(adapter.requestsFor('/courses/course-2/access'), hasLength(1));
+    });
+
+    test('uses backend can_access even when enrollment exists', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/course-3/access') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: _accessPayload(
+              courseId: 'course-3',
+              canAccess: false,
+              enrollment: _enrollmentPayload(source: 'intro_enrollment'),
+            ),
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      final state = await repo.fetchCourseState('course-3');
+
+      expect(state.enrollment, isNotNull);
+      expect(state.enrollment!.source, 'intro_enrollment');
+      expect(state.canAccess, isFalse);
     });
 
     test('rejects legacy step progression field', () {
@@ -433,6 +457,7 @@ Map<String, Object?> _accessPayload({
   String? requiredEnrollmentSource = 'purchase',
   bool enrollable = false,
   bool purchasable = true,
+  bool canAccess = true,
   Map<String, Object?> extra = const {},
 }) {
   return {
@@ -441,6 +466,7 @@ Map<String, Object?> _accessPayload({
     'required_enrollment_source': requiredEnrollmentSource,
     'enrollable': enrollable,
     'purchasable': purchasable,
+    'can_access': canAccess,
     'enrollment': enrollment,
     ...extra,
   };
@@ -455,6 +481,18 @@ const Map<String, Object?> _defaultEnrollment = {
   'drip_started_at': '2024-01-10T12:00:00Z',
   'current_unlock_position': 1,
 };
+
+Map<String, Object?> _enrollmentPayload({String source = 'purchase'}) {
+  return {
+    'id': 'enrollment-1',
+    'user_id': 'user-1',
+    'course_id': 'course-1',
+    'source': source,
+    'granted_at': '2024-01-10T12:00:00Z',
+    'drip_started_at': '2024-01-10T12:00:00Z',
+    'current_unlock_position': 1,
+  };
+}
 
 Map<String, Object?> _lessonPayload({
   Object? lesson = const {

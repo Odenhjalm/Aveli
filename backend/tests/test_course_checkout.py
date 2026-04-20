@@ -7,7 +7,10 @@ from app import db, repositories
 from app.config import settings
 from app.repositories import courses as courses_repo
 from app.repositories import payments as payments_repo
+from app.routes import stripe_webhooks
 from app.services import checkout_service
+from app.services import courses_service
+from app.services import stripe_webhook_support_service
 
 from .utils import register_user
 
@@ -133,6 +136,7 @@ async def _mark_course_checkout_ready(course_id: str) -> None:
                        content_ready = true,
                        stripe_product_id = %s,
                        active_stripe_price_id = %s,
+                       required_enrollment_source = 'purchase'::app.course_enrollment_source,
                        sellable = true
                  WHERE id = %s
                 """,
@@ -1027,6 +1031,334 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
             await _cleanup_course(course_id)
         await _cleanup_user(teacher_id)
         await _cleanup_user(str(student_id))
+
+
+async def test_refund_webhook_revokes_purchase_enrollment_and_access(
+    async_client,
+    monkeypatch,
+):
+    _set_stripe_test_env(monkeypatch)
+    settings.stripe_test_webhook_secret = "whsec_test"
+    captured_session = _install_course_stripe_fakes(
+        monkeypatch,
+        checkout_id="cs_refund_webhook_access",
+        payment_intent="pi_refund_webhook_access",
+    )
+
+    teacher_headers, teacher_id = await _register_teacher(async_client)
+    student_headers, student_id, _ = await register_user(async_client)
+    course_id = None
+    try:
+        slug = f"refund-access-{uuid.uuid4().hex[:8]}"
+        course_id = await _create_course(
+            async_client,
+            teacher_headers,
+            slug,
+            1500,
+            group_position=1,
+            checkout_ready=True,
+        )
+
+        checkout_response = await async_client.post(
+            "/api/checkout/create",
+            headers=student_headers,
+            json={"slug": slug},
+        )
+        assert checkout_response.status_code == 201, checkout_response.text
+        checkout_payload = checkout_response.json()
+
+        refund_event = {
+            "id": f"evt_refund_access_charge_{uuid.uuid4().hex}",
+            "type": "charge.refunded",
+            "data": {
+                "object": {
+                    "id": "ch_refund_webhook_access",
+                    "payment_intent": "pi_refund_webhook_access",
+                }
+            },
+        }
+        events = [
+            {
+                "id": f"evt_refund_access_purchase_{uuid.uuid4().hex}",
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "id": "cs_refund_webhook_access",
+                        "mode": "payment",
+                        "metadata": _captured_course_checkout_metadata(
+                            captured_session
+                        ),
+                        "customer": "cus_refund_webhook_access",
+                        "payment_intent": "pi_refund_webhook_access",
+                        "amount_total": 1500,
+                        "currency": "sek",
+                    }
+                },
+            },
+            refund_event,
+            refund_event,
+        ]
+
+        def fake_construct_event(payload, sig_header, secret):
+            assert sig_header == "sig_test"
+            assert secret == "whsec_test"
+            return events.pop(0)
+
+        monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+
+        purchase_response = await async_client.post(
+            "/api/stripe/webhook",
+            content=json.dumps({}),
+            headers={"stripe-signature": "sig_test"},
+        )
+        assert purchase_response.status_code == 200, purchase_response.text
+
+        access_before = await courses_service.read_canonical_course_access(
+            str(student_id),
+            course_id,
+        )
+        assert access_before["can_access"] is True
+
+        refund_response = await async_client.post(
+            "/api/stripe/webhook",
+            content=json.dumps({}),
+            headers={"stripe-signature": "sig_test"},
+        )
+        assert refund_response.status_code == 200, refund_response.text
+
+        order = await repositories.get_order(checkout_payload["order_id"])
+        assert order is not None
+        assert order["status"] == "refunded"
+        assert (
+            await courses_repo.get_course_enrollment(str(student_id), course_id)
+            is None
+        )
+
+        access_after = await courses_service.read_canonical_course_access(
+            str(student_id),
+            course_id,
+        )
+        assert access_after["can_access"] is False
+
+        duplicate_refund_response = await async_client.post(
+            "/api/stripe/webhook",
+            content=json.dumps({}),
+            headers={"stripe-signature": "sig_test"},
+        )
+        assert duplicate_refund_response.status_code == 200
+        assert (
+            await courses_repo.get_course_enrollment(str(student_id), course_id)
+            is None
+        )
+    finally:
+        if course_id:
+            await _cleanup_course(course_id)
+        await _cleanup_user(teacher_id)
+        await _cleanup_user(str(student_id))
+
+
+async def test_refund_webhook_reuses_payment_event_claim_connection(monkeypatch):
+    sentinel_conn = object()
+    captured: dict[str, object] = {}
+
+    async def fake_get_order_by_payment_intent(payment_intent_id, *, conn=None):
+        captured["payment_intent_id"] = payment_intent_id
+        captured["lookup_conn"] = conn
+        return {
+            "id": "order_refund_claim",
+            "user_id": "user_refund_claim",
+            "course_id": "course_refund_claim",
+            "amount_cents": 1500,
+            "currency": "sek",
+            "status": "paid",
+        }
+
+    async def fake_mark_order_refunded(order_id, *, payment_intent=None, conn=None):
+        captured["mark_refunded"] = {
+            "order_id": order_id,
+            "payment_intent": payment_intent,
+            "conn": conn,
+        }
+        return {
+            "id": order_id,
+            "user_id": "user_refund_claim",
+            "course_id": "course_refund_claim",
+            "amount_cents": 1500,
+            "currency": "sek",
+            "status": "refunded",
+            "previous_status": "paid",
+        }
+
+    async def fake_revoke_paid_order_access(**kwargs):
+        captured["revoke_access"] = kwargs
+        return ["course_refund_claim"]
+
+    async def fake_record_payment(**kwargs):
+        captured["record_payment"] = kwargs
+
+    monkeypatch.setattr(
+        stripe_webhook_support_service.orders_repo,
+        "get_order_by_payment_intent",
+        fake_get_order_by_payment_intent,
+    )
+    monkeypatch.setattr(
+        stripe_webhook_support_service.orders_repo,
+        "mark_order_refunded",
+        fake_mark_order_refunded,
+    )
+    monkeypatch.setattr(
+        stripe_webhook_support_service.payments_repo,
+        "record_payment",
+        fake_record_payment,
+    )
+    monkeypatch.setattr(
+        stripe_webhook_support_service.stripe_webhook_course_service,
+        "revoke_paid_order_access",
+        fake_revoke_paid_order_access,
+    )
+
+    await stripe_webhook_support_service.handle_refund_event(
+        "charge.refunded",
+        {"payment_intent": "pi_refund_claim"},
+        conn=sentinel_conn,
+    )
+
+    assert captured["payment_intent_id"] == "pi_refund_claim"
+    assert captured["lookup_conn"] is sentinel_conn
+    assert captured["mark_refunded"]["conn"] is sentinel_conn
+    assert captured["revoke_access"]["conn"] is sentinel_conn
+    assert captured["revoke_access"]["order"]["course_id"] == "course_refund_claim"
+    assert captured["record_payment"]["conn"] is sentinel_conn
+    assert captured["record_payment"]["status"] == "refunded"
+
+
+async def test_completed_course_event_reconciliation_repairs_missing_enrollment_after_full_proof(
+    monkeypatch,
+):
+    order_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+    course_id = str(uuid.uuid4())
+    order = {
+        "id": order_id,
+        "user_id": user_id,
+        "course_id": course_id,
+        "order_type": "one_off",
+        "amount_cents": 1500,
+        "currency": "sek",
+        "status": "paid",
+        "stripe_checkout_id": "cs_reconcile_completed",
+        "metadata": {"price_id": "price_reconcile_completed"},
+    }
+    session = {
+        "id": "cs_reconcile_completed",
+        "metadata": {
+            "checkout_type": "course",
+            "order_id": order_id,
+            "user_id": user_id,
+            "price_id": "price_reconcile_completed",
+        },
+        "payment_intent": "pi_reconcile_completed",
+        "amount_total": 1500,
+        "currency": "sek",
+    }
+    captured: dict[str, object] = {}
+
+    async def fake_get_payment_for_order_by_reference(
+        lookup_order_id,
+        provider_reference,
+        *,
+        status=None,
+        conn=None,
+    ):
+        captured["payment_lookup"] = {
+            "order_id": lookup_order_id,
+            "provider_reference": provider_reference,
+            "status": status,
+            "conn": conn,
+        }
+        return {"id": "payment_reconcile_completed", "status": "paid"}
+
+    async def fake_assert_purchase_enrollment_exists(**kwargs):
+        captured["enrollment_repair"] = kwargs
+        return {"id": "enrollment_reconcile_completed", "source": "purchase"}
+
+    monkeypatch.setattr(
+        stripe_webhooks.payments_repo,
+        "get_payment_for_order_by_reference",
+        fake_get_payment_for_order_by_reference,
+    )
+    monkeypatch.setattr(
+        stripe_webhooks.stripe_webhook_course_service,
+        "assert_purchase_enrollment_exists",
+        fake_assert_purchase_enrollment_exists,
+    )
+
+    await stripe_webhooks._assert_course_checkout_fulfillment_completed(
+        order=order,
+        session=session,
+        repair_missing_enrollment=True,
+        event_type="checkout.session.completed",
+    )
+
+    assert captured["payment_lookup"]["status"] == "paid"
+    assert captured["enrollment_repair"]["repair_missing_enrollment"] is True
+    assert captured["enrollment_repair"]["event_type"] == "checkout.session.completed"
+
+
+async def test_completed_course_event_reconciliation_requires_paid_payment_before_repair(
+    monkeypatch,
+):
+    order_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+    course_id = str(uuid.uuid4())
+    order = {
+        "id": order_id,
+        "user_id": user_id,
+        "course_id": course_id,
+        "order_type": "one_off",
+        "amount_cents": 1500,
+        "currency": "sek",
+        "status": "paid",
+        "stripe_checkout_id": "cs_reconcile_missing_payment",
+        "metadata": {"price_id": "price_reconcile_missing_payment"},
+    }
+    session = {
+        "id": "cs_reconcile_missing_payment",
+        "metadata": {
+            "checkout_type": "course",
+            "order_id": order_id,
+            "user_id": user_id,
+            "price_id": "price_reconcile_missing_payment",
+        },
+        "payment_intent": "pi_reconcile_missing_payment",
+        "amount_total": 1500,
+        "currency": "sek",
+    }
+
+    async def fake_get_payment_for_order_by_reference(*args, **kwargs):
+        return None
+
+    async def fail_assert_purchase_enrollment_exists(**kwargs):
+        raise AssertionError("missing paid payment must block enrollment repair")
+
+    monkeypatch.setattr(
+        stripe_webhooks.payments_repo,
+        "get_payment_for_order_by_reference",
+        fake_get_payment_for_order_by_reference,
+    )
+    monkeypatch.setattr(
+        stripe_webhooks.stripe_webhook_course_service,
+        "assert_purchase_enrollment_exists",
+        fail_assert_purchase_enrollment_exists,
+    )
+
+    with pytest.raises(RuntimeError, match="payment record is missing"):
+        await stripe_webhooks._assert_course_checkout_fulfillment_completed(
+            order=order,
+            session=session,
+            repair_missing_enrollment=True,
+            event_type="checkout.session.completed",
+        )
 
 
 async def test_webhook_returns_500_when_subscription_processing_fails(async_client, monkeypatch):

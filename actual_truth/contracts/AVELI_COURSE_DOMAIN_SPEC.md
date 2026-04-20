@@ -106,6 +106,17 @@ These fields do not alter lesson, content, media, progression, or access
 meaning. Their monetization and ownership authority remains governed by the
 active course monetization and commerce contracts.
 
+Accepted baseline course-access classification metadata on `app.courses` is:
+
+- `required_enrollment_source`: `purchase | intro_enrollment | null`.
+
+`required_enrollment_source` is the only canonical course-owned metadata that
+classifies whether protected course content requires a `purchase` enrollment or
+an `intro_enrollment` enrollment. `null` means the course is not classified for
+protected content access and protected access MUST fail closed. This field MUST
+NOT be derived from `sellable`, `price_amount_cents`, `group_position`, Stripe
+state, order state, payment state, or frontend state.
+
 Public course read composition may project teacher display data as:
 
 ```text
@@ -320,8 +331,8 @@ Valid `group_position` values are non-negative integers:
 - `1..n` are valid ordered progression positions
 
 `group_position` alone MUST NOT decide whether a course is intro/free,
-purchasable, or enrollable. Access metadata remains the only authority for
-those states.
+purchasable, or enrollable. `app.courses.required_enrollment_source` is the
+course-access classification authority for protected course access.
 
 Within a `course_group_id`, progression order is strictly defined by
 `group_position`.
@@ -329,7 +340,8 @@ Within a `course_group_id`, progression order is strictly defined by
 arbitrary grouping.
 
 The legacy public/domain field name `step` MUST NOT be emitted or accepted as a
-course progression authority.
+course progression authority. It MUST NOT be used as the Baseline V2 course
+access classification authority.
 
 Lesson ordering is defined only by `app.lessons.position`.
 
@@ -381,20 +393,23 @@ and is not governed by course enrollment.
 `lesson_structure_surface` is public lesson identity/structure discovery and is
 not governed by course enrollment.
 
-`lesson_content_surface` is protected and requires both:
+`lesson_content_surface` is protected and requires all of:
 
 - a canonical `app.course_enrollments` row for `(user_id, course_id)`
+- `app.course_enrollments.source = app.courses.required_enrollment_source`
 - `app.lessons.position <= app.course_enrollments.current_unlock_position`
 
-Intro courses still require explicit enrollment with `source = intro_enrollment`
-before protected lesson content can be accessed.
+Courses classified with `required_enrollment_source = intro_enrollment` require
+explicit enrollment with `source = intro_enrollment` before protected lesson
+content can be accessed.
 
-Paid courses require explicit enrollment with `source = purchase` before
-protected lesson content can be accessed.
+Courses classified with `required_enrollment_source = purchase` require
+explicit enrollment with `source = purchase` before protected lesson content can
+be accessed.
 
 No endpoint, view, frontend model, token claim, membership state, purchase state,
 or media state may provide protected lesson content or lesson media without the
-two required `lesson_content_surface` conditions.
+required `lesson_content_surface` conditions.
 
 ## 9. FRONTEND CONTRACT (strict media shape)
 

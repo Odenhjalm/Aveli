@@ -73,7 +73,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
     state.when(
       data: (courseState) {
         if (!mounted || !context.mounted) return;
-        if (courseState?.hasEnrollment == true) {
+        if (courseState?.canAccess == true) {
           showSnack(context, 'Du är nu anmäld till kursen.');
         }
         ref.invalidate(courseStateProvider(detail.course.id));
@@ -183,12 +183,12 @@ class _CourseContent extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final courseState = courseStateAsync.valueOrNull;
-    final hasEnrollment = courseState?.hasEnrollment == true;
-    final currentUnlockPosition =
-        courseState?.enrollment?.currentUnlockPosition;
+    final canAccess = courseState?.canAccess == true;
+    final currentUnlockPosition = canAccess
+        ? courseState?.enrollment?.currentUnlockPosition
+        : null;
     final canEnroll =
-        !hasEnrollment &&
-        (courseState?.enrollable == true || course.enrollable);
+        !canAccess && (courseState?.enrollable == true || course.enrollable);
     final lessons = _visibleCourseLessons(detail.lessons);
     final unlockedLessons = lessons
         .where(
@@ -201,7 +201,7 @@ class _CourseContent extends StatelessWidget {
     final enrollError = enrollState.whenOrNull(error: (error, _) => error);
 
     Widget? primaryCta;
-    if (hasEnrollment && unlockedLessons.isNotEmpty) {
+    if (canAccess && unlockedLessons.isNotEmpty) {
       primaryCta = FilledButton(
         onPressed: () => onOpenLesson(unlockedLessons.first.id),
         child: const Text('Fortsätt kursen'),
@@ -223,7 +223,7 @@ class _CourseContent extends StatelessWidget {
         height: 48,
         child: buyButton,
       );
-    } else if (hasEnrollment) {
+    } else if (canAccess) {
       primaryCta = const FilledButton(
         onPressed: null,
         child: Text('Kurs aktiverad'),
@@ -285,7 +285,7 @@ class _CourseContent extends StatelessWidget {
                 const SizedBox(height: 12),
                 if (primaryCta != null)
                   SizedBox(width: double.infinity, child: primaryCta),
-                if (hasEnrollment && currentUnlockPosition != null) ...[
+                if (canAccess && currentUnlockPosition != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Upplåsta lektioner: $currentUnlockPosition',
@@ -317,7 +317,7 @@ class _CourseContent extends StatelessWidget {
                   children: [
                     ...lessons.map((lesson) {
                       final isLocked =
-                          !hasEnrollment ||
+                          !canAccess ||
                           currentUnlockPosition == null ||
                           lesson.position > currentUnlockPosition;
                       return ListTile(

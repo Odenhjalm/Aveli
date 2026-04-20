@@ -56,6 +56,7 @@ void main() {
       expect(payload.containsKey('sellable'), isFalse);
       expect(payload.containsKey('stripe_product_id'), isFalse);
       expect(payload.containsKey('active_stripe_price_id'), isFalse);
+      expect(payload.containsKey('required_enrollment_source'), isFalse);
       expect(payload.containsKey('teacher_id'), isFalse);
     },
   );

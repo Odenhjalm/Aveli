@@ -964,6 +964,7 @@ class CourseAccessStateResponse(BaseModel):
     required_enrollment_source: Literal["purchase", "intro_enrollment"] | None = None
     enrollable: bool
     purchasable: bool
+    can_access: bool
     enrollment: CourseEnrollmentRecord | None = None
 
 

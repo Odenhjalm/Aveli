@@ -79,33 +79,21 @@ def _if_match_contains_etag(if_match: str | None, expected_etag: str) -> bool:
     return expected_etag in {candidate.strip() for candidate in value.split(",")}
 
 
-def _normalized_course_price_amount(course: Mapping[str, Any]) -> int | None:
-    try:
-        return int(course.get("price_amount_cents") or 0)
-    except (TypeError, ValueError):
-        return None
-
-
-def _course_expected_source(course: Mapping[str, Any] | None) -> str | None:
+def _course_required_enrollment_source(course: Mapping[str, Any] | None) -> str | None:
     if not course:
         return None
-    amount_cents = _normalized_course_price_amount(course)
-    if amount_cents is None:
-        return None
-    sellable = course.get("sellable")
-    if sellable is True:
-        return "purchase"
-    if sellable is False and amount_cents <= 0:
-        return "intro_enrollment"
+    required_source = str(course.get("required_enrollment_source") or "").strip().lower()
+    if required_source in {"purchase", "intro_enrollment"}:
+        return required_source
     return None
 
 
 def build_course_access_model(course: Mapping[str, Any] | None) -> dict[str, Any]:
-    expected_source = _course_expected_source(course)
+    required_source = _course_required_enrollment_source(course)
     return {
-        "required_enrollment_source": expected_source,
-        "enrollable": expected_source == "intro_enrollment",
-        "purchasable": expected_source == "purchase",
+        "required_enrollment_source": required_source,
+        "enrollable": required_source == "intro_enrollment",
+        "purchasable": required_source == "purchase",
     }
 
 
@@ -207,6 +195,7 @@ def _is_course_sellable_subject(course: Mapping[str, Any]) -> bool:
         return False
     stripe_product_id = str(course.get("stripe_product_id") or "").strip()
     active_price_id = str(course.get("active_stripe_price_id") or "").strip()
+    required_source = _course_required_enrollment_source(course)
     return (
         bool(teacher_id)
         and visibility == "public"
@@ -214,6 +203,7 @@ def _is_course_sellable_subject(course: Mapping[str, Any]) -> bool:
         and amount_cents > 0
         and bool(stripe_product_id)
         and bool(active_price_id)
+        and required_source == "purchase"
     )
 
 
@@ -1550,11 +1540,14 @@ async def publish_course(
         teacher_id=normalized_teacher_id,
         amount_cents=amount_cents,
     )
-    updated = await courses_repo.publish_course_state(
-        normalized_course_id,
-        stripe_product_id=product_id,
-        active_stripe_price_id=price_id,
-    )
+    try:
+        updated = await courses_repo.publish_course_state(
+            normalized_course_id,
+            stripe_product_id=product_id,
+            active_stripe_price_id=price_id,
+        )
+    except Exception as exc:
+        raise RuntimeError("Course publish state could not be persisted") from exc
     if updated is None:
         raise RuntimeError("Course publish state could not be persisted")
     return dict(updated)
@@ -1759,15 +1752,17 @@ def _canonical_course_state_payload(
     *,
     course: Mapping[str, Any],
     enrollment: Mapping[str, Any] | None,
-    expected_source: str | None,
+    required_enrollment_source: str | None,
+    can_access: bool,
 ) -> dict[str, Any]:
     access_model = build_course_access_model(course)
     return {
         "course_id": str(course.get("id") or ""),
         "group_position": int(course.get("group_position") or 0),
-        "required_enrollment_source": expected_source,
+        "required_enrollment_source": required_enrollment_source,
         "enrollable": bool(access_model["enrollable"]),
         "purchasable": bool(access_model["purchasable"]),
+        "can_access": bool(can_access),
         "enrollment": dict(enrollment) if enrollment is not None else None,
     }
 
@@ -1780,16 +1775,17 @@ async def read_canonical_course_access(user_id: str, course_id: str) -> dict[str
         if course is not None and normalized_user_id
         else None
     )
-    expected_source = _course_expected_source(course)
+    required_enrollment_source = _course_required_enrollment_source(course)
     source_matches = (
         enrollment is not None
-        and expected_source is not None
-        and str(enrollment.get("source") or "").strip().lower() == expected_source
+        and required_enrollment_source is not None
+        and str(enrollment.get("source") or "").strip().lower()
+        == required_enrollment_source
     )
     return {
         "course": course,
         "enrollment": enrollment,
-        "expected_source": expected_source,
+        "required_enrollment_source": required_enrollment_source,
         "can_access": bool(source_matches),
     }
 
@@ -1804,7 +1800,8 @@ async def read_canonical_course_state(
     return _canonical_course_state_payload(
         course=course,
         enrollment=access["enrollment"],
-        expected_source=access["expected_source"],
+        required_enrollment_source=access["required_enrollment_source"],
+        can_access=access["can_access"],
     )
 
 
@@ -1815,7 +1812,7 @@ async def read_canonical_lesson_access(user_id: str, lesson_id: str) -> dict[str
             "lesson": None,
             "course": None,
             "enrollment": None,
-            "expected_source": None,
+            "required_enrollment_source": None,
             "current_unlock_position": 0,
             "can_access": False,
         }
@@ -1878,5 +1875,6 @@ async def create_intro_course_enrollment(
     return _canonical_course_state_payload(
         course=course,
         enrollment=enrollment,
-        expected_source="intro_enrollment",
+        required_enrollment_source="intro_enrollment",
+        can_access=True,
     )

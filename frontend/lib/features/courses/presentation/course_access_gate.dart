@@ -21,7 +21,7 @@ class CourseAccessGate extends ConsumerWidget {
     final courseState = ref.watch(courseStateProvider(courseId));
     return courseState.when(
       data: (state) {
-        if (state?.hasEnrollment == true) {
+        if (state?.canAccess == true) {
           return child;
         }
         return PaywallPrompt(courseId: courseId);

@@ -165,6 +165,40 @@ void main() {
       expect(checkout['session_id'], 'cs_bundle');
       expect(checkout['order_id'], 'order_bundle');
     });
+
+    test('bundle creation sends only canonical backend-owned fields', () async {
+      final requests = <RequestOptions>[];
+      final repo = CourseBundlesRepository(
+        _recordingClient((options) async {
+          requests.add(options);
+          expect(options.path, '/api/teachers/course-bundles');
+          return _jsonResponse({
+            'id': 'bundle-1',
+            'teacher_id': 'teacher-1',
+            'title': 'Paket',
+            'price_amount_cents': 24900,
+            'courses': const [],
+          });
+        }),
+      );
+
+      final bundle = await repo.createBundle(
+        title: 'Paket',
+        priceAmountCents: 24900,
+        courseIds: const ['course-1', 'course-2'],
+      );
+
+      expect(requests, hasLength(1));
+      expect(requests.single.data, {
+        'title': 'Paket',
+        'price_amount_cents': 24900,
+        'course_ids': ['course-1', 'course-2'],
+      });
+      expect((requests.single.data as Map).containsKey('description'), isFalse);
+      expect((requests.single.data as Map).containsKey('currency'), isFalse);
+      expect((requests.single.data as Map).containsKey('is_active'), isFalse);
+      expect(bundle['title'], 'Paket');
+    });
   });
 
   group('COP-010 redirect handling contract', () {
@@ -469,6 +503,39 @@ void main() {
         expect(source, isNot(contains('grantAccess')));
       },
     );
+
+    test(
+      'bundle authoring UI does not expose forbidden bundle authority fields',
+      () {
+        final pageSource = _readFrontendSource(
+          'lib/features/teacher/presentation/course_bundle_page.dart',
+        );
+        final repoSource = _readFrontendSource(
+          'lib/features/teacher/data/course_bundles_repository.dart',
+        );
+
+        expect(pageSource, isNot(contains('_descriptionController')));
+        expect(pageSource, isNot(contains('_isActive')));
+        expect(pageSource, isNot(contains("bundle['description']")));
+        expect(pageSource, isNot(contains("bundle['is_active']")));
+        expect(repoSource, isNot(contains("'description'")));
+        expect(repoSource, isNot(contains("'currency'")));
+        expect(repoSource, isNot(contains("'is_active'")));
+      },
+    );
+
+    test('bundle save failures use Swedish safe non-technical text', () {
+      final source = _readFrontendSource(
+        'lib/features/teacher/presentation/course_bundle_page.dart',
+      );
+
+      expect(source, contains('Paketet kunde inte sparas just nu.'));
+      expect(source, contains('Betalningen kunde inte startas just nu.'));
+      expect(source, isNot(contains(r'Kunde inte spara paket: $e')));
+      expect(source, isNot(contains(r'Kunde inte starta betalning: $e')));
+      expect(source, isNot(contains(r'Kunde inte hämta kurser: $error')));
+      expect(source, isNot(contains(r'Kunde inte läsa paket: $error')));
+    });
   });
 }
 

@@ -320,6 +320,7 @@ def test_course_schemas_reject_legacy_step_field():
             required_enrollment_source="intro_enrollment",
             enrollable=True,
             purchasable=False,
+            can_access=False,
             enrollment=None,
         )
 

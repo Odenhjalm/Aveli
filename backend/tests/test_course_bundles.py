@@ -48,6 +48,7 @@ async def _set_course_bundle_eligibility(
 ) -> None:
     product_id = f"prod_bundle_course_{uuid.uuid4().hex}" if sellable else None
     price_id = f"price_bundle_course_{uuid.uuid4().hex}" if sellable else None
+    required_source = "purchase" if visibility == "public" else None
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -58,6 +59,7 @@ async def _set_course_bundle_eligibility(
                        stripe_product_id = %s,
                        active_stripe_price_id = %s,
                        sellable = %s,
+                       required_enrollment_source = %s::app.course_enrollment_source,
                        updated_at = now()
                  WHERE id = %s
                 """,
@@ -67,6 +69,7 @@ async def _set_course_bundle_eligibility(
                     product_id,
                     price_id,
                     sellable,
+                    required_source,
                     course_id,
                 ),
             )

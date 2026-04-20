@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
-from uuid import UUID
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
@@ -20,12 +21,14 @@ def _course(
     group_position: int = 1,
     price_amount_cents: int | None = 1000,
     sellable: bool | None = None,
+    required_enrollment_source: str | None = "purchase",
 ) -> dict[str, object]:
     return {
         "id": course_id,
         "group_position": group_position,
         "price_amount_cents": price_amount_cents,
         "sellable": price_amount_cents is not None if sellable is None else sellable,
+        "required_enrollment_source": required_enrollment_source,
         "visibility": "public",
     }
 
@@ -36,8 +39,19 @@ def _enrollment(*, source: str, position: int = 1) -> dict[str, object]:
         "user_id": "user-1",
         "course_id": "course-paid",
         "source": source,
+        "granted_at": "2026-01-01T00:00:00Z",
+        "drip_started_at": "2026-01-01T00:00:00Z",
         "current_unlock_position": position,
     }
+
+
+def test_course_required_source_uses_required_enrollment_source_only() -> None:
+    source = inspect.getsource(courses_service._course_required_enrollment_source)
+
+    assert "required_enrollment_source" in source
+    assert "price_amount_cents" not in source
+    assert "sellable" not in source
+    assert "group_position" not in source
 
 
 async def test_canonical_course_access_denies_paid_course_without_enrollment(
@@ -61,7 +75,7 @@ async def test_canonical_course_access_denies_paid_course_without_enrollment(
 
     access = await courses_service.read_canonical_course_access("user-1", "course-paid")
 
-    assert access["expected_source"] == "purchase"
+    assert access["required_enrollment_source"] == "purchase"
     assert access["enrollment"] is None
     assert access["can_access"] is False
     assert courses_service.build_course_access_model(access["course"]) == {
@@ -76,7 +90,12 @@ async def test_canonical_course_access_denies_intro_course_without_intro_enrollm
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
         del slug
-        return _course(course_id or "course-intro", group_position=0, price_amount_cents=None)
+        return _course(
+            course_id or "course-intro",
+            group_position=0,
+            price_amount_cents=None,
+            required_enrollment_source="intro_enrollment",
+        )
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
@@ -92,7 +111,7 @@ async def test_canonical_course_access_denies_intro_course_without_intro_enrollm
 
     access = await courses_service.read_canonical_course_access("user-1", "course-intro")
 
-    assert access["expected_source"] == "intro_enrollment"
+    assert access["required_enrollment_source"] == "intro_enrollment"
     assert access["enrollment"] is None
     assert access["can_access"] is False
     assert courses_service.build_course_access_model(access["course"]) == {
@@ -107,7 +126,12 @@ async def test_canonical_course_access_allows_intro_only_with_intro_enrollment(
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
         del slug
-        return _course(course_id or "course-intro", group_position=0, price_amount_cents=None)
+        return _course(
+            course_id or "course-intro",
+            group_position=0,
+            price_amount_cents=None,
+            required_enrollment_source="intro_enrollment",
+        )
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
@@ -123,8 +147,34 @@ async def test_canonical_course_access_allows_intro_only_with_intro_enrollment(
 
     access = await courses_service.read_canonical_course_access("user-1", "course-intro")
 
-    assert access["expected_source"] == "intro_enrollment"
+    assert access["required_enrollment_source"] == "intro_enrollment"
     assert access["enrollment"]["source"] == "intro_enrollment"
+    assert access["can_access"] is True
+
+
+async def test_canonical_course_access_allows_paid_only_with_purchase_enrollment(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(course_id or "course-paid")
+
+    async def _fake_get_enrollment(user_id: str, course_id: str):
+        del user_id, course_id
+        return _enrollment(source="purchase")
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service,
+        "get_course_enrollment",
+        _fake_get_enrollment,
+        raising=True,
+    )
+
+    access = await courses_service.read_canonical_course_access("user-1", "course-paid")
+
+    assert access["required_enrollment_source"] == "purchase"
+    assert access["enrollment"]["source"] == "purchase"
     assert access["can_access"] is True
 
 
@@ -149,8 +199,39 @@ async def test_canonical_course_access_denies_wrong_enrollment_source(
 
     access = await courses_service.read_canonical_course_access("user-1", "course-paid")
 
-    assert access["expected_source"] == "purchase"
+    assert access["required_enrollment_source"] == "purchase"
     assert access["enrollment"]["source"] == "intro_enrollment"
+    assert access["can_access"] is False
+
+
+async def test_canonical_course_access_denies_intro_course_with_purchase_enrollment(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(
+            course_id or "course-intro",
+            group_position=0,
+            price_amount_cents=None,
+            required_enrollment_source="intro_enrollment",
+        )
+
+    async def _fake_get_enrollment(user_id: str, course_id: str):
+        del user_id, course_id
+        return _enrollment(source="purchase")
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service,
+        "get_course_enrollment",
+        _fake_get_enrollment,
+        raising=True,
+    )
+
+    access = await courses_service.read_canonical_course_access("user-1", "course-intro")
+
+    assert access["required_enrollment_source"] == "intro_enrollment"
+    assert access["enrollment"]["source"] == "purchase"
     assert access["can_access"] is False
 
 
@@ -159,7 +240,12 @@ async def test_create_intro_course_enrollment_uses_intro_enrollment_source(
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
         del slug
-        return _course(course_id or "course-intro", group_position=0, price_amount_cents=None)
+        return _course(
+            course_id or "course-intro",
+            group_position=0,
+            price_amount_cents=None,
+            required_enrollment_source="intro_enrollment",
+        )
 
     create_course_enrollment = AsyncMock(
         return_value=_enrollment(source="intro_enrollment")
@@ -215,7 +301,7 @@ async def test_create_intro_course_enrollment_rejects_non_intro_course(
     create_course_enrollment.assert_not_awaited()
 
 
-async def test_sellable_group_position_zero_is_purchasable_not_auto_enrollable(
+async def test_required_source_purchase_ignores_group_position_and_sellable(
     monkeypatch,
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
@@ -225,6 +311,7 @@ async def test_sellable_group_position_zero_is_purchasable_not_auto_enrollable(
             group_position=0,
             price_amount_cents=1000,
             sellable=True,
+            required_enrollment_source="purchase",
         )
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
@@ -292,7 +379,47 @@ async def test_enroll_route_maps_purchase_required_to_swedish_safe_error(
     assert "purchase" not in str(excinfo.value.detail).lower()
 
 
-async def test_priced_unsellable_course_is_not_actionable_for_access(
+async def test_course_access_route_projects_backend_can_access(monkeypatch) -> None:
+    course_id = UUID("77777777-7777-7777-7777-777777777777")
+
+    async def _fake_read_course_state_or_404(*, user_id: str, course_id: str):
+        assert user_id == "88888888-8888-8888-8888-888888888888"
+        return {
+            "course_id": course_id,
+            "group_position": 1,
+            "required_enrollment_source": "purchase",
+            "enrollable": False,
+            "purchasable": True,
+            "can_access": False,
+            "enrollment": {
+                "id": "99999999-9999-9999-9999-999999999999",
+                "user_id": "88888888-8888-8888-8888-888888888888",
+                "course_id": course_id,
+                "source": "intro_enrollment",
+                "granted_at": "2026-01-01T00:00:00Z",
+                "drip_started_at": "2026-01-01T00:00:00Z",
+                "current_unlock_position": 1,
+            },
+        }
+
+    monkeypatch.setattr(
+        course_routes,
+        "_read_course_state_or_404",
+        _fake_read_course_state_or_404,
+        raising=True,
+    )
+
+    response = await course_routes.course_access(
+        course_id,
+        {"id": UUID("88888888-8888-8888-8888-888888888888")},
+    )
+
+    assert response.can_access is False
+    assert response.enrollment is not None
+    assert response.enrollment.source == "intro_enrollment"
+
+
+async def test_missing_required_source_fails_closed_even_when_priced_or_sellable(
     monkeypatch,
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
@@ -301,7 +428,8 @@ async def test_priced_unsellable_course_is_not_actionable_for_access(
             course_id or "course-priced-unsellable",
             group_position=1,
             price_amount_cents=1000,
-            sellable=False,
+            sellable=True,
+            required_enrollment_source=None,
         )
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
@@ -321,7 +449,7 @@ async def test_priced_unsellable_course_is_not_actionable_for_access(
         "course-priced-unsellable",
     )
 
-    assert access["expected_source"] is None
+    assert access["required_enrollment_source"] is None
     assert access["can_access"] is False
     assert courses_service.build_course_access_model(access["course"]) == {
         "required_enrollment_source": None,
@@ -339,7 +467,7 @@ async def test_lesson_playback_access_does_not_fall_back_to_entitlements(
             "lesson": {"id": lesson_id, "course_id": "course-paid"},
             "course": _course("course-paid"),
             "enrollment": None,
-            "expected_source": "purchase",
+            "required_enrollment_source": "purchase",
             "current_unlock_position": 0,
             "can_access": False,
         }
@@ -369,9 +497,14 @@ async def test_lesson_playback_access_allows_canonical_lesson_access(
         del user_id
         return {
             "lesson": {"id": lesson_id, "course_id": "course-intro"},
-            "course": _course("course-intro", group_position=0, price_amount_cents=None),
+            "course": _course(
+                "course-intro",
+                group_position=0,
+                price_amount_cents=None,
+                required_enrollment_source="intro_enrollment",
+            ),
             "enrollment": _enrollment(source="intro_enrollment"),
-            "expected_source": "intro_enrollment",
+            "required_enrollment_source": "intro_enrollment",
             "current_unlock_position": 1,
             "can_access": True,
         }

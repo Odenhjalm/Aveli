@@ -349,6 +349,7 @@ class CourseAccessData {
     required this.requiredEnrollmentSource,
     required this.enrollable,
     required this.purchasable,
+    required this.canAccess,
     required this.enrollment,
   });
 
@@ -357,9 +358,8 @@ class CourseAccessData {
   final String? requiredEnrollmentSource;
   final bool enrollable;
   final bool purchasable;
+  final bool canAccess;
   final CourseEnrollmentRecord? enrollment;
-
-  bool get hasEnrollment => enrollment != null;
 
   factory CourseAccessData.fromResponse(Object? payload) {
     _rejectLegacyCourseProgressionFields(payload, 'course_access');
@@ -384,6 +384,10 @@ class CourseAccessData {
       purchasable: _requireBool(
         _requiredField(payload, 'purchasable'),
         'purchasable',
+      ),
+      canAccess: _requireBool(
+        _requiredField(payload, 'can_access'),
+        'can_access',
       ),
       enrollment: enrollmentPayload == null
           ? null

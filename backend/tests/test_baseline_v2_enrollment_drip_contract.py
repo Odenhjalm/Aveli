@@ -91,6 +91,7 @@ def _insert_course(
     course_id: str,
     slug: str,
     group_position: int,
+    required_enrollment_source: str,
     drip_enabled: bool,
     drip_interval_days: int | None,
     sellable: bool,
@@ -107,6 +108,7 @@ def _insert_course(
               slug,
               course_group_id,
               group_position,
+              required_enrollment_source,
               visibility,
               content_ready,
               price_amount_cents,
@@ -118,6 +120,7 @@ def _insert_course(
               cover_media_id
             )
             VALUES (
+              %s,
               %s,
               %s,
               %s,
@@ -142,6 +145,7 @@ def _insert_course(
                 slug,
                 str(uuid4()),
                 group_position,
+                required_enrollment_source,
                 1000 if sellable else None,
                 f"prod_{course_id}" if sellable else None,
                 f"price_{course_id}" if sellable else None,
@@ -205,7 +209,7 @@ def _advance_enrollment(
     return dict(row)
 
 
-async def test_enrollment_initialization_uses_group_position_and_sellable_authority():
+async def test_enrollment_initialization_uses_required_source_authority():
     with _baseline_v2_connection() as conn:
         _apply_baseline_v2_slots(conn)
 
@@ -220,6 +224,7 @@ async def test_enrollment_initialization_uses_group_position_and_sellable_author
             course_id=intro_course_id,
             slug="intro-drip",
             group_position=0,
+            required_enrollment_source="intro_enrollment",
             drip_enabled=True,
             drip_interval_days=7,
             sellable=False,
@@ -231,6 +236,7 @@ async def test_enrollment_initialization_uses_group_position_and_sellable_author
             course_id=paid_course_id,
             slug="paid-full-unlock",
             group_position=1,
+            required_enrollment_source="purchase",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=True,
@@ -271,6 +277,7 @@ async def test_enrollment_creation_enforces_canonical_boundary_and_source_alignm
             course_id=course_id,
             slug="intro-source-check",
             group_position=0,
+            required_enrollment_source="intro_enrollment",
             drip_enabled=True,
             drip_interval_days=7,
             sellable=False,
@@ -300,7 +307,7 @@ async def test_enrollment_creation_enforces_canonical_boundary_and_source_alignm
 
         with pytest.raises(
             psycopg.Error,
-            match="non-sellable courses require source = intro_enrollment",
+            match="requires enrollment source intro_enrollment",
         ):
             _create_enrollment(
                 conn,
@@ -324,6 +331,7 @@ async def test_worker_advances_existing_drip_enrollment_only():
             course_id=course_id,
             slug="paid-drip-course",
             group_position=1,
+            required_enrollment_source="purchase",
             drip_enabled=True,
             drip_interval_days=2,
             sellable=True,

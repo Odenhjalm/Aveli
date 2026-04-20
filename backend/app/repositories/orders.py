@@ -303,17 +303,27 @@ async def get_order_by_checkout_id(checkout_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-async def get_order_by_payment_intent(payment_intent: str) -> dict[str, Any] | None:
+async def get_order_by_payment_intent(
+    payment_intent: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    query = f"""
+        {_ORDER_SELECT}
+         WHERE stripe_payment_intent = %s
+         ORDER BY updated_at DESC
+         LIMIT 1
+        """
+    params = (payment_intent,)
+
+    if conn is not None:
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
     async with get_conn() as cur:
-        await cur.execute(
-            f"""
-            {_ORDER_SELECT}
-             WHERE stripe_payment_intent = %s
-             ORDER BY updated_at DESC
-             LIMIT 1
-            """,
-            (payment_intent,),
-        )
+        await cur.execute(query, params)
         row = await cur.fetchone()
     return dict(row) if row else None
 
@@ -387,9 +397,10 @@ async def mark_order_refunded(
     order_id: str | UUID,
     *,
     payment_intent: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any] | None:
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 WITH existing AS (
@@ -428,5 +439,12 @@ async def mark_order_refunded(
                 (order_id, payment_intent, order_id),
             )
             row = await cur.fetchone()
-            await conn.commit()
-            return dict(row) if row else None
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore[attr-defined]
+        row = await _execute(active_conn)
+        await active_conn.commit()
+        return row

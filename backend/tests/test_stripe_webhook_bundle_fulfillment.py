@@ -110,6 +110,28 @@ def _bundle_order():
     }
 
 
+def _checkout_bundle_order(
+    *,
+    status: str = "pending",
+    checkout_id: str | None = "cs_bundle_valid",
+) -> dict[str, object]:
+    return {
+        "id": "00000000-0000-0000-0000-000000000410",
+        "user_id": "00000000-0000-0000-0000-000000000420",
+        "course_id": None,
+        "bundle_id": "00000000-0000-0000-0000-000000000430",
+        "order_type": "bundle",
+        "amount_cents": 2490,
+        "currency": "sek",
+        "status": status,
+        "stripe_checkout_id": checkout_id,
+        "stripe_payment_intent": None,
+        "stripe_subscription_id": None,
+        "stripe_customer_id": "cus_bundle",
+        "metadata": {"checkout_type": "bundle"},
+    }
+
+
 def _snapshot_rows():
     return [
         {
@@ -300,18 +322,202 @@ async def test_bundle_webhook_service_fails_closed_on_order_type_mismatch(
 
 
 @pytest.mark.anyio("asyncio")
+async def test_bundle_settlement_rejects_missing_canonical_checkout_correlation(
+    monkeypatch,
+):
+    order = _checkout_bundle_order(checkout_id=None)
+
+    async def fake_get_order_by_checkout_id(checkout_id):
+        assert checkout_id == "cs_provider_only"
+        return None
+
+    async def fake_get_order(order_id):
+        assert order_id == order["id"]
+        return order
+
+    async def fail_settle(*args, **kwargs):
+        raise AssertionError("bundle settlement must not run without checkout correlation")
+
+    async def fail_fulfillment(*args, **kwargs):
+        raise AssertionError("bundle fulfillment must not run without checkout correlation")
+
+    monkeypatch.setattr(
+        stripe_webhooks.orders_repo,
+        "get_order_by_checkout_id",
+        fake_get_order_by_checkout_id,
+    )
+    monkeypatch.setattr(stripe_webhooks.orders_repo, "get_order", fake_get_order)
+    monkeypatch.setattr(stripe_webhooks.payments_repo, "mark_order_paid", fail_settle)
+    monkeypatch.setattr(stripe_webhooks.payments_repo, "record_payment", fail_settle)
+    monkeypatch.setattr(
+        stripe_webhooks.stripe_webhook_bundle_service,
+        "handle_paid_checkout_order",
+        fail_fulfillment,
+    )
+
+    with pytest.raises(
+        stripe_webhooks.CheckoutOrderValidationError,
+        match="Ordern saknar checkout-koppling",
+    ):
+        await stripe_webhooks._handle_checkout_session_completion(
+            {
+                "id": "cs_provider_only",
+                "metadata": {"order_id": order["id"]},
+                "payment_intent": "pi_bundle",
+                "amount_total": 2490,
+                "currency": "sek",
+            },
+            "checkout.session.completed",
+        )
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize(
+    ("amount_total", "currency", "message"),
+    [
+        (2400, "sek", "Checkout-sessionens belopp matchar inte ordern"),
+        (2490, "eur", "Checkout-sessionens valuta matchar inte ordern"),
+    ],
+)
+async def test_bundle_settlement_rejects_amount_and_currency_mismatch(
+    monkeypatch,
+    amount_total,
+    currency,
+    message,
+):
+    order = _checkout_bundle_order()
+
+    async def fake_get_order_by_checkout_id(checkout_id):
+        assert checkout_id == "cs_bundle_valid"
+        return order
+
+    async def fail_settle(*args, **kwargs):
+        raise AssertionError("bundle settlement must not run on invalid amounts")
+
+    async def fail_fulfillment(*args, **kwargs):
+        raise AssertionError("bundle fulfillment must not run on invalid amounts")
+
+    monkeypatch.setattr(
+        stripe_webhooks.orders_repo,
+        "get_order_by_checkout_id",
+        fake_get_order_by_checkout_id,
+    )
+    monkeypatch.setattr(stripe_webhooks.payments_repo, "mark_order_paid", fail_settle)
+    monkeypatch.setattr(stripe_webhooks.payments_repo, "record_payment", fail_settle)
+    monkeypatch.setattr(
+        stripe_webhooks.stripe_webhook_bundle_service,
+        "handle_paid_checkout_order",
+        fail_fulfillment,
+    )
+
+    with pytest.raises(stripe_webhooks.CheckoutOrderValidationError, match=message):
+        await stripe_webhooks._handle_checkout_session_completion(
+            {
+                "id": "cs_bundle_valid",
+                "metadata": {"order_id": order["id"], "checkout_type": "bundle"},
+                "payment_intent": "pi_bundle",
+                "amount_total": amount_total,
+                "currency": currency,
+            },
+            "checkout.session.completed",
+        )
+
+
+@pytest.mark.anyio("asyncio")
+async def test_bundle_settlement_uses_checkout_id_not_metadata_authority(monkeypatch):
+    order = _checkout_bundle_order()
+    captured: dict[str, object] = {}
+
+    async def fake_get_order_by_checkout_id(checkout_id):
+        assert checkout_id == "cs_bundle_valid"
+        return order
+
+    async def fail_get_order(order_id):
+        raise AssertionError("metadata order_id must not be used when checkout id matches")
+
+    async def fake_mark_order_paid(order_id, **kwargs):
+        captured["marked_order_id"] = order_id
+        captured["mark_kwargs"] = kwargs
+        return {
+            **order,
+            "status": "paid",
+            "stripe_payment_intent": kwargs["payment_intent"],
+        }
+
+    async def fake_record_payment(**kwargs):
+        captured["payment"] = kwargs
+        return {"id": "payment_1", **kwargs}
+
+    async def fake_bundle_fulfillment(*, order, event_type):
+        captured["fulfilled_order_id"] = order["id"]
+        captured["fulfilled_event_type"] = event_type
+
+    monkeypatch.setattr(
+        stripe_webhooks.orders_repo,
+        "get_order_by_checkout_id",
+        fake_get_order_by_checkout_id,
+    )
+    monkeypatch.setattr(stripe_webhooks.orders_repo, "get_order", fail_get_order)
+    monkeypatch.setattr(
+        stripe_webhooks.payments_repo,
+        "mark_order_paid",
+        fake_mark_order_paid,
+    )
+    monkeypatch.setattr(
+        stripe_webhooks.payments_repo,
+        "record_payment",
+        fake_record_payment,
+    )
+    monkeypatch.setattr(
+        stripe_webhooks.stripe_webhook_bundle_service,
+        "handle_paid_checkout_order",
+        fake_bundle_fulfillment,
+    )
+
+    await stripe_webhooks._handle_checkout_session_completion(
+        {
+            "id": "cs_bundle_valid",
+            "client_reference_id": "00000000-0000-0000-0000-000000009999",
+            "metadata": {
+                "order_id": "00000000-0000-0000-0000-000000008888",
+                "bundle_id": "00000000-0000-0000-0000-000000007777",
+                "course_ids": ["00000000-0000-0000-0000-000000006666"],
+            },
+            "payment_intent": "pi_bundle_valid",
+            "amount_total": 2490,
+            "currency": "sek",
+        },
+        "checkout.session.completed",
+    )
+
+    assert captured["marked_order_id"] == order["id"]
+    assert captured["fulfilled_order_id"] == order["id"]
+    payment = captured["payment"]
+    assert isinstance(payment, dict)
+    assert payment["order_id"] == order["id"]
+    assert payment["provider_reference"] == "pi_bundle_valid"
+    assert payment["amount_cents"] == 2490
+    assert payment["currency"] == "sek"
+
+
+@pytest.mark.anyio("asyncio")
 async def test_duplicate_paid_bundle_event_reruns_idempotent_snapshot_fulfillment(
     monkeypatch,
 ):
     calls: list[str] = []
     order = {
-        "id": "order_bundle_paid",
-        "user_id": "user_123",
-        "bundle_id": "bundle_123",
+        "id": "00000000-0000-0000-0000-000000000510",
+        "user_id": "00000000-0000-0000-0000-000000000520",
+        "bundle_id": "00000000-0000-0000-0000-000000000530",
         "course_id": None,
         "order_type": "bundle",
+        "amount_cents": 2490,
+        "currency": "sek",
         "status": "paid",
         "stripe_checkout_id": "cs_paid",
+        "stripe_payment_intent": "pi_paid",
+        "stripe_subscription_id": None,
+        "stripe_customer_id": "cus_paid",
         "metadata": {},
     }
 
@@ -353,4 +559,6 @@ async def test_duplicate_paid_bundle_event_reruns_idempotent_snapshot_fulfillmen
         "checkout.session.completed",
     )
 
-    assert calls == ["order_bundle_paid:checkout.session.completed"]
+    assert calls == [
+        "00000000-0000-0000-0000-000000000510:checkout.session.completed"
+    ]

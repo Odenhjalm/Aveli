@@ -1060,13 +1060,15 @@ async def test_bundle_remedy_keeps_overlapping_access_when_another_purchase_stil
     assert captured["refund_kwargs"]["payment_intent"] == "pi_bundle_123"
 
 
-async def test_refund_webhook_is_settlement_only_and_not_course_access_authority(
+async def test_refund_webhook_revokes_course_access_through_canonical_service(
     monkeypatch,
 ) -> None:
+    sentinel_conn = object()
     captured: dict[str, object] = {}
 
-    async def fake_get_order_by_payment_intent(payment_intent_id):
+    async def fake_get_order_by_payment_intent(payment_intent_id, *, conn=None):
         captured["payment_intent_id"] = payment_intent_id
+        captured["lookup_conn"] = conn
         return {
             "id": "order_123",
             "user_id": "user_123",
@@ -1076,10 +1078,11 @@ async def test_refund_webhook_is_settlement_only_and_not_course_access_authority
             "currency": "sek",
         }
 
-    async def fake_mark_order_refunded(order_id, *, payment_intent=None):
+    async def fake_mark_order_refunded(order_id, *, payment_intent=None, conn=None):
         captured["marked_refunded"] = {
             "order_id": order_id,
             "payment_intent": payment_intent,
+            "conn": conn,
         }
         return {
             "id": order_id,
@@ -1094,8 +1097,9 @@ async def test_refund_webhook_is_settlement_only_and_not_course_access_authority
     async def fake_record_payment(**kwargs):
         captured["record_payment"] = kwargs
 
-    async def fail_revoke(*args, **kwargs):
-        raise AssertionError("refund webhook must not revoke course access directly")
+    async def fake_revoke_paid_order_access(**kwargs):
+        captured["revoked_access"] = kwargs
+        return ["course_123"]
 
     monkeypatch.setattr(
         stripe_webhook_support_service.orders_repo,
@@ -1113,20 +1117,25 @@ async def test_refund_webhook_is_settlement_only_and_not_course_access_authority
         fake_record_payment,
     )
     monkeypatch.setattr(
-        checkout_service.courses_repo,
-        "revoke_course_enrollment",
-        fail_revoke,
-        raising=False,
+        stripe_webhook_support_service.stripe_webhook_course_service,
+        "revoke_paid_order_access",
+        fake_revoke_paid_order_access,
     )
 
     await stripe_webhook_support_service.handle_refund_event(
         "charge.refunded",
         {"payment_intent": "pi_course_123"},
+        conn=sentinel_conn,
     )
 
     assert captured["payment_intent_id"] == "pi_course_123"
+    assert captured["lookup_conn"] is sentinel_conn
     assert captured["marked_refunded"]["order_id"] == "order_123"
+    assert captured["marked_refunded"]["conn"] is sentinel_conn
+    assert captured["revoked_access"]["conn"] is sentinel_conn
+    assert captured["revoked_access"]["order"]["course_id"] == "course_123"
     assert captured["record_payment"]["status"] == "refunded"
+    assert captured["record_payment"]["conn"] is sentinel_conn
 
 
 async def test_invoice_settlement_records_payment_before_membership_state(

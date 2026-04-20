@@ -88,13 +88,13 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "81fa1f074308957decf8f9d2944cc4e623fde01d8f4b430856ca0554d6a50a2c",
+    "expected_schema_hash": "6da9e05b2a563f31107914abe603f1be04fb2fe3049df87e87262bf888ec981b",
     "expected_counts": {
       "enums": 13,
       "tables": 28,
       "views": 5,
       "fks": 39,
-      "constraints": 144,
+      "constraints": 145,
       "triggers": 13,
       "functions": 23
     },
@@ -241,6 +241,12 @@
       "filename": "V2_0017_bundle_order_courses.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0017_bundle_order_courses.sql",
       "sha256": "9047f7c29d27460bf838015f428d29c939e98af3b280c388e30113ee7eee5164"
+    },
+    {
+      "slot": 18,
+      "filename": "V2_0018_course_access_classification.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0018_course_access_classification.sql",
+      "sha256": "ac7f2fc9a4a92b75c8f9c9878bf40900b78507ba131b7aea0387633b25a7b6a0"
     }
   ]
 }

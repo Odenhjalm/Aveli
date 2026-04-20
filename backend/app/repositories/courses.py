@@ -3,7 +3,6 @@ from __future__ import annotations
 from uuid import uuid4
 from typing import Any, Sequence
 
-from psycopg import errors
 from psycopg.rows import dict_row
 
 from ..db import get_conn, pool
@@ -25,6 +24,7 @@ _COURSE_COLUMNS = """
     c.stripe_product_id,
     c.active_stripe_price_id,
     c.sellable,
+    c.required_enrollment_source::text as required_enrollment_source,
     c.drip_enabled,
     c.drip_interval_days,
     c.cover_media_id
@@ -42,6 +42,7 @@ _PUBLIC_DISCOVERY_COLUMNS = """
     cds.drip_enabled,
     cds.drip_interval_days,
     cds.cover_media_id,
+    cds.required_enrollment_source::text as required_enrollment_source,
     c.sellable
 """
 
@@ -133,6 +134,7 @@ async def get_course_publish_subject(course_id: str) -> dict[str, Any] | None:
             c.stripe_product_id,
             c.active_stripe_price_id,
             c.sellable,
+            c.required_enrollment_source::text as required_enrollment_source,
             c.drip_enabled,
             c.drip_interval_days,
             c.cover_media_id
@@ -318,6 +320,7 @@ async def get_public_course_detail_rows(
             cd.price_amount_cents,
             cd.drip_enabled,
             cd.drip_interval_days,
+            cd.required_enrollment_source::text as required_enrollment_source,
             c.sellable,
             cd.short_description,
             cd.lesson_id,
@@ -350,6 +353,7 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
             slug,
             course_group_id,
             group_position,
+            required_enrollment_source,
             price_amount_cents,
             drip_enabled,
             drip_interval_days,
@@ -362,6 +366,7 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
             %s,
             %s::uuid,
             %s,
+            %s::app.course_enrollment_source,
             %s,
             %s,
             %s,
@@ -376,6 +381,7 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
         payload["slug"],
         str(payload["course_group_id"]),
         payload["group_position"],
+        payload.get("required_enrollment_source"),
         payload.get("price_amount_cents"),
         payload["drip_enabled"],
         payload["drip_interval_days"],
@@ -400,6 +406,11 @@ async def update_course(course_id: str, patch: dict[str, Any]) -> CourseRow | No
         ("slug", "slug = %s", lambda value: value),
         ("course_group_id", "course_group_id = %s::uuid", lambda value: str(value)),
         ("group_position", "group_position = %s", lambda value: int(value)),
+        (
+            "required_enrollment_source",
+            "required_enrollment_source = %s::app.course_enrollment_source",
+            lambda value: str(value) if value is not None else None,
+        ),
         ("price_amount_cents", "price_amount_cents = %s", lambda value: value),
         ("drip_enabled", "drip_enabled = %s", lambda value: value),
         ("drip_interval_days", "drip_interval_days = %s", lambda value: value),
@@ -473,6 +484,7 @@ async def publish_course_state(
             visibility = 'public'::app.course_visibility,
             stripe_product_id = %s,
             active_stripe_price_id = %s,
+            required_enrollment_source = 'purchase'::app.course_enrollment_source,
             sellable = true
         where id = %s::uuid
         returning id
@@ -505,7 +517,8 @@ async def get_course_sellability_subject(course_id: str) -> dict[str, Any] | Non
             c.price_amount_cents,
             c.stripe_product_id,
             c.active_stripe_price_id,
-            c.sellable
+            c.sellable,
+            c.required_enrollment_source::text as required_enrollment_source
         from app.courses as c
         where c.id = %s::uuid
         limit 1
@@ -1453,27 +1466,37 @@ async def revoke_course_enrollment(
     course_id: str,
     *,
     excluding_order_id: str | None = None,
+    conn: Any | None = None,
 ) -> bool:
-    if await _has_remaining_paid_course_purchase(
-        user_id,
-        course_id,
-        excluding_order_id=excluding_order_id,
-    ):
-        return False
+    async def _execute(active_conn: Any) -> bool:
+        if await _has_remaining_paid_course_purchase(
+            user_id,
+            course_id,
+            excluding_order_id=excluding_order_id,
+            conn=active_conn,
+        ):
+            return False
 
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+        async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 delete from app.course_enrollments
                 where user_id = %s::uuid
                   and course_id = %s::uuid
+                  and source = 'purchase'::app.course_enrollment_source
                 """,
                 (user_id, course_id),
             )
             deleted = cur.rowcount > 0
-            await conn.commit()
-    return deleted
+        return deleted
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        deleted = await _execute(active_conn)
+        await active_conn.commit()
+        return deleted
 
 
 async def _has_remaining_paid_course_purchase(
@@ -1481,6 +1504,7 @@ async def _has_remaining_paid_course_purchase(
     course_id: str,
     *,
     excluding_order_id: str | None = None,
+    conn: Any | None = None,
 ) -> bool:
     direct_query = """
         select 1
@@ -1491,15 +1515,6 @@ async def _has_remaining_paid_course_purchase(
           and (%s::uuid is null or o.id <> %s::uuid)
         limit 1
     """
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                direct_query,
-                (user_id, course_id, excluding_order_id, excluding_order_id),
-            )
-            if await cur.fetchone() is not None:
-                return True
-
     bundle_query = """
         select 1
         from app.orders as o
@@ -1512,13 +1527,29 @@ async def _has_remaining_paid_course_purchase(
           and (%s::uuid is null or o.id <> %s::uuid)
         limit 1
     """
-    try:
-        async with pool.connection() as conn:  # type: ignore
-            async with conn.cursor() as cur:  # type: ignore[attr-defined]
-                await cur.execute(
-                    bundle_query,
-                    (user_id, course_id, excluding_order_id, excluding_order_id),
-                )
-                return await cur.fetchone() is not None
-    except errors.UndefinedTable:
-        return False
+
+    async def _execute(active_conn: Any) -> bool:
+        async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                direct_query,
+                (user_id, course_id, excluding_order_id, excluding_order_id),
+            )
+            if await cur.fetchone() is not None:
+                return True
+
+            await cur.execute("select to_regclass('app.course_bundle_courses')")
+            bundle_table = await cur.fetchone()
+            if not bundle_table or bundle_table[0] is None:
+                return False
+
+            await cur.execute(
+                bundle_query,
+                (user_id, course_id, excluding_order_id, excluding_order_id),
+            )
+            return await cur.fetchone() is not None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)

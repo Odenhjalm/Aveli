@@ -42,6 +42,12 @@ No purchase flow may bypass that order/payment trail and create course access as
 - Membership state does not replace `app.course_enrollments` as protected course-access authority.
 - Purchase authority does not replace `app.course_enrollments` as protected course-access state.
 - Course-access state must remain explicit and non-implicit.
+- Course access classification is owned by `app.courses.required_enrollment_source`.
+- A course enrollment grants protected course access only when `app.course_enrollments.source` matches `app.courses.required_enrollment_source`.
+- If `app.courses.required_enrollment_source` is `null`, protected course access fails closed.
+- `sellable`, `price_amount_cents`, `group_position`, Stripe state, order state, payment state, and frontend state MUST NOT classify protected course access.
+- `/courses/{course_id}/access` MUST expose backend-authored `can_access`.
+- Frontend course gates MUST use backend-authored `can_access` and MUST NOT infer protected course access from enrollment presence, checkout success, order state, payment state, or Stripe state.
 
 ## 5. FORBIDDEN PATTERNS
 

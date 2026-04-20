@@ -8,6 +8,7 @@ from app.media_control_plane.services.media_resolver_service import (
     RuntimeMediaResolutionReason,
 )
 from app.routes import studio
+from app.repositories import courses as courses_repo
 from app.services import courses_service
 
 
@@ -32,6 +33,7 @@ def _course(**overrides):
         "stripe_product_id": None,
         "active_stripe_price_id": None,
         "sellable": False,
+        "required_enrollment_source": None,
         "drip_enabled": False,
         "drip_interval_days": None,
         "cover_media_id": None,
@@ -103,6 +105,7 @@ async def _install_publish_fakes(
             "stripe_product_id": stripe_product_id,
             "active_stripe_price_id": active_stripe_price_id,
             "sellable": True,
+            "required_enrollment_source": "purchase",
         }
         state["course"] = published
         state["published"] = published
@@ -208,7 +211,15 @@ async def test_publish_success_creates_mapping_and_public_sellable_state(monkeyp
     assert course["stripe_product_id"] == "prod_publish_1"
     assert course["active_stripe_price_id"] == "price_publish_1"
     assert course["sellable"] is True
+    assert course["required_enrollment_source"] == "purchase"
     assert calls == {"product_create": 1, "price_create": 1}
+
+
+def test_publish_state_sets_purchase_access_classification():
+    source = inspect.getsource(courses_repo.publish_course_state)
+
+    assert "required_enrollment_source" in source
+    assert "'purchase'::app.course_enrollment_source" in source
 
 
 async def test_publish_fails_without_lessons_before_stripe(monkeypatch):
@@ -336,6 +347,32 @@ async def test_publish_fails_with_invalid_price_before_stripe(monkeypatch):
     _install_stripe_fail_fakes(monkeypatch)
 
     with pytest.raises(ValueError, match="pris"):
+        await courses_service.publish_course(COURSE_ID, teacher_id=TEACHER_ID)
+
+
+async def test_publish_fails_closed_if_access_classification_cannot_persist(
+    monkeypatch,
+):
+    await _install_publish_fakes(monkeypatch)
+    _install_stripe_create_fakes(monkeypatch)
+
+    async def fail_publish_course_state(
+        course_id: str,
+        *,
+        stripe_product_id: str,
+        active_stripe_price_id: str,
+    ):
+        del course_id, stripe_product_id, active_stripe_price_id
+        raise Exception("required_enrollment_source write failed")
+
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "publish_course_state",
+        fail_publish_course_state,
+        raising=True,
+    )
+
+    with pytest.raises(RuntimeError, match="publish state"):
         await courses_service.publish_course(COURSE_ID, teacher_id=TEACHER_ID)
 
 

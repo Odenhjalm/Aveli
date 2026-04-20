@@ -211,6 +211,11 @@ async def stripe_payment_element_webhook(request: Request):
             await stripe_webhook_support_service.handle_refund_event(
                 str(event_type),
                 data_object,
+                conn=(
+                    getattr(event_claim, "_conn", None)
+                    if event_claim is not None and event_claim.claimed
+                    else None
+                ),
             )
         elif event_type and event_type.startswith("account."):
             logger.info("Ignoring inactive Stripe Connect event %s", event_type)
@@ -616,6 +621,8 @@ async def _ensure_completed_course_checkout_effect_applied(event: Mapping[str, A
     await _assert_course_checkout_fulfillment_completed(
         order=order,
         session=data_object,
+        repair_missing_enrollment=True,
+        event_type=str(event_type),
     )
     return True
 
@@ -625,6 +632,8 @@ async def _assert_course_checkout_fulfillment_completed(
     order: Mapping[str, object],
     session: Mapping[str, object],
     conn: Any | None = None,
+    repair_missing_enrollment: bool = False,
+    event_type: str = "course_checkout_reconciliation",
 ) -> None:
     validated = _validate_course_checkout_session(order=order, session=session)
     if str(order.get("status") or "").strip().lower() != "paid":
@@ -642,6 +651,8 @@ async def _assert_course_checkout_fulfillment_completed(
     await stripe_webhook_course_service.assert_purchase_enrollment_exists(
         order=order,
         conn=conn,
+        repair_missing_enrollment=repair_missing_enrollment,
+        event_type=event_type,
     )
 
 
@@ -769,6 +780,8 @@ async def _fulfill_course_checkout_order(
                     order=locked_order,
                     session=session,
                     conn=active_conn,
+                    repair_missing_enrollment=True,
+                    event_type=event_type,
                 )
                 await active_conn.commit()
                 return

@@ -246,7 +246,7 @@ async def test_lesson_detail_uses_surface_based_content_and_structure(monkeypatc
             },
             "course": {"id": COURSE_ID},
             "enrollment": {"course_id": COURSE_ID, "user_id": USER_ID},
-            "expected_source": "purchase",
+            "required_enrollment_source": "purchase",
             "current_unlock_position": 1,
             "can_access": True,
         }

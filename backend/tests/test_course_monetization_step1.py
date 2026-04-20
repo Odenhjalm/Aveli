@@ -20,6 +20,7 @@ def _course_row(**overrides):
         "stripe_product_id": None,
         "active_stripe_price_id": None,
         "sellable": False,
+        "required_enrollment_source": None,
         "drip_enabled": False,
         "drip_interval_days": None,
         "cover_media_id": None,
@@ -220,6 +221,17 @@ def test_course_sellability_predicate_fails_closed_without_public_ready_authorit
     assert (
         courses_service._is_course_sellable_subject(
             {**mapped_subject, "visibility": "public", "content_ready": True}
+        )
+        is False
+    )
+    assert (
+        courses_service._is_course_sellable_subject(
+            {
+                **mapped_subject,
+                "visibility": "public",
+                "content_ready": True,
+                "required_enrollment_source": "purchase",
+            }
         )
         is True
     )

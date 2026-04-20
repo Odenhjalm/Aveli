@@ -36,7 +36,7 @@ async def _allow_lesson_access(user_id: str, lesson_id: str):
             "source": "purchase",
             "current_unlock_position": 1,
         },
-        "expected_source": "purchase",
+        "required_enrollment_source": "purchase",
         "current_unlock_position": 1,
         "can_access": True,
     }

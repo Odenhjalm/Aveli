@@ -32,12 +32,11 @@ CourseDetailData _detail({
   String? coverMediaId,
   CourseCoverData? cover,
   int? priceCents = 0,
-  bool? enrollable,
-  bool? purchasable,
+  String? requiredEnrollmentSource = 'intro_enrollment',
+  bool enrollable = true,
+  bool purchasable = false,
   String? shortDescription = 'Backendbeskriven kurs för startklara elever.',
 }) {
-  final isFreeIntro =
-      groupPosition == 0 && (priceCents == null || priceCents == 0);
   return CourseDetailData(
     course: CourseSummary(
       id: courseId,
@@ -54,11 +53,9 @@ CourseDetailData _detail({
       priceCents: priceCents,
       dripEnabled: false,
       dripIntervalDays: null,
-      requiredEnrollmentSource: (enrollable ?? isFreeIntro)
-          ? 'intro_enrollment'
-          : 'purchase',
-      enrollable: enrollable ?? isFreeIntro,
-      purchasable: purchasable ?? !isFreeIntro,
+      requiredEnrollmentSource: requiredEnrollmentSource,
+      enrollable: enrollable,
+      purchasable: purchasable,
     ),
     lessons: const [
       LessonSummary(id: 'lesson-1', lessonTitle: 'Lesson 1', position: 1),
@@ -74,11 +71,32 @@ CourseAccessData _enrolledState(String courseId) {
     requiredEnrollmentSource: 'intro_enrollment',
     enrollable: true,
     purchasable: false,
+    canAccess: true,
     enrollment: CourseEnrollmentRecord(
       id: 'enrollment-1',
       userId: 'user-1',
       courseId: courseId,
       source: 'intro_enrollment',
+      grantedAt: DateTime.utc(2024, 1, 1),
+      dripStartedAt: DateTime.utc(2024, 1, 1),
+      currentUnlockPosition: 1,
+    ),
+  );
+}
+
+CourseAccessData _deniedStateWithEnrollment(String courseId) {
+  return CourseAccessData(
+    courseId: courseId,
+    groupPosition: 0,
+    requiredEnrollmentSource: 'intro_enrollment',
+    enrollable: true,
+    purchasable: false,
+    canAccess: false,
+    enrollment: CourseEnrollmentRecord(
+      id: 'enrollment-1',
+      userId: 'user-1',
+      courseId: courseId,
+      source: 'purchase',
       grantedAt: DateTime.utc(2024, 1, 1),
       dripStartedAt: DateTime.utc(2024, 1, 1),
       currentUnlockPosition: 1,
@@ -176,6 +194,7 @@ void main() {
       title: 'Paid Zero Course',
       groupPosition: 0,
       priceCents: 9900,
+      requiredEnrollmentSource: 'purchase',
       enrollable: false,
       purchasable: true,
     );
@@ -237,6 +256,41 @@ void main() {
     expect(find.text('Lesson 1'), findsOneWidget);
   });
 
+  testWidgets('course page locks lessons when backend can_access is false', (
+    tester,
+  ) async {
+    final detail = _detail(
+      courseId: 'course-denied',
+      slug: 'denied-course',
+      title: 'Denied Course',
+      groupPosition: 0,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              subscriptionsEnabled: true,
+            ),
+          ),
+          authOverride(),
+          courseDetailProvider.overrideWith((ref, slug) async => detail),
+          courseStateProvider.overrideWith(
+            (ref, courseId) async => _deniedStateWithEnrollment(courseId),
+          ),
+        ],
+        child: const MaterialApp(home: CoursePage(slug: 'denied-course')),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Forts'), findsNothing);
+    expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
+  });
+
   testWidgets('learner course page renders backend cover resolved url', (
     tester,
   ) async {
@@ -296,6 +350,9 @@ void main() {
       title: 'Paid Cover Course',
       groupPosition: 1,
       priceCents: 9900,
+      requiredEnrollmentSource: 'purchase',
+      enrollable: false,
+      purchasable: true,
       coverMediaId: 'media-1',
       cover: const CourseCoverData(
         mediaId: 'media-1',
