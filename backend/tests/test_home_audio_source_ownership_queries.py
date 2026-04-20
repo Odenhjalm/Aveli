@@ -119,8 +119,55 @@ async def test_get_home_player_course_link_filters_by_canonical_course_owner(
     assert row is not None
     query, params = cursor.executed[0]
     assert params == ("link-1", "teacher-1")
+    assert "c.teacher_id AS teacher_id" in query
+    assert "hpcl.teacher_id" not in query
+    assert "hpcl.course_title_snapshot" not in query
     assert "c_owner.teacher_id = %s::uuid" in query
     assert "AND hpcl.teacher_id = %s::uuid" not in query
+
+
+async def test_upsert_home_player_course_link_writes_only_source_inclusion(
+    monkeypatch,
+):
+    cursor = _FakeCursor(
+        {"id": "link-1"},
+        {
+            "id": "link-1",
+            "teacher_id": "teacher-1",
+            "lesson_media_id": "lesson-media-1",
+            "title": "Link",
+            "course_title": "Course",
+            "enabled": True,
+            "status": "active",
+            "kind": "audio",
+            "created_at": None,
+            "updated_at": None,
+        },
+    )
+    _install_fake_conn(monkeypatch, cursor)
+
+    row = await repo.upsert_home_player_course_link(
+        teacher_id="teacher-1",
+        lesson_media_id="lesson-media-1",
+        title="Link",
+        course_title_snapshot="Course",
+        enabled=True,
+    )
+
+    assert row is not None
+    query, params = cursor.executed[0]
+    assert params == ("Link", True, "lesson-media-1", "teacher-1", "teacher-1")
+    assert "INSERT INTO app.home_player_course_links" in query
+    insert_columns = query.split("SELECT", 1)[0]
+    assert "lesson_media_id" in insert_columns
+    assert "title" in insert_columns
+    assert "enabled" in insert_columns
+    assert "teacher_id" not in insert_columns
+    assert "course_title_snapshot" not in query
+    assert "ON CONFLICT (lesson_media_id)" in query
+    assert "ON CONFLICT (teacher_id, lesson_media_id)" not in query
+    assert "c.teacher_id = %s::uuid" in query
+    assert "c_owner.teacher_id = %s::uuid" in query
 
 
 async def test_update_home_player_course_link_filters_by_canonical_course_owner(

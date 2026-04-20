@@ -218,10 +218,10 @@ async def get_home_player_course_link(
     query = f"""
         SELECT
           hpcl.id,
-          hpcl.teacher_id,
+          c.teacher_id AS teacher_id,
           hpcl.lesson_media_id,
           hpcl.title,
-          coalesce(c.title, hpcl.course_title_snapshot, ''::text) AS course_title,
+          coalesce(c.title, ''::text) AS course_title,
           hpcl.enabled,
           CASE
             WHEN hpcl.lesson_media_id IS NULL OR lm.id IS NULL OR ma.id IS NULL THEN 'source_missing'
@@ -290,26 +290,46 @@ async def upsert_home_player_course_link(
     course_title_snapshot: str,
     enabled: bool,
 ) -> Optional[dict[str, Any]]:
-    query = """
+    del course_title_snapshot
+    query = f"""
         INSERT INTO app.home_player_course_links (
-          teacher_id,
           lesson_media_id,
           title,
-          course_title_snapshot,
           enabled
         )
-        VALUES (%s::uuid, %s::uuid, %s, %s, %s)
-        ON CONFLICT (teacher_id, lesson_media_id) DO UPDATE
+        SELECT
+          lm.id,
+          %s,
+          %s
+        FROM app.lesson_media lm
+        JOIN app.lessons l ON l.id = lm.lesson_id
+        JOIN app.courses c ON c.id = l.course_id
+        WHERE lm.id = %s::uuid
+          AND c.teacher_id = %s::uuid
+          AND {_test_visibility_clause("lm")}
+          AND {_test_visibility_clause("l")}
+          AND {_test_visibility_clause("c")}
+        ON CONFLICT (lesson_media_id) DO UPDATE
           SET title = EXCLUDED.title,
-              course_title_snapshot = EXCLUDED.course_title_snapshot,
               enabled = EXCLUDED.enabled,
               updated_at = now()
+        WHERE EXISTS (
+          SELECT 1
+          FROM app.lesson_media lm_owner
+          JOIN app.lessons l_owner ON l_owner.id = lm_owner.lesson_id
+          JOIN app.courses c_owner ON c_owner.id = l_owner.course_id
+          WHERE lm_owner.id = app.home_player_course_links.lesson_media_id
+            AND c_owner.teacher_id = %s::uuid
+            AND {_test_visibility_clause("lm_owner")}
+            AND {_test_visibility_clause("l_owner")}
+            AND {_test_visibility_clause("c_owner")}
+        )
         RETURNING id
     """
     async with get_conn() as cur:
         await cur.execute(
             query,
-            (teacher_id, lesson_media_id, title, course_title_snapshot, enabled),
+            (title, enabled, lesson_media_id, teacher_id, teacher_id),
         )
         row = await cur.fetchone()
     if not row:
