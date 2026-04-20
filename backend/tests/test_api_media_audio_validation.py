@@ -150,5 +150,5 @@ def test_upload_detect_kind_uses_pdf_for_application_pdf():
     assert upload_routes._detect_kind("application/pdf") == "pdf"
 
 
-def test_asset_media_type_maps_pdf_kind_to_document_asset():
-    assert upload_routes._asset_media_type("pdf") == "document"
+def test_legacy_upload_route_does_not_own_asset_media_type_mapping():
+    assert not hasattr(upload_routes, "_asset_media_type")

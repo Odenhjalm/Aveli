@@ -35,8 +35,6 @@ from ..services import (
     studio_authority,
 )
 from ..services import media_cleanup
-from ..utils import media_signer
-from ..utils.media_urls import absolutize_media_url_items, absolutize_media_urls
 from ..utils.profile_media import profile_media_item_from_row
 from .media import _build_streaming_response
 from . import upload as upload_routes
@@ -1332,22 +1330,17 @@ async def canonical_delete_lesson_media_placement(
 
 @lesson_media_router.get(
     "/{lesson_id}",
-    response_model=schemas.StudioLessonMediaListResponse,
+    include_in_schema=False,
 )
 async def studio_list_lesson_media(
     lesson_id: UUID,
     current: TeacherEntryUser,
 ):
-    await _require_studio_lesson(str(lesson_id))
-    rows = await courses_service.list_studio_lesson_media(str(lesson_id))
-    items = [
-        await _studio_lesson_media_item_from_row(
-            row=dict(row),
-            user_id=str(current["id"]),
-        )
-        for row in rows
-    ]
-    return schemas.StudioLessonMediaListResponse(items=items)
+    del lesson_id, current
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Legacy lesson media listing endpoint removed from canonical runtime",
+    )
 
 
 @lesson_media_router.get(
@@ -1458,25 +1451,15 @@ async def studio_request_lesson_media_previews(
     return schemas.MediaPreviewBatchResponse(items=ordered_items)
 
 
-@router.get("/lessons/{lesson_id}/media")
+@router.get("/lessons/{lesson_id}/media", include_in_schema=False)
 async def list_lesson_media(
     request: Request, lesson_id: UUID, current: TeacherEntryUser
 ):
-    lesson_id_str = str(lesson_id)
-    _, course_id = await courses_service.lesson_course_ids(lesson_id_str)
-    if not course_id or not await models.is_course_owner(current["id"], course_id):
-        _log_course_owner_denied(
-            str(current["id"]), course_id=course_id, lesson_id=lesson_id_str
-        )
-        raise HTTPException(status_code=403, detail="Not course owner")
-    items = list(
-        await courses_service.list_lesson_media(
-            str(lesson_id),
-            mode="editor_preview",
-        )
+    del request, lesson_id, current
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Legacy lesson media listing endpoint removed from canonical runtime",
     )
-    absolutize_media_url_items(items, base_url=str(request.base_url))
-    return {"items": items}
 
 
 @router.get(

@@ -73,9 +73,13 @@ def test_noncanonical_write_routes_cannot_regain_dominance() -> None:
     }
 
     assert forbidden.isdisjoint(route_pairs)
+    allowed_api_media_routes = {
+        ("POST", "/api/media/profile-avatar/init"),
+    }
     assert not any(
-        path == "/api/media" or path.startswith("/api/media/")
-        for _, path in route_pairs
+        (method, path) not in allowed_api_media_routes
+        and (path == "/api/media" or path.startswith("/api/media/"))
+        for method, path in route_pairs
     )
 
 

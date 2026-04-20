@@ -113,7 +113,7 @@ async def _register_user(
                 INSERT INTO app.auth_subjects (
                   user_id,
                   onboarding_state,
-                  role,
+                  role
                 )
                 VALUES (%s::uuid, 'completed', 'learner')
                 """,
@@ -418,7 +418,6 @@ async def _insert_home_player_upload(
     title: str,
     active: bool,
 ) -> None:
-    del title
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -427,11 +426,12 @@ async def _insert_home_player_upload(
                   id,
                   teacher_id,
                   media_asset_id,
+                  title,
                   active
                 )
-                values (%s::uuid, %s::uuid, %s::uuid, %s)
+                values (%s::uuid, %s::uuid, %s::uuid, %s, %s)
                 """,
-                (upload_id, teacher_id, media_asset_id, active),
+                (upload_id, teacher_id, media_asset_id, title, active),
             )
             await conn.commit()
 
@@ -445,21 +445,20 @@ async def _insert_home_player_course_link(
     enabled: bool,
     course_title_snapshot: str,
 ) -> None:
+    del teacher_id, course_title_snapshot
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 insert into app.home_player_course_links (
                   id,
-                  teacher_id,
                   lesson_media_id,
                   title,
-                  course_title_snapshot,
                   enabled
                 )
-                values (%s::uuid, %s::uuid, %s::uuid, %s, %s, %s)
+                values (%s::uuid, %s::uuid, %s, %s)
                 """,
-                (link_id, teacher_id, lesson_media_id, title, course_title_snapshot, enabled),
+                (link_id, lesson_media_id, title, enabled),
             )
             await conn.commit()
 

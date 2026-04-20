@@ -42,7 +42,7 @@ def _row(
     content_type: str | None,
     storage_path: str | None,
     lesson_id: str | None = "lesson-1",
-    title: str | None = "Audio title",
+    lesson_title: str | None = "Audio title",
     kind: str | None = "audio",
     storage_bucket: str | None = "course-media",
 ) -> scan.AudioContentRow:
@@ -50,7 +50,7 @@ def _row(
         source_table=source_table,
         media_row_id=media_row_id,
         lesson_id=lesson_id,
-        title=title,
+        lesson_title=lesson_title,
         kind=kind,
         content_type=content_type,
         storage_bucket=storage_bucket,

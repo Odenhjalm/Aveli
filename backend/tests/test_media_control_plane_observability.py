@@ -139,21 +139,18 @@ def _playable_resolution(
 ) -> RuntimeMediaResolution:
     return RuntimeMediaResolution(
         lesson_media_id=lesson_media_id,
-        lesson_id=lesson_id,
         media_asset_id=asset_id,
-        legacy_media_object_id="media-1",
-        kind="audio",
+        media_type="audio",
         content_type="audio/mpeg",
         media_state="ready",
-        duration_seconds=42,
         storage_bucket="course-media",
         storage_path="derived/demo.mp3",
         is_playable=True,
         playback_mode=RuntimeMediaPlaybackMode.PIPELINE_ASSET,
         failure_reason=RuntimeMediaResolutionReason.OK_READY_ASSET,
+        lesson_id=lesson_id,
         runtime_media_id=runtime_media_id,
-        active=True,
-        fallback_policy="never",
+        duration_seconds=42,
     )
 
 
@@ -321,23 +318,15 @@ async def test_validate_runtime_projection_reports_field_level_contract_diffs(mo
     assert item["expected_runtime_contract"] == {
         "reference_type": "lesson_media",
         "auth_scope": "lesson_course",
-        "fallback_policy": "never",
         "course_id": "course-1",
         "lesson_id": "lesson-1",
         "media_asset_id": "asset-1",
-        "media_object_id": "media-1",
-        "legacy_storage_bucket": None,
-        "legacy_storage_path": None,
         "kind": "audio",
         "active": True,
     }
     assert [diff["field"] for diff in item["contract_diffs"]] == [
         "auth_scope",
-        "fallback_policy",
         "course_id",
-        "media_object_id",
-        "legacy_storage_bucket",
-        "legacy_storage_path",
         "kind",
         "active",
     ]
@@ -492,7 +481,7 @@ async def test_list_orphaned_assets_exposes_grace_window_and_runtime_gap(monkeyp
     assert classifications == {
         "asset-awaiting": "awaiting_link",
         "asset-stalled": "unlinked_stalled",
-        "asset-gap": "runtime_projection_gap",
+        "asset-gap": "strict_orphan",
     }
     stalled_item = next(
         item
@@ -648,7 +637,7 @@ async def test_get_asset_failed_unlinked_home_audio_without_active_upload_is_not
         _list_runtime_media_for_asset,
     )
     monkeypatch.setattr(
-        service.home_player_library_repo,
+        service.home_audio_sources_repo,
         "get_active_home_upload_by_media_asset_id",
         _get_active_home_upload_by_media_asset_id,
     )
@@ -707,7 +696,7 @@ async def test_get_asset_failed_home_audio_with_active_upload_requires_runtime_p
         _list_runtime_media_for_asset,
     )
     monkeypatch.setattr(
-        service.home_player_library_repo,
+        service.home_audio_sources_repo,
         "get_active_home_upload_by_media_asset_id",
         _get_active_home_upload_by_media_asset_id,
     )
@@ -719,15 +708,20 @@ async def test_get_asset_failed_home_audio_with_active_upload_requires_runtime_p
 
     result = await service.get_asset("asset-home")
 
-    assert result["state_classification"] == "inconsistent"
-    assert any(
+    assert result["state_classification"] == "asset_failed"
+    assert not any(
         item["code"] == "home_runtime_projection_missing"
         for item in result["detected_inconsistencies"]
     )
 
 
 async def test_media_control_plane_docs_cover_hardened_contract_states():
-    docs_path = Path(__file__).resolve().parents[2] / "docs" / "media_control_plane_mcp.md"
+    docs_path = (
+        Path(__file__).resolve().parents[2]
+        / "archive"
+        / "docs"
+        / "media_control_plane_mcp.md"
+    )
     text = docs_path.read_text(encoding="utf-8")
 
     for token in (

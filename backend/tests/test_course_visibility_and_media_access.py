@@ -1,15 +1,12 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
 
-from psycopg import errors
-
-from app.config import settings
-from app import db, models, repositories
+from app import db, repositories
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
-from app.services import courses_service, home_audio_service
+from app.services import home_audio_service
 pytestmark = pytest.mark.anyio("asyncio")
 
 
@@ -23,13 +20,30 @@ async def register_user(client, email: str, password: str, display_name: str) ->
         json={
             "email": email,
             "password": password,
-            "display_name": display_name,
         },
     )
     assert register_resp.status_code == 201, register_resp.text
     tokens = register_resp.json()
-    me_resp = await client.get("/profiles/me", headers=auth_header(tokens["access_token"]))
+    headers = auth_header(tokens["access_token"])
+    me_resp = await client.get("/profiles/me", headers=headers)
     assert me_resp.status_code == 200, me_resp.text
+    user_id = me_resp.json()["user_id"]
+    profile_resp = await client.post(
+        "/auth/onboarding/create-profile",
+        headers=headers,
+        json={"display_name": display_name, "bio": None},
+    )
+    assert profile_resp.status_code == 200, profile_resp.text
+    onboarding_resp = await client.post(
+        "/auth/onboarding/complete",
+        headers=headers,
+    )
+    assert onboarding_resp.status_code == 200, onboarding_resp.text
+    await repositories.upsert_membership_record(
+        user_id,
+        status="active",
+        source="coupon",
+    )
     return tokens["access_token"], me_resp.json()["user_id"]
 
 
@@ -55,46 +69,95 @@ async def insert_course(
     is_published: bool,
     is_free_intro: bool = False,
 ) -> str:
+    course_id = str(uuid.uuid4())
+    required_enrollment_source = "intro_enrollment" if is_free_intro else "purchase"
+    price_amount_cents = None if is_free_intro else 1000
+    sellable = bool(is_published and not is_free_intro)
+    stripe_product_id = f"prod_{uuid.uuid4().hex[:12]}" if sellable else None
+    active_stripe_price_id = f"price_{uuid.uuid4().hex[:12]}" if sellable else None
+    visibility = "public" if is_published else "draft"
+    content_ready = is_published
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    """
-                    INSERT INTO app.courses (
-                      slug,
-                      title,
-                      is_free_intro,
-                      price_amount_cents,
-                      currency,
-                      is_published,
-                      created_by
-                    )
-                    VALUES (%s, %s, %s, 1000, 'sek', %s, %s)
-                    RETURNING id
-                    """,
-                    (slug, title, is_free_intro, is_published, owner_id),
+            await cur.execute(
+                """
+                INSERT INTO app.courses (
+                  id,
+                  teacher_id,
+                  title,
+                  slug,
+                  course_group_id,
+                  group_position,
+                  visibility,
+                  content_ready,
+                  required_enrollment_source,
+                  price_amount_cents,
+                  stripe_product_id,
+                  active_stripe_price_id,
+                  sellable,
+                  drip_enabled,
+                  drip_interval_days
                 )
-            except errors.UndefinedColumn:
-                await conn.rollback()
-                await cur.execute(
-                    """
-                    INSERT INTO app.courses (
-                      slug,
-                      title,
-                      price_amount_cents,
-                      currency,
-                      is_published,
-                      created_by
-                    )
-                    VALUES (%s, %s, 1000, 'sek', %s, %s)
-                    RETURNING id
-                    """,
-                    (slug, title, is_published, owner_id),
+                VALUES (
+                  %s::uuid,
+                  %s::uuid,
+                  %s,
+                  %s,
+                  %s::uuid,
+                  0,
+                  %s::app.course_visibility,
+                  %s,
+                  %s::app.course_enrollment_source,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  false,
+                  null
                 )
+                RETURNING id
+                """,
+                (
+                    course_id,
+                    owner_id,
+                    title,
+                    slug,
+                    str(uuid.uuid4()),
+                    visibility,
+                    content_ready,
+                    required_enrollment_source,
+                    price_amount_cents,
+                    stripe_product_id,
+                    active_stripe_price_id,
+                    sellable,
+                ),
+            )
             row = await cur.fetchone()
+            if is_published:
+                await cur.execute(
+                    """
+                    INSERT INTO app.course_public_content (
+                      course_id,
+                      short_description
+                    )
+                    VALUES (%s::uuid, %s)
+                    ON CONFLICT (course_id) DO NOTHING
+                    """,
+                    (course_id, "Public course"),
+                )
             await conn.commit()
     assert row
     return str(row[0])
+
+
+async def insert_lesson(*, course_id: str, title: str, position: int) -> dict:
+    return await courses_repo.create_lesson(
+        lesson_id=None,
+        course_id=course_id,
+        lesson_title=title,
+        content_markdown="# Lesson",
+        position=max(1, position),
+    )
 
 
 async def insert_media_asset(
@@ -111,57 +174,54 @@ async def insert_media_asset(
     original_filename: str,
     original_size_bytes: int,
     storage_bucket: str,
+    playback_object_path: str | None = None,
+    playback_format: str | None = None,
 ) -> dict:
+    del owner_id, course_id, lesson_id, original_content_type, original_filename, storage_bucket
     media_asset_id = str(uuid.uuid4())
+    content_hash = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 INSERT INTO app.media_assets (
                   id,
-                  owner_id,
-                  course_id,
-                  lesson_id,
                   media_type,
-                  ingest_format,
+                  purpose,
                   original_object_path,
-                  original_content_type,
-                  original_filename,
-                  original_size_bytes,
-                  storage_bucket,
+                  ingest_format,
+                  playback_object_path,
+                  playback_format,
                   state,
-                  purpose
+                  file_size,
+                  content_hash_algorithm,
+                  content_hash
                 )
                 VALUES (
                   %s::uuid,
-                  %s::uuid,
-                  %s::uuid,
-                  %s::uuid,
+                  %s::app.media_type,
+                  %s::app.media_purpose,
                   %s,
                   %s,
                   %s,
                   %s,
+                  %s::app.media_state,
                   %s,
-                  %s,
-                  %s,
-                  %s,
+                  'sha256',
                   %s
                 )
                 """,
                 (
                     media_asset_id,
-                    owner_id,
-                    course_id,
-                    lesson_id,
                     media_type,
-                    ingest_format,
-                    original_object_path,
-                    original_content_type,
-                    original_filename,
-                    original_size_bytes,
-                    storage_bucket,
-                    state,
                     purpose,
+                    original_object_path,
+                    ingest_format,
+                    playback_object_path,
+                    playback_format,
+                    state,
+                    original_size_bytes,
+                    content_hash,
                 ),
             )
             await conn.commit()
@@ -170,15 +230,22 @@ async def insert_media_asset(
     return asset
 
 
-async def upsert_membership(user_id: str, status: str) -> None:
-    await repositories.upsert_membership_record(
-        user_id,
-        plan_interval="month",
-        price_id=f"price_{status}_{uuid.uuid4().hex[:8]}",
-        status=status,
-        stripe_customer_id=f"cus_{uuid.uuid4().hex[:8]}",
-        stripe_subscription_id=f"sub_{uuid.uuid4().hex[:8]}",
+async def insert_lesson_media(*, lesson_id: str, media_asset_id: str) -> dict:
+    row = await courses_repo.create_lesson_media(
+        lesson_id=lesson_id,
+        media_asset_id=media_asset_id,
     )
+    if "id" not in row and row.get("lesson_media_id") is not None:
+        row["id"] = row["lesson_media_id"]
+    return row
+
+
+async def upsert_membership(user_id: str, status: str) -> None:
+    kwargs = {"status": status, "source": "coupon"}
+    if status == "canceled":
+        kwargs["expires_at"] = datetime.now(timezone.utc) - timedelta(days=1)
+        kwargs["canceled_at"] = datetime.now(timezone.utc) - timedelta(days=2)
+    await repositories.upsert_membership_record(user_id, **kwargs)
 
 
 async def test_public_course_list_only_shows_published(async_client):
@@ -216,14 +283,14 @@ async def test_public_course_list_only_shows_published(async_client):
     assert published_id in ids2
     assert unpublished_id not in ids2
 
-    # Owner must keep access to their own unpublished course.
+    # Canonical public detail route must stay fail-closed for unpublished courses.
     detail = await async_client.get(f"/courses/{unpublished_id}", headers=auth_header(owner_token))
-    assert detail.status_code == 200
+    assert detail.status_code == 404
 
 
 async def test_published_course_visible_even_with_processing_media(async_client):
     password = "Passw0rd!"
-    _, owner_id = await register_user(
+    owner_token, owner_id = await register_user(
         async_client,
         f"processing_owner_{uuid.uuid4().hex[:6]}@example.com",
         password,
@@ -237,12 +304,7 @@ async def test_published_course_visible_even_with_processing_media(async_client)
         is_published=True,
     )
 
-    lesson = await courses_repo.create_lesson(
-        course_id,
-        title="Lesson",
-        position=0,
-        is_intro=False,
-    )
+    lesson = await insert_lesson(course_id=course_id, title="Lesson", position=0)
     assert lesson
 
     media_asset = await insert_media_asset(
@@ -250,7 +312,7 @@ async def test_published_course_visible_even_with_processing_media(async_client)
         course_id=course_id,
         lesson_id=str(lesson["id"]),
         media_type="audio",
-        purpose="lesson_audio",
+        purpose="lesson_media",
         state="processing",
         original_object_path=f"media/source/audio/courses/{course_id}/lessons/{lesson['id']}/test.wav",
         ingest_format="wav",
@@ -260,15 +322,9 @@ async def test_published_course_visible_even_with_processing_media(async_client)
         storage_bucket="course-media",
     )
     assert media_asset
-    lesson_media = await models.add_lesson_media_entry(
+    lesson_media = await insert_lesson_media(
         lesson_id=str(lesson["id"]),
-        kind="audio",
-        storage_path=None,
-        storage_bucket="course-media",
-        media_id=None,
         media_asset_id=str(media_asset["id"]),
-        position=1,
-        duration_seconds=None,
     )
     assert lesson_media
 
@@ -392,7 +448,7 @@ async def test_home_audio_requires_enrollment_for_course_links(async_client, mon
     assert enrolled_item["media"]["media_id"] == media_asset_id
 
 
-async def test_trialing_membership_does_not_grant_non_intro_course_access(async_client):
+async def test_active_app_membership_does_not_grant_non_intro_course_access(async_client):
     password = "Passw0rd!"
     _, owner_id = await register_user(
         async_client,
@@ -415,7 +471,7 @@ async def test_trialing_membership_does_not_grant_non_intro_course_access(async_
         is_free_intro=False,
     )
 
-    await upsert_membership(student_id, "trialing")
+    await upsert_membership(student_id, "active")
 
     access_resp = await async_client.get(
         f"/courses/{course_id}/access",
@@ -423,17 +479,15 @@ async def test_trialing_membership_does_not_grant_non_intro_course_access(async_
     )
     assert access_resp.status_code == 200, access_resp.text
     access_payload = access_resp.json()
-    assert access_payload["has_active_subscription"] is True
-    assert access_payload["has_access"] is False
     assert access_payload["can_access"] is False
-    assert access_payload["access_reason"] == "none"
-    assert access_payload["enrolled"] is False
+    assert access_payload["required_enrollment_source"] == "purchase"
+    assert access_payload["enrollment"] is None
 
 
-async def test_trialing_membership_does_not_grant_non_intro_media_playback(
-    async_client, tmp_path, monkeypatch
+async def test_active_app_membership_does_not_grant_non_intro_media_playback(
+    async_client,
 ):
-    """Regression: membership metadata must not bypass enrollment for paid media."""
+    """Regression: app-entry membership must not bypass enrollment for paid media."""
     password = "Passw0rd!"
     owner_token, owner_id = await register_user(
         async_client,
@@ -453,44 +507,36 @@ async def test_trialing_membership_does_not_grant_non_intro_media_playback(
         slug=f"subscription-media-{uuid.uuid4().hex[:8]}",
         title="Subscription Media Course",
         owner_id=owner_id,
-        is_published=False,
+        is_published=True,
         is_free_intro=False,
     )
-    lesson = await courses_repo.create_lesson(
-        course_id,
-        title="Lesson",
-        position=0,
-        is_intro=False,
-    )
+    lesson = await insert_lesson(course_id=course_id, title="Lesson", position=0)
     assert lesson
 
-    # Create an image media row for the lesson.
-    media_object = await models.create_media_object(
+    media_asset = await insert_media_asset(
         owner_id=owner_id,
-        storage_path=f"unit-tests/{uuid.uuid4().hex}.png",
-        storage_bucket="lesson-media",
-        content_type="image/png",
-        byte_size=3,
-        checksum=None,
-        original_name="legacy.png",
-    )
-    assert media_object
-    legacy_media = await models.add_lesson_media_entry(
+        course_id=course_id,
         lesson_id=str(lesson["id"]),
-        kind="image",
-        storage_path=media_object["storage_path"],
-        storage_bucket=media_object["storage_bucket"],
-        media_id=str(media_object["id"]),
-        position=1,
+        media_type="image",
+        purpose="lesson_media",
+        state="ready",
+        original_object_path=f"media/source/lessons/{lesson['id']}/image.png",
+        ingest_format="png",
+        original_content_type="image/png",
+        original_filename="image.png",
+        original_size_bytes=3,
+        storage_bucket="course-media",
+        playback_object_path=f"lessons/{lesson['id']}/image.png",
+        playback_format="png",
     )
-    assert legacy_media
+    assert media_asset
+    lesson_media = await insert_lesson_media(
+        lesson_id=str(lesson["id"]),
+        media_asset_id=str(media_asset["id"]),
+    )
+    assert lesson_media
 
-    monkeypatch.setattr(settings, "media_root", tmp_path.as_posix())
-    local_path = tmp_path / media_object["storage_bucket"] / media_object["storage_path"]
-    local_path.parent.mkdir(parents=True, exist_ok=True)
-    local_path.write_bytes(b"png")
-
-    await upsert_membership(student_id, "trialing")
+    await upsert_membership(student_id, "active")
 
     access_resp = await async_client.get(
         f"/courses/{course_id}/access",
@@ -498,31 +544,24 @@ async def test_trialing_membership_does_not_grant_non_intro_media_playback(
     )
     assert access_resp.status_code == 200, access_resp.text
     access_payload = access_resp.json()
-    assert access_payload["has_active_subscription"] is True
-    assert access_payload["has_access"] is False
-    assert access_payload["enrolled"] is False
+    assert access_payload["can_access"] is False
+    assert access_payload["required_enrollment_source"] == "purchase"
+    assert access_payload["enrollment"] is None
 
-    studio_get_unpublished = await async_client.get(
-        f"/studio/media/{legacy_media['id']}",
+    lesson_detail_resp = await async_client.get(
+        f"/courses/lessons/{lesson['id']}",
         headers=auth_header(student_token),
     )
-    assert studio_get_unpublished.status_code == 403, studio_get_unpublished.text
+    assert lesson_detail_resp.status_code == 403, lesson_detail_resp.text
 
-    publish_resp = await async_client.patch(
-        f"/studio/courses/{course_id}",
+    legacy_media_resp = await async_client.get(
+        f"/studio/media/{lesson_media['id']}",
         headers=auth_header(owner_token),
-        json={"is_published": True},
     )
-    assert publish_resp.status_code == 200, publish_resp.text
-
-    studio_get_ok = await async_client.get(
-        f"/studio/media/{legacy_media['id']}",
-        headers=auth_header(student_token),
-    )
-    assert studio_get_ok.status_code == 403, studio_get_ok.text
+    assert legacy_media_resp.status_code == 410, legacy_media_resp.text
 
 
-@pytest.mark.parametrize("membership_status", ["canceled", "incomplete"])
+@pytest.mark.parametrize("membership_status", ["canceled", "inactive", "past_due", "expired"])
 async def test_non_active_membership_statuses_do_not_grant_course_or_media_access(
     async_client, membership_status: str
 ):
@@ -547,33 +586,8 @@ async def test_non_active_membership_statuses_do_not_grant_course_or_media_acces
         is_published=True,
         is_free_intro=False,
     )
-    lesson = await courses_repo.create_lesson(
-        course_id,
-        title="Lesson",
-        position=0,
-        is_intro=False,
-    )
+    lesson = await insert_lesson(course_id=course_id, title="Lesson", position=0)
     assert lesson
-
-    media_object = await models.create_media_object(
-        owner_id=owner_id,
-        storage_path=f"unit-tests/{uuid.uuid4().hex}.png",
-        storage_bucket="lesson-media",
-        content_type="image/png",
-        byte_size=3,
-        checksum=None,
-        original_name=f"{membership_status}.png",
-    )
-    assert media_object
-    legacy_media = await models.add_lesson_media_entry(
-        lesson_id=str(lesson["id"]),
-        kind="image",
-        storage_path=media_object["storage_path"],
-        storage_bucket=media_object["storage_bucket"],
-        media_id=str(media_object["id"]),
-        position=1,
-    )
-    assert legacy_media
 
     await upsert_membership(student_id, membership_status)
 
@@ -581,13 +595,8 @@ async def test_non_active_membership_statuses_do_not_grant_course_or_media_acces
         f"/courses/{course_id}/access",
         headers=auth_header(student_token),
     )
-    assert access_resp.status_code == 200, access_resp.text
-    access_payload = access_resp.json()
-    assert access_payload["has_active_subscription"] is False
-    assert access_payload["has_access"] is False
-    assert access_payload["can_access"] is False
-    assert access_payload["access_reason"] == "none"
-    assert access_payload["enrolled"] is False
+    assert access_resp.status_code == 403, access_resp.text
+    assert access_resp.json()["detail"] == "canonical_app_entry_required"
 
     lesson_detail_resp = await async_client.get(
         f"/courses/lessons/{lesson['id']}",
@@ -595,7 +604,7 @@ async def test_non_active_membership_statuses_do_not_grant_course_or_media_acces
     )
     assert lesson_detail_resp.status_code == 403, lesson_detail_resp.text
 
-async def test_lesson_detail_returns_unresolved_media_without_intro_enrollment_side_effect(
+async def test_lesson_detail_returns_unresolved_canonical_media_after_intro_enrollment(
     async_client,
 ):
     password = "Passw0rd!"
@@ -620,36 +629,42 @@ async def test_lesson_detail_returns_unresolved_media_without_intro_enrollment_s
         is_published=True,
         is_free_intro=True,
     )
-    lesson = await courses_repo.create_lesson(
-        course_id,
+    lesson = await insert_lesson(
+        course_id=course_id,
         title="Broken Intro Lesson",
         position=0,
-        is_intro=True,
     )
     assert lesson
 
-    media_object = await models.create_media_object(
+    media_asset = await insert_media_asset(
         owner_id=teacher_id,
-        storage_path=f"missing/{uuid.uuid4().hex}.png",
-        storage_bucket="lesson-media",
-        content_type="image/png",
-        byte_size=3,
-        checksum=None,
-        original_name="broken.png",
-    )
-    assert media_object
-    legacy_media = await models.add_lesson_media_entry(
+        course_id=course_id,
         lesson_id=str(lesson["id"]),
-        kind="image",
-        storage_path=media_object["storage_path"],
-        storage_bucket=media_object["storage_bucket"],
-        media_id=str(media_object["id"]),
-        position=1,
+        media_type="image",
+        purpose="lesson_media",
+        state="processing",
+        original_object_path=f"media/source/lessons/{lesson['id']}/broken.png",
+        ingest_format="png",
+        original_content_type="image/png",
+        original_filename="broken.png",
+        original_size_bytes=3,
+        storage_bucket="course-media",
     )
-    assert legacy_media
+    assert media_asset
+    lesson_media = await insert_lesson_media(
+        lesson_id=str(lesson["id"]),
+        media_asset_id=str(media_asset["id"]),
+    )
+    assert lesson_media
 
     await upsert_membership(student_id, "active")
     assert await courses_repo.is_enrolled(student_id, course_id) is False
+    enroll_resp = await async_client.post(
+        f"/courses/{course_id}/enroll",
+        headers=auth_header(student_token),
+    )
+    assert enroll_resp.status_code == 200, enroll_resp.text
+    assert enroll_resp.json()["can_access"] is True
 
     lesson_detail_resp = await async_client.get(
         f"/courses/lessons/{lesson['id']}",
@@ -660,22 +675,24 @@ async def test_lesson_detail_returns_unresolved_media_without_intro_enrollment_s
     payload = lesson_detail_resp.json()
     assert payload["lesson"]["id"] == str(lesson["id"])
     item = next(
-        media_item
-        for media_item in (payload.get("media") or [])
-        if media_item.get("id") == str(legacy_media["id"])
+        (
+            media_item
+            for media_item in (payload.get("media") or [])
+            if media_item.get("id") == str(lesson_media["id"])
+        ),
+        None,
     )
-    assert item["resolvable_for_student"] is False
-    assert item["resolvable_for_editor"] is False
-    assert "preferredUrl" not in item
-    assert "download_url" not in item
-    assert "signed_url" not in item
-    assert "signed_url_expires_at" not in item
-    assert await courses_repo.is_enrolled(student_id, course_id) is False
+    assert item is None
+    for media_item in payload.get("media") or []:
+        assert "preferredUrl" not in media_item
+        assert "download_url" not in media_item
+        assert "signed_url" not in media_item
+        assert "signed_url_expires_at" not in media_item
+    assert await courses_repo.is_enrolled(student_id, course_id) is True
 
 
-async def test_lesson_detail_access_check_does_not_depend_on_full_course_fetch(
+async def test_lesson_detail_blocks_intro_media_without_canonical_enrollment(
     async_client,
-    monkeypatch,
 ):
     password = "Passw0rd!"
     _, teacher_id = await register_user(
@@ -699,58 +716,40 @@ async def test_lesson_detail_access_check_does_not_depend_on_full_course_fetch(
         is_published=True,
         is_free_intro=True,
     )
-    lesson = await courses_repo.create_lesson(
-        course_id,
+    lesson = await insert_lesson(
+        course_id=course_id,
         title="Broken Intro Lesson",
         position=0,
-        is_intro=True,
     )
     assert lesson
 
-    media_object = await models.create_media_object(
+    media_asset = await insert_media_asset(
         owner_id=teacher_id,
-        storage_path=f"missing/{uuid.uuid4().hex}.png",
-        storage_bucket="lesson-media",
-        content_type="image/png",
-        byte_size=3,
-        checksum=None,
-        original_name="broken.png",
-    )
-    assert media_object
-    legacy_media = await models.add_lesson_media_entry(
+        course_id=course_id,
         lesson_id=str(lesson["id"]),
-        kind="image",
-        storage_path=media_object["storage_path"],
-        storage_bucket=media_object["storage_bucket"],
-        media_id=str(media_object["id"]),
-        position=1,
+        media_type="image",
+        purpose="lesson_media",
+        state="ready",
+        original_object_path=f"media/source/lessons/{lesson['id']}/blocked.png",
+        ingest_format="png",
+        original_content_type="image/png",
+        original_filename="blocked.png",
+        original_size_bytes=3,
+        storage_bucket="course-media",
+        playback_object_path=f"lessons/{lesson['id']}/blocked.png",
+        playback_format="png",
     )
-    assert legacy_media
+    assert media_asset
+    lesson_media = await insert_lesson_media(
+        lesson_id=str(lesson["id"]),
+        media_asset_id=str(media_asset["id"]),
+    )
+    assert lesson_media
 
     await upsert_membership(student_id, "active")
-
-    async def fail_fetch_course(*args, **kwargs):
-        raise RuntimeError("full course read path must not be used for lesson access")
-
-    monkeypatch.setattr(
-        courses_service,
-        "fetch_course",
-        fail_fetch_course,
-    )
 
     lesson_detail_resp = await async_client.get(
         f"/courses/lessons/{lesson['id']}",
         headers=auth_header(student_token),
     )
-    assert lesson_detail_resp.status_code == 200, lesson_detail_resp.text
-
-    payload = lesson_detail_resp.json()
-    item = next(
-        media_item
-        for media_item in (payload.get("media") or [])
-        if media_item.get("id") == str(legacy_media["id"])
-    )
-    assert item["resolvable_for_student"] is False
-    assert item["resolvable_for_editor"] is False
-    assert "preferredUrl" not in item
-    assert "download_url" not in item
+    assert lesson_detail_resp.status_code == 403, lesson_detail_resp.text

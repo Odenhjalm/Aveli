@@ -12,6 +12,14 @@ LESSON_MEDIA_ID = "11111111-1111-1111-1111-111111111111"
 LESSON_MEDIA_ID_2 = "11111111-1111-1111-1111-111111111112"
 MEDIA_ASSET_ID = "33333333-3333-3333-3333-333333333333"
 TEACHER_ID = "44444444-4444-4444-4444-444444444444"
+FORBIDDEN_MEDIA_FIELDS = {
+    "upload_url",
+    "storage_path",
+    "object_path",
+    "download_url",
+    "signed_url",
+    "provider_url",
+}
 
 
 def _row(*, state: str = "ready") -> dict[str, object]:
@@ -23,6 +31,18 @@ def _row(*, state: str = "ready") -> dict[str, object]:
         "media_type": "document",
         "state": state,
     }
+
+
+def _payload_keys(value: object) -> set[str]:
+    keys: set[str] = set()
+    if isinstance(value, dict):
+        keys.update(str(key) for key in value)
+        for nested in value.values():
+            keys.update(_payload_keys(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            keys.update(_payload_keys(nested))
+    return keys
 
 
 async def test_studio_lesson_media_item_ready_composes_canonical_media(monkeypatch):
@@ -48,6 +68,8 @@ async def test_studio_lesson_media_item_ready_composes_canonical_media(monkeypat
     assert str(item.media.media_id) == "33333333-3333-3333-3333-333333333333"
     assert item.media.state == "ready"
     assert item.media.resolved_url == "https://cdn.test/lesson-media/guide.pdf"
+    payload = item.model_dump(mode="json")
+    assert _payload_keys(payload).isdisjoint(FORBIDDEN_MEDIA_FIELDS)
 
 
 async def test_studio_lesson_media_item_non_ready_keeps_media_object_without_url(
@@ -168,14 +190,30 @@ async def test_studio_preview_lesson_media_preserves_canonical_row_identity(
         "preview_url": "https://cdn.test/preview.mp4",
         "expires_at": "2026-01-01T00:00:00Z",
     }
-    assert not {
-        "upload_url",
-        "storage_path",
-        "download_url",
-        "signed_url",
-        "storage_bucket",
-        "object_path",
-    }.intersection(payload)
+    assert _payload_keys(payload).isdisjoint(
+        FORBIDDEN_MEDIA_FIELDS | {"storage_bucket"}
+    )
+
+
+async def test_legacy_studio_lesson_media_listing_is_inert():
+    with pytest.raises(studio.HTTPException) as exc_info:
+        await studio.list_lesson_media(
+            request=object(),
+            lesson_id=studio.UUID(LESSON_ID),
+            current={"id": TEACHER_ID},
+        )
+
+    assert exc_info.value.status_code == 410
+
+
+async def test_legacy_api_lesson_media_listing_is_inert():
+    with pytest.raises(studio.HTTPException) as exc_info:
+        await studio.studio_list_lesson_media(
+            lesson_id=studio.UUID(LESSON_ID),
+            current={"id": TEACHER_ID},
+        )
+
+    assert exc_info.value.status_code == 410
 
 
 async def test_studio_preview_lesson_media_fails_closed_without_row_identity(
@@ -319,10 +357,13 @@ async def test_canonical_upload_url_creates_asset_without_placement(monkeypatch)
     assert str(response.media_asset_id) == MEDIA_ASSET_ID
     assert response.asset_state == "pending_upload"
     assert not hasattr(response, "lesson_media_id")
+    assert _payload_keys(response.model_dump(mode="json")).isdisjoint(
+        FORBIDDEN_MEDIA_FIELDS | {"headers", "storage_bucket"}
+    )
     assert len(asset_calls) == 1
     assert asset_calls[0]["purpose"] == "lesson_media"
     assert asset_calls[0]["state"] == "pending_upload"
-    assert len(upload_calls) == 1
+    assert upload_calls == []
 
 
 async def test_canonical_upload_completion_does_not_attach(monkeypatch):
@@ -335,6 +376,9 @@ async def test_canonical_upload_completion_does_not_attach(monkeypatch):
     async def fake_mark_uploaded(*, media_id: str):
         completed.append(media_id)
         return {"id": media_id, "state": "uploaded"}
+
+    async def fake_assert_storage_write(media_asset):
+        assert media_asset["id"] == MEDIA_ASSET_ID
 
     async def fail_create_lesson_media(**kwargs):
         raise AssertionError("upload-completion must not attach lesson_media")
@@ -349,6 +393,12 @@ async def test_canonical_upload_completion_does_not_attach(monkeypatch):
         studio.media_assets_repo,
         "mark_lesson_media_pipeline_asset_uploaded",
         fake_mark_uploaded,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio,
+        "_assert_canonical_media_storage_write",
+        fake_assert_storage_write,
         raising=True,
     )
     monkeypatch.setattr(

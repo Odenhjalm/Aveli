@@ -86,8 +86,6 @@ class TeacherProfileLessonSource extends Equatable {
     this.courseTitle,
     this.courseSlug,
     required this.kind,
-    this.storagePath,
-    this.storageBucket,
     this.contentType,
     this.durationSeconds,
     this.position,
@@ -119,14 +117,6 @@ class TeacherProfileLessonSource extends Equatable {
         'course_slug',
       ),
       kind: _requireString(_requiredField(payload, 'kind'), 'kind'),
-      storagePath: _optionalString(
-        _requiredField(payload, 'storage_path'),
-        'storage_path',
-      ),
-      storageBucket: _optionalString(
-        _requiredField(payload, 'storage_bucket'),
-        'storage_bucket',
-      ),
       contentType: _optionalString(
         _requiredField(payload, 'content_type'),
         'content_type',
@@ -155,8 +145,6 @@ class TeacherProfileLessonSource extends Equatable {
   final String? courseTitle;
   final String? courseSlug;
   final String kind;
-  final String? storagePath;
-  final String? storageBucket;
   final String? contentType;
   final int? durationSeconds;
   final int? position;
@@ -172,8 +160,6 @@ class TeacherProfileLessonSource extends Equatable {
     courseTitle,
     courseSlug,
     kind,
-    storagePath,
-    storageBucket,
     contentType,
     durationSeconds,
     position,

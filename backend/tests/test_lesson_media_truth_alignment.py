@@ -10,7 +10,31 @@ from app.services import courses_service
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-async def test_list_lesson_media_editor_suppresses_unresolvable_image_urls(
+def _resolution(
+    *,
+    lesson_media_id: str,
+    media_asset_id: str | None,
+    media_type: str,
+    media_state: str,
+    is_playable: bool,
+    playback_mode: RuntimeMediaPlaybackMode,
+    failure_reason: RuntimeMediaResolutionReason,
+) -> RuntimeMediaResolution:
+    return RuntimeMediaResolution(
+        lesson_media_id=lesson_media_id,
+        media_asset_id=media_asset_id,
+        media_type=media_type,
+        content_type="video/mp4" if media_type == "video" else "audio/mpeg",
+        media_state=media_state,
+        storage_bucket="course-media",
+        storage_path=f"media/derived/{media_type}/{lesson_media_id}",
+        is_playable=is_playable,
+        playback_mode=playback_mode,
+        failure_reason=failure_reason,
+    )
+
+
+async def test_list_lesson_media_editor_uses_canonical_projection_only(
     monkeypatch,
 ):
     async def fake_list_lesson_media(_lesson_id: str):
@@ -18,28 +42,21 @@ async def test_list_lesson_media_editor_suppresses_unresolvable_image_urls(
             {
                 "id": "image-1",
                 "lesson_id": "lesson-1",
-                "kind": "image",
-                "storage_bucket": "public-media",
-                "storage_path": "lessons/lesson-1/images/missing.png",
+                "media_asset_id": "asset-1",
+                "position": 1,
+                "media_type": "image",
+                "state": "processing",
                 "preferredUrl": "https://cdn.test/raw-image.png",
                 "download_url": "https://cdn.test/raw-image.png",
+                "signed_url": "https://signed.test/raw-image.png",
                 "original_name": "missing.png",
             }
         ]
-
-    async def fake_fetch_storage_object_existence(_pairs):
-        return {}, True
 
     monkeypatch.setattr(
         courses_service.courses_repo,
         "list_lesson_media",
         fake_list_lesson_media,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.storage_objects,
-        "fetch_storage_object_existence",
-        fake_fetch_storage_object_existence,
         raising=True,
     )
 
@@ -47,15 +64,22 @@ async def test_list_lesson_media_editor_suppresses_unresolvable_image_urls(
         await courses_service.list_lesson_media("lesson-1", mode="editor_preview")
     )
 
-    assert len(items) == 1
-    item = items[0]
-    assert item["resolvable_for_editor"] is False
-    assert "preferredUrl" not in item
-    assert "download_url" not in item
-    assert "signed_url" not in item
+    assert items == [
+        {
+            "id": "image-1",
+            "lesson_id": "lesson-1",
+            "media_asset_id": "asset-1",
+            "position": 1,
+            "media_type": "image",
+            "kind": "image",
+            "state": "processing",
+            "media": None,
+            "original_name": "missing.png",
+        }
+    ]
 
 
-async def test_list_lesson_media_student_suppresses_unresolvable_audio_urls(
+async def test_list_lesson_media_student_suppresses_non_playable_assets(
     monkeypatch,
 ):
     async def fake_list_lesson_media(_lesson_id: str):
@@ -63,21 +87,30 @@ async def test_list_lesson_media_student_suppresses_unresolvable_audio_urls(
             {
                 "id": "audio-1",
                 "lesson_id": "lesson-1",
-                "kind": "audio",
-                "storage_bucket": "course-media",
-                "storage_path": "lessons/lesson-1/audio/missing.mp3",
-                "media_id": "media-object-1",
+                "media_asset_id": "asset-1",
+                "position": 1,
+                "media_type": "audio",
+                "state": "processing",
                 "original_name": "missing.mp3",
             }
         ]
 
-    async def fake_fetch_storage_object_existence(_pairs):
-        return {}, True
-
-    def fake_attach_media_links(item: dict, *, purpose: str | None = None) -> None:
-        item["download_url"] = "https://cdn.test/raw-audio.mp3"
-        item["signed_url"] = "https://signed.test/raw-audio.mp3"
-        item["signed_url_expires_at"] = "2099-01-01T00:00:00+00:00"
+    async def fake_resolve_lesson_media(
+        lesson_media_id: str,
+        *,
+        emit_logs: bool = True,
+    ) -> RuntimeMediaResolution:
+        assert lesson_media_id == "audio-1"
+        assert emit_logs is False
+        return _resolution(
+            lesson_media_id="audio-1",
+            media_asset_id="asset-1",
+            media_type="audio",
+            media_state="processing",
+            is_playable=False,
+            playback_mode=RuntimeMediaPlaybackMode.NONE,
+            failure_reason=RuntimeMediaResolutionReason.ASSET_NOT_READY,
+        )
 
     monkeypatch.setattr(
         courses_service.courses_repo,
@@ -86,31 +119,29 @@ async def test_list_lesson_media_student_suppresses_unresolvable_audio_urls(
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.storage_objects,
-        "fetch_storage_object_existence",
-        fake_fetch_storage_object_existence,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.media_signer,
-        "attach_media_links",
-        fake_attach_media_links,
+        courses_service.canonical_media_resolver,
+        "resolve_lesson_media",
+        fake_resolve_lesson_media,
         raising=True,
     )
 
     items = list(
-        await courses_service.list_lesson_media("lesson-1", mode="student_render")
+        await courses_service.list_lesson_media(
+            "lesson-1",
+            mode="student_render",
+            user_id="user-1",
+        )
     )
 
     assert len(items) == 1
     item = items[0]
-    assert item["resolvable_for_student"] is False
+    assert item["media"] is None
     assert "download_url" not in item
     assert "signed_url" not in item
     assert "signed_url_expires_at" not in item
 
 
-async def test_list_lesson_media_student_marks_legacy_video_not_playable(
+async def test_list_lesson_media_student_suppresses_non_pipeline_resolution(
     monkeypatch,
 ):
     async def fake_list_lesson_media(_lesson_id: str):
@@ -118,21 +149,13 @@ async def test_list_lesson_media_student_marks_legacy_video_not_playable(
             {
                 "id": "video-1",
                 "lesson_id": "lesson-1",
-                "kind": "video",
-                "storage_bucket": "course-media",
-                "storage_path": "lessons/lesson-1/video/demo.mp4",
-                "media_id": "media-object-1",
+                "media_asset_id": "asset-1",
+                "position": 1,
+                "media_type": "video",
+                "state": "ready",
                 "original_name": "demo.mp4",
             }
         ]
-
-    async def fake_fetch_storage_object_existence(_pairs):
-        return {("course-media", "lessons/lesson-1/video/demo.mp4"): True}, True
-
-    def fake_attach_media_links(item: dict, *, purpose: str | None = None) -> None:
-        item["download_url"] = "https://cdn.test/raw-video.mp4"
-        item["signed_url"] = "https://signed.test/raw-video.mp4"
-        item["signed_url_expires_at"] = "2099-01-01T00:00:00+00:00"
 
     async def fake_resolve_lesson_media(
         lesson_media_id: str,
@@ -141,37 +164,20 @@ async def test_list_lesson_media_student_marks_legacy_video_not_playable(
     ) -> RuntimeMediaResolution:
         assert lesson_media_id == "video-1"
         assert emit_logs is False
-        return RuntimeMediaResolution(
+        return _resolution(
             lesson_media_id="video-1",
-            media_asset_id=None,
-            legacy_media_object_id="media-object-1",
-            kind="video",
-            content_type="video/mp4",
+            media_asset_id="asset-1",
+            media_type="video",
             media_state="ready",
-            storage_bucket="course-media",
-            storage_path="lessons/lesson-1/video/demo.mp4",
             is_playable=True,
-            playback_mode=RuntimeMediaPlaybackMode.LEGACY_STORAGE,
-            failure_reason=RuntimeMediaResolutionReason.OK_LEGACY_OBJECT,
-            reference_type="lesson_media",
+            playback_mode=RuntimeMediaPlaybackMode.NONE,
+            failure_reason=RuntimeMediaResolutionReason.UNSUPPORTED_MEDIA_CONTRACT,
         )
 
     monkeypatch.setattr(
         courses_service.courses_repo,
         "list_lesson_media",
         fake_list_lesson_media,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.storage_objects,
-        "fetch_storage_object_existence",
-        fake_fetch_storage_object_existence,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.media_signer,
-        "attach_media_links",
-        fake_attach_media_links,
         raising=True,
     )
     monkeypatch.setattr(
@@ -182,20 +188,21 @@ async def test_list_lesson_media_student_marks_legacy_video_not_playable(
     )
 
     items = list(
-        await courses_service.list_lesson_media("lesson-1", mode="student_render")
+        await courses_service.list_lesson_media(
+            "lesson-1",
+            mode="student_render",
+            user_id="user-1",
+        )
     )
 
     assert len(items) == 1
     item = items[0]
-    assert item["resolvable_for_student"] is False
-    assert item["robustness_status"] == "not_playable"
-    assert item["robustness_recommended_action"] == "manual_review"
+    assert item["media"] is None
     assert "download_url" not in item
     assert "signed_url" not in item
-    assert "signed_url_expires_at" not in item
 
 
-async def test_list_lesson_media_student_keeps_pipeline_video_playable(
+async def test_list_lesson_media_student_exposes_only_canonical_pipeline_media(
     monkeypatch,
 ):
     async def fake_list_lesson_media(_lesson_id: str):
@@ -203,21 +210,13 @@ async def test_list_lesson_media_student_keeps_pipeline_video_playable(
             {
                 "id": "video-2",
                 "lesson_id": "lesson-1",
-                "kind": "video",
-                "storage_bucket": "course-media",
-                "storage_path": "media/derived/video/demo.mp4",
                 "media_asset_id": "asset-1",
-                "media_state": "ready",
+                "position": 1,
+                "media_type": "video",
+                "state": "ready",
                 "original_name": "demo.mp4",
             }
         ]
-
-    async def fake_fetch_storage_object_existence(_pairs):
-        return {("course-media", "media/derived/video/demo.mp4"): True}, True
-
-    def fake_attach_media_links(item: dict, *, purpose: str | None = None) -> None:
-        item["download_url"] = "https://cdn.test/pipeline-video.mp4"
-        item["signed_url"] = "https://signed.test/pipeline-video.mp4"
 
     async def fake_resolve_lesson_media(
         lesson_media_id: str,
@@ -226,20 +225,24 @@ async def test_list_lesson_media_student_keeps_pipeline_video_playable(
     ) -> RuntimeMediaResolution:
         assert lesson_media_id == "video-2"
         assert emit_logs is False
-        return RuntimeMediaResolution(
+        return _resolution(
             lesson_media_id="video-2",
             media_asset_id="asset-1",
-            legacy_media_object_id=None,
-            kind="video",
-            content_type="video/mp4",
+            media_type="video",
             media_state="ready",
-            storage_bucket="course-media",
-            storage_path="media/derived/video/demo.mp4",
             is_playable=True,
             playback_mode=RuntimeMediaPlaybackMode.PIPELINE_ASSET,
             failure_reason=RuntimeMediaResolutionReason.OK_READY_ASSET,
-            reference_type="lesson_media",
         )
+
+    async def fake_resolve_lesson_media_playback(
+        *,
+        lesson_media_id: str,
+        user_id: str,
+    ):
+        assert lesson_media_id == "video-2"
+        assert user_id == "user-1"
+        return {"resolved_url": "https://cdn.test/pipeline-video.mp4"}
 
     monkeypatch.setattr(
         courses_service.courses_repo,
@@ -248,31 +251,32 @@ async def test_list_lesson_media_student_keeps_pipeline_video_playable(
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.storage_objects,
-        "fetch_storage_object_existence",
-        fake_fetch_storage_object_existence,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.media_signer,
-        "attach_media_links",
-        fake_attach_media_links,
-        raising=True,
-    )
-    monkeypatch.setattr(
         courses_service.canonical_media_resolver,
         "resolve_lesson_media",
         fake_resolve_lesson_media,
         raising=True,
     )
+    monkeypatch.setattr(
+        courses_service.lesson_playback_service,
+        "resolve_lesson_media_playback",
+        fake_resolve_lesson_media_playback,
+        raising=True,
+    )
 
     items = list(
-        await courses_service.list_lesson_media("lesson-1", mode="student_render")
+        await courses_service.list_lesson_media(
+            "lesson-1",
+            mode="student_render",
+            user_id="user-1",
+        )
     )
 
     assert len(items) == 1
     item = items[0]
-    assert item["resolvable_for_student"] is True
-    assert item["robustness_status"] == "ok"
-    assert item["download_url"] == "https://cdn.test/pipeline-video.mp4"
-    assert item["signed_url"] == "https://signed.test/pipeline-video.mp4"
+    assert item["media"] == {
+        "media_id": "asset-1",
+        "state": "ready",
+        "resolved_url": "https://cdn.test/pipeline-video.mp4",
+    }
+    assert "download_url" not in item
+    assert "signed_url" not in item

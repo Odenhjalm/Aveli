@@ -1,261 +1,24 @@
-import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:file_selector/file_selector.dart' as fs;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
-import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/media/data/media_pipeline_repository.dart';
+import 'package:aveli/features/studio/application/studio_providers.dart';
+import 'package:aveli/features/studio/data/studio_models.dart';
+import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_source.dart';
-import 'package:aveli/features/studio/widgets/wav_upload_types.dart';
 
-class _FakeMediaPipelineRepository implements MediaPipelineRepository {
-  _FakeMediaPipelineRepository({
-    required this.uploadTarget,
-    required this.statuses,
-    MediaStatus? completeStatus,
-  }) : completeStatus =
-           completeStatus ??
-           (statuses.isNotEmpty
-               ? statuses.last
-               : const MediaStatus(mediaId: 'media-1', state: 'ready'));
-
-  final MediaUploadTarget uploadTarget;
-  final List<MediaStatus> statuses;
-  final MediaStatus completeStatus;
-  int _statusCalls = 0;
-
-  @override
-  Future<MediaUploadTarget> requestUploadUrl({
-    required String filename,
-    required String mimeType,
-    required int sizeBytes,
-    required String mediaType,
-    String? purpose,
-    String? courseId,
-    String? lessonId,
-  }) async {
-    return uploadTarget;
-  }
-
-  @override
-  Future<MediaUploadTarget> refreshUploadUrl({required String mediaId}) async {
-    return uploadTarget;
-  }
-
-  @override
-  Future<MediaStatus> completeUpload({required String mediaId}) async {
-    return MediaStatus(
-      mediaId: mediaId,
-      state: completeStatus.state,
-      errorMessage: completeStatus.errorMessage,
-      ingestFormat: completeStatus.ingestFormat,
-      streamingFormat: completeStatus.streamingFormat,
-      durationSeconds: completeStatus.durationSeconds,
-      codec: completeStatus.codec,
-    );
-  }
-
-  @override
-  Future<MediaStatus> attachUpload({
-    required String mediaId,
-    required String linkScope,
-    String? lessonId,
-    String? lessonMediaId,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaUploadTarget> requestCoverUploadUrl({
-    required String filename,
-    required String mimeType,
-    required int sizeBytes,
-    required String courseId,
-  }) async {
-    return uploadTarget;
-  }
-
-  @override
-  Future<void> clearCourseCover(String courseId) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MediaStatus> fetchStatus(String mediaId) async {
-    final index = _statusCalls < statuses.length
-        ? _statusCalls
-        : statuses.length - 1;
-    _statusCalls += 1;
-    return statuses[index];
-  }
-}
+class _MockStudioRepository extends Mock implements StudioRepository {}
 
 void main() {
-  testWidgets('shows upload progress for WAV uploads', (tester) async {
-    final uploadTarget = MediaUploadTarget(
-      mediaId: 'media-1',
-      uploadUrl: Uri.parse('https://storage.test/upload'),
-      objectPath: 'media/source/audio/demo.wav',
-      headers: const {},
-      expiresAt: DateTime.now().toUtc(),
-    );
-    final repo = _FakeMediaPipelineRepository(
-      uploadTarget: uploadTarget,
-      statuses: const [MediaStatus(mediaId: 'media-1', state: 'processing')],
-    );
-
-    final uploadCompleter = Completer<void>();
-
-    Future<WavUploadFile?> fakePick() async {
-      final data = Uint8List(10);
-      final file = fs.XFile.fromData(
-        data,
-        name: 'demo.wav',
-        mimeType: 'audio/wav',
-      );
-      return WavUploadFile(file, 'audio/wav', 10);
-    }
-
-    Future<void> fakeUpload({
-      required String mediaId,
-      required String courseId,
-      required String lessonId,
-      required Uri uploadUrl,
-      required String objectPath,
-      required Map<String, String> headers,
-      required WavUploadFile file,
-      required String contentType,
-      required void Function(int sent, int total) onProgress,
-      WavUploadCancelToken? cancelToken,
-      void Function(bool resumed)? onResume,
-      Future<bool> Function()? ensureAuth,
-      Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
-      refreshSigning,
-      void Function()? onSigningRefresh,
-      WavResumableSession? resumableSession,
-    }) async {
-      onProgress(5, 10);
-      await uploadCompleter.future;
-    }
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [mediaPipelineRepositoryProvider.overrideWithValue(repo)],
-        child: MaterialApp(
-          home: Scaffold(
-            body: WavUploadCard(
-              courseId: 'course-1',
-              lessonId: 'lesson-1',
-              pickFileOverride: fakePick,
-              uploadFileOverride: fakeUpload,
-              pollInterval: const Duration(hours: 1),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('Ladda upp ljud'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Ge ljudet/videon ett namn'), findsOneWidget);
-    expect(find.byType(AlertDialog), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsNothing);
-
-    uploadCompleter.complete();
-    await tester.pump();
-  });
-
-  testWidgets('keeps upload action visible while processing and ready', (
-    tester,
-  ) async {
-    final uploadTarget = MediaUploadTarget(
-      mediaId: 'media-1',
-      uploadUrl: Uri.parse('https://storage.test/upload'),
-      objectPath: 'media/source/audio/demo.wav',
-      headers: const {},
-      expiresAt: DateTime.now().toUtc(),
-    );
-    final repo = _FakeMediaPipelineRepository(
-      uploadTarget: uploadTarget,
-      statuses: const [
-        MediaStatus(mediaId: 'media-1', state: 'processing'),
-        MediaStatus(mediaId: 'media-1', state: 'ready'),
-      ],
-    );
-
-    Future<WavUploadFile?> fakePick() async {
-      final data = Uint8List(10);
-      final file = fs.XFile.fromData(
-        data,
-        name: 'demo.wav',
-        mimeType: 'audio/wav',
-      );
-      return WavUploadFile(file, 'audio/wav', 10);
-    }
-
-    Future<void> fakeUpload({
-      required String mediaId,
-      required String courseId,
-      required String lessonId,
-      required Uri uploadUrl,
-      required String objectPath,
-      required Map<String, String> headers,
-      required WavUploadFile file,
-      required String contentType,
-      required void Function(int sent, int total) onProgress,
-      WavUploadCancelToken? cancelToken,
-      void Function(bool resumed)? onResume,
-      Future<bool> Function()? ensureAuth,
-      Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
-      refreshSigning,
-      void Function()? onSigningRefresh,
-      WavResumableSession? resumableSession,
-    }) async {
-      onProgress(10, 10);
-    }
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [mediaPipelineRepositoryProvider.overrideWithValue(repo)],
-        child: MaterialApp(
-          home: Scaffold(
-            body: WavUploadCard(
-              courseId: 'course-1',
-              lessonId: 'lesson-1',
-              pickFileOverride: fakePick,
-              uploadFileOverride: fakeUpload,
-              pollInterval: const Duration(seconds: 10),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('Ladda upp ljud'), findsOneWidget);
-    expect(find.text('Byt ljud'), findsNothing);
-
-    await tester.tap(find.text('Ladda upp ljud'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Demo');
-    await tester.pump();
-    await tester.tap(find.text('Fortsätt'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Ladda upp ljud'), findsOneWidget);
-    expect(find.text('Byt ljud'), findsNothing);
-    expect(find.text('Uppladdning klar – bearbetas till MP3'), findsOneWidget);
-
-    await tester.pump(const Duration(seconds: 10));
-    await tester.pump();
-
-    expect(find.text('Ladda upp ljud'), findsOneWidget);
-    expect(find.text('Byt ljud'), findsNothing);
-    expect(find.text('MP3 klar – ljudet kan spelas upp'), findsOneWidget);
+  setUpAll(() {
+    registerFallbackValue(Uint8List(0));
+    registerFallbackValue(CancelToken());
   });
 
   testWidgets('shows upload action by default', (tester) async {
@@ -301,62 +64,58 @@ void main() {
     expect(button.onPressed, isNull);
   });
 
-  testWidgets('accepts MP3 uploads into the audio pipeline', (tester) async {
-    final uploadTarget = MediaUploadTarget(
-      mediaId: 'media-1',
-      uploadUrl: Uri.parse('https://storage.test/upload'),
-      objectPath: 'media/source/audio/demo.wav',
-      headers: const {},
-      expiresAt: DateTime.now().toUtc(),
-    );
-    final repo = _FakeMediaPipelineRepository(
-      uploadTarget: uploadTarget,
-      statuses: const [MediaStatus(mediaId: 'media-1', state: 'processing')],
-    );
-
-    var uploadRequested = false;
+  testWidgets('uploads audio through canonical studio lesson media pipeline', (
+    tester,
+  ) async {
+    final repo = _MockStudioRepository();
+    when(
+      () => repo.uploadLessonMedia(
+        lessonId: any(named: 'lessonId'),
+        data: any(named: 'data'),
+        filename: any(named: 'filename'),
+        contentType: any(named: 'contentType'),
+        mediaType: any(named: 'mediaType'),
+        onProgress: any(named: 'onProgress'),
+        cancelToken: any(named: 'cancelToken'),
+      ),
+    ).thenAnswer((invocation) async {
+      final onProgress =
+          invocation.namedArguments[#onProgress] as void Function(
+            UploadProgress progress,
+          )?;
+      onProgress?.call(const UploadProgress(sent: 5, total: 10));
+      return const StudioLessonMediaItem(
+        lessonMediaId: 'lesson-media-1',
+        lessonId: 'lesson-1',
+        position: 1,
+        mediaType: 'audio',
+        state: 'processing',
+        previewReady: false,
+        mediaAssetId: 'media-1',
+      );
+    });
 
     Future<WavUploadFile?> fakePick() async {
       final data = Uint8List(10);
       final file = fs.XFile.fromData(
         data,
+        path: 'demo.mp3',
         name: 'demo.mp3',
         mimeType: 'audio/mpeg',
       );
       return WavUploadFile(file, 'audio/mpeg', 10);
     }
 
-    Future<void> fakeUpload({
-      required String mediaId,
-      required String courseId,
-      required String lessonId,
-      required Uri uploadUrl,
-      required String objectPath,
-      required Map<String, String> headers,
-      required WavUploadFile file,
-      required String contentType,
-      required void Function(int sent, int total) onProgress,
-      WavUploadCancelToken? cancelToken,
-      void Function(bool resumed)? onResume,
-      Future<bool> Function()? ensureAuth,
-      Future<WavUploadSigningRefresh> Function(WavResumableSession session)?
-      refreshSigning,
-      void Function()? onSigningRefresh,
-      WavResumableSession? resumableSession,
-    }) async {
-      uploadRequested = true;
-    }
-
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [mediaPipelineRepositoryProvider.overrideWithValue(repo)],
+        overrides: [studioRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: WavUploadCard(
               courseId: 'course-1',
               lessonId: 'lesson-1',
               pickFileOverride: fakePick,
-              uploadFileOverride: fakeUpload,
+              pollInterval: const Duration(hours: 1),
             ),
           ),
         ),
@@ -366,17 +125,18 @@ void main() {
     await tester.tap(find.text('Ladda upp ljud'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ge ljudet/videon ett namn'), findsOneWidget);
-    expect(find.byType(AlertDialog), findsOneWidget);
-    expect(
-      find.text('Only MP3, WAV, or M4A files are supported.'),
-      findsNothing,
-    );
-    await tester.enterText(find.byType(TextField), 'Demo');
-    await tester.pump();
-    await tester.tap(find.text('Fortsätt'));
-    await tester.pumpAndSettle();
-
-    expect(uploadRequested, isTrue);
+    expect(find.text('demo.mp3'), findsOneWidget);
+    expect(find.text('Uppladdning klar – bearbetas till MP3'), findsOneWidget);
+    verify(
+      () => repo.uploadLessonMedia(
+        lessonId: 'lesson-1',
+        data: any(named: 'data'),
+        filename: 'demo.mp3',
+        contentType: 'audio/mpeg',
+        mediaType: 'audio',
+        onProgress: any(named: 'onProgress'),
+        cancelToken: any(named: 'cancelToken'),
+      ),
+    ).called(1);
   });
 }

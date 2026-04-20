@@ -39,7 +39,7 @@ async def _register_user(
                 INSERT INTO app.auth_subjects (
                   user_id,
                   onboarding_state,
-                  role,
+                  role
                 )
                 VALUES (%s::uuid, 'completed', 'learner')
                 """,
@@ -94,43 +94,69 @@ async def _promote_to_teacher(user_id: str) -> None:
 
 
 async def _insert_published_course(*, owner_id: str, slug: str, title: str) -> str:
+    course_id = str(uuid.uuid4())
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    """
-                    INSERT INTO app.courses (
-                      slug,
-                      title,
-                      is_free_intro,
-                      price_amount_cents,
-                      currency,
-                      is_published,
-                      created_by
-                    )
-                    VALUES (%s, %s, false, 1000, 'sek', true, %s)
-                    RETURNING id
-                    """,
-                    (slug, title, owner_id),
+            await cur.execute(
+                """
+                INSERT INTO app.courses (
+                  id,
+                  teacher_id,
+                  title,
+                  slug,
+                  course_group_id,
+                  group_position,
+                  visibility,
+                  content_ready,
+                  required_enrollment_source,
+                  price_amount_cents,
+                  stripe_product_id,
+                  active_stripe_price_id,
+                  sellable,
+                  drip_enabled,
+                  drip_interval_days
                 )
-            except Exception:
-                await conn.rollback()
-                await cur.execute(
-                    """
-                    INSERT INTO app.courses (
-                      slug,
-                      title,
-                      price_amount_cents,
-                      currency,
-                      is_published,
-                      created_by
-                    )
-                    VALUES (%s, %s, 1000, 'sek', true, %s)
-                    RETURNING id
-                    """,
-                    (slug, title, owner_id),
+                VALUES (
+                  %s::uuid,
+                  %s::uuid,
+                  %s,
+                  %s,
+                  %s::uuid,
+                  0,
+                  'public'::app.course_visibility,
+                  true,
+                  'purchase'::app.course_enrollment_source,
+                  1000,
+                  %s,
+                  %s,
+                  true,
+                  false,
+                  null
                 )
+                RETURNING id
+                """,
+                (
+                    course_id,
+                    owner_id,
+                    title,
+                    slug,
+                    str(uuid.uuid4()),
+                    f"prod_{uuid.uuid4().hex[:12]}",
+                    f"price_{uuid.uuid4().hex[:12]}",
+                ),
+            )
             row = await cur.fetchone()
+            await cur.execute(
+                """
+                INSERT INTO app.course_public_content (
+                  course_id,
+                  short_description
+                )
+                VALUES (%s::uuid, %s)
+                ON CONFLICT (course_id) DO NOTHING
+                """,
+                (course_id, "Public course"),
+            )
             await conn.commit()
     return str(row[0])
 

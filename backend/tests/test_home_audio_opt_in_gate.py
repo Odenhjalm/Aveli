@@ -3,7 +3,7 @@ import uuid
 
 import pytest
 
-from app import db
+from app import db, repositories
 from app.routes import studio as studio_routes
 from app.services import courses_service, home_audio_service
 
@@ -29,16 +29,32 @@ async def register_user(
         json={
             "email": email,
             "password": password,
-            "display_name": display_name,
         },
     )
     assert register_resp.status_code == 201, register_resp.text
     tokens = register_resp.json()
     token = tokens["access_token"]
+    headers = auth_header(token)
 
-    me_resp = await client.get("/profiles/me", headers=auth_header(token))
+    me_resp = await client.get("/profiles/me", headers=headers)
     assert me_resp.status_code == 200, me_resp.text
     user_id = me_resp.json()["user_id"]
+    profile_resp = await client.post(
+        "/auth/onboarding/create-profile",
+        headers=headers,
+        json={"display_name": display_name, "bio": None},
+    )
+    assert profile_resp.status_code == 200, profile_resp.text
+    onboarding_resp = await client.post(
+        "/auth/onboarding/complete",
+        headers=headers,
+    )
+    assert onboarding_resp.status_code == 200, onboarding_resp.text
+    await repositories.upsert_membership_record(
+        user_id,
+        status="active",
+        source="coupon",
+    )
     return token, user_id
 
 

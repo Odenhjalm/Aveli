@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 
+from app import repositories
 from app.repositories import media_assets as media_assets_repo
 from app.repositories import courses as courses_repo
 
@@ -13,7 +14,7 @@ async def _register_teacher(async_client) -> tuple[dict[str, str], str]:
     password = "Secret123!"
     register_resp = await async_client.post(
         "/auth/register",
-        json={"email": email, "password": password, "display_name": "Teacher"},
+        json={"email": email, "password": password},
     )
     assert register_resp.status_code == 201, register_resp.text
     tokens = register_resp.json()
@@ -21,6 +22,22 @@ async def _register_teacher(async_client) -> tuple[dict[str, str], str]:
     profile_resp = await async_client.get("/profiles/me", headers=headers)
     assert profile_resp.status_code == 200, profile_resp.text
     user_id = profile_resp.json()["user_id"]
+    create_profile_resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=headers,
+        json={"display_name": "Teacher", "bio": None},
+    )
+    assert create_profile_resp.status_code == 200, create_profile_resp.text
+    complete_resp = await async_client.post(
+        "/auth/onboarding/complete",
+        headers=headers,
+    )
+    assert complete_resp.status_code == 200, complete_resp.text
+    await repositories.upsert_membership_record(
+        user_id,
+        status="active",
+        source="coupon",
+    )
     await _promote_to_teacher(user_id)
     return headers, user_id
 

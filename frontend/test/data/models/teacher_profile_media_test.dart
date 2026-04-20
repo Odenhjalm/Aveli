@@ -3,14 +3,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 
 void main() {
-  test('rejects missing required source catalogs in payload parsing', () {
-    expect(
-      () => TeacherProfileMediaPayload.fromJson({
-        'items': const [],
-        'lesson_media_sources': const [],
-      }),
-      throwsA(isA<FormatException>()),
-    );
+  test('parses canonical profile media payload without source catalogs', () {
+    final payload = TeacherProfileMediaPayload.fromJson({'items': const []});
+
+    expect(payload.items, isEmpty);
+  });
+
+  test('lesson source parsing does not require legacy storage fields', () {
+    final source = TeacherProfileLessonSource.fromJson({
+      'id': 'source-1',
+      'lesson_id': 'lesson-1',
+      'lesson_title': 'Lektion',
+      'course_id': 'course-1',
+      'course_title': 'Kurs',
+      'course_slug': 'kurs',
+      'kind': 'audio',
+      'content_type': 'audio/mpeg',
+      'duration_seconds': 12,
+      'position': 1,
+      'created_at': '2025-01-01T00:00:00.000Z',
+      'media': null,
+    });
+
+    expect(source.id, 'source-1');
+    expect(source.media, isNull);
   });
 
   test('rejects collapsed external identity in item parsing', () {
