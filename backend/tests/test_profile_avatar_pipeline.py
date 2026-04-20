@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -8,6 +9,7 @@ from pydantic import ValidationError
 from app import schemas
 from app.main import app
 from app.routes import profile_avatar, profiles, studio
+from app.utils import profile_media as profile_media_utils
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -351,6 +353,138 @@ async def test_profiles_me_uses_avatar_read_composition(monkeypatch) -> None:
     assert response.avatar_media_id == UUID(media_asset_id)
     assert response.photo_url == "https://cdn.example/avatar.jpg"
     assert calls["get_profile"] == user_id
+
+
+async def test_profiles_me_returns_canonical_jpg_avatar(monkeypatch) -> None:
+    user_id = _uuid()
+    media_asset_id = _uuid()
+    expected_media_asset_id = media_asset_id
+
+    async def fake_get_profile(user_id_arg):
+        return _profile_payload(user_id_arg, avatar_media_id=media_asset_id)
+
+    async def fake_runtime_row(media_asset_id: str):
+        assert media_asset_id == expected_media_asset_id
+        return {
+            "media_type": "image",
+            "purpose": "profile_media",
+            "playback_object_path": "profiles/avatar.jpg",
+            "playback_format": "jpg",
+            "state": "ready",
+        }
+
+    monkeypatch.setattr(profiles.models, "get_profile", fake_get_profile)
+    monkeypatch.setattr(
+        profile_media_utils.runtime_media_repo,
+        "get_profile_runtime_media",
+        fake_runtime_row,
+    )
+    monkeypatch.setattr(
+        profile_media_utils.storage_service,
+        "get_storage_service",
+        lambda bucket: SimpleNamespace(
+            public_url=lambda path: f"https://cdn.example/{bucket}/{path}"
+        ),
+    )
+
+    response = await profiles.get_me(current_user={"id": user_id})
+
+    assert response.avatar_media_id == UUID(media_asset_id)
+    assert response.photo_url.endswith("/profiles/avatar.jpg")
+    dumped = response.model_dump(mode="json")
+    assert "storage_path" not in dumped
+    assert "storage_bucket" not in dumped
+    assert "original_object_path" not in dumped
+    assert "playback_object_path" not in dumped
+
+
+@pytest.mark.parametrize(
+    ("runtime_row", "public_url"),
+    [
+        (
+            {
+                "media_type": "image",
+                "purpose": "profile_media",
+                "playback_object_path": "profiles/avatar.jpeg",
+                "playback_format": "jpeg",
+                "state": "ready",
+            },
+            "https://cdn.example/profiles/avatar.jpeg",
+        ),
+        (
+            {
+                "media_type": "image",
+                "purpose": "profile_media",
+                "playback_object_path": "profiles/avatar.png",
+                "playback_format": "png",
+                "state": "ready",
+            },
+            "https://cdn.example/profiles/avatar.png",
+        ),
+        (
+            {
+                "media_type": "image",
+                "purpose": "profile_media",
+                "playback_object_path": "profiles/avatar.jpg",
+                "playback_format": "jpg",
+                "state": "uploaded",
+            },
+            "https://cdn.example/profiles/avatar.jpg",
+        ),
+        (
+            {
+                "media_type": "image",
+                "purpose": "profile_media",
+                "playback_object_path": "",
+                "playback_format": "jpg",
+                "state": "ready",
+            },
+            "https://cdn.example/profiles/avatar.jpg",
+        ),
+        (
+            {
+                "media_type": "image",
+                "purpose": "profile_media",
+                "playback_object_path": "profiles/avatar.jpg",
+                "playback_format": "jpg",
+                "state": "ready",
+            },
+            "   ",
+        ),
+    ],
+)
+async def test_profiles_me_filters_noncanonical_avatar_media(
+    monkeypatch,
+    runtime_row: dict[str, str],
+    public_url: str,
+) -> None:
+    user_id = _uuid()
+    media_asset_id = _uuid()
+    expected_media_asset_id = media_asset_id
+
+    async def fake_get_profile(user_id_arg):
+        return _profile_payload(user_id_arg, avatar_media_id=media_asset_id)
+
+    async def fake_runtime_row(media_asset_id: str):
+        assert media_asset_id == expected_media_asset_id
+        return dict(runtime_row)
+
+    monkeypatch.setattr(profiles.models, "get_profile", fake_get_profile)
+    monkeypatch.setattr(
+        profile_media_utils.runtime_media_repo,
+        "get_profile_runtime_media",
+        fake_runtime_row,
+    )
+    monkeypatch.setattr(
+        profile_media_utils.storage_service,
+        "get_storage_service",
+        lambda bucket: SimpleNamespace(public_url=lambda path: public_url),
+    )
+
+    response = await profiles.get_me(current_user={"id": user_id})
+
+    assert response.avatar_media_id == UUID(media_asset_id)
+    assert response.photo_url is None
 
 
 def test_onboarding_and_profile_patch_still_forbid_avatar_fields() -> None:

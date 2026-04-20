@@ -10,7 +10,7 @@ class AuthBootPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Keep the boot surface stable and avoid triggering any auth-required
-    // providers until the profile has been verified.
+    // providers until entry-state has been resolved.
     final auth = ref.watch(authControllerProvider);
     final theme = Theme.of(context);
     final message = auth.isLoading ? 'Verifierar session…' : 'Förbereder…';

@@ -5,7 +5,7 @@ import pytest
 
 from app import db
 from app.routes import studio as studio_routes
-from app.services import courses_service
+from app.services import courses_service, home_audio_service
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -198,13 +198,13 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_direct_upload_sources",
         fake_list_direct_uploads,
         raising=True,
     )
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
+        home_audio_service.home_audio_runtime_repo,
         "list_home_audio_course_link_sources",
         fake_list_course_links,
         raising=True,

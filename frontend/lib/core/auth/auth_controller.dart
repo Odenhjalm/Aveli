@@ -64,30 +64,42 @@ class AuthController extends StateNotifier<AuthState> {
 
   Future<void> loadSession({bool hydrateProfile = true}) async {
     state = state.copyWith(isLoading: true, error: null);
-    final token = await _repo.currentToken();
-    if (token == null || token.isEmpty) {
+    var hasToken = false;
+    try {
+      final token = await _repo.currentToken();
+      if (token == null || token.isEmpty) {
+        gate.reset();
+        state = const AuthState();
+        return;
+      }
+      hasToken = true;
+
+      state = state.copyWith(
+        hasStoredToken: true,
+        isLoading: true,
+        error: null,
+        clearEntryState: true,
+      );
+
+      final entryState = await _fetchEntryState();
+      state = state.copyWith(
+        entryState: entryState,
+        hasStoredToken: true,
+        isLoading: false,
+      );
       gate.reset();
-      state = const AuthState();
-      return;
-    }
 
-    state = state.copyWith(
-      hasStoredToken: true,
-      isLoading: true,
-      error: null,
-      clearEntryState: true,
-    );
-
-    final entryState = await _fetchEntryState();
-    state = state.copyWith(
-      entryState: entryState,
-      hasStoredToken: true,
-      isLoading: false,
-    );
-    gate.reset();
-
-    if (hydrateProfile) {
-      await _hydrateProfile();
+      if (hydrateProfile) {
+        unawaited(_hydrateProfile());
+      }
+    } catch (err, stackTrace) {
+      final failure = AppFailure.from(err, stackTrace);
+      state = AuthState(
+        hasStoredToken: hasToken,
+        isLoading: false,
+        error: failure.message,
+      );
+      gate.reset();
     }
   }
 
@@ -99,7 +111,6 @@ class AuthController extends StateNotifier<AuthState> {
   Future<EntryState?> refreshEntryState() async {
     try {
       final entryState = await _fetchEntryState();
-      if (entryState == null) return null;
       state = state.copyWith(
         entryState: entryState,
         hasStoredToken: true,
@@ -139,21 +150,23 @@ class AuthController extends StateNotifier<AuthState> {
       clearProfile: true,
       clearEntryState: true,
     );
+    var tokensStored = false;
     try {
-      final profile = await _repo.login(email: email, password: password);
+      await _repo.login(email: email, password: password);
+      tokensStored = true;
       final entryState = await _fetchEntryState();
       state = AuthState(
-        profile: profile,
         entryState: entryState,
         hasStoredToken: true,
         isLoading: false,
       );
       gate.reset();
+      unawaited(_hydrateProfile());
     } catch (err, stackTrace) {
       final failure = AppFailure.from(err, stackTrace);
       state = AuthState(
         profile: null,
-        hasStoredToken: false,
+        hasStoredToken: tokensStored,
         isLoading: false,
         error: failure.message,
       );
@@ -170,21 +183,23 @@ class AuthController extends StateNotifier<AuthState> {
       clearProfile: true,
       clearEntryState: true,
     );
+    var tokensStored = false;
     try {
-      final profile = await _repo.register(email: email, password: password);
+      await _repo.register(email: email, password: password);
+      tokensStored = true;
       final entryState = await _fetchEntryState();
       state = AuthState(
-        profile: profile,
         entryState: entryState,
         hasStoredToken: true,
         isLoading: false,
       );
       gate.reset();
+      unawaited(_hydrateProfile());
     } catch (err, stackTrace) {
       final failure = AppFailure.from(err, stackTrace);
       state = AuthState(
         profile: null,
-        hasStoredToken: false,
+        hasStoredToken: tokensStored,
         isLoading: false,
         error: failure.message,
       );
@@ -232,15 +247,16 @@ class AuthController extends StateNotifier<AuthState> {
   Future<void> completeWelcome() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final profile = await _repo.completeWelcome();
+      await _repo.completeWelcome();
       final entryState = await _fetchEntryState();
       state = AuthState(
-        profile: profile,
+        profile: state.profile,
         entryState: entryState,
         hasStoredToken: true,
         isLoading: false,
       );
       gate.reset();
+      unawaited(_hydrateProfile());
     } catch (err, stackTrace) {
       final failure = AppFailure.from(err, stackTrace);
       state = state.copyWith(isLoading: false, error: failure.message);
@@ -257,10 +273,12 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
-  Future<EntryState?> _fetchEntryState() async {
+  Future<EntryState> _fetchEntryState() async {
     final loader = _loadEntryState;
     if (loader == null) {
-      return null;
+      throw ConfigurationFailure(
+        message: 'Kunde inte verifiera sessionen. Försök igen.',
+      );
     }
     return loader();
   }
@@ -288,7 +306,7 @@ final authControllerProvider = StateNotifierProvider<AuthController, AuthState>(
       observer,
       loadEntryState: entryStateRepo.fetchEntryState,
     );
-    controller.loadSession();
+    unawaited(controller.loadSession());
     return controller;
   },
 );

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict
 from uuid import UUID
 
@@ -35,38 +34,28 @@ def _normalized_profile_media_state(value: Any) -> str | None:
     return normalized
 
 
-async def resolved_profile_media_url(runtime_row: Dict[str, Any]) -> str | None:
-    media_type = str(runtime_row.get("media_type") or "").strip().lower()
+def _canonical_profile_image_playback_path(runtime_row: Dict[str, Any]) -> str | None:
+    if str(runtime_row.get("state") or "").strip().lower() != "ready":
+        return None
+    if str(runtime_row.get("media_type") or "").strip().lower() != "image":
+        return None
+    if str(runtime_row.get("purpose") or "").strip().lower() != "profile_media":
+        return None
+    if str(runtime_row.get("playback_format") or "").strip().lower() != "jpg":
+        return None
     playback_object_path = str(runtime_row.get("playback_object_path") or "").strip()
-    playback_format = str(runtime_row.get("playback_format") or "").strip().lower()
-    if not media_type or not playback_object_path:
+    return playback_object_path or None
+
+
+async def resolved_profile_media_url(runtime_row: Dict[str, Any]) -> str | None:
+    playback_object_path = _canonical_profile_image_playback_path(runtime_row)
+    if playback_object_path is None:
         return None
-
-    if media_type == "image":
-        return storage_service.get_storage_service(
-            settings.media_public_bucket
-        ).public_url(playback_object_path)
-
-    expected_format = {
-        "audio": "mp3",
-        "video": "mp4",
-        "document": "pdf",
-    }.get(media_type)
-    if expected_format is None or playback_format != expected_format:
-        return None
-
     try:
-        presigned = await storage_service.get_storage_service(
-            settings.media_source_bucket
-        ).get_presigned_url(
-            playback_object_path,
-            ttl=settings.media_playback_url_ttl_seconds,
-            filename=Path(playback_object_path).name or f"media.{playback_format}",
-            download=False,
-        )
+        public_storage = storage_service.get_storage_service(settings.media_public_bucket)
+        resolved_url = str(public_storage.public_url(playback_object_path) or "").strip()
     except storage_service.StorageServiceError:
         return None
-    resolved_url = str(presigned.url or "").strip()
     return resolved_url or None
 
 
@@ -81,10 +70,6 @@ async def resolve_profile_avatar_photo_url(
         media_asset_id=exact_media_asset_id,
     )
     if runtime_row is None:
-        return None
-    if str(runtime_row.get("state") or "").strip().lower() != "ready":
-        return None
-    if str(runtime_row.get("media_type") or "").strip().lower() != "image":
         return None
     return await resolved_profile_media_url(runtime_row)
 
@@ -116,15 +101,14 @@ async def profile_media_item_from_row(
         media_asset_id=str(media_asset_id),
     )
     media: schemas.ResolvedMedia | None = None
-    if runtime_row is not None:
-        state = _normalized_profile_media_state(runtime_row.get("state"))
-        if state is not None:
-            resolved_url: str | None = None
-            if state == "ready":
-                resolved_url = await resolved_profile_media_url(runtime_row)
+    if runtime_row is not None and _normalized_profile_media_state(
+        runtime_row.get("state")
+    ) == "ready":
+        resolved_url = await resolved_profile_media_url(runtime_row)
+        if resolved_url is not None:
             media = schemas.ResolvedMedia(
                 media_id=media_asset_id,
-                state=state,
+                state="ready",
                 resolved_url=resolved_url,
             )
 

@@ -11,6 +11,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
+from app.repositories import media_assets as media_assets_repo
 from backend.bootstrap import baseline_v2
 
 
@@ -65,7 +66,16 @@ def _baseline_v2_connection():
             )
 
 
-def _insert_media_asset(conn: psycopg.Connection, *, media_id: str) -> None:
+def _insert_media_asset(
+    conn: psycopg.Connection,
+    *,
+    media_id: str,
+    media_type: str = "audio",
+    purpose: str = "lesson_media",
+    original_object_path: str = "courses/course-1/lessons/lesson-1/media/source.wav",
+    ingest_format: str = "wav",
+    hash_seed: str = "a",
+) -> None:
     conn.execute(
         """
         INSERT INTO app.media_assets (
@@ -80,16 +90,23 @@ def _insert_media_asset(conn: psycopg.Connection, *, media_id: str) -> None:
         )
         VALUES (
           %s::uuid,
-          'audio'::app.media_type,
-          'lesson_media'::app.media_purpose,
-          'courses/course-1/lessons/lesson-1/media/source.wav',
-          'wav',
+          %s::app.media_type,
+          %s::app.media_purpose,
+          %s,
+          %s,
           4,
           'sha256',
-          repeat('a', 64)
+          repeat(%s, 64)
         )
         """,
-        (media_id,),
+        (
+            media_id,
+            media_type,
+            purpose,
+            original_object_path,
+            ingest_format,
+            hash_seed,
+        ),
     )
 
 
@@ -151,6 +168,38 @@ def _transition(
             error_message,
             next_retry_at,
         ),
+    ).fetchone()
+    assert row is not None
+    return dict(row)
+
+
+def _lock_media_asset(conn: psycopg.Connection, media_id: str) -> dict[str, object]:
+    row = conn.execute(
+        """
+        SELECT *
+        FROM app.canonical_worker_lock_media_asset_for_processing(%s::uuid)
+        """,
+        (media_id,),
+    ).fetchone()
+    assert row is not None
+    return dict(row)
+
+
+def _media_asset_row(conn: psycopg.Connection, media_id: str) -> dict[str, object]:
+    row = conn.execute(
+        """
+        SELECT
+          id::text AS id,
+          media_type::text AS media_type,
+          purpose::text AS purpose,
+          state::text AS state,
+          playback_format,
+          processing_locked_at,
+          next_retry_at
+        FROM app.media_assets
+        WHERE id = %s::uuid
+        """,
+        (media_id,),
     ).fetchone()
     assert row is not None
     return dict(row)
@@ -253,6 +302,79 @@ async def test_media_lifecycle_mutations_are_db_function_owned():
         assert ready["playback_format"] == "mp3"
 
 
+async def test_worker_stale_lock_release_covers_lesson_media_worker_classes():
+    with _baseline_v2_connection() as conn:
+        eligible_assets = [
+            {
+                "media_type": "image",
+                "purpose": "lesson_media",
+                "original_object_path": "media/source/lessons/lesson-1/image.png",
+                "ingest_format": "png",
+                "hash_seed": "c",
+            },
+            {
+                "media_type": "video",
+                "purpose": "lesson_media",
+                "original_object_path": "media/source/lessons/lesson-1/video.mp4",
+                "ingest_format": "mp4",
+                "hash_seed": "d",
+            },
+            {
+                "media_type": "document",
+                "purpose": "lesson_media",
+                "original_object_path": "media/source/lessons/lesson-1/document.pdf",
+                "ingest_format": "pdf",
+                "hash_seed": "e",
+            },
+        ]
+        eligible_ids: list[str] = []
+        for asset in eligible_assets:
+            media_id = str(uuid4())
+            eligible_ids.append(media_id)
+            _insert_media_asset(conn, media_id=media_id, **asset)
+            _transition(conn, media_id, "uploaded")
+            locked = _lock_media_asset(conn, media_id)
+            assert locked["processing_locked_at"] is not None
+
+        unsupported_media_id = str(uuid4())
+        _insert_media_asset(
+            conn,
+            media_id=unsupported_media_id,
+            media_type="image",
+            purpose="home_player_audio",
+            original_object_path="media/source/home-player/not-worker-image.png",
+            ingest_format="png",
+            hash_seed="f",
+        )
+        _transition(conn, unsupported_media_id, "uploaded")
+        unsupported_locked = _lock_media_asset(conn, unsupported_media_id)
+        assert unsupported_locked["processing_locked_at"] is not None
+
+        released_at = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        released = conn.execute(
+            """
+            SELECT app.canonical_worker_release_stale_media_asset_locks(%s, %s)
+              AS released
+            """,
+            (1, released_at),
+        ).fetchone()
+        assert released is not None
+        assert released["released"] == len(eligible_ids)
+
+        for media_id in eligible_ids:
+            row = _media_asset_row(conn, media_id)
+            assert row["state"] == "processing"
+            assert row["processing_locked_at"] is None
+            assert row["next_retry_at"] == released_at
+
+        unsupported_row = _media_asset_row(conn, unsupported_media_id)
+        assert unsupported_row["media_type"] == "image"
+        assert unsupported_row["purpose"] == "home_player_audio"
+        assert unsupported_row["state"] == "processing"
+        assert unsupported_row["processing_locked_at"] is not None
+        assert unsupported_row["next_retry_at"] is None
+
+
 async def test_course_cover_ready_requires_jpg_playback_identity():
     with _baseline_v2_connection() as conn:
         media_id = str(uuid4())
@@ -301,6 +423,235 @@ async def test_course_cover_ready_requires_jpg_playback_identity():
             "media/derived/cover/courses/course-1/source.jpg"
         )
         assert ready["playback_format"] == "jpg"
+
+
+async def test_ready_transition_enforces_canonical_playback_format_matrix():
+    cases = [
+        {
+            "media_type": "audio",
+            "purpose": "lesson_media",
+            "original_object_path": "media/source/audio/courses/course-1/lessons/lesson-1/source.wav",
+            "ingest_format": "wav",
+            "valid_formats": ("mp3",),
+            "invalid_format": "wav",
+            "invalid_message": "ready audio media requires playback_format mp3",
+            "hash_seed": "0",
+        },
+        {
+            "media_type": "video",
+            "purpose": "lesson_media",
+            "original_object_path": "courses/course-1/lessons/lesson-1/video/source.mp4",
+            "ingest_format": "mp4",
+            "valid_formats": ("mp4",),
+            "invalid_format": "mov",
+            "invalid_message": "ready lesson video media requires playback_format mp4",
+            "hash_seed": "1",
+        },
+        {
+            "media_type": "document",
+            "purpose": "lesson_media",
+            "original_object_path": "courses/course-1/lessons/lesson-1/documents/source.pdf",
+            "ingest_format": "pdf",
+            "valid_formats": ("pdf",),
+            "invalid_format": "docx",
+            "invalid_message": "ready lesson document media requires playback_format pdf",
+            "hash_seed": "2",
+        },
+        {
+            "media_type": "image",
+            "purpose": "lesson_media",
+            "original_object_path": "lessons/lesson-1/images/source.png",
+            "ingest_format": "png",
+            "valid_formats": ("jpg", "png"),
+            "invalid_format": "webp",
+            "invalid_message": "ready lesson image media requires playback_format jpg or png",
+            "hash_seed": "3",
+        },
+        {
+            "media_type": "image",
+            "purpose": "course_cover",
+            "original_object_path": "media/source/cover/courses/course-1/source.png",
+            "ingest_format": "png",
+            "valid_formats": ("jpg",),
+            "invalid_format": "png",
+            "invalid_message": "ready course cover media requires playback_format jpg",
+            "hash_seed": "4",
+        },
+        {
+            "media_type": "image",
+            "purpose": "profile_media",
+            "original_object_path": "media/source/profile/user-1/source.png",
+            "ingest_format": "png",
+            "valid_formats": ("jpg",),
+            "invalid_format": "png",
+            "invalid_message": "ready profile media image requires playback_format jpg",
+            "hash_seed": "5",
+        },
+    ]
+
+    with _baseline_v2_connection() as conn:
+        for case_index, case in enumerate(cases):
+            for valid_format in case["valid_formats"]:
+                media_id = str(uuid4())
+                _insert_media_asset(
+                    conn,
+                    media_id=media_id,
+                    media_type=case["media_type"],
+                    purpose=case["purpose"],
+                    original_object_path=case["original_object_path"],
+                    ingest_format=case["ingest_format"],
+                    hash_seed=case["hash_seed"],
+                )
+                _transition(conn, media_id, "uploaded")
+                _lock_media_asset(conn, media_id)
+
+                playback_object_path = (
+                    f"media/derived/step-5/{case_index}/{media_id}.{valid_format}"
+                )
+                media_assets_repo._require_worker_ready_asset(
+                    media_id=media_id,
+                    asset={
+                        "media_type": case["media_type"],
+                        "purpose": case["purpose"],
+                    },
+                    playback_object_path=playback_object_path,
+                    playback_format=valid_format,
+                )
+                ready = _transition(
+                    conn,
+                    media_id,
+                    "ready",
+                    playback_object_path=playback_object_path,
+                    playback_format=valid_format,
+                )
+                assert ready["state"] == "ready"
+                assert ready["playback_format"] == valid_format
+
+            invalid_media_id = str(uuid4())
+            _insert_media_asset(
+                conn,
+                media_id=invalid_media_id,
+                media_type=case["media_type"],
+                purpose=case["purpose"],
+                original_object_path=case["original_object_path"],
+                ingest_format=case["ingest_format"],
+                hash_seed=case["hash_seed"],
+            )
+            _transition(conn, invalid_media_id, "uploaded")
+            _lock_media_asset(conn, invalid_media_id)
+
+            invalid_path = (
+                f"media/derived/step-5/{case_index}/{invalid_media_id}."
+                f"{case['invalid_format']}"
+            )
+            with pytest.raises(RuntimeError):
+                media_assets_repo._require_worker_ready_asset(
+                    media_id=invalid_media_id,
+                    asset={
+                        "media_type": case["media_type"],
+                        "purpose": case["purpose"],
+                    },
+                    playback_object_path=invalid_path,
+                    playback_format=case["invalid_format"],
+                )
+            with pytest.raises(psycopg.Error, match=case["invalid_message"]):
+                _transition(
+                    conn,
+                    invalid_media_id,
+                    "ready",
+                    playback_object_path=invalid_path,
+                    playback_format=case["invalid_format"],
+                )
+
+            row = _media_asset_row(conn, invalid_media_id)
+            assert row["state"] == "processing"
+            assert row["playback_format"] is None
+
+
+async def test_ready_format_matrix_rejects_unsupported_ready_combinations():
+    media_id = str(uuid4())
+    with _baseline_v2_connection() as conn:
+        _insert_media_asset(
+            conn,
+            media_id=media_id,
+            media_type="image",
+            purpose="home_player_audio",
+            original_object_path="media/source/home-player/not-audio.png",
+            ingest_format="png",
+            hash_seed="6",
+        )
+        _transition(conn, media_id, "uploaded")
+        _lock_media_asset(conn, media_id)
+
+        with pytest.raises(
+            RuntimeError,
+            match="unsupported canonical worker ready media purpose",
+        ):
+            media_assets_repo._require_worker_ready_asset(
+                media_id=media_id,
+                asset={
+                    "media_type": "image",
+                    "purpose": "home_player_audio",
+                },
+                playback_object_path="media/derived/home-player/not-audio.jpg",
+                playback_format="jpg",
+            )
+        with pytest.raises(
+            psycopg.Error,
+            match="ready media violates canonical playback format matrix",
+        ):
+            _transition(
+                conn,
+                media_id,
+                "ready",
+                playback_object_path="media/derived/home-player/not-audio.jpg",
+                playback_format="jpg",
+            )
+
+        row = _media_asset_row(conn, media_id)
+        assert row["state"] == "processing"
+        assert row["playback_format"] is None
+
+
+async def test_ready_format_matrix_check_blocks_direct_ready_bypass():
+    media_id = str(uuid4())
+    with _baseline_v2_connection() as conn:
+        _insert_media_asset(
+            conn,
+            media_id=media_id,
+            media_type="video",
+            purpose="lesson_media",
+            original_object_path="courses/course-1/lessons/lesson-1/video/source.mp4",
+            ingest_format="mp4",
+            hash_seed="7",
+        )
+
+        conn.execute(
+            "select pg_catalog.set_config('app.canonical_worker_function_context', 'on', false)"
+        )
+        try:
+            with pytest.raises(
+                psycopg.Error,
+                match="media_assets_ready_canonical_format_matrix_check",
+            ):
+                conn.execute(
+                    """
+                    update app.media_assets
+                       set state = 'ready'::app.media_state,
+                           playback_object_path = 'media/derived/video/source.mov',
+                           playback_format = 'mov'
+                     where id = %s::uuid
+                    """,
+                    (media_id,),
+                )
+        finally:
+            conn.execute(
+                "select pg_catalog.set_config('app.canonical_worker_function_context', 'off', false)"
+            )
+
+        row = _media_asset_row(conn, media_id)
+        assert row["state"] == "pending_upload"
+        assert row["playback_format"] is None
 
 
 async def test_media_worker_failed_transition_carries_error_and_retry():

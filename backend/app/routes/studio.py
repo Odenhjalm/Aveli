@@ -1359,7 +1359,7 @@ async def studio_preview_lesson_media(
     lesson_media_id: UUID,
     current: TeacherEntryUser,
 ):
-    del current
+    user_id = str(current["id"])
     await _require_studio_lesson(str(lesson_id))
     row = await courses_repo.get_lesson_media_for_studio(
         str(lesson_id),
@@ -1367,6 +1367,19 @@ async def studio_preview_lesson_media(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Lesson media not found")
+    row_lesson_media_id = str(row.get("lesson_media_id") or "").strip()
+    try:
+        canonical_lesson_media_id = UUID(row_lesson_media_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Canonical studio lesson media identity is unavailable",
+        ) from exc
+    if canonical_lesson_media_id != lesson_media_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Canonical studio lesson media identity is unavailable",
+        )
     if row.get("preview_ready") is not True:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1374,8 +1387,8 @@ async def studio_preview_lesson_media(
         )
 
     playback = await lesson_playback_service.resolve_lesson_media_playback(
-        lesson_media_id=str(lesson_media_id),
-        user_id=str(current["id"]),
+        lesson_media_id=str(canonical_lesson_media_id),
+        user_id=user_id,
     )
     resolved_url = str(playback.get("resolved_url") or "").strip()
     expires_at = playback.get("expires_at")
@@ -1385,7 +1398,7 @@ async def studio_preview_lesson_media(
             detail="Preview storage is unavailable",
         )
     return schemas.StudioLessonMediaPreviewResponse(
-        lesson_media_id=lesson_media_id,
+        lesson_media_id=canonical_lesson_media_id,
         preview_url=resolved_url,
         expires_at=expires_at,
     )
@@ -1538,6 +1551,14 @@ async def studio_delete_profile_media(item_id: UUID, current: TeacherEntryUser):
     )
     if not deleted:
         raise HTTPException(status_code=404, detail="Profile media item not found")
+    media_asset_id = str(existing.get("media_asset_id") or "").strip()
+    if media_asset_id:
+        await media_cleanup.request_lifecycle_evaluation(
+            media_asset_ids=[media_asset_id],
+            trigger_source="profile_media_delete",
+            subject_type="profile_media",
+            subject_id=str(item_id),
+        )
     return Response(status_code=204)
 
 

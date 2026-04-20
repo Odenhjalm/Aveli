@@ -1,299 +1,107 @@
-from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
-from fastapi import HTTPException, status
 
-from app.services import courses_service
+from app.services import courses_service, home_audio_service
 
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-def _source_timestamp(*, minutes_ago: int = 0) -> datetime:
-    return datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+def _home_audio_item(*, media_id: str) -> dict[str, object]:
+    return {
+        "source_type": "direct_upload",
+        "title": "Canonical track",
+        "lesson_title": None,
+        "course_id": None,
+        "course_title": None,
+        "course_slug": None,
+        "teacher_id": str(uuid.uuid4()),
+        "teacher_name": "Teacher",
+        "created_at": None,
+        "media": {
+            "media_id": media_id,
+            "state": "ready",
+            "resolved_url": "https://stream.local/canonical.mp3",
+        },
+    }
 
 
-async def test_courses_service_home_audio_returns_backend_authored_media(
+async def test_courses_service_home_audio_delegates_to_canonical_owner(monkeypatch):
+    user_id = str(uuid.uuid4())
+    media_id = str(uuid.uuid4())
+    canonical_items = [_home_audio_item(media_id=media_id)]
+    calls: list[tuple[str, int]] = []
+
+    async def fake_list_home_audio_media(
+        candidate_user_id: str,
+        *,
+        limit: int = 12,
+    ):
+        calls.append((candidate_user_id, limit))
+        return canonical_items
+
+    monkeypatch.setattr(
+        home_audio_service,
+        "list_home_audio_media",
+        fake_list_home_audio_media,
+        raising=True,
+    )
+
+    items = await courses_service.list_home_audio_media(user_id, limit=7)
+
+    assert items is canonical_items
+    assert calls == [(user_id, 7)]
+
+
+async def test_courses_service_home_audio_result_matches_canonical_entry_path(
     monkeypatch,
 ):
-    teacher_id = str(uuid.uuid4())
-    direct_media_asset_id = str(uuid.uuid4())
-    course_link_media_asset_id = str(uuid.uuid4())
-    lesson_id = str(uuid.uuid4())
-    course_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+    canonical_items = [_home_audio_item(media_id=str(uuid.uuid4()))]
 
-    async def fake_list_direct_uploads(*, limit: int = 100):
-        assert limit >= 100
-        return [
-            {
-                "teacher_id": teacher_id,
-                "title": "Direct track",
-                "created_at": _source_timestamp(minutes_ago=2),
-                "teacher_name": "Teacher",
-                "media_asset_id": direct_media_asset_id,
-                "media_state": "ready",
-            }
-        ]
-
-    async def fake_list_course_links(*, limit: int = 100):
-        assert limit >= 100
-        return [
-            {
-                "teacher_id": teacher_id,
-                "title": "Course track",
-                "created_at": _source_timestamp(minutes_ago=1),
-                "teacher_name": "Teacher",
-                "lesson_id": lesson_id,
-                "course_id": course_id,
-                "lesson_title": "Lesson",
-                "course_title": "Course",
-                "course_slug": "course",
-                "media_asset_id": course_link_media_asset_id,
-                "media_state": "ready",
-            }
-        ]
-
-    async def fake_read_access(user_id: str, candidate_lesson_id: str):
-        assert user_id == teacher_id
-        assert candidate_lesson_id == lesson_id
-        return {"lesson": {"id": lesson_id}, "can_access": True}
-
-    async def fail_runtime_media_lookup(**kwargs):
-        raise AssertionError(f"runtime_media must not gate home audio: {kwargs}")
-
-    async def fake_resolve_media_asset_playback(*, media_asset_id: str):
-        urls = {
-            direct_media_asset_id: "https://stream.local/direct-track.mp3",
-            course_link_media_asset_id: "https://stream.local/course-track.mp3",
-        }
-        assert media_asset_id in urls
-        return {"resolved_url": urls[media_asset_id]}
+    async def fake_list_home_audio_media(
+        candidate_user_id: str,
+        *,
+        limit: int = 12,
+    ):
+        assert candidate_user_id == user_id
+        assert limit == 3
+        return canonical_items
 
     monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
-        "list_home_audio_direct_upload_sources",
-        fake_list_direct_uploads,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
-        "list_home_audio_course_link_sources",
-        fake_list_course_links,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service,
-        "read_canonical_lesson_access",
-        fake_read_access,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_home_player_runtime_media",
-        fail_runtime_media_lookup,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_lesson_runtime_media",
-        fail_runtime_media_lookup,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.lesson_playback_service,
-        "resolve_media_asset_playback",
-        fake_resolve_media_asset_playback,
+        home_audio_service,
+        "list_home_audio_media",
+        fake_list_home_audio_media,
         raising=True,
     )
 
-    items = list(await courses_service.list_home_audio_media(teacher_id, limit=10))
+    delegated_items = await courses_service.list_home_audio_media(user_id, limit=3)
+    canonical_path_items = await home_audio_service.list_home_audio_media(
+        user_id,
+        limit=3,
+    )
 
-    assert [item["source_type"] for item in items] == ["course_link", "direct_upload"]
-
-    course_link_item = items[0]
-    assert course_link_item["media"] == {
-        "media_id": course_link_media_asset_id,
-        "state": "ready",
-        "resolved_url": "https://stream.local/course-track.mp3",
+    assert delegated_items == canonical_path_items
+    assert set(delegated_items[0]) == {
+        "source_type",
+        "title",
+        "lesson_title",
+        "course_id",
+        "course_title",
+        "course_slug",
+        "teacher_id",
+        "teacher_name",
+        "created_at",
+        "media",
     }
-    assert course_link_item["lesson_title"] == "Lesson"
-    assert course_link_item["course_id"] == course_id
-    assert course_link_item["course_title"] == "Course"
-    assert course_link_item["course_slug"] == "course"
-
-    direct_upload_item = items[1]
-    assert direct_upload_item["media"] == {
-        "media_id": direct_media_asset_id,
-        "state": "ready",
-        "resolved_url": "https://stream.local/direct-track.mp3",
-    }
-    assert direct_upload_item["lesson_title"] is None
-    assert direct_upload_item["course_id"] is None
-    assert direct_upload_item["course_title"] is None
-    assert direct_upload_item["course_slug"] is None
-
-
-async def test_courses_service_home_audio_filters_invalid_ready_items(monkeypatch):
-    teacher_id = str(uuid.uuid4())
-    good_media_asset_id = str(uuid.uuid4())
-    bad_media_asset_id = str(uuid.uuid4())
-
-    async def fake_list_direct_uploads(*, limit: int = 100):
-        return [
-            {
-                "teacher_id": teacher_id,
-                "title": "Good ready",
-                "created_at": _source_timestamp(minutes_ago=2),
-                "teacher_name": "Teacher",
-                "media_asset_id": good_media_asset_id,
-                "media_state": "ready",
-            },
-            {
-                "teacher_id": teacher_id,
-                "title": "Bad ready",
-                "created_at": _source_timestamp(minutes_ago=1),
-                "teacher_name": "Teacher",
-                "media_asset_id": bad_media_asset_id,
-                "media_state": "ready",
-            },
-        ]
-
-    async def fake_list_course_links(*, limit: int = 100):
-        return []
-
-    async def fail_runtime_media_lookup(**kwargs):
-        raise AssertionError(f"runtime_media must not gate home audio: {kwargs}")
-
-    async def fake_resolve_media_asset_playback(*, media_asset_id: str):
-        if media_asset_id == good_media_asset_id:
-            return {"resolved_url": "https://stream.local/good.mp3"}
-        assert media_asset_id == bad_media_asset_id
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Strömningen är inte tillgänglig.",
-        )
-
-    monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
-        "list_home_audio_direct_upload_sources",
-        fake_list_direct_uploads,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
-        "list_home_audio_course_link_sources",
-        fake_list_course_links,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_home_player_runtime_media",
-        fail_runtime_media_lookup,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_lesson_runtime_media",
-        fail_runtime_media_lookup,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.lesson_playback_service,
-        "resolve_media_asset_playback",
-        fake_resolve_media_asset_playback,
-        raising=True,
-    )
-
-    items = list(await courses_service.list_home_audio_media(teacher_id, limit=10))
-
-    assert len(items) == 1
-    assert items[0]["media"] == {
-        "media_id": good_media_asset_id,
-        "state": "ready",
-        "resolved_url": "https://stream.local/good.mp3",
+    assert set(delegated_items[0]["media"]) == {
+        "media_id",
+        "state",
+        "resolved_url",
     }
 
 
-async def test_courses_service_home_audio_requires_canonical_lesson_access(monkeypatch):
-    teacher_id = str(uuid.uuid4())
-    other_user_id = str(uuid.uuid4())
-    lesson_id = str(uuid.uuid4())
-    media_asset_id = str(uuid.uuid4())
-
-    async def fake_list_direct_uploads(*, limit: int = 100):
-        return []
-
-    async def fake_list_course_links(*, limit: int = 100):
-        return [
-            {
-                "teacher_id": teacher_id,
-                "title": "Course track",
-                "created_at": _source_timestamp(minutes_ago=1),
-                "teacher_name": "Teacher",
-                "lesson_id": lesson_id,
-                "course_id": str(uuid.uuid4()),
-                "lesson_title": "Lesson",
-                "course_title": "Course",
-                "course_slug": "course",
-                "media_asset_id": media_asset_id,
-                "media_state": "processing",
-            }
-        ]
-
-    async def fake_read_access(user_id: str, candidate_lesson_id: str):
-        assert candidate_lesson_id == lesson_id
-        return {"lesson": {"id": lesson_id}, "can_access": user_id == teacher_id}
-
-    async def fail_runtime_media_lookup(**kwargs):
-        raise AssertionError(f"runtime_media must not gate home audio: {kwargs}")
-
-    async def fail_playback_resolution(**kwargs):
-        raise AssertionError(f"non-ready media must not resolve playback: {kwargs}")
-
-    monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
-        "list_home_audio_direct_upload_sources",
-        fake_list_direct_uploads,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.home_audio_runtime_repo,
-        "list_home_audio_course_link_sources",
-        fake_list_course_links,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service,
-        "read_canonical_lesson_access",
-        fake_read_access,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_lesson_runtime_media",
-        fail_runtime_media_lookup,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.runtime_media_repo,
-        "get_home_player_runtime_media",
-        fail_runtime_media_lookup,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        courses_service.lesson_playback_service,
-        "resolve_media_asset_playback",
-        fail_playback_resolution,
-        raising=True,
-    )
-
-    teacher_items = list(await courses_service.list_home_audio_media(teacher_id, limit=10))
-    other_items = list(await courses_service.list_home_audio_media(other_user_id, limit=10))
-
-    assert len(teacher_items) == 1
-    assert teacher_items[0]["media"] == {
-        "media_id": media_asset_id,
-        "state": "processing",
-        "resolved_url": None,
-    }
-    assert other_items == []
+def test_courses_service_home_audio_has_no_independent_composition_path():
+    assert not hasattr(courses_service, "_compose_home_audio_media")
+    assert not hasattr(courses_service, "_normalized_home_audio_state")
+    assert not hasattr(courses_service, "home_audio_runtime_repo")

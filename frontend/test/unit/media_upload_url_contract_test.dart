@@ -11,35 +11,114 @@ import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 
 void main() {
-  test('legacy media pipeline upload surface is inert before network', () async {
+  test('course cover upload consumes canonical upload_endpoint', () async {
     final client = _clientWith(
       _RecordingAdapter((options) {
+        if (options.path ==
+            '/api/courses/course-1/cover-media-assets/upload-url') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'media_asset_id': 'media-1',
+              'asset_state': 'pending_upload',
+              'upload_session_id': 'upload-session-1',
+              'upload_endpoint': '/api/media-assets/media-1/upload-bytes',
+              'expires_at': DateTime.now().toUtc().toIso8601String(),
+            },
+          );
+        }
+        if (options.path == '/api/media-assets/media-1/upload-bytes') {
+          return _jsonResponse(statusCode: 200, body: {'accepted': true});
+        }
         return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
       }),
     );
     final repo = MediaPipelineRepository(client: client);
 
-    await expectLater(
-      repo.requestUploadUrl(
-        filename: 'demo.wav',
-        mimeType: 'audio/wav',
-        sizeBytes: 10,
-        mediaType: 'audio',
-        purpose: 'home_player_audio',
-      ),
-      throwsA(
-        isA<CanonicalMediaSurfaceUnavailable>().having(
-          (error) => error.toString(),
-          'message',
-          'Den har medieytan ar inte monterad i den kanoniska frontendmodellen.',
-        ),
-      ),
+    final target = await repo.requestCoverUploadUrl(
+      filename: 'cover.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 4,
+      courseId: 'course-1',
+    );
+    await repo.uploadBytes(
+      target: target,
+      data: Uint8List.fromList(<int>[1, 2, 3, 4]),
+      contentType: 'image/jpeg',
     );
 
     expect(client.raw.httpClientAdapter, isA<_RecordingAdapter>());
     final adapter = client.raw.httpClientAdapter as _RecordingAdapter;
-    expect(adapter.requests, isEmpty);
+    final uploadTargetRequests = adapter.requestsFor(
+      '/api/courses/course-1/cover-media-assets/upload-url',
+    );
+    final byteUploadRequests = adapter.requestsFor(
+      '/api/media-assets/media-1/upload-bytes',
+    );
+
+    expect(uploadTargetRequests, hasLength(1));
+    expect(byteUploadRequests, hasLength(1));
+    expect(byteUploadRequests.single.method, 'PUT');
+    expect(byteUploadRequests.single.contentType, 'image/jpeg');
+    expect(
+      byteUploadRequests.single.headers['X-Aveli-Upload-Session'],
+      'upload-session-1',
+    );
+    expect(
+      adapter.requests.where((request) => request.path.contains('storage')),
+      isEmpty,
+    );
   });
+
+  test(
+    'upload target rejects legacy direct-upload response without endpoint',
+    () async {
+      final client = _clientWith(
+        _RecordingAdapter((options) {
+          if (options.path ==
+              '/api/courses/course-1/cover-media-assets/upload-url') {
+            return _jsonResponse(
+              statusCode: 200,
+              body: {
+                'media_asset_id': 'media-1',
+                'asset_state': 'pending_upload',
+                'upload_session_id': 'upload-session-1',
+                'upload_url': 'https://storage.example.test/upload',
+                'headers': {'x-upsert': 'false'},
+                'storage_path': 'media/source/cover/course-1/cover.jpg',
+                'object_path': 'media/source/cover/course-1/cover.jpg',
+                'expires_at': DateTime.now().toUtc().toIso8601String(),
+              },
+            );
+          }
+          return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+        }),
+      );
+      final repo = MediaPipelineRepository(client: client);
+
+      await expectLater(
+        repo.requestCoverUploadUrl(
+          filename: 'cover.jpg',
+          mimeType: 'image/jpeg',
+          sizeBytes: 4,
+          courseId: 'course-1',
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      final adapter = client.raw.httpClientAdapter as _RecordingAdapter;
+      expect(
+        adapter.requestsFor(
+          '/api/courses/course-1/cover-media-assets/upload-url',
+        ),
+        hasLength(1),
+      );
+      expect(
+        adapter.requestsFor('/api/media-assets/media-1/upload-bytes'),
+        isEmpty,
+      );
+    },
+  );
 
   test('lesson preview reads use canonical placement read shape', () async {
     const placementReadPath = '/api/media-placements/lesson-media-1';
@@ -124,6 +203,12 @@ class _RecordingAdapter implements HttpClientAdapter {
       _RecordedRequest(
         path: options.path,
         method: options.method.toUpperCase(),
+        contentType:
+            (options.contentType ??
+                    options.headers[Headers.contentTypeHeader]?.toString() ??
+                    '')
+                .toString(),
+        headers: Map<String, Object?>.from(options.headers),
       ),
     );
     return _handler(options);
@@ -131,10 +216,17 @@ class _RecordingAdapter implements HttpClientAdapter {
 }
 
 class _RecordedRequest {
-  const _RecordedRequest({required this.path, required this.method});
+  const _RecordedRequest({
+    required this.path,
+    required this.method,
+    required this.contentType,
+    required this.headers,
+  });
 
   final String path;
   final String method;
+  final String contentType;
+  final Map<String, Object?> headers;
 }
 
 class _MemoryFlutterSecureStorage extends FlutterSecureStorage {

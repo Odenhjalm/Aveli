@@ -16,10 +16,7 @@ class AuthRepository {
   final ApiClient _client;
   final TokenStorage _tokens;
 
-  Future<Profile> login({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> login({required String email, required String password}) async {
     try {
       final data = await _client.post<Map<String, dynamic>>(
         ApiPaths.authLogin,
@@ -35,23 +32,19 @@ class AuthRepository {
         accessToken: accessToken,
         refreshToken: refreshToken,
       );
-      return await getCurrentProfile();
     } on DioException catch (e) {
       debugPrint('Auth login failed: ${e.response?.data ?? e.message}');
       rethrow;
     }
   }
 
-  Future<Profile> register({
+  Future<void> register({
     required String email,
     required String password,
   }) async {
     final data = await _client.post<Map<String, dynamic>>(
       ApiPaths.authRegister,
-      body: {
-        'email': email,
-        'password': password,
-      },
+      body: {'email': email, 'password': password},
       skipAuth: true,
     );
     final accessToken = data['access_token'] as String?;
@@ -63,12 +56,6 @@ class AuthRepository {
       accessToken: accessToken,
       refreshToken: refreshToken,
     );
-    try {
-      return await getCurrentProfile();
-    } catch (_) {
-      await _tokens.clear();
-      rethrow;
-    }
   }
 
   Future<void> requestPasswordReset(String email) async {
@@ -141,10 +128,7 @@ class AuthRepository {
   }) async {
     final data = await _client.post<Map<String, dynamic>>(
       ApiPaths.authOnboardingCreateProfile,
-      body: {
-        'display_name': displayName,
-        if (bio != null) 'bio': bio,
-      },
+      body: {'display_name': displayName, if (bio != null) 'bio': bio},
     );
     return Profile.fromJson(data);
   }
@@ -156,7 +140,7 @@ class AuthRepository {
     );
   }
 
-  Future<Profile> completeWelcome() async {
+  Future<void> completeWelcome() async {
     final data = await _client.post<Map<String, dynamic>>(
       ApiPaths.authOnboardingComplete,
     );
@@ -184,7 +168,6 @@ class AuthRepository {
         refreshToken: nextRefreshToken,
       );
     }
-    return getCurrentProfile();
   }
 
   Future<void> logout() => _tokens.clear();

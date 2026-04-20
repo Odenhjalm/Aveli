@@ -425,6 +425,10 @@ async def _delete_unreferenced_lesson_audio_assets(*, limit: int) -> list[dict[s
                     AND NOT EXISTS (
                       SELECT 1 FROM app.courses c WHERE c.cover_media_id = ma.id
                     )
+                    AND NOT EXISTS (
+                      SELECT 1 FROM app.profile_media_placements pmp
+                      WHERE pmp.media_asset_id = ma.id
+                    )
                   ORDER BY ma.id ASC
                   LIMIT %s
                   FOR UPDATE SKIP LOCKED
@@ -477,6 +481,10 @@ async def _delete_orphan_course_cover_assets_for_deleted_courses(
                     AND NOT EXISTS (
                       SELECT 1 FROM app.courses c WHERE c.cover_media_id = ma.id
                     )
+                    AND NOT EXISTS (
+                      SELECT 1 FROM app.profile_media_placements pmp
+                      WHERE pmp.media_asset_id = ma.id
+                    )
                   ORDER BY ma.id ASC
                   LIMIT %s
                   FOR UPDATE SKIP LOCKED
@@ -526,6 +534,10 @@ async def prune_course_cover_assets(*, course_id: str, limit: int = 100) -> int:
                     )
                     AND NOT EXISTS (
                       SELECT 1 FROM app.courses c WHERE c.cover_media_id = ma.id
+                    )
+                    AND NOT EXISTS (
+                      SELECT 1 FROM app.profile_media_placements pmp
+                      WHERE pmp.media_asset_id = ma.id
                     )
                   ORDER BY ma.id ASC
                   LIMIT %s
@@ -592,6 +604,10 @@ async def delete_course_cover_assets_for_course(
                     )
                     AND NOT EXISTS (
                       SELECT 1 FROM app.courses c WHERE c.cover_media_id = ma.id
+                    )
+                    AND NOT EXISTS (
+                      SELECT 1 FROM app.profile_media_placements pmp
+                      WHERE pmp.media_asset_id = ma.id
                     )
                   ORDER BY ma.id ASC
                   LIMIT %s
@@ -774,7 +790,7 @@ async def delete_media_asset_and_objects(*, media_id: str) -> bool:
     """Delete a media asset and its storage objects.
 
     No-op when the media asset is still referenced by app.lesson_media, app.courses,
-    or app.home_player_uploads.
+    app.home_player_uploads, or app.profile_media_placements.
     """
 
     if not media_id:
@@ -794,6 +810,10 @@ async def delete_media_asset_and_objects(*, media_id: str) -> bool:
                   )
                   AND NOT EXISTS (
                     SELECT 1 FROM app.home_player_uploads hpu WHERE hpu.media_asset_id = ma.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM app.profile_media_placements pmp
+                    WHERE pmp.media_asset_id = ma.id
                   )
                 RETURNING
                   ma.id,

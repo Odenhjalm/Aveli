@@ -9,7 +9,6 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_source.dart';
-import 'package:aveli/shared/models/request_headers.dart';
 
 class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   _FakeMediaPipelineRepository({required this.uploadTarget});
@@ -77,9 +76,8 @@ void main() {
     final repo = _FakeMediaPipelineRepository(
       uploadTarget: MediaUploadTarget(
         mediaId: 'cover-1',
-        uploadUrl: Uri.parse('https://storage.test/upload'),
-        objectPath: 'media/source/cover/courses/course-1/cover.jpg',
-        headers: RequestHeaders.empty,
+        uploadSessionId: 'upload-session-1',
+        uploadEndpoint: '/api/media-assets/cover-1/upload-bytes',
         expiresAt: DateTime.now().toUtc(),
       ),
     );
@@ -97,11 +95,16 @@ void main() {
     }
 
     Future<void> fakeUpload({
-      required Uri uploadUrl,
-      required RequestHeaders headers,
+      required Uri uploadEndpoint,
+      required String contentType,
       required CoverUploadFile file,
       required void Function(int sent, int total) onProgress,
     }) async {
+      expect(
+        uploadEndpoint.toString(),
+        '/api/media-assets/cover-1/upload-bytes',
+      );
+      expect(contentType, 'image/jpeg');
       onProgress(4, 4);
     }
 

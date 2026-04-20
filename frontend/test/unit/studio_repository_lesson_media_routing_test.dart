@@ -1,6 +1,4 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -12,20 +10,10 @@ import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 
 void main() {
-  late _UploadServer uploadServer;
-
-  setUp(() async {
-    uploadServer = await _UploadServer.start();
-  });
-
-  tearDown(() async {
-    await uploadServer.close();
-  });
-
   test(
     'listLessonMedia reconstructs from lesson content and canonical placements',
     () async {
-      final harness = await _Harness.create(uploadServer: uploadServer);
+      final harness = await _Harness.create();
       final repo = StudioRepository(client: harness.client);
 
       final items = await repo.listLessonMedia('lesson-1');
@@ -69,7 +57,7 @@ void main() {
   );
 
   test('uploadLessonMedia uses canonical studio upload endpoints', () async {
-    final harness = await _Harness.create(uploadServer: uploadServer);
+    final harness = await _Harness.create();
     final repo = StudioRepository(client: harness.client);
 
     final uploaded = await repo.uploadLessonMedia(
@@ -88,7 +76,7 @@ void main() {
       'https://cdn.example.test/guide.pdf?token=studio',
     );
 
-    final uploadUrlRequests = harness.adapter.requestsFor(
+    final uploadTargetRequests = harness.adapter.requestsFor(
       '/api/lessons/lesson-1/media-assets/upload-url',
     );
     final completeRequests = harness.adapter.requestsFor(
@@ -98,13 +86,23 @@ void main() {
       '/api/lessons/lesson-1/media-placements',
     );
 
-    expect(uploadUrlRequests, hasLength(1));
+    expect(uploadTargetRequests, hasLength(1));
     expect(completeRequests, hasLength(1));
     expect(placementRequests, hasLength(1));
-    expect(harness.adapter.recordedPathContaining('/direct/guide.pdf'), isTrue);
+    final byteUploadRequests = harness.adapter.requestsFor(
+      '/api/media-assets/media-1/upload-bytes',
+    );
+    expect(byteUploadRequests, hasLength(1));
+    expect(byteUploadRequests.single.method, 'PUT');
+    expect(byteUploadRequests.single.contentType, 'application/pdf');
+    expect(
+      byteUploadRequests.single.headers['X-Aveli-Upload-Session'],
+      'upload-session-1',
+    );
+    expect(harness.adapter.recordedPathContaining('/direct/'), isFalse);
 
     final uploadPayload = Map<String, dynamic>.from(
-      uploadUrlRequests.single.data as Map,
+      uploadTargetRequests.single.data as Map,
     );
     expect(uploadPayload, {
       'filename': 'guide.pdf',
@@ -123,7 +121,7 @@ void main() {
   });
 
   test('fetchLessonMediaPreviews uses canonical placement reads', () async {
-    final harness = await _Harness.create(uploadServer: uploadServer);
+    final harness = await _Harness.create();
     final repo = StudioRepository(client: harness.client);
 
     final previews = await repo.fetchLessonMediaPreviews(['lesson-media-1']);
@@ -140,7 +138,7 @@ void main() {
   });
 
   test('deleteLessonMedia uses canonical placement delete', () async {
-    final harness = await _Harness.create(uploadServer: uploadServer);
+    final harness = await _Harness.create();
     final repo = StudioRepository(client: harness.client);
 
     await repo.deleteLessonMedia('lesson-1', 'lesson-media-1');
@@ -157,7 +155,7 @@ void main() {
   });
 
   test('reorderLessonMedia uses canonical placement reorder', () async {
-    final harness = await _Harness.create(uploadServer: uploadServer);
+    final harness = await _Harness.create();
     final repo = StudioRepository(client: harness.client);
 
     await repo.reorderLessonMedia('lesson-1', [
@@ -186,7 +184,7 @@ class _Harness {
   final ApiClient client;
   final _RecordingAdapter adapter;
 
-  static Future<_Harness> create({required _UploadServer uploadServer}) async {
+  static Future<_Harness> create() async {
     final storage = _MemoryFlutterSecureStorage();
     final tokens = TokenStorage(storage: storage);
     await tokens.saveTokens(
@@ -234,19 +232,19 @@ class _Harness {
             'media_asset_id': 'media-1',
             'asset_state': 'pending_upload',
             'upload_session_id': 'upload-session-1',
-            'upload_endpoint': uploadServer.url('/direct/guide.pdf').toString(),
+            'upload_endpoint': '/api/media-assets/media-1/upload-bytes',
             'expires_at': DateTime.now().toUtc().toIso8601String(),
           },
         );
+      }
+      if (options.path == '/api/media-assets/media-1/upload-bytes') {
+        return _jsonResponse(statusCode: 200, body: {'uploaded': true});
       }
       if (options.path == '/api/media-assets/media-1/upload-completion') {
         return _jsonResponse(
           statusCode: 200,
           body: {'media_asset_id': 'media-1', 'asset_state': 'uploaded'},
         );
-      }
-      if (options.path.contains('/direct/guide.pdf')) {
-        return _jsonResponse(statusCode: 200, body: {'uploaded': true});
       }
       if (options.path == '/api/lessons/lesson-1/media-placements') {
         return _jsonResponse(
@@ -311,38 +309,6 @@ class _Harness {
   }
 }
 
-class _UploadServer {
-  _UploadServer._(this._server);
-
-  final HttpServer _server;
-  final List<String> putPaths = <String>[];
-
-  static Future<_UploadServer> start() async {
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final wrapper = _UploadServer._(server);
-    unawaited(wrapper._listen());
-    return wrapper;
-  }
-
-  Future<void> _listen() async {
-    await for (final request in _server) {
-      if (request.method == 'PUT') {
-        putPaths.add(request.uri.path);
-        await request.drain<void>();
-        request.response.statusCode = HttpStatus.ok;
-        await request.response.close();
-        continue;
-      }
-      request.response.statusCode = HttpStatus.notFound;
-      await request.response.close();
-    }
-  }
-
-  Uri url(String path) => Uri.parse('http://127.0.0.1:${_server.port}$path');
-
-  Future<void> close() => _server.close(force: true);
-}
-
 ResponseBody _jsonResponse({
   required int statusCode,
   required Map<String, dynamic> body,
@@ -398,6 +364,7 @@ class _RecordingAdapter implements HttpClientAdapter {
                     options.headers[Headers.contentTypeHeader]?.toString() ??
                     '')
                 .toString(),
+        headers: Map<String, Object?>.from(options.headers),
         data: options.data,
       ),
     );
@@ -410,12 +377,14 @@ class _RecordedRequest {
     required this.path,
     required this.method,
     required this.contentType,
+    required this.headers,
     required this.data,
   });
 
   final String path;
   final String method;
   final String contentType;
+  final Map<String, Object?> headers;
   final Object? data;
 }
 

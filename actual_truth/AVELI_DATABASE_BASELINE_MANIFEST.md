@@ -411,6 +411,12 @@ Rules:
 - `ready` media requires canonical worker-owned readiness.
 - Audio `ready` requires `playback_format = 'mp3'`.
 - Direct audio `ready` writes are forbidden.
+- Worker stale-lock release eligibility must match active worker fetch/lock
+  eligibility exactly: all audio media, image media with purpose
+  `course_cover`, `profile_media`, or `lesson_media`, and video/document media
+  with purpose `lesson_media`.
+- Worker stale-lock release must not introduce new lifecycle states or broaden
+  worker-managed media classes beyond the active fetch/lock set.
 
 ### 5.4 Enrollments
 

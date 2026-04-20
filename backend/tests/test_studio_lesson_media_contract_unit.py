@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 
 from app import schemas
@@ -95,6 +97,147 @@ async def test_studio_lesson_media_item_ready_returns_null_media_when_unresolvab
     )
 
     assert item.media is None
+
+
+async def test_studio_preview_lesson_media_preserves_canonical_row_identity(
+    monkeypatch,
+):
+    preview_expires_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    resolver_calls: list[dict[str, str]] = []
+
+    async def fake_require_studio_lesson(lesson_id: str):
+        assert lesson_id == LESSON_ID
+        return {"id": LESSON_ID}
+
+    async def fake_get_lesson_media_for_studio(
+        lesson_id: str,
+        lesson_media_id: str,
+    ):
+        assert lesson_id == LESSON_ID
+        assert lesson_media_id == LESSON_MEDIA_ID
+        return {
+            "lesson_media_id": LESSON_MEDIA_ID,
+            "lesson_id": LESSON_ID,
+            "media_asset_id": MEDIA_ASSET_ID,
+            "position": 1,
+            "media_type": "video",
+            "state": "ready",
+            "preview_ready": True,
+        }
+
+    async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+        resolver_calls.append(
+            {"lesson_media_id": lesson_media_id, "user_id": user_id}
+        )
+        return {
+            "resolved_url": "https://cdn.test/preview.mp4",
+            "expires_at": preview_expires_at,
+        }
+
+    monkeypatch.setattr(
+        studio,
+        "_require_studio_lesson",
+        fake_require_studio_lesson,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.courses_repo,
+        "get_lesson_media_for_studio",
+        fake_get_lesson_media_for_studio,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.lesson_playback_service,
+        "resolve_lesson_media_playback",
+        fake_resolve_lesson_media_playback,
+        raising=True,
+    )
+
+    response = await studio.studio_preview_lesson_media(
+        lesson_id=studio.UUID(LESSON_ID),
+        lesson_media_id=studio.UUID(LESSON_MEDIA_ID),
+        current={"id": TEACHER_ID},
+    )
+
+    assert resolver_calls == [
+        {"lesson_media_id": LESSON_MEDIA_ID, "user_id": TEACHER_ID}
+    ]
+    payload = response.model_dump(mode="json")
+    assert payload == {
+        "lesson_media_id": LESSON_MEDIA_ID,
+        "preview_url": "https://cdn.test/preview.mp4",
+        "expires_at": "2026-01-01T00:00:00Z",
+    }
+    assert not {
+        "upload_url",
+        "storage_path",
+        "download_url",
+        "signed_url",
+        "storage_bucket",
+        "object_path",
+    }.intersection(payload)
+
+
+async def test_studio_preview_lesson_media_fails_closed_without_row_identity(
+    monkeypatch,
+):
+    resolver_called = False
+
+    async def fake_require_studio_lesson(lesson_id: str):
+        assert lesson_id == LESSON_ID
+        return {"id": LESSON_ID}
+
+    async def fake_get_lesson_media_for_studio(
+        lesson_id: str,
+        lesson_media_id: str,
+    ):
+        assert lesson_id == LESSON_ID
+        assert lesson_media_id == LESSON_MEDIA_ID
+        return {
+            "lesson_id": LESSON_ID,
+            "media_asset_id": MEDIA_ASSET_ID,
+            "position": 1,
+            "media_type": "video",
+            "state": "ready",
+            "preview_ready": True,
+        }
+
+    async def fake_resolve_lesson_media_playback(*, lesson_media_id: str, user_id: str):
+        nonlocal resolver_called
+        resolver_called = True
+        return {
+            "resolved_url": "https://cdn.test/preview.mp4",
+            "expires_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        }
+
+    monkeypatch.setattr(
+        studio,
+        "_require_studio_lesson",
+        fake_require_studio_lesson,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.courses_repo,
+        "get_lesson_media_for_studio",
+        fake_get_lesson_media_for_studio,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.lesson_playback_service,
+        "resolve_lesson_media_playback",
+        fake_resolve_lesson_media_playback,
+        raising=True,
+    )
+
+    with pytest.raises(studio.HTTPException) as exc_info:
+        await studio.studio_preview_lesson_media(
+            lesson_id=studio.UUID(LESSON_ID),
+            lesson_media_id=studio.UUID(LESSON_MEDIA_ID),
+            current={"id": TEACHER_ID},
+        )
+
+    assert exc_info.value.status_code == 503
+    assert resolver_called is False
 
 
 async def test_canonical_upload_url_creates_asset_without_placement(monkeypatch):
