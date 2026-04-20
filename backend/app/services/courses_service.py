@@ -1313,7 +1313,9 @@ async def _validate_referenced_lesson_media_ready(
         ):
             _publish_validation_error("Lektionens media är inte redo")
         row_media_asset_id = str(row.get("media_asset_id") or "").strip()
-        if row_media_asset_id and row_media_asset_id != str(resolution.media_asset_id):
+        if not row_media_asset_id or row_media_asset_id != str(
+            resolution.media_asset_id
+        ):
             _publish_validation_error("Lektionens mediareferenser är ogiltiga")
 
 

@@ -12,7 +12,8 @@ async def handle_paid_checkout_order(
     *,
     order: Mapping[str, Any],
     event_type: str,
-) -> None:
+    conn: Any | None = None,
+) -> dict[str, Any]:
     order_metadata = order.get("metadata")
     if not isinstance(order_metadata, Mapping):
         order_metadata = {}
@@ -34,8 +35,31 @@ async def handle_paid_checkout_order(
         )
         raise RuntimeError("Missing required webhook data: course_id")
 
-    await courses_repo.create_course_enrollment(
+    return await courses_repo.create_course_enrollment(
         user_id=str(user_id),
         course_id=str(course_id),
         source="purchase",
+        conn=conn,
     )
+
+
+async def assert_purchase_enrollment_exists(
+    *,
+    order: Mapping[str, Any],
+    conn: Any | None = None,
+) -> dict[str, Any]:
+    user_id = order.get("user_id")
+    course_id = order.get("course_id")
+    if not user_id or not course_id:
+        raise RuntimeError("Missing required webhook data: user_id/course_id")
+
+    enrollment = await courses_repo.get_course_enrollment(
+        str(user_id),
+        str(course_id),
+        conn=conn,
+    )
+    if enrollment is None:
+        raise RuntimeError("Course purchase is missing canonical enrollment")
+    if str(enrollment.get("source") or "").strip().lower() != "purchase":
+        raise RuntimeError("Course purchase enrollment source is not purchase")
+    return enrollment

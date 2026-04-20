@@ -645,7 +645,12 @@ async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
     return [dict(row) for row in rows]
 
 
-async def get_course_enrollment(user_id: str, course_id: str) -> dict[str, Any] | None:
+async def get_course_enrollment(
+    user_id: str,
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
     query = """
         select
             ce.id,
@@ -660,11 +665,17 @@ async def get_course_enrollment(user_id: str, course_id: str) -> dict[str, Any] 
           and ce.course_id = %s
         limit 1
     """
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (user_id, course_id))
             row = await cur.fetchone()
-    return dict(row) if row else None
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
 
 
 async def is_enrolled(user_id: str, course_id: str) -> bool:
@@ -1399,6 +1410,7 @@ async def create_course_enrollment(
     user_id: str,
     course_id: str,
     source: str,
+    conn: Any | None = None,
 ) -> dict[str, Any]:
     enrollment_id = str(uuid4())
     query = """
@@ -1418,13 +1430,22 @@ async def create_course_enrollment(
             clock_timestamp()
         ) as ce
     """
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+
+    async def _execute(active_conn: Any) -> dict[str, Any]:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (enrollment_id, user_id, course_id, source))
             row = await cur.fetchone()
-    if row is None:
-        raise RuntimeError("canonical course enrollment was not returned")
-    return dict(row)
+        if row is None:
+            raise RuntimeError("canonical course enrollment was not returned")
+        return dict(row)
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        row = await _execute(active_conn)
+        await active_conn.commit()
+        return row
 
 
 async def revoke_course_enrollment(

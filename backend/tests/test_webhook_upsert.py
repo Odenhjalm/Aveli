@@ -370,7 +370,7 @@ async def test_unified_webhook_processes_subscription_and_checkout(async_client,
                     "object": {
                         "id": "cs_canonical",
                         "mode": "payment",
-                        "metadata": {"order_id": checkout_payload["order_id"]},
+                        "metadata": dict(captured_session.get("metadata") or {}),
                         "customer": "cus_canonical",
                         "payment_intent": "pi_canonical",
                         "amount_total": 1500,

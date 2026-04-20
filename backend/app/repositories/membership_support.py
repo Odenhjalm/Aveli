@@ -176,10 +176,9 @@ async def complete_payment_event(
                 INSERT INTO app.payment_events (
                     event_id,
                     payload,
-                    metadata,
-                    processed_at
+                    metadata
                 )
-                VALUES (%s, %s, %s, now())
+                VALUES (%s, %s, %s)
                 ON CONFLICT (event_id) DO NOTHING
                 RETURNING event_id
                 """,

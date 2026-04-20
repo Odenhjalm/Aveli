@@ -255,7 +255,7 @@ async def get_checkout_sessions() -> dict[str, Any]:
                event_type,
                payload #>> '{data,object,id}' AS stripe_checkout_id,
                payload #>> '{data,object,metadata,order_id}' AS metadata_order_id,
-               processed_at
+               created_at AS processed_at
         FROM app.payment_events pe
         WHERE event_type IN ('checkout.session.completed', 'checkout.session.async_payment_succeeded')
           AND NOT EXISTS (
@@ -264,7 +264,7 @@ async def get_checkout_sessions() -> dict[str, Any]:
             WHERE o.id::text = COALESCE(NULLIF(pe.payload #>> '{data,object,metadata,order_id}', ''), '<missing>')
                OR o.stripe_checkout_id = pe.payload #>> '{data,object,id}'
           )
-        ORDER BY processed_at DESC
+        ORDER BY created_at DESC
         LIMIT %s
         """,
         (_RECENT_LIMIT,),
@@ -586,7 +586,7 @@ async def get_webhook_state() -> dict[str, Any]:
         """
         SELECT event_type,
                COUNT(*)::int AS event_count,
-               MAX(processed_at) AS last_processed_at
+               MAX(created_at) AS last_processed_at
         FROM app.payment_events
         GROUP BY event_type
         ORDER BY event_type
@@ -602,9 +602,9 @@ async def get_webhook_state() -> dict[str, Any]:
                payload #>> '{data,object,metadata,order_id}' AS metadata_order_id,
                metadata ->> 'status' AS processing_status,
                created_at,
-               processed_at
+               created_at AS processed_at
         FROM app.payment_events
-        ORDER BY processed_at DESC, created_at DESC
+        ORDER BY created_at DESC
         LIMIT %s
         """,
         (_RECENT_LIMIT,),
@@ -643,10 +643,10 @@ async def get_webhook_state() -> dict[str, Any]:
         SELECT event_id,
                event_type,
                metadata ->> 'status' AS processing_status,
-               processed_at
+               created_at AS processed_at
         FROM app.payment_events
         WHERE COALESCE(metadata ->> 'status', '') <> 'completed'
-        ORDER BY processed_at DESC
+        ORDER BY created_at DESC
         LIMIT %s
         """,
         (_RECENT_LIMIT,),
@@ -668,7 +668,7 @@ async def get_webhook_state() -> dict[str, Any]:
                pe.event_type,
                pe.payload #>> '{data,object,metadata,order_id}' AS metadata_order_id,
                pe.payload #>> '{data,object,id}' AS stripe_object_id,
-               pe.processed_at
+               pe.created_at AS processed_at
         FROM app.payment_events pe
         WHERE COALESCE(pe.payload #>> '{data,object,metadata,order_id}', '') <> ''
           AND NOT EXISTS (
@@ -676,7 +676,7 @@ async def get_webhook_state() -> dict[str, Any]:
             FROM app.orders o
             WHERE o.id::text = pe.payload #>> '{data,object,metadata,order_id}'
           )
-        ORDER BY pe.processed_at DESC
+        ORDER BY pe.created_at DESC
         LIMIT %s
         """,
         (_RECENT_LIMIT,),

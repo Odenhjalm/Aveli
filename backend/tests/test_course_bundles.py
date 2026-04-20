@@ -126,19 +126,18 @@ async def _count_bundle_orders_for_user(user_id: str, bundle_id: str) -> int:
 async def _cleanup_user(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    """
-                    DELETE FROM app.bundle_order_courses boc
-                     USING app.orders o
-                     WHERE boc.order_id = o.id
-                       AND o.user_id = %s
-                    """,
-                    (user_id,),
-                )
-            except errors.UndefinedTable:
-                await conn.rollback()
-            await cur.execute("DELETE FROM app.orders WHERE user_id = %s", (user_id,))
+            await cur.execute(
+                """
+                DELETE FROM app.orders o
+                 WHERE o.user_id = %s
+                   AND NOT EXISTS (
+                       SELECT 1
+                         FROM app.bundle_order_courses boc
+                        WHERE boc.order_id = o.id
+                   )
+                """,
+                (user_id,),
+            )
             await cur.execute("DELETE FROM app.memberships WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM app.course_enrollments WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM app.stripe_customers WHERE user_id = %s", (user_id,))
@@ -157,7 +156,18 @@ async def _cleanup_course(course_id: str):
                 await cur.execute("DELETE FROM app.course_bundle_courses WHERE course_id = %s", (course_id,))
             except errors.UndefinedTable:
                 await conn.rollback()
-            await cur.execute("DELETE FROM app.courses WHERE id = %s", (course_id,))
+            await cur.execute(
+                """
+                DELETE FROM app.courses c
+                 WHERE c.id = %s
+                   AND NOT EXISTS (
+                       SELECT 1
+                         FROM app.bundle_order_courses boc
+                        WHERE boc.course_id = c.id
+                   )
+                """,
+                (course_id,),
+            )
             await conn.commit()
 
 
@@ -166,15 +176,38 @@ async def _cleanup_bundle(bundle_id: str):
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             try:
                 await cur.execute(
-                    "DELETE FROM app.bundle_order_courses WHERE bundle_id = %s",
+                    """
+                    DELETE FROM app.orders o
+                     WHERE o.bundle_id = %s
+                       AND NOT EXISTS (
+                           SELECT 1
+                             FROM app.bundle_order_courses boc
+                            WHERE boc.order_id = o.id
+                       )
+                    """,
                     (bundle_id,),
                 )
-                await cur.execute("DELETE FROM app.orders WHERE bundle_id = %s", (bundle_id,))
                 await cur.execute(
                     "DELETE FROM app.course_bundle_courses WHERE bundle_id = %s",
                     (bundle_id,),
                 )
-                await cur.execute("DELETE FROM app.course_bundles WHERE id = %s", (bundle_id,))
+                await cur.execute(
+                    """
+                    DELETE FROM app.course_bundles cb
+                     WHERE cb.id = %s
+                       AND NOT EXISTS (
+                           SELECT 1
+                             FROM app.bundle_order_courses boc
+                            WHERE boc.bundle_id = cb.id
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1
+                             FROM app.orders o
+                            WHERE o.bundle_id = cb.id
+                       )
+                    """,
+                    (bundle_id,),
+                )
                 await conn.commit()
             except errors.UndefinedTable:
                 await conn.rollback()
@@ -539,8 +572,10 @@ async def test_bundle_checkout_stripe_failure_keeps_pending_order_snapshot(
     def fake_price_retrieve(price_id):
         return stripe_prices[price_id]
 
+    stripe_customer_id = f"cus_bundle_failure_test_{uuid.uuid4().hex}"
+
     def fake_customer_create(**kwargs):
-        return {"id": "cus_bundle_failure_test"}
+        return {"id": stripe_customer_id}
 
     def fake_session_create(**kwargs):
         raise stripe.error.StripeError("checkout failed")
@@ -659,15 +694,21 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
     def fake_price_retrieve(price_id):
         return stripe_prices[price_id]
 
+    stripe_customer_id = f"cus_bundle_test_{uuid.uuid4().hex}"
+
     def fake_customer_create(**kwargs):
-        return {"id": "cus_bundle_test"}
+        return {"id": stripe_customer_id}
+
+    stripe_session_id = f"cs_bundle_test_{uuid.uuid4().hex}"
+    stripe_session_url = f"https://stripe.test/{stripe_session_id}"
+    stripe_payment_intent = f"pi_bundle_test_{uuid.uuid4().hex}"
 
     def fake_session_create(**kwargs):
         captured_session.update(kwargs)
         return {
-            "id": "cs_bundle_test",
-            "url": "https://stripe.test/cs_bundle_test",
-            "payment_intent": "pi_bundle_test",
+            "id": stripe_session_id,
+            "url": stripe_session_url,
+            "payment_intent": stripe_payment_intent,
         }
 
     monkeypatch.setattr("stripe.Product.create", fake_product_create)
@@ -812,8 +853,8 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         )
         assert checkout_resp.status_code == 201, checkout_resp.text
         payload = checkout_resp.json()
-        assert payload["url"] == "https://stripe.test/cs_bundle_test"
-        assert payload["session_id"] == "cs_bundle_test"
+        assert payload["url"] == stripe_session_url
+        assert payload["session_id"] == stripe_session_id
         assert payload["order_id"]
         assert captured_session.get("locale") == "sv"
         metadata = captured_session.get("metadata") or {}

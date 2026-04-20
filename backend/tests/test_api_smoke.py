@@ -233,8 +233,9 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
         assert checkout_payload["url"].startswith("https://stripe.test")
 
         webhook_payload = {
+            "id": "cs_test_course",
             "event_type": "checkout.session.completed",
-            "metadata": {"order_id": order_id},
+            "metadata": dict(captured_session.get("metadata") or {}),
             "payment_intent": "pi_test_course",
             "amount_total": 12900,
             "currency": "sek",

@@ -17,19 +17,13 @@ class CourseBundlesRepository {
 
   Future<Map<String, dynamic>> createBundle({
     required String title,
-    String? description,
     required int priceAmountCents,
-    String currency = 'sek',
     List<String> courseIds = const [],
-    bool isActive = true,
   }) async {
     final body = {
       'title': title,
-      if (description != null) 'description': description,
       'price_amount_cents': priceAmountCents,
-      'currency': currency,
       'course_ids': courseIds,
-      'is_active': isActive,
     };
     final res = await _client.post<Map<String, dynamic>>(
       '/api/teachers/course-bundles',

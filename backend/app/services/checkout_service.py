@@ -212,6 +212,8 @@ async def handle_payment_intent_succeeded(
         # Checkout-session purchases must settle only from the checkout-session
         # webhook path, never from payment_intent.succeeded.
         return dict(order)
+    if order and order.get("course_id"):
+        return dict(order)
 
     metadata = payload.get("metadata") or {}
     if not isinstance(metadata, dict):
@@ -223,6 +225,8 @@ async def handle_payment_intent_succeeded(
     order = await repositories.get_order(order_id)
     if not order:
         return None
+    if order.get("course_id"):
+        return order
     if order.get("status") == "paid":
         return order
 

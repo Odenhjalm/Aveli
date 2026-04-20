@@ -19,11 +19,9 @@ class CourseBundlePage extends ConsumerStatefulWidget {
 
 class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
   final _titleController = TextEditingController();
-  final _descriptionController = TextEditingController();
   final _priceController = TextEditingController(text: '0');
   final _selectedCourses = <String>{};
   final _checkoutBundleIds = <String>{};
-  bool _isActive = true;
   bool _submitting = false;
 
   String _courseSelectionLabel(CourseStudio course) {
@@ -36,7 +34,6 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
   @override
   void dispose() {
     _titleController.dispose();
-    _descriptionController.dispose();
     _priceController.dispose();
     super.dispose();
   }
@@ -55,24 +52,19 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
       final repo = ref.read(courseBundlesRepositoryProvider);
       await repo.createBundle(
         title: title,
-        description: _descriptionController.text.trim().isEmpty
-            ? null
-            : _descriptionController.text.trim(),
         priceAmountCents: price * 100,
         courseIds: _selectedCourses.toList(),
-        isActive: _isActive,
       );
       if (!mounted) return;
       ref.invalidate(teacherBundlesProvider);
       showSnack(context, 'Paketet skapades.');
       _titleController.clear();
-      _descriptionController.clear();
       _priceController.text = '0';
       _selectedCourses.clear();
       setState(() {});
     } catch (e) {
       if (!mounted) return;
-      showSnack(context, 'Kunde inte spara paket: $e');
+      showSnack(context, 'Paketet kunde inte sparas just nu.');
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
@@ -106,7 +98,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
       context.pushNamed(AppRoute.checkout, extra: url);
     } catch (e) {
       if (!mounted) return;
-      showSnack(context, 'Kunde inte starta betalning: $e');
+      showSnack(context, 'Betalningen kunde inte startas just nu.');
     } finally {
       if (mounted) {
         setState(() => _checkoutBundleIds.remove(bundleId));
@@ -119,7 +111,6 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
     final coursesAsync = ref.watch(myCoursesProvider);
     final bundlesAsync = ref.watch(teacherBundlesProvider);
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
 
     return AppScaffold(
       title: 'Paketpriser',
@@ -157,29 +148,12 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                     ),
                     const SizedBox(height: 12),
                     TextField(
-                      controller: _descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Beskrivning (valfri)',
-                        hintText: 'Vad innehåller paketet?',
-                      ),
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
                       controller: _priceController,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
                         labelText: 'Paketpris (kr)',
                         prefixText: 'kr ',
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _isActive,
-                      onChanged: (value) => setState(() => _isActive = value),
-                      title: const Text('Aktivt paket'),
-                      subtitle: const Text('Aktiva paket kan köpas av elever.'),
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -195,7 +169,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                         child: LinearProgressIndicator(minHeight: 2),
                       ),
                       error: (error, _) =>
-                          Text('Kunde inte hämta kurser: $error'),
+                          const Text('Kunde inte hämta kurser just nu.'),
                       data: (courses) {
                         if (courses.isEmpty) {
                           return const Text('Du har inga kurser ännu.');
@@ -255,7 +229,7 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
             const SizedBox(height: 8),
             bundlesAsync.when(
               loading: () => const LinearProgressIndicator(minHeight: 2),
-              error: (error, _) => Text('Kunde inte läsa paket: $error'),
+              error: (error, _) => const Text('Kunde inte läsa paket just nu.'),
               data: (bundles) {
                 if (bundles.isEmpty) {
                   return const Text('Inga paket skapade ännu.');
@@ -280,27 +254,8 @@ class _CourseBundlePageState extends ConsumerState<CourseBundlePage> {
                                         ?.copyWith(fontWeight: FontWeight.w700),
                                   ),
                                 ),
-                                Icon(
-                                  bundle['is_active'] == true
-                                      ? Icons.check_circle_outline
-                                      : Icons.pause_circle,
-                                  color: bundle['is_active'] == true
-                                      ? cs.primary
-                                      : cs.outline,
-                                ),
                               ],
                             ),
-                            if ((bundle['description'] as String?)
-                                    ?.isNotEmpty ??
-                                false) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                bundle['description'] as String,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
                             const SizedBox(height: 8),
                             if (courses.isNotEmpty)
                               Wrap(

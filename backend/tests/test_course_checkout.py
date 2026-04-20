@@ -172,6 +172,59 @@ def _install_course_stripe_fakes(
     return captured_session
 
 
+def _captured_course_checkout_metadata(captured_session: dict[str, object]) -> dict:
+    metadata = captured_session.get("metadata")
+    assert isinstance(metadata, dict)
+    return dict(metadata)
+
+
+async def _paid_payment_count(order_id: str) -> int:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT count(*)
+                  FROM app.payments
+                 WHERE order_id = %s
+                   AND status = 'paid'
+                """,
+                (order_id,),
+            )
+            row = await cur.fetchone()
+    return int(row[0])
+
+
+async def _course_enrollment_count(user_id: str, course_id: str) -> int:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT count(*)
+                  FROM app.course_enrollments
+                 WHERE user_id = %s
+                   AND course_id = %s
+                """,
+                (user_id, course_id),
+            )
+            row = await cur.fetchone()
+    return int(row[0])
+
+
+async def _payment_event_completed(event_id: str) -> bool:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT metadata ->> 'status'
+                  FROM app.payment_events
+                 WHERE event_id = %s
+                """,
+                (event_id,),
+            )
+            row = await cur.fetchone()
+    return bool(row and row[0] == "completed")
+
+
 async def _register_teacher(async_client) -> tuple[dict[str, str], str]:
     _, user_id, email = await register_user(async_client)
     await _promote_to_teacher(str(user_id))
@@ -345,7 +398,7 @@ async def test_step2_course_checkout_uses_canonical_sellable_flow(async_client, 
 async def test_webhook_checkout_session_grants_entitlement(async_client, monkeypatch):
     _set_stripe_test_env(monkeypatch)
     settings.stripe_test_webhook_secret = "whsec_test"
-    _install_course_stripe_fakes(
+    captured_session = _install_course_stripe_fakes(
         monkeypatch,
         checkout_id="cs_checkout_webhook",
         payment_intent="pi_checkout_webhook",
@@ -389,7 +442,9 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
                     "object": {
                         "id": "cs_checkout_webhook",
                         "mode": "payment",
-                        "metadata": {"order_id": checkout_payload["order_id"]},
+                        "metadata": _captured_course_checkout_metadata(
+                            captured_session
+                        ),
                         "customer": "cus_checkout_webhook",
                         "payment_intent": "pi_checkout_webhook",
                         "amount_total": 1500,
@@ -420,6 +475,356 @@ async def test_webhook_checkout_session_grants_entitlement(async_client, monkeyp
         )
         assert enrollment is not None
         assert enrollment["source"] == "purchase"
+    finally:
+        if course_id:
+            await _cleanup_course(course_id)
+        await _cleanup_user(teacher_id)
+        await _cleanup_user(str(student_id))
+
+
+async def test_course_checkout_webhook_duplicate_is_idempotent(
+    async_client,
+    monkeypatch,
+):
+    _set_stripe_test_env(monkeypatch)
+    settings.stripe_test_webhook_secret = "whsec_test"
+    captured_session = _install_course_stripe_fakes(
+        monkeypatch,
+        checkout_id="cs_checkout_duplicate",
+        payment_intent="pi_checkout_duplicate",
+    )
+
+    teacher_headers, teacher_id = await _register_teacher(async_client)
+    student_headers, student_id, _ = await register_user(async_client)
+    course_id = None
+    try:
+        slug = f"checkout-duplicate-{uuid.uuid4().hex[:8]}"
+        course_id = await _create_course(
+            async_client,
+            teacher_headers,
+            slug,
+            1500,
+            group_position=1,
+            checkout_ready=True,
+        )
+        checkout_response = await async_client.post(
+            "/api/checkout/create",
+            headers=student_headers,
+            json={"slug": slug},
+        )
+        assert checkout_response.status_code == 201, checkout_response.text
+        checkout_payload = checkout_response.json()
+        event_id = f"evt_checkout_duplicate_{uuid.uuid4().hex}"
+
+        def fake_construct_event(payload, sig_header, secret):
+            assert sig_header == "sig_test"
+            assert secret == "whsec_test"
+            return {
+                "id": event_id,
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "id": "cs_checkout_duplicate",
+                        "mode": "payment",
+                        "metadata": _captured_course_checkout_metadata(
+                            captured_session
+                        ),
+                        "customer": "cus_checkout_duplicate",
+                        "payment_intent": "pi_checkout_duplicate",
+                        "amount_total": 1500,
+                        "currency": "sek",
+                    }
+                },
+            }
+
+        monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+
+        for _ in range(2):
+            response = await async_client.post(
+                "/api/stripe/webhook",
+                content=json.dumps({}),
+                headers={"stripe-signature": "sig_test"},
+            )
+            assert response.status_code == 200, response.text
+
+        assert await _paid_payment_count(checkout_payload["order_id"]) == 1
+        assert await _course_enrollment_count(str(student_id), course_id) == 1
+    finally:
+        if course_id:
+            await _cleanup_course(course_id)
+        await _cleanup_user(teacher_id)
+        await _cleanup_user(str(student_id))
+
+
+async def test_course_checkout_webhook_rolls_back_when_enrollment_fails(
+    async_client,
+    monkeypatch,
+):
+    _set_stripe_test_env(monkeypatch)
+    settings.stripe_test_webhook_secret = "whsec_test"
+    captured_session = _install_course_stripe_fakes(
+        monkeypatch,
+        checkout_id="cs_checkout_enrollment_failure",
+        payment_intent="pi_checkout_enrollment_failure",
+    )
+
+    teacher_headers, teacher_id = await _register_teacher(async_client)
+    student_headers, student_id, _ = await register_user(async_client)
+    course_id = None
+    try:
+        slug = f"checkout-enroll-fail-{uuid.uuid4().hex[:8]}"
+        course_id = await _create_course(
+            async_client,
+            teacher_headers,
+            slug,
+            1500,
+            group_position=1,
+            checkout_ready=True,
+        )
+        checkout_response = await async_client.post(
+            "/api/checkout/create",
+            headers=student_headers,
+            json={"slug": slug},
+        )
+        assert checkout_response.status_code == 201, checkout_response.text
+        checkout_payload = checkout_response.json()
+        event_id = f"evt_checkout_enrollment_failure_{uuid.uuid4().hex}"
+
+        async def fail_create_course_enrollment(**kwargs):
+            raise RuntimeError("enrollment write failed")
+
+        monkeypatch.setattr(
+            courses_repo,
+            "create_course_enrollment",
+            fail_create_course_enrollment,
+        )
+
+        def fake_construct_event(payload, sig_header, secret):
+            assert sig_header == "sig_test"
+            assert secret == "whsec_test"
+            return {
+                "id": event_id,
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "id": "cs_checkout_enrollment_failure",
+                        "mode": "payment",
+                        "metadata": _captured_course_checkout_metadata(
+                            captured_session
+                        ),
+                        "customer": "cus_checkout_enrollment_failure",
+                        "payment_intent": "pi_checkout_enrollment_failure",
+                        "amount_total": 1500,
+                        "currency": "sek",
+                    }
+                },
+            }
+
+        monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+
+        response = await async_client.post(
+            "/api/stripe/webhook",
+            content=json.dumps({}),
+            headers={"stripe-signature": "sig_test"},
+        )
+        assert response.status_code == 500, response.text
+
+        order = await repositories.get_order(checkout_payload["order_id"])
+        assert order is not None
+        assert order["status"] == "pending"
+        assert await _paid_payment_count(checkout_payload["order_id"]) == 0
+        assert await _course_enrollment_count(str(student_id), course_id) == 0
+        assert not await _payment_event_completed(event_id)
+    finally:
+        if course_id:
+            await _cleanup_course(course_id)
+        await _cleanup_user(teacher_id)
+        await _cleanup_user(str(student_id))
+
+
+async def test_course_checkout_webhook_rejects_amount_and_currency_mismatch(
+    async_client,
+    monkeypatch,
+):
+    _set_stripe_test_env(monkeypatch)
+    settings.stripe_test_webhook_secret = "whsec_test"
+    captured_session = _install_course_stripe_fakes(
+        monkeypatch,
+        checkout_id="cs_checkout_mismatch",
+        payment_intent="pi_checkout_mismatch",
+    )
+
+    teacher_headers, teacher_id = await _register_teacher(async_client)
+    student_headers, student_id, _ = await register_user(async_client)
+    course_id = None
+    try:
+        slug = f"checkout-mismatch-{uuid.uuid4().hex[:8]}"
+        course_id = await _create_course(
+            async_client,
+            teacher_headers,
+            slug,
+            1500,
+            group_position=1,
+            checkout_ready=True,
+        )
+        checkout_response = await async_client.post(
+            "/api/checkout/create",
+            headers=student_headers,
+            json={"slug": slug},
+        )
+        assert checkout_response.status_code == 201, checkout_response.text
+        checkout_payload = checkout_response.json()
+        event_id = f"evt_checkout_mismatch_{uuid.uuid4().hex}"
+
+        def fake_construct_event(payload, sig_header, secret):
+            assert sig_header == "sig_test"
+            assert secret == "whsec_test"
+            return {
+                "id": event_id,
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "id": "cs_checkout_mismatch",
+                        "mode": "payment",
+                        "metadata": _captured_course_checkout_metadata(
+                            captured_session
+                        ),
+                        "customer": "cus_checkout_mismatch",
+                        "payment_intent": "pi_checkout_mismatch",
+                        "amount_total": 1400,
+                        "currency": "eur",
+                    }
+                },
+            }
+
+        monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+
+        response = await async_client.post(
+            "/api/stripe/webhook",
+            content=json.dumps({}),
+            headers={"stripe-signature": "sig_test"},
+        )
+        assert response.status_code == 400, response.text
+
+        order = await repositories.get_order(checkout_payload["order_id"])
+        assert order is not None
+        assert order["status"] == "pending"
+        assert await _paid_payment_count(checkout_payload["order_id"]) == 0
+        assert await _course_enrollment_count(str(student_id), course_id) == 0
+        assert not await _payment_event_completed(event_id)
+    finally:
+        if course_id:
+            await _cleanup_course(course_id)
+        await _cleanup_user(teacher_id)
+        await _cleanup_user(str(student_id))
+
+
+async def test_course_checkout_webhook_conflicting_enrollment_source_fails_closed(
+    async_client,
+    monkeypatch,
+):
+    _set_stripe_test_env(monkeypatch)
+    settings.stripe_test_webhook_secret = "whsec_test"
+    captured_session = _install_course_stripe_fakes(
+        monkeypatch,
+        checkout_id="cs_checkout_conflict",
+        payment_intent="pi_checkout_conflict",
+    )
+
+    teacher_headers, teacher_id = await _register_teacher(async_client)
+    student_headers, student_id, _ = await register_user(async_client)
+    course_id = None
+    try:
+        slug = f"checkout-conflict-{uuid.uuid4().hex[:8]}"
+        course_id = await _create_course(
+            async_client,
+            teacher_headers,
+            slug,
+            1500,
+            group_position=1,
+            checkout_ready=True,
+        )
+        checkout_response = await async_client.post(
+            "/api/checkout/create",
+            headers=student_headers,
+            json={"slug": slug},
+        )
+        assert checkout_response.status_code == 201, checkout_response.text
+        checkout_payload = checkout_response.json()
+
+        async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    "SELECT set_config('app.canonical_enrollment_function_context', 'on', true)"
+                )
+                await cur.execute(
+                    """
+                    INSERT INTO app.course_enrollments (
+                        id,
+                        user_id,
+                        course_id,
+                        source,
+                        granted_at,
+                        drip_started_at,
+                        current_unlock_position
+                    )
+                    VALUES (
+                        %s,
+                        %s,
+                        %s,
+                        'intro_enrollment',
+                        now(),
+                        now(),
+                        0
+                    )
+                    """,
+                    (str(uuid.uuid4()), str(student_id), course_id),
+                )
+                await cur.execute(
+                    "SELECT set_config('app.canonical_enrollment_function_context', 'off', true)"
+                )
+                await conn.commit()
+
+        def fake_construct_event(payload, sig_header, secret):
+            assert sig_header == "sig_test"
+            assert secret == "whsec_test"
+            return {
+                "id": f"evt_checkout_conflict_{uuid.uuid4().hex}",
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "id": "cs_checkout_conflict",
+                        "mode": "payment",
+                        "metadata": _captured_course_checkout_metadata(
+                            captured_session
+                        ),
+                        "customer": "cus_checkout_conflict",
+                        "payment_intent": "pi_checkout_conflict",
+                        "amount_total": 1500,
+                        "currency": "sek",
+                    }
+                },
+            }
+
+        monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
+
+        response = await async_client.post(
+            "/api/stripe/webhook",
+            content=json.dumps({}),
+            headers={"stripe-signature": "sig_test"},
+        )
+        assert response.status_code == 500, response.text
+
+        order = await repositories.get_order(checkout_payload["order_id"])
+        assert order is not None
+        assert order["status"] == "pending"
+        assert await _paid_payment_count(checkout_payload["order_id"]) == 0
+        enrollment = await courses_repo.get_course_enrollment(
+            str(student_id),
+            course_id,
+        )
+        assert enrollment is not None
+        assert enrollment["source"] == "intro_enrollment"
     finally:
         if course_id:
             await _cleanup_course(course_id)
@@ -501,7 +906,7 @@ async def test_payment_intent_webhook_does_not_settle_checkout_backed_purchase(
 async def test_refunded_paid_course_order_revokes_enrollment(async_client, monkeypatch):
     _set_stripe_test_env(monkeypatch)
     settings.stripe_test_webhook_secret = "whsec_test"
-    _install_course_stripe_fakes(
+    captured_session = _install_course_stripe_fakes(
         monkeypatch,
         checkout_id="cs_refund_checkout",
         payment_intent="pi_refund_checkout",
@@ -537,7 +942,9 @@ async def test_refunded_paid_course_order_revokes_enrollment(async_client, monke
                     "object": {
                         "id": "cs_refund_checkout",
                         "mode": "payment",
-                        "metadata": {"order_id": checkout_payload["order_id"]},
+                        "metadata": _captured_course_checkout_metadata(
+                            captured_session
+                        ),
                         "customer": "cus_refund_checkout",
                         "payment_intent": "pi_refund_checkout",
                         "amount_total": 1500,
