@@ -119,6 +119,7 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(
             "course_title": "Course home-gate",
             "course_is_published": True,
             "media_type": "audio",
+            "media_purpose": "lesson_media",
         }
 
     async def fake_upsert_link(
@@ -126,7 +127,6 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(
         teacher_id: str,
         lesson_media_id: str,
         title: str,
-        course_title_snapshot: str,
         enabled: bool,
     ):
         row = {
@@ -134,7 +134,7 @@ async def test_home_audio_requires_teacher_opt_in_before_entitlements(
             "teacher_id": teacher_id,
             "lesson_media_id": lesson_media_id,
             "title": title,
-            "course_title": course_title_snapshot,
+            "course_title": "Course home-gate",
             "enabled": enabled,
             "status": "active",
             "kind": "audio",
@@ -314,6 +314,7 @@ async def test_home_audio_course_links_reject_non_audio_lesson_media(
             "course_title": "Course",
             "course_is_published": True,
             "media_type": "video",
+            "media_purpose": "lesson_media",
         }
 
     monkeypatch.setattr(
@@ -334,3 +335,71 @@ async def test_home_audio_course_links_reject_non_audio_lesson_media(
     )
     assert create_link.status_code == 422, create_link.text
     assert create_link.json()["detail"] == "Only audio can be linked"
+
+
+async def test_home_audio_course_links_reject_non_owned_and_wrong_purpose_media(
+    async_client,
+    monkeypatch,
+):
+    password = "Passw0rd!"
+    teacher_token, teacher_id = await register_user(
+        async_client,
+        f"home_owner_teacher_{uuid.uuid4().hex[:6]}@example.org",
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+
+    other_teacher_id = str(uuid.uuid4())
+    non_owned_lesson_media_id = str(uuid.uuid4())
+    wrong_purpose_lesson_media_id = str(uuid.uuid4())
+
+    async def fake_resolve_owner(candidate_lesson_media_id: str):
+        if candidate_lesson_media_id == non_owned_lesson_media_id:
+            return {
+                "teacher_id": other_teacher_id,
+                "course_title": "Other course",
+                "course_is_published": True,
+                "media_type": "audio",
+                "media_purpose": "lesson_media",
+            }
+        if candidate_lesson_media_id == wrong_purpose_lesson_media_id:
+            return {
+                "teacher_id": teacher_id,
+                "course_title": "Course",
+                "course_is_published": True,
+                "media_type": "audio",
+                "media_purpose": "home_player_audio",
+            }
+        raise AssertionError(candidate_lesson_media_id)
+
+    monkeypatch.setattr(
+        studio_routes.home_audio_sources_repo,
+        "resolve_lesson_media_course_owner",
+        fake_resolve_owner,
+        raising=True,
+    )
+
+    non_owned = await async_client.post(
+        "/studio/home-player/course-links",
+        headers=auth_header(teacher_token),
+        json={
+            "lesson_media_id": non_owned_lesson_media_id,
+            "title": "Other audio",
+            "enabled": True,
+        },
+    )
+    assert non_owned.status_code == 403, non_owned.text
+    assert non_owned.json()["detail"] == "Not course owner"
+
+    wrong_purpose = await async_client.post(
+        "/studio/home-player/course-links",
+        headers=auth_header(teacher_token),
+        json={
+            "lesson_media_id": wrong_purpose_lesson_media_id,
+            "title": "Wrong purpose",
+            "enabled": True,
+        },
+    )
+    assert wrong_purpose.status_code == 422, wrong_purpose.text
+    assert wrong_purpose.json()["detail"] == "Invalid media purpose"

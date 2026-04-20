@@ -407,6 +407,8 @@ class TeacherProfileMediaPublicResponse(BaseModel):
 
 
 class HomePlayerUploadItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     teacher_id: UUID
     media_asset_id: UUID
@@ -415,13 +417,14 @@ class HomePlayerUploadItem(BaseModel):
     active: bool
     created_at: datetime
     updated_at: datetime
-    content_type: Optional[str] = None
-    byte_size: Optional[int] = None
-    original_name: Optional[str] = None
-    media_state: Optional[Literal["uploaded", "processing", "ready", "failed"]] = None
+    media_state: Optional[
+        Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
+    ] = None
 
 
 class HomePlayerUploadCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str
     active: bool = True
     media_asset_id: UUID
@@ -434,6 +437,8 @@ class HomePlayerCourseLinkStatus(str, Enum):
 
 
 class HomePlayerCourseLinkItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     teacher_id: UUID
     lesson_media_id: Optional[UUID] = None
@@ -447,19 +452,77 @@ class HomePlayerCourseLinkItem(BaseModel):
 
 
 class HomePlayerUploadUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: Optional[str] = None
     active: Optional[bool] = None
 
 
 class HomePlayerCourseLinkCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     lesson_media_id: UUID
     title: str
     enabled: bool = True
 
 
 class HomePlayerCourseLinkUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: Optional[bool] = None
     title: Optional[str] = None
+
+
+class HomePlayerLibraryUploadItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    media_asset_id: UUID
+    title: str
+    active: bool
+    created_at: datetime
+    updated_at: datetime
+    kind: Literal["audio"]
+    media_state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
+
+
+class HomePlayerLibraryCourseLinkItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    lesson_media_id: UUID
+    title: str
+    course_title: str
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+    kind: Literal["audio"]
+    status: HomePlayerCourseLinkStatus
+
+
+class HomePlayerLibraryCourseMediaItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    lesson_id: UUID
+    lesson_title: Optional[str] = None
+    course_id: UUID
+    course_title: str
+    course_slug: str
+    kind: Literal["audio"]
+    content_type: Optional[str] = None
+    duration_seconds: Optional[int] = None
+    position: int
+    created_at: Optional[datetime] = None
+    media: Optional["ResolvedMedia"] = None
+
+
+class HomePlayerLibraryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    uploads: List[HomePlayerLibraryUploadItem]
+    course_links: List[HomePlayerLibraryCourseLinkItem]
+    course_media: List[HomePlayerLibraryCourseMediaItem]
 
 
 class SeminarDetailResponse(BaseModel):
@@ -862,9 +925,9 @@ class CoursePricingResponse(BaseModel):
 
 
 class LandingTeacherCard(BaseModel):
-    user_id: UUID
+    id: str
     display_name: str
-    photo_url: str | None = None
+    avatar_url: str | None = None
     bio: str | None = None
 
 

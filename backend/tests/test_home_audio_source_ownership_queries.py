@@ -80,6 +80,7 @@ async def test_resolve_lesson_media_course_owner_uses_canonical_course_teacher_i
             "course_title": "Course",
             "course_is_published": True,
             "media_type": "audio",
+            "media_purpose": "lesson_media",
         }
     )
     _install_fake_conn(monkeypatch, cursor)
@@ -91,6 +92,9 @@ async def test_resolve_lesson_media_course_owner_uses_canonical_course_teacher_i
     assert params == ("lesson-media-1",)
     assert "c.teacher_id AS teacher_id" in query
     assert "c.created_by" not in query
+    assert "ma.purpose::text AS media_purpose" in query
+    assert "is_test" not in query
+    assert "test_session_id" not in query
 
 
 async def test_get_home_player_course_link_filters_by_canonical_course_owner(
@@ -151,7 +155,6 @@ async def test_upsert_home_player_course_link_writes_only_source_inclusion(
         teacher_id="teacher-1",
         lesson_media_id="lesson-media-1",
         title="Link",
-        course_title_snapshot="Course",
         enabled=True,
     )
 
@@ -169,6 +172,10 @@ async def test_upsert_home_player_course_link_writes_only_source_inclusion(
     assert "ON CONFLICT (teacher_id, lesson_media_id)" not in query
     assert "c.teacher_id = %s::uuid" in query
     assert "c_owner.teacher_id = %s::uuid" in query
+    assert "ma.purpose = 'lesson_media'::app.media_purpose" in query
+    assert "ma.media_type = 'audio'::app.media_type" in query
+    assert "is_test" not in query
+    assert "test_session_id" not in query
 
 
 async def test_update_home_player_course_link_filters_by_canonical_course_owner(
@@ -203,6 +210,10 @@ async def test_update_home_player_course_link_filters_by_canonical_course_owner(
     assert params["teacher_id"] == "teacher-1"
     assert "c.teacher_id = %(teacher_id)s::uuid" in update_query
     assert "AND teacher_id = %(teacher_id)s::uuid" not in update_query
+    assert "ma.purpose = 'lesson_media'::app.media_purpose" in update_query
+    assert "ma.media_type = 'audio'::app.media_type" in update_query
+    assert "is_test" not in update_query
+    assert "test_session_id" not in update_query
 
 
 async def test_delete_home_player_course_link_filters_by_canonical_course_owner(
@@ -221,3 +232,59 @@ async def test_delete_home_player_course_link_filters_by_canonical_course_owner(
     assert params == ("link-1", "teacher-1")
     assert "c.teacher_id = %s::uuid" in query
     assert "AND teacher_id = %s::uuid" not in query
+    assert "ma.purpose = 'lesson_media'::app.media_purpose" in query
+    assert "ma.media_type = 'audio'::app.media_type" in query
+    assert "is_test" not in query
+    assert "test_session_id" not in query
+
+
+async def test_home_player_mutation_repo_uses_only_baseline_v2_columns(
+    monkeypatch,
+):
+    cursor = _FakeCursor({"id": "upload-1"})
+    _install_fake_conn(monkeypatch, cursor)
+
+    await repo.create_home_player_upload(
+        teacher_id="teacher-1",
+        media_asset_id="media-1",
+        title="Upload",
+        active=True,
+    )
+
+    query, params = cursor.executed[0]
+    assert params == ("teacher-1", "media-1", "Upload", True)
+    assert "INSERT INTO app.home_player_uploads" in query
+    insert_columns = query.split(")", 1)[0]
+    assert "teacher_id" in insert_columns
+    assert "media_asset_id" in insert_columns
+    assert "title" in insert_columns
+    assert "active" in insert_columns
+    for forbidden in (
+        "media_id",
+        "owner_id",
+        "original_content_type",
+        "original_filename",
+        "original_size_bytes",
+        "storage",
+        "kind",
+        "course_title_snapshot",
+        "is_test",
+        "test_session_id",
+    ):
+        assert forbidden not in query
+
+
+async def test_home_player_update_rejects_non_baseline_internal_fields():
+    with pytest.raises(ValueError):
+        await repo.update_home_player_upload(
+            upload_id="upload-1",
+            teacher_id="teacher-1",
+            fields={"media_id": "legacy"},
+        )
+
+    with pytest.raises(ValueError):
+        await repo.update_home_player_course_link(
+            link_id="link-1",
+            teacher_id="teacher-1",
+            fields={"course_title_snapshot": "legacy"},
+        )

@@ -481,34 +481,26 @@ async def list_popular_courses(limit: int = 6) -> Iterable[dict]:
     return await courses_service.list_public_courses(limit=limit)
 
 
-async def list_teachers(limit: int = 20) -> Iterable[dict]:
-    teacher_role_sql = _effective_role_sql("subj")
+async def list_teacher_profiles(limit: int = 20) -> Iterable[dict]:
     async with get_conn() as cur:
         await cur.execute(
-            f"""
+            """
             SELECT
               prof.user_id,
               prof.display_name,
-              {_profile_photo_url_sql("prof")} AS photo_url,
-              prof.bio
-            FROM app.profiles prof
-            LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
-            WHERE ({teacher_role_sql}) = 'teacher'
-              AND lower(subj.email) = lower(%s)
-            ORDER BY prof.display_name NULLS LAST
+              prof.bio,
+              prof.avatar_media_id,
+              prof.created_at,
+              prof.updated_at
+            FROM app.auth_subjects subj
+            JOIN app.profiles prof ON prof.user_id = subj.user_id
+            WHERE subj.role::text = 'teacher'
+            ORDER BY lower(prof.display_name) NULLS LAST, prof.user_id
             LIMIT %s
             """,
-            ("avelibooks@gmail.com", limit),
+            (limit,),
         )
-        rows = await cur.fetchall()
-
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        item = dict(row)
-        item["photo_url"] = _choose_public_profile_photo_url(item.get("photo_url"))
-        items.append(item)
-    return items
-
+        return await cur.fetchall()
 
 def _normalize_public_profile_photo_url(url: str | None) -> str | None:
     if not url:
@@ -1362,11 +1354,10 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
                 FROM app.profiles prof
                 LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
                 WHERE prof.user_id = %s
-                  AND ({_effective_role_sql("subj")}) = 'teacher'
-                  AND lower(subj.email) = lower(%s)
+                  AND subj.role::text = 'teacher'
                 LIMIT 1
                 """,
-                (user_id, "avelibooks@gmail.com"),
+                (user_id,),
             )
             fallback_profile = await _fetchone(cur)
         else:

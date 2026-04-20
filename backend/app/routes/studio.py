@@ -24,6 +24,7 @@ from ..permissions import TeacherEntryUser
 from ..repositories import courses as courses_repo
 from ..repositories import home_audio_sources as home_audio_sources_repo
 from ..repositories import media_assets as media_assets_repo
+from ..repositories import studio_home_player_library as studio_home_player_library_repo
 from ..repositories import storage_objects
 from ..repositories import teacher_profile_media as profile_media_repo
 from ..services import (
@@ -1558,6 +1559,30 @@ async def studio_delete_profile_media(item_id: UUID, current: TeacherEntryUser):
     return Response(status_code=204)
 
 
+@router.get(
+    "/home-player/library",
+    response_model=schemas.HomePlayerLibraryResponse,
+)
+async def studio_home_player_library(current: TeacherEntryUser):
+    payload = await studio_home_player_library_repo.get_home_player_library(
+        teacher_id=str(current["id"]),
+    )
+    return schemas.HomePlayerLibraryResponse(
+        uploads=[
+            schemas.HomePlayerLibraryUploadItem(**item)
+            for item in payload["uploads"]
+        ],
+        course_links=[
+            schemas.HomePlayerLibraryCourseLinkItem(**item)
+            for item in payload["course_links"]
+        ],
+        course_media=[
+            schemas.HomePlayerLibraryCourseMediaItem(**item)
+            for item in payload["course_media"]
+        ],
+    )
+
+
 @router.post(
     "/home-player/uploads",
     response_model=schemas.HomePlayerUploadItem,
@@ -1576,8 +1601,6 @@ async def studio_create_home_player_upload(
     )
     if not media_asset:
         raise HTTPException(status_code=404, detail="Media not found")
-    if str(media_asset.get("owner_id") or "") != teacher_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     if str(media_asset.get("purpose") or "").strip().lower() != "home_player_audio":
         raise HTTPException(status_code=422, detail="Invalid media purpose")
     if str(media_asset.get("media_type") or "").strip().lower() != "audio":
@@ -1664,13 +1687,13 @@ async def studio_create_home_player_course_link(
         raise HTTPException(status_code=403, detail="Not course owner")
     if str(resolved.get("media_type") or "").strip().lower() != "audio":
         raise HTTPException(status_code=422, detail="Only audio can be linked")
+    if str(resolved.get("media_purpose") or "").strip().lower() != "lesson_media":
+        raise HTTPException(status_code=422, detail="Invalid media purpose")
 
-    course_title_snapshot = str(resolved.get("course_title") or "").strip()
     row = await home_audio_sources_repo.upsert_home_player_course_link(
         teacher_id=teacher_id,
         lesson_media_id=str(payload.lesson_media_id),
         title=title,
-        course_title_snapshot=course_title_snapshot,
         enabled=bool(payload.enabled),
     )
     if not row:

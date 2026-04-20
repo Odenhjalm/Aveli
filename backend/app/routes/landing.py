@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from .. import models, schemas
 from ..services import courses_service
+from ..utils.profile_media import profile_projection_with_avatar
 
 router = APIRouter(prefix="/landing", tags=["landing"])
 
@@ -54,10 +55,19 @@ async def popular_courses():
     response_model=schemas.LandingTeacherSectionResponse,
 )
 async def teachers():
-    rows = await models.list_teachers()
-    return schemas.LandingTeacherSectionResponse(
-        items=[schemas.LandingTeacherCard(**row) for row in rows]
-    )
+    rows = await models.list_teacher_profiles()
+    items: list[schemas.LandingTeacherCard] = []
+    for row in rows:
+        profile = await profile_projection_with_avatar(dict(row))
+        items.append(
+            schemas.LandingTeacherCard(
+                id=str(profile["user_id"]),
+                display_name=profile["display_name"],
+                avatar_url=profile.get("photo_url"),
+                bio=profile.get("bio"),
+            )
+        )
+    return schemas.LandingTeacherSectionResponse(items=items)
 
 
 @router.get(

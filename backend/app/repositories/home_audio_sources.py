@@ -5,23 +5,27 @@ from typing import Any, Optional
 from ..db import get_conn
 
 
-def _test_visibility_clause(alias: str) -> str:
-    return f"app.is_test_row_visible({alias}.is_test, {alias}.test_session_id)"
+_HOME_PLAYER_UPLOAD_UPDATE_FIELDS = frozenset({"title", "active"})
+_HOME_PLAYER_COURSE_LINK_UPDATE_FIELDS = frozenset({"title", "enabled"})
+
+
+def _validate_update_fields(
+    fields: dict[str, Any],
+    *,
+    allowed: frozenset[str],
+) -> None:
+    invalid = sorted(set(fields) - allowed)
+    if invalid:
+        raise ValueError(f"invalid home player update field: {', '.join(invalid)}")
 
 
 async def get_home_audio_media_asset(media_asset_id: str) -> Optional[dict[str, Any]]:
     query = """
         SELECT
           ma.id,
-          ma.owner_id,
-          ma.course_id,
-          ma.lesson_id,
           ma.media_type::text AS media_type,
           ma.purpose::text AS purpose,
-          ma.state::text AS state,
-          ma.original_content_type,
-          ma.original_filename,
-          ma.original_size_bytes
+          ma.state::text AS state
         FROM app.media_assets ma
         WHERE ma.id = %s::uuid
         LIMIT 1
@@ -43,13 +47,10 @@ async def get_home_player_upload(
           hpu.teacher_id,
           hpu.media_asset_id,
           hpu.title,
-          hpu.kind,
+          'audio' AS kind,
           hpu.active,
           hpu.created_at,
           hpu.updated_at,
-          ma.original_content_type AS content_type,
-          ma.original_size_bytes AS byte_size,
-          ma.original_filename AS original_name,
           ma.state::text AS media_state
         FROM app.home_player_uploads hpu
         JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
@@ -76,13 +77,10 @@ async def get_home_player_upload_by_media_asset_id(
           hpu.teacher_id,
           hpu.media_asset_id,
           hpu.title,
-          hpu.kind,
+          'audio' AS kind,
           hpu.active,
           hpu.created_at,
           hpu.updated_at,
-          ma.original_content_type AS content_type,
-          ma.original_size_bytes AS byte_size,
-          ma.original_filename AS original_name,
           ma.state::text AS media_state
         FROM app.home_player_uploads hpu
         JOIN app.media_assets ma ON ma.id = hpu.media_asset_id
@@ -136,13 +134,11 @@ async def create_home_player_upload(
     query = """
         INSERT INTO app.home_player_uploads (
           teacher_id,
-          media_id,
           media_asset_id,
           title,
-          kind,
           active
         )
-        VALUES (%s::uuid, NULL, %s::uuid, %s, 'audio', %s)
+        VALUES (%s::uuid, %s::uuid, %s, %s)
         RETURNING id
     """
     async with get_conn() as cur:
@@ -167,6 +163,7 @@ async def update_home_player_upload(
 ) -> Optional[dict[str, Any]]:
     if not fields:
         return await get_home_player_upload(upload_id=upload_id, teacher_id=teacher_id)
+    _validate_update_fields(fields, allowed=_HOME_PLAYER_UPLOAD_UPDATE_FIELDS)
 
     params: dict[str, Any] = {"upload_id": upload_id, "teacher_id": teacher_id}
     assignments: list[str] = []
@@ -215,7 +212,7 @@ async def get_home_player_course_link(
     link_id: str,
     teacher_id: str,
 ) -> Optional[dict[str, Any]]:
-    query = f"""
+    query = """
         SELECT
           hpcl.id,
           c.teacher_id AS teacher_id,
@@ -244,13 +241,7 @@ async def get_home_player_course_link(
             JOIN app.courses c_owner ON c_owner.id = l_owner.course_id
             WHERE lm_owner.id = hpcl.lesson_media_id
               AND c_owner.teacher_id = %s::uuid
-              AND {_test_visibility_clause("lm_owner")}
-              AND {_test_visibility_clause("l_owner")}
-              AND {_test_visibility_clause("c_owner")}
           )
-          AND {_test_visibility_clause("lm")}
-          AND {_test_visibility_clause("l")}
-          AND {_test_visibility_clause("c")}
         LIMIT 1
     """
     async with get_conn() as cur:
@@ -260,20 +251,18 @@ async def get_home_player_course_link(
 
 
 async def resolve_lesson_media_course_owner(lesson_media_id: str) -> Optional[dict[str, Any]]:
-    query = f"""
+    query = """
         SELECT
           c.teacher_id AS teacher_id,
           c.title AS course_title,
           (c.visibility = 'public'::app.course_visibility) AS course_is_published,
-          ma.media_type::text AS media_type
+          ma.media_type::text AS media_type,
+          ma.purpose::text AS media_purpose
         FROM app.lesson_media lm
         JOIN app.lessons l ON l.id = lm.lesson_id
         JOIN app.courses c ON c.id = l.course_id
         JOIN app.media_assets ma ON ma.id = lm.media_asset_id
         WHERE lm.id = %s::uuid
-          AND {_test_visibility_clause("lm")}
-          AND {_test_visibility_clause("l")}
-          AND {_test_visibility_clause("c")}
         LIMIT 1
     """
     async with get_conn() as cur:
@@ -287,11 +276,9 @@ async def upsert_home_player_course_link(
     teacher_id: str,
     lesson_media_id: str,
     title: str,
-    course_title_snapshot: str,
     enabled: bool,
 ) -> Optional[dict[str, Any]]:
-    del course_title_snapshot
-    query = f"""
+    query = """
         INSERT INTO app.home_player_course_links (
           lesson_media_id,
           title,
@@ -304,11 +291,11 @@ async def upsert_home_player_course_link(
         FROM app.lesson_media lm
         JOIN app.lessons l ON l.id = lm.lesson_id
         JOIN app.courses c ON c.id = l.course_id
+        JOIN app.media_assets ma ON ma.id = lm.media_asset_id
         WHERE lm.id = %s::uuid
           AND c.teacher_id = %s::uuid
-          AND {_test_visibility_clause("lm")}
-          AND {_test_visibility_clause("l")}
-          AND {_test_visibility_clause("c")}
+          AND ma.purpose = 'lesson_media'::app.media_purpose
+          AND ma.media_type = 'audio'::app.media_type
         ON CONFLICT (lesson_media_id) DO UPDATE
           SET title = EXCLUDED.title,
               enabled = EXCLUDED.enabled,
@@ -318,11 +305,11 @@ async def upsert_home_player_course_link(
           FROM app.lesson_media lm_owner
           JOIN app.lessons l_owner ON l_owner.id = lm_owner.lesson_id
           JOIN app.courses c_owner ON c_owner.id = l_owner.course_id
+          JOIN app.media_assets ma_owner ON ma_owner.id = lm_owner.media_asset_id
           WHERE lm_owner.id = app.home_player_course_links.lesson_media_id
             AND c_owner.teacher_id = %s::uuid
-            AND {_test_visibility_clause("lm_owner")}
-            AND {_test_visibility_clause("l_owner")}
-            AND {_test_visibility_clause("c_owner")}
+            AND ma_owner.purpose = 'lesson_media'::app.media_purpose
+            AND ma_owner.media_type = 'audio'::app.media_type
         )
         RETURNING id
     """
@@ -348,6 +335,7 @@ async def update_home_player_course_link(
 ) -> Optional[dict[str, Any]]:
     if not fields:
         return await get_home_player_course_link(link_id=link_id, teacher_id=teacher_id)
+    _validate_update_fields(fields, allowed=_HOME_PLAYER_COURSE_LINK_UPDATE_FIELDS)
 
     params: dict[str, Any] = {"link_id": link_id, "teacher_id": teacher_id}
     assignments: list[str] = []
@@ -365,11 +353,11 @@ async def update_home_player_course_link(
              FROM app.lesson_media lm
              JOIN app.lessons l ON l.id = lm.lesson_id
              JOIN app.courses c ON c.id = l.course_id
+             JOIN app.media_assets ma ON ma.id = lm.media_asset_id
              WHERE lm.id = hpcl.lesson_media_id
                AND c.teacher_id = %(teacher_id)s::uuid
-               AND {_test_visibility_clause("lm")}
-               AND {_test_visibility_clause("l")}
-               AND {_test_visibility_clause("c")}
+               AND ma.purpose = 'lesson_media'::app.media_purpose
+               AND ma.media_type = 'audio'::app.media_type
            )
         RETURNING hpcl.id
     """
@@ -386,7 +374,7 @@ async def delete_home_player_course_link(
     link_id: str,
     teacher_id: str,
 ) -> bool:
-    query = f"""
+    query = """
         DELETE FROM app.home_player_course_links AS hpcl
         WHERE hpcl.id = %s::uuid
           AND EXISTS (
@@ -394,11 +382,11 @@ async def delete_home_player_course_link(
             FROM app.lesson_media lm
             JOIN app.lessons l ON l.id = lm.lesson_id
             JOIN app.courses c ON c.id = l.course_id
+            JOIN app.media_assets ma ON ma.id = lm.media_asset_id
             WHERE lm.id = hpcl.lesson_media_id
               AND c.teacher_id = %s::uuid
-              AND {_test_visibility_clause("lm")}
-              AND {_test_visibility_clause("l")}
-              AND {_test_visibility_clause("c")}
+              AND ma.purpose = 'lesson_media'::app.media_purpose
+              AND ma.media_type = 'audio'::app.media_type
           )
         RETURNING hpcl.id
     """

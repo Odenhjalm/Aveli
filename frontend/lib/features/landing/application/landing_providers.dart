@@ -60,25 +60,25 @@ Object? _field(Object? payload, String fieldName) {
 @immutable
 class LandingTeacher {
   const LandingTeacher({
-    required this.userId,
+    required this.id,
     required this.displayName,
-    required this.photoUrl,
+    required this.avatarUrl,
     required this.bio,
   });
 
-  final String userId;
+  final String id;
   final String displayName;
-  final String? photoUrl;
+  final String? avatarUrl;
   final String? bio;
 
   factory LandingTeacher.fromResponse(Object? payload) {
     return LandingTeacher(
-      userId: _requireString(_field(payload, 'user_id'), 'user_id'),
+      id: _requireString(_field(payload, 'id'), 'id'),
       displayName: _requireString(
         _field(payload, 'display_name'),
         'display_name',
       ),
-      photoUrl: _optionalString(_field(payload, 'photo_url'), 'photo_url'),
+      avatarUrl: _optionalString(_field(payload, 'avatar_url'), 'avatar_url'),
       bio: _optionalString(_field(payload, 'bio'), 'bio'),
     );
   }

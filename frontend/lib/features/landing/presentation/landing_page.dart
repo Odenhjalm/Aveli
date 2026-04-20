@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
@@ -224,7 +223,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
     final theme = Theme.of(context);
     final t = theme.textTheme;
     final isLightMode = theme.brightness == Brightness.light;
-    final config = ref.watch(appConfigProvider);
     final envInfo = ref.watch(envInfoProvider);
     final authState = ref.watch(authControllerProvider);
     final hasEnvIssues = envInfo.hasIssues;
@@ -450,7 +448,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
                                     if (index > 0) const SizedBox(width: 12),
                                     _TeacherCardData(
                                       teacher: _teacherItems[index],
-                                      apiBaseUrl: config.apiBaseUrl,
                                     ),
                                   ],
                                 ],
@@ -814,15 +811,13 @@ class _TeacherCardSkeleton extends StatelessWidget {
 
 class _TeacherCardData extends StatelessWidget {
   final LandingTeacher teacher;
-  final String apiBaseUrl;
-  const _TeacherCardData({required this.teacher, required this.apiBaseUrl});
+  const _TeacherCardData({required this.teacher});
   @override
   Widget build(BuildContext context) {
-    final userId = teacher.userId;
+    final userId = teacher.id;
     final name = teacher.displayName;
-    final avatar = teacher.photoUrl;
+    final avatar = teacher.avatarUrl;
     final bio = teacher.bio ?? '';
-    final resolvedAvatar = _resolveUrl(avatar);
     return SizedBox(
       width: _teacherCardWidth,
       child: Material(
@@ -853,7 +848,7 @@ class _TeacherCardData extends StatelessWidget {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        AppAvatar(url: resolvedAvatar, size: 56),
+                        AppAvatar(url: avatar, size: 56),
                         const SizedBox(width: 12),
                         Flexible(
                           child: TeacherNameText(
@@ -890,13 +885,6 @@ class _TeacherCardData extends StatelessWidget {
     );
   }
 
-  String? _resolveUrl(String? path) {
-    if (path == null || path.isEmpty) return null;
-    final uri = Uri.parse(path);
-    if (uri.hasScheme) return uri.toString();
-    final base = Uri.parse(apiBaseUrl);
-    return base.resolve(path.startsWith('/') ? path : '/$path').toString();
-  }
 }
 
 class _ServiceTileGlass extends StatelessWidget {

@@ -71,20 +71,15 @@ async def cleanup_user(user_id: str):
 def _canonical_asset(
     *,
     media_asset_id: str,
-    owner_id: str,
     media_type: str = "audio",
     purpose: str = "home_player_audio",
     state: str = "uploaded",
 ) -> dict:
     return {
         "id": media_asset_id,
-        "owner_id": owner_id,
         "media_type": media_type,
         "purpose": purpose,
         "state": state,
-        "original_content_type": "audio/wav" if media_type == "audio" else "video/mp4",
-        "original_filename": "home.wav" if media_type == "audio" else "home.mp4",
-        "original_size_bytes": 1024,
     }
 
 
@@ -98,7 +93,7 @@ async def test_home_player_upload_create_uses_media_asset_identity_only(
 
         async def fake_get_media_asset(candidate_media_asset_id: str):
             assert candidate_media_asset_id == media_asset_id
-            return _canonical_asset(media_asset_id=media_asset_id, owner_id=user_id)
+            return _canonical_asset(media_asset_id=media_asset_id)
 
         async def fake_create_upload(*, teacher_id: str, media_asset_id: str, title: str, active: bool):
             return {
@@ -110,9 +105,6 @@ async def test_home_player_upload_create_uses_media_asset_identity_only(
                 "active": active,
                 "created_at": _source_timestamp(minutes_ago=2),
                 "updated_at": _source_timestamp(minutes_ago=2),
-                "content_type": "audio/wav",
-                "byte_size": 1024,
-                "original_name": "home.wav",
                 "media_state": "uploaded",
             }
 
@@ -145,14 +137,18 @@ async def test_home_player_upload_create_uses_media_asset_identity_only(
         assert created["title"] == "Demo audio"
         assert created["kind"] == "audio"
         assert created["active"] is True
-        assert created["content_type"] == "audio/wav"
-        assert created["byte_size"] == 1024
-        assert created["original_name"] == "home.wav"
         assert created["media_state"] == "uploaded"
         for removed_field in (
             "media_id",
+            "owner_id",
             "storage_bucket",
             "storage_path",
+            "content_type",
+            "byte_size",
+            "original_name",
+            "original_content_type",
+            "original_filename",
+            "original_size_bytes",
             "signed_url",
             "download_url",
             "upload_url",
@@ -179,16 +175,13 @@ async def test_home_player_upload_update_and_delete_use_canonical_source_rows(
             "active": True,
             "created_at": _source_timestamp(minutes_ago=3),
             "updated_at": _source_timestamp(minutes_ago=3),
-            "content_type": "audio/wav",
-            "byte_size": 1024,
-            "original_name": "home.wav",
             "media_state": "uploaded",
         }
         lifecycle_requests: list[dict[str, object]] = []
 
         async def fake_get_media_asset(candidate_media_asset_id: str):
             assert candidate_media_asset_id == media_asset_id
-            return _canonical_asset(media_asset_id=media_asset_id, owner_id=user_id)
+            return _canonical_asset(media_asset_id=media_asset_id)
 
         async def fake_create_upload(*, teacher_id: str, media_asset_id: str, title: str, active: bool):
             stored.update(
@@ -327,13 +320,11 @@ async def test_home_player_upload_rejects_non_home_audio_assets(
             if candidate_media_asset_id == wrong_purpose_asset_id:
                 return _canonical_asset(
                     media_asset_id=wrong_purpose_asset_id,
-                    owner_id=user_id,
                     purpose="lesson_audio",
                 )
             if candidate_media_asset_id == wrong_type_asset_id:
                 return _canonical_asset(
                     media_asset_id=wrong_type_asset_id,
-                    owner_id=user_id,
                     media_type="video",
                 )
             raise AssertionError(candidate_media_asset_id)
@@ -368,5 +359,41 @@ async def test_home_player_upload_rejects_non_home_audio_assets(
         )
         assert type_resp.status_code == 422, type_resp.text
         assert type_resp.json()["detail"] == "Invalid media type"
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_home_player_upload_create_rejects_non_baseline_request_fields(
+    async_client,
+    monkeypatch,
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        media_asset_id = str(uuid.uuid4())
+
+        async def fail_get_media_asset(candidate_media_asset_id: str):
+            raise AssertionError(candidate_media_asset_id)
+
+        monkeypatch.setattr(
+            studio_routes.home_audio_sources_repo,
+            "get_home_audio_media_asset",
+            fail_get_media_asset,
+            raising=True,
+        )
+
+        response = await async_client.post(
+            "/studio/home-player/uploads",
+            headers=headers,
+            json={
+                "title": "Demo audio",
+                "active": True,
+                "media_asset_id": media_asset_id,
+                "media_id": str(uuid.uuid4()),
+                "kind": "audio",
+                "original_filename": "demo.wav",
+            },
+        )
+
+        assert response.status_code == 422, response.text
     finally:
         await cleanup_user(user_id)
