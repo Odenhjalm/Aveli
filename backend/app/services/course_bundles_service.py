@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import stripe
+from psycopg import Error as PsycopgError
+from psycopg import errors as psycopg_errors
 from starlette.concurrency import run_in_threadpool
 
 from typing import Any, Mapping, Sequence
+from uuid import UUID
 
 from .. import repositories
 from .. import stripe_mode
@@ -40,6 +43,28 @@ class CourseBundleConfigError(CourseBundleError):
         super().__init__(detail, status_code=503)
 
 
+def map_bundle_database_error(exc: PsycopgError) -> CourseBundleError:
+    if isinstance(exc, (psycopg_errors.UndefinedColumn, psycopg_errors.UndefinedTable)):
+        return CourseBundleError(
+            "Paketfunktionen är inte tillgänglig just nu",
+            status_code=503,
+        )
+    if isinstance(
+        exc,
+        (
+            psycopg_errors.CheckViolation,
+            psycopg_errors.ForeignKeyViolation,
+            psycopg_errors.NotNullViolation,
+            psycopg_errors.UniqueViolation,
+        ),
+    ):
+        return CourseBundleError(
+            "Paketet kunde inte sparas med angivna uppgifter",
+            status_code=400,
+        )
+    return CourseBundleError("Paketet kunde inte hanteras just nu", status_code=503)
+
+
 def _is_bundle_sellable_subject(
     bundle: Mapping[str, Any],
     *,
@@ -67,22 +92,20 @@ async def create_bundle(
     validated_course_ids = await _validate_bundle_course_candidates(
         payload.course_ids,
         teacher_id=teacher_id,
+        minimum_count=2,
     )
     bundle = await bundle_repo.create_bundle(
         teacher_id=teacher_id,
         title=payload.title,
-        description=payload.description,
         price_amount_cents=price_amount_cents,
     )
     try:
         await ensure_bundle_stripe_mapping(str(bundle["id"]), teacher_id)
+        await bundle_repo.replace_bundle_courses(str(bundle["id"]), validated_course_ids)
+        await refresh_bundle_sellability(str(bundle["id"]))
     except Exception:
         await bundle_repo.delete_bundle(str(bundle["id"]))
         raise
-    if validated_course_ids:
-        for idx, course_id in enumerate(validated_course_ids):
-            await bundle_repo.add_course_to_bundle(bundle["id"], course_id, position=idx)
-    await refresh_bundle_sellability(str(bundle["id"]))
     detailed = await get_bundle(bundle["id"], include_inactive=True)
     if not detailed:
         raise CourseBundleError("Paketet kunde inte skapas", status_code=500)
@@ -105,12 +128,15 @@ async def attach_course(
     validated_course_ids = await _validate_bundle_course_candidates(
         [course_id],
         teacher_id=teacher_id,
+        minimum_count=1,
     )
-    await bundle_repo.add_course_to_bundle(
-        bundle_id,
+    current_courses = await bundle_repo.list_bundle_courses_composition(bundle_id)
+    next_course_ids = _bundle_course_ids_after_attach(
+        current_courses,
         validated_course_ids[0],
         position=position,
     )
+    await bundle_repo.replace_bundle_courses(bundle_id, next_course_ids)
     await refresh_bundle_sellability(bundle_id)
     detailed = await get_bundle(bundle_id, include_inactive=True)
     if not detailed:
@@ -142,7 +168,7 @@ async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> Cours
             course_id=row["course_id"],
             slug=row.get("slug"),
             title=row.get("title"),
-            position=row.get("position") or 0,
+            position=int(row["position"]),
             price_amount_cents=row.get("price_amount_cents"),
         )
         for row in courses
@@ -151,7 +177,6 @@ async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> Cours
         id=bundle["id"],
         teacher_id=bundle["teacher_id"],
         title=bundle["title"],
-        description=bundle.get("description"),
         price_amount_cents=bundle["price_amount_cents"],
         courses=course_models,
     )
@@ -256,11 +281,33 @@ async def _validate_bundle_course_candidates(
     course_ids: Sequence[str],
     *,
     teacher_id: str,
+    minimum_count: int,
 ) -> list[str]:
-    normalized_course_ids = [str(course_id or "").strip() for course_id in course_ids]
-    exact_course_ids = [course_id for course_id in normalized_course_ids if course_id]
-    if not exact_course_ids:
-        return []
+    exact_course_ids: list[str] = []
+    for course_id in course_ids:
+        raw_course_id = str(course_id or "").strip()
+        if not raw_course_id:
+            continue
+        try:
+            exact_course_ids.append(str(UUID(raw_course_id)))
+        except ValueError as exc:
+            raise CourseBundleError("Kurs-id är ogiltigt", status_code=400) from exc
+
+    if len(exact_course_ids) != len(set(exact_course_ids)):
+        raise CourseBundleError(
+            "Paketet kan inte innehålla samma kurs flera gånger",
+            status_code=400,
+        )
+    if len(exact_course_ids) < minimum_count:
+        detail = (
+            "Paketet måste innehålla minst två kurser"
+            if minimum_count > 1
+            else "Kurs-id krävs"
+        )
+        raise CourseBundleError(
+            detail,
+            status_code=400,
+        )
 
     ownership_rows = await courses_repo.list_course_ownership_rows(exact_course_ids)
     ownership_by_course_id = {
@@ -283,6 +330,28 @@ async def _validate_bundle_course_candidates(
         validated_course_ids.append(course_id)
 
     return validated_course_ids
+
+
+def _bundle_course_ids_after_attach(
+    current_courses: Sequence[Mapping[str, Any]],
+    course_id: str,
+    *,
+    position: int | None,
+) -> list[str]:
+    current_course_ids = [str(row["course_id"]) for row in current_courses]
+    if course_id in current_course_ids:
+        raise CourseBundleError("Kursen finns redan i paketet", status_code=400)
+
+    target_position = int(position) if position is not None else len(current_course_ids) + 1
+    if target_position < 1 or target_position > len(current_course_ids) + 1:
+        raise CourseBundleError("Kursens position är ogiltig", status_code=400)
+
+    insert_at = target_position - 1
+    return [
+        *current_course_ids[:insert_at],
+        course_id,
+        *current_course_ids[insert_at:],
+    ]
 
 
 def _validate_bundle_price_amount(price_amount_cents: int) -> int:
@@ -493,4 +562,5 @@ __all__ = [
     "grant_bundle_entitlements",
     "CourseBundleError",
     "CourseBundleConfigError",
+    "map_bundle_database_error",
 ]

@@ -71,6 +71,7 @@ async def _cleanup_bundle(bundle_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             try:
+                await cur.execute("DELETE FROM app.orders WHERE bundle_id = %s", (bundle_id,))
                 await cur.execute(
                     "DELETE FROM app.course_bundle_courses WHERE bundle_id = %s",
                     (bundle_id,),
@@ -173,8 +174,10 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
 
     slug_one = f"bundle-course-{uuid.uuid4().hex[:6]}"
     slug_two = f"bundle-course-{uuid.uuid4().hex[6:12]}"
+    slug_three = f"bundle-course-{uuid.uuid4().hex[12:18]}"
     course_one = None
     course_two = None
+    course_three = None
     bundle_id = None
 
     captured_session: dict[str, object] = {}
@@ -206,15 +209,15 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
     try:
         course_one = await _create_course(async_client, teacher_token, slug_one, 1500)
         course_two = await _create_course(async_client, teacher_token, slug_two, 1200)
+        course_three = await _create_course(async_client, teacher_token, slug_three, 900)
 
         create_resp = await async_client.post(
             "/api/teachers/course-bundles",
             headers=_auth(teacher_token),
             json={
                 "title": "Paket A",
-                "description": "Bundle Description",
                 "price_amount_cents": 2490,
-                "course_ids": [course_one],
+                "course_ids": [course_one, course_two],
             },
         )
         assert create_resp.status_code == 201, create_resp.text
@@ -222,15 +225,33 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         bundle_id = bundle["id"]
         assert bundle["title"] == "Paket A"
         assert bundle["price_amount_cents"] == 2490
-        assert len(bundle["courses"]) == 1
+        assert set(bundle) == {"id", "teacher_id", "title", "price_amount_cents", "courses"}
+        assert [item["position"] for item in bundle["courses"]] == [1, 2]
+
+        list_resp = await async_client.get(
+            "/api/teachers/course-bundles",
+            headers=_auth(teacher_token),
+        )
+        assert list_resp.status_code == 200, list_resp.text
+        listed_bundle = next(
+            item for item in list_resp.json()["items"] if item["id"] == bundle_id
+        )
+        assert set(listed_bundle) == {"id", "teacher_id", "title", "price_amount_cents", "courses"}
+        assert [item["position"] for item in listed_bundle["courses"]] == [1, 2]
 
         attach_resp = await async_client.post(
             f"/api/teachers/course-bundles/{bundle_id}/courses",
             headers=_auth(teacher_token),
-            json={"course_id": course_two, "position": 1},
+            json={"course_id": course_three, "position": 2},
         )
         assert attach_resp.status_code == 200, attach_resp.text
-        assert len(attach_resp.json()["courses"]) == 2
+        attached_courses = attach_resp.json()["courses"]
+        assert [item["course_id"] for item in attached_courses] == [
+            course_one,
+            course_three,
+            course_two,
+        ]
+        assert [item["position"] for item in attached_courses] == [1, 2, 3]
 
         checkout_resp = await async_client.post(
             f"/api/course-bundles/{bundle_id}/checkout-session",
@@ -294,10 +315,16 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
             str(student_id),
             course_two,
         )
+        enrollment_three = await courses_repo.get_course_enrollment(
+            str(student_id),
+            course_three,
+        )
         assert enrollment_one is not None
         assert enrollment_two is not None
+        assert enrollment_three is not None
         assert enrollment_one["source"] == "purchase"
         assert enrollment_two["source"] == "purchase"
+        assert enrollment_three["source"] == "purchase"
     finally:
         if bundle_id:
             await _cleanup_bundle(bundle_id)
@@ -305,5 +332,7 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
             await _cleanup_course(course_one)
         if course_two:
             await _cleanup_course(course_two)
+        if course_three:
+            await _cleanup_course(course_three)
         await _cleanup_user(str(teacher_id))
         await _cleanup_user(str(student_id))

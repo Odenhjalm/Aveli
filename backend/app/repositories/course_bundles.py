@@ -15,23 +15,20 @@ async def create_bundle(
     *,
     teacher_id: str,
     title: str,
-    description: str | None,
     price_amount_cents: int,
 ) -> BundleRow:
     query = """
         INSERT INTO app.course_bundles (
             teacher_id,
             title,
-            description,
             price_amount_cents,
             created_at,
             updated_at
         )
-        VALUES (%s, %s, %s, %s, now(), now())
+        VALUES (%s, %s, %s, now(), now())
         RETURNING id,
                   teacher_id,
                   title,
-                  description,
                   price_amount_cents,
                   sellable,
                   created_at,
@@ -44,7 +41,6 @@ async def create_bundle(
                 (
                     teacher_id,
                     title,
-                    description,
                     price_amount_cents,
                 ),
             )
@@ -53,18 +49,29 @@ async def create_bundle(
             return dict(row or {})
 
 
-async def add_course_to_bundle(bundle_id: str, course_id: str, *, position: int | None = None) -> None:
-    position_value = position if position is not None else 0
-    query = """
+async def replace_bundle_courses(bundle_id: str, course_ids: Sequence[str]) -> None:
+    rows = [
+        (bundle_id, course_id, position)
+        for position, course_id in enumerate(course_ids, start=1)
+    ]
+    delete_query = """
+        DELETE FROM app.course_bundle_courses
+         WHERE bundle_id = %s
+    """
+    insert_query = """
         INSERT INTO app.course_bundle_courses (bundle_id, course_id, position)
         VALUES (%s, %s, %s)
-        ON CONFLICT (bundle_id, course_id) DO UPDATE
-           SET position = EXCLUDED.position
     """
     async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, (bundle_id, course_id, position_value))
-            await conn.commit()
+        try:
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(delete_query, (bundle_id,))
+                if rows:
+                    await cur.executemany(insert_query, rows)
+                await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
 
 
 async def get_bundle_composition(
@@ -81,7 +88,6 @@ async def get_bundle_composition(
         SELECT id,
                teacher_id,
                title,
-               description,
                price_amount_cents,
                sellable,
                created_at,
@@ -101,7 +107,6 @@ async def get_bundle_mapping_subject(bundle_id: str) -> BundleRow | None:
         SELECT id,
                teacher_id,
                title,
-               description,
                price_amount_cents,
                sellable,
                stripe_product_id,
@@ -132,7 +137,6 @@ async def list_bundle_compositions(
         SELECT id,
                teacher_id,
                title,
-               description,
                price_amount_cents,
                sellable,
                created_at,
@@ -280,7 +284,7 @@ __all__ = [
     "delete_bundle",
     "get_bundle_composition",
     "get_bundle_mapping_subject",
-    "add_course_to_bundle",
+    "replace_bundle_courses",
     "list_bundle_compositions",
     "list_bundle_courses_composition",
     "list_bundle_checkout_courses",

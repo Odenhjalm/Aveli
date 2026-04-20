@@ -42,8 +42,8 @@ def test_baseline_v2_lock_is_complete_ordered_and_lf_hashed() -> None:
     assert "app_tables" not in lock["schema_verification"]["expected_counts"]
 
     slots = lock["slots"]
-    assert len(slots) == 16
-    assert [entry["slot"] for entry in slots] == list(range(1, 17))
+    assert len(slots) == 17
+    assert [entry["slot"] for entry in slots] == list(range(1, 18))
 
     locked_filenames = [entry["filename"] for entry in slots]
     actual_filenames = [

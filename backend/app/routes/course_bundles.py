@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
+from psycopg import Error as PsycopgError
 
 from ..auth import CurrentUser
 from ..permissions import TeacherEntryUser
@@ -16,12 +17,20 @@ from ..services import course_bundles_service
 router = APIRouter(tags=["course-bundles"])
 
 
+def _raise_bundle_database_error(exc: PsycopgError) -> None:
+    mapped = course_bundles_service.map_bundle_database_error(exc)
+    raise HTTPException(status_code=mapped.status_code, detail=mapped.detail) from exc
+
+
 @router.get(
     "/api/course-bundles/{bundle_id}",
     response_model=CourseBundleResponse,
 )
 async def get_bundle(bundle_id: str) -> CourseBundleResponse:
-    bundle = await course_bundles_service.get_bundle(bundle_id)
+    try:
+        bundle = await course_bundles_service.get_bundle(bundle_id)
+    except PsycopgError as exc:
+        _raise_bundle_database_error(exc)
     if not bundle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paketet hittades inte")
     return bundle
@@ -42,6 +51,8 @@ async def create_bundle(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except course_bundles_service.CourseBundleError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    except PsycopgError as exc:
+        _raise_bundle_database_error(exc)
 
 
 @router.get(
@@ -56,6 +67,8 @@ async def list_teacher_bundles(current: TeacherEntryUser) -> CourseBundleListRes
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except course_bundles_service.CourseBundleError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    except PsycopgError as exc:
+        _raise_bundle_database_error(exc)
 
 
 @router.post(
@@ -78,6 +91,8 @@ async def add_course_to_bundle(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except course_bundles_service.CourseBundleError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    except PsycopgError as exc:
+        _raise_bundle_database_error(exc)
 
 
 @router.post(
@@ -95,3 +110,5 @@ async def create_bundle_checkout(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except course_bundles_service.CourseBundleError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    except PsycopgError as exc:
+        _raise_bundle_database_error(exc)
