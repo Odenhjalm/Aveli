@@ -74,6 +74,27 @@ async def replace_bundle_courses(bundle_id: str, course_ids: Sequence[str]) -> N
             raise
 
 
+async def list_bundle_candidate_courses(course_ids: Sequence[str]) -> Sequence[BundleCourseRow]:
+    normalized_ids = [str(course_id or "").strip() for course_id in course_ids]
+    exact_ids = [course_id for course_id in normalized_ids if course_id]
+    if not exact_ids:
+        return []
+
+    query = """
+        SELECT c.id,
+               c.teacher_id,
+               c.visibility,
+               c.content_ready,
+               c.sellable
+          FROM app.courses c
+         WHERE c.id = any(%s::uuid[])
+    """
+    async with get_conn() as cur:
+        await cur.execute(query, (exact_ids,))
+        rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
 async def get_bundle_composition(
     bundle_id: str,
     *,
@@ -156,8 +177,12 @@ async def list_bundle_courses_composition(bundle_id: str) -> Sequence[BundleCour
         SELECT b.bundle_id,
                b.course_id,
                b.position,
+               c.teacher_id,
                c.slug,
                c.title,
+               c.visibility,
+               c.content_ready,
+               c.sellable AS course_sellable,
                c.price_amount_cents
           FROM app.course_bundle_courses b
           JOIN app.courses c ON c.id = b.course_id
@@ -175,8 +200,12 @@ async def list_bundle_checkout_courses(bundle_id: str) -> Sequence[BundleCourseR
         SELECT b.bundle_id,
                b.course_id,
                b.position,
+               c.teacher_id,
                c.slug,
                c.title,
+               c.visibility,
+               c.content_ready,
+               c.sellable AS course_sellable,
                c.price_amount_cents
           FROM app.course_bundle_courses b
           JOIN app.courses c ON c.id = b.course_id
@@ -187,6 +216,42 @@ async def list_bundle_checkout_courses(bundle_id: str) -> Sequence[BundleCourseR
         await cur.execute(query, (bundle_id,))
         rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def update_bundle_details(
+    bundle_id: str,
+    *,
+    title: str | None = None,
+    price_amount_cents: int | None = None,
+) -> BundleRow | None:
+    assignments: list[str] = []
+    params: list[Any] = []
+    if title is not None:
+        assignments.append("title = %s")
+        params.append(title)
+    if price_amount_cents is not None:
+        assignments.append("price_amount_cents = %s")
+        params.append(price_amount_cents)
+
+    if not assignments:
+        return await get_bundle_mapping_subject(bundle_id)
+
+    assignments.append("updated_at = now()")
+    params.append(bundle_id)
+    query = f"""
+        UPDATE app.course_bundles
+           SET {", ".join(assignments)}
+         WHERE id = %s
+        RETURNING id
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        return None
+    return await get_bundle_mapping_subject(bundle_id)
 
 
 async def update_bundle_stripe_mapping(
@@ -284,10 +349,12 @@ __all__ = [
     "delete_bundle",
     "get_bundle_composition",
     "get_bundle_mapping_subject",
+    "list_bundle_candidate_courses",
     "replace_bundle_courses",
     "list_bundle_compositions",
     "list_bundle_courses_composition",
     "list_bundle_checkout_courses",
+    "update_bundle_details",
     "update_bundle_price_amount",
     "update_bundle_sellability",
     "update_bundle_stripe_mapping",

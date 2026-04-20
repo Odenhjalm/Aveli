@@ -23,28 +23,48 @@ void main() {
   });
 
   test(
-    'listLessonMedia parses canonical media objects from studio route',
+    'listLessonMedia reconstructs from lesson content and canonical placements',
     () async {
       final harness = await _Harness.create(uploadServer: uploadServer);
       final repo = StudioRepository(client: harness.client);
 
       final items = await repo.listLessonMedia('lesson-1');
 
-      expect(items, hasLength(1));
-      expect(items.single.lessonMediaId, 'lesson-media-1');
-      expect(items.single.mediaType, 'document');
-      expect(items.single.media?.mediaId, 'media-1');
-      expect(items.single.media?.state, 'ready');
+      expect(items.map((item) => item.lessonMediaId), [
+        'lesson-media-1',
+        'lesson-media-2',
+      ]);
+      expect(items.first.position, 1);
+      expect(items.first.mediaType, 'document');
+      expect(items.first.originalName, isNull);
+      expect(items.first.media?.mediaId, 'media-1');
+      expect(items.first.media?.state, 'ready');
       expect(
-        items.single.media?.resolvedUrl,
+        items.first.media?.resolvedUrl,
         'https://cdn.example.test/guide.pdf',
       );
+      expect(items.last.position, 2);
+      expect(items.last.mediaType, 'video');
+      expect(items.last.state, 'processing');
+      expect(items.last.media, isNull);
 
-      final requests = harness.adapter.requestsFor(
-        '/api/lesson-media/lesson-1',
+      final contentRequests = harness.adapter.requestsFor(
+        '/studio/lessons/lesson-1/content',
       );
-      expect(requests, hasLength(1));
-      expect(requests.single.method, 'GET');
+      expect(contentRequests, hasLength(1));
+      expect(contentRequests.single.method, 'GET');
+      expect(
+        harness.adapter.requestsFor('/api/media-placements/lesson-media-1'),
+        hasLength(1),
+      );
+      expect(
+        harness.adapter.requestsFor('/api/media-placements/lesson-media-2'),
+        hasLength(1),
+      );
+      expect(
+        harness.adapter.requestsFor('/api/lesson-media/lesson-1'),
+        isEmpty,
+      );
     },
   );
 
@@ -81,7 +101,7 @@ void main() {
     expect(uploadUrlRequests, hasLength(1));
     expect(completeRequests, hasLength(1));
     expect(placementRequests, hasLength(1));
-    expect(uploadServer.putPaths, contains('/direct/guide.pdf'));
+    expect(harness.adapter.recordedPathContaining('/direct/guide.pdf'), isTrue);
 
     final uploadPayload = Map<String, dynamic>.from(
       uploadUrlRequests.single.data as Map,
@@ -110,7 +130,7 @@ void main() {
     final preview = previews.itemFor('lesson-media-1');
 
     expect(preview, isNotNull);
-    expect(preview?.previewUrl, 'https://cdn.example.test/preview.webp');
+    expect(preview?.previewUrl, 'https://cdn.example.test/guide.pdf');
 
     final requests = harness.adapter.requestsFor(
       '/api/media-placements/lesson-media-1',
@@ -131,9 +151,7 @@ void main() {
     expect(requests, hasLength(1));
     expect(requests.single.method, 'DELETE');
     expect(
-      harness.adapter.requestsFor(
-        '/api/lesson-media/lesson-1/lesson-media-1',
-      ),
+      harness.adapter.requestsFor('/api/lesson-media/lesson-1/lesson-media-1'),
       isEmpty,
     );
   });
@@ -181,25 +199,31 @@ class _Harness {
       tokenStorage: tokens,
     );
     final adapter = _RecordingAdapter((options) {
-      if (options.path == '/api/lesson-media/lesson-1') {
+      if (options.path == '/studio/lessons/lesson-1/content') {
         return _jsonResponse(
           statusCode: 200,
           body: {
-            'items': [
+            'lesson_id': 'lesson-1',
+            'content_markdown': 'Persisted content',
+            'media': [
+              {
+                'lesson_media_id': 'lesson-media-2',
+                'media_asset_id': 'media-2',
+                'position': 2,
+                'media_type': 'video',
+                'state': 'processing',
+              },
               {
                 'lesson_media_id': 'lesson-media-1',
-                'lesson_id': 'lesson-1',
                 'media_asset_id': 'media-1',
                 'position': 1,
                 'media_type': 'document',
                 'state': 'ready',
-                'media': {
-                  'media_id': 'media-1',
-                  'state': 'ready',
-                  'resolved_url': 'https://cdn.example.test/guide.pdf',
-                },
               },
             ],
+          },
+          headers: {
+            'etag': ['"content-v1"'],
           },
         );
       }
@@ -209,8 +233,8 @@ class _Harness {
           body: {
             'media_asset_id': 'media-1',
             'asset_state': 'pending_upload',
-            'upload_url': uploadServer.url('/direct/guide.pdf').toString(),
-            'headers': const <String, String>{},
+            'upload_session_id': 'upload-session-1',
+            'upload_endpoint': uploadServer.url('/direct/guide.pdf').toString(),
             'expires_at': DateTime.now().toUtc().toIso8601String(),
           },
         );
@@ -220,6 +244,9 @@ class _Harness {
           statusCode: 200,
           body: {'media_asset_id': 'media-1', 'asset_state': 'uploaded'},
         );
+      }
+      if (options.path.contains('/direct/guide.pdf')) {
+        return _jsonResponse(statusCode: 200, body: {'uploaded': true});
       }
       if (options.path == '/api/lessons/lesson-1/media-placements') {
         return _jsonResponse(
@@ -250,13 +277,27 @@ class _Harness {
             'lesson_id': 'lesson-1',
             'media_asset_id': 'media-1',
             'position': 1,
-            'media_type': 'image',
+            'media_type': 'document',
             'asset_state': 'ready',
             'media': {
               'media_id': 'media-1',
               'state': 'ready',
-              'resolved_url': 'https://cdn.example.test/preview.webp',
+              'resolved_url': 'https://cdn.example.test/guide.pdf',
             },
+          },
+        );
+      }
+      if (options.path == '/api/media-placements/lesson-media-2') {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'lesson_media_id': 'lesson-media-2',
+            'lesson_id': 'lesson-1',
+            'media_asset_id': 'media-2',
+            'position': 2,
+            'media_type': 'video',
+            'asset_state': 'processing',
+            'media': null,
           },
         );
       }
@@ -305,12 +346,14 @@ class _UploadServer {
 ResponseBody _jsonResponse({
   required int statusCode,
   required Map<String, dynamic> body,
+  Map<String, List<String>> headers = const <String, List<String>>{},
 }) {
   return ResponseBody.fromString(
     json.encode(body),
     statusCode,
     headers: {
       Headers.contentTypeHeader: [Headers.jsonContentType],
+      ...headers,
     },
   );
 }
@@ -332,6 +375,10 @@ class _RecordingAdapter implements HttpClientAdapter {
   List<_RecordedRequest> requestsFor(String path) => _requests
       .where((request) => request.path == path)
       .toList(growable: false);
+
+  bool recordedPathContaining(String value) {
+    return _requests.any((request) => request.path.contains(value));
+  }
 
   @override
   void close({bool force = false}) {}

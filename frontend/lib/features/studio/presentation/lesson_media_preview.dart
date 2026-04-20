@@ -350,6 +350,11 @@ class _PreviewLabel extends StatelessWidget {
       );
     }
 
+    final label = fileName?.trim();
+    final displayName = label == null || label.isEmpty
+        ? _fallbackLabel()
+        : label;
+
     return Align(
       alignment: Alignment.bottomLeft,
       child: Row(
@@ -372,7 +377,7 @@ class _PreviewLabel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  fileName!,
+                  displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -407,6 +412,22 @@ class _PreviewLabel extends StatelessWidget {
         return Icons.movie_outlined;
       default:
         return Icons.insert_drive_file_outlined;
+    }
+  }
+
+  String _fallbackLabel() {
+    switch (mediaType) {
+      case 'image':
+        return 'Bild';
+      case 'audio':
+        return 'Ljud';
+      case 'video':
+        return 'Video';
+      case 'document':
+      case 'pdf':
+        return 'PDF';
+      default:
+        return 'Media';
     }
   }
 

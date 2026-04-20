@@ -12,6 +12,7 @@ import 'package:aveli/data/repositories/profile_repository.dart';
 import 'package:aveli/features/courses/application/course_providers.dart'
     as courses_front;
 import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/media/application/profile_avatar_upload_controller.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
@@ -36,6 +37,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   bool _editing = false;
   bool _saving = false;
   String? _hydratedProfileId;
+  ProfileAvatarUploadSnapshot _avatarUpload =
+      const ProfileAvatarUploadSnapshot.empty();
 
   @override
   void initState() {
@@ -102,6 +105,43 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       setState(() => _saving = false);
       showSnack(context, 'Kunde inte spara: ${failure.message}');
     }
+  }
+
+  Future<void> _pickAndUploadAvatar() async {
+    if (_avatarUpload.isBusy) return;
+    try {
+      final picker = ref.read(profileAvatarPickerProvider);
+      final picked = await picker();
+      if (!mounted || picked == null) return;
+      final controller = ref.read(profileAvatarUploadControllerProvider);
+      final updatedProfile = await controller.uploadAndAttach(
+        picked,
+        onSnapshot: (snapshot) {
+          if (!mounted) return;
+          setState(() => _avatarUpload = snapshot);
+        },
+      );
+      await ref.read(authControllerProvider.notifier).loadSession();
+      if (!mounted) return;
+      setState(() {
+        _avatarUpload = ProfileAvatarUploadSnapshot(
+          stage: ProfileAvatarUploadStage.attached,
+          progress: 1,
+          status: 'Profilbilden är sparad.',
+          attachedAvatarMediaId: updatedProfile.avatarMediaId,
+        );
+      });
+      showSnack(context, 'Profilbilden är sparad.');
+    } catch (error, stackTrace) {
+      _handleAvatarFailure(error, stackTrace);
+    }
+  }
+
+  void _handleAvatarFailure(Object error, StackTrace stackTrace) {
+    if (!mounted) return;
+    AppFailure.from(error, stackTrace);
+    setState(() => _avatarUpload = _avatarUpload.asFailed());
+    showSnack(context, 'Kunde inte spara profilbilden. Försök igen.');
   }
 
   @override
@@ -174,11 +214,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   isTeacher: access.isTeacher,
                   isAdmin: access.isAdmin,
                   displayNameController: _displayNameCtrl,
+                  avatarUpload: _avatarUpload,
                   editing: _editing,
                   saving: _saving,
                   onStartEditing: _startEditing,
                   onCancelEditing: () => _cancelEditing(profile),
                   onSaveProfile: () => _saveProfile(profile),
+                  onPickAvatar: _pickAndUploadAvatar,
                 ),
                 columnGap,
                 _BioSection(
@@ -221,22 +263,26 @@ class _IdentitySection extends StatelessWidget {
     required this.isTeacher,
     required this.isAdmin,
     required this.displayNameController,
+    required this.avatarUpload,
     required this.editing,
     required this.saving,
     required this.onStartEditing,
     required this.onCancelEditing,
     required this.onSaveProfile,
+    required this.onPickAvatar,
   });
 
   final Profile profile;
   final bool isTeacher;
   final bool isAdmin;
   final TextEditingController displayNameController;
+  final ProfileAvatarUploadSnapshot avatarUpload;
   final bool editing;
   final bool saving;
   final VoidCallback onStartEditing;
   final VoidCallback onCancelEditing;
   final VoidCallback onSaveProfile;
+  final VoidCallback onPickAvatar;
 
   @override
   Widget build(BuildContext context) {
@@ -307,10 +353,35 @@ class _IdentitySection extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _ProfileAvatar(
-                profile: profile,
-                initials: initials,
-                displayName: displayName,
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ProfileAvatar(
+                    profile: profile,
+                    initials: initials,
+                    displayName: displayName,
+                    uploadSnapshot: avatarUpload,
+                    onTap: onPickAvatar,
+                  ),
+                  if (_shouldShowAvatarStatus(avatarUpload)) ...[
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      width: 112,
+                      child: Text(
+                        profileAvatarVisibleStatus(avatarUpload),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color:
+                              avatarUpload.stage ==
+                                  ProfileAvatarUploadStage.failed
+                              ? theme.colorScheme.error
+                              : theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -350,20 +421,31 @@ class _IdentitySection extends StatelessWidget {
   }
 }
 
+bool _shouldShowAvatarStatus(ProfileAvatarUploadSnapshot snapshot) {
+  return snapshot.stage != ProfileAvatarUploadStage.empty ||
+      snapshot.status?.isNotEmpty == true ||
+      snapshot.errorMessage?.isNotEmpty == true;
+}
+
 class _ProfileAvatar extends ConsumerWidget {
   const _ProfileAvatar({
     required this.profile,
     required this.initials,
     required this.displayName,
+    required this.uploadSnapshot,
+    required this.onTap,
   });
 
   final Profile profile;
   final String initials;
   final String displayName;
+  final ProfileAvatarUploadSnapshot uploadSnapshot;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final photoPath = profile.photoUrl?.trim();
     final resolvedUrl = photoPath == null || photoPath.isEmpty
         ? null
@@ -373,46 +455,126 @@ class _ProfileAvatar extends ConsumerWidget {
     final avatarLabel = initials.isEmpty
         ? displayName.characters.first.toUpperCase()
         : initials;
+    final isError = uploadSnapshot.stage == ProfileAvatarUploadStage.failed;
+    final isDone = uploadSnapshot.stage == ProfileAvatarUploadStage.attached;
+    final isBusy = uploadSnapshot.isBusy;
+    final tooltip = resolvedUrl == null ? 'Välj profilbild' : 'Byt profilbild';
+    final progress =
+        uploadSnapshot.progress <= 0 || uploadSnapshot.progress >= 1
+        ? null
+        : uploadSnapshot.progress;
+
+    Widget image;
+    if (uploadSnapshot.previewBytes != null &&
+        uploadSnapshot.previewBytes!.isNotEmpty) {
+      image = Image.memory(
+        uploadSnapshot.previewBytes!,
+        fit: BoxFit.cover,
+        width: 64,
+        height: 64,
+        gaplessPlayback: true,
+      );
+    } else if (resolvedUrl == null) {
+      image = CircleAvatar(
+        radius: 32,
+        backgroundColor: Colors.white.withValues(alpha: 0.2),
+        child: Text(
+          avatarLabel,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    } else {
+      image = AppAvatar(url: resolvedUrl, size: 64);
+    }
 
     return Tooltip(
-      message: resolvedUrl == null
-          ? 'Profilbild saknas'
-          : 'Profilbild visas som skrivskyddad projektion',
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          resolvedUrl == null
-              ? CircleAvatar(
-                  radius: 32,
-                  backgroundColor: Colors.white.withValues(alpha: 0.2),
-                  child: Text(
-                    avatarLabel,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        enabled: !isBusy,
+        label: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: isBusy ? null : onTap,
+            child: SizedBox(
+              width: 76,
+              height: 76,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isError
+                            ? colorScheme.error
+                            : Colors.white.withValues(alpha: 0.18),
+                        width: 2,
+                      ),
+                    ),
+                    child: ClipOval(child: Center(child: image)),
+                  ),
+                  if (uploadSnapshot.stage ==
+                      ProfileAvatarUploadStage.uploading)
+                    SizedBox(
+                      width: 74,
+                      height: 74,
+                      child: CircularProgressIndicator(
+                        value: progress,
+                        strokeWidth: 3,
+                      ),
+                    )
+                  else if (isBusy)
+                    const SizedBox(
+                      width: 74,
+                      height: 74,
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    ),
+                  Positioned(
+                    bottom: 2,
+                    right: 2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: isError
+                            ? colorScheme.error
+                            : isDone
+                            ? colorScheme.primary
+                            : Colors.black54,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          isError
+                              ? Icons.priority_high
+                              : isDone
+                              ? Icons.check
+                              : isBusy
+                              ? Icons.cloud_upload_outlined
+                              : Icons.add_a_photo_outlined,
+                          size: 16,
+                          color: isError
+                              ? colorScheme.onError
+                              : isDone
+                              ? colorScheme.onPrimary
+                              : Colors.white,
+                        ),
+                      ),
                     ),
                   ),
-                )
-              : AppAvatar(url: resolvedUrl, size: 64),
-          Positioned(
-            bottom: -2,
-            right: -2,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: const Padding(
-                padding: EdgeInsets.all(2),
-                child: Icon(
-                  Icons.visibility_outlined,
-                  size: 16,
-                  color: Colors.white,
-                ),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

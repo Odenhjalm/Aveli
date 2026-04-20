@@ -18,6 +18,7 @@ from ..schemas.course_bundles import (
     CourseBundleCourse,
     CourseBundleCreateRequest,
     CourseBundleResponse,
+    CourseBundleUpdateRequest,
 )
 from . import stripe_customers as stripe_customers_service
 
@@ -26,6 +27,22 @@ CANCEL_PATH = "checkout/cancel"
 RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
 CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
 _CANONICAL_BUNDLE_STRIPE_CURRENCY = "sek"
+_CREATE_FIELDS = frozenset({"title", "price_amount_cents", "course_ids"})
+_UPDATE_FIELDS = frozenset({"title", "price_amount_cents", "course_ids"})
+_ATTACH_FIELDS = frozenset({"course_id", "position"})
+_FORBIDDEN_CLIENT_FIELDS = frozenset(
+    {
+        "teacher_id",
+        "description",
+        "currency",
+        "is_active",
+        "sellable",
+        "stripe_product_id",
+        "active_stripe_price_id",
+        "created_at",
+        "updated_at",
+    }
+)
 
 
 class CourseBundleError(Exception):
@@ -43,6 +60,51 @@ class CourseBundleConfigError(CourseBundleError):
         super().__init__(detail, status_code=503)
 
 
+def parse_create_request(payload: Any) -> CourseBundleCreateRequest:
+    data = _payload_mapping(payload)
+    _reject_unauthorized_fields(data, allowed_fields=_CREATE_FIELDS)
+    return CourseBundleCreateRequest(
+        title=_required_title(data),
+        price_amount_cents=_required_price_amount(data),
+        course_ids=_required_course_ids(data),
+    )
+
+
+def parse_update_request(payload: Any) -> CourseBundleUpdateRequest:
+    data = _payload_mapping(payload)
+    _reject_unauthorized_fields(data, allowed_fields=_UPDATE_FIELDS)
+    if not data:
+        raise CourseBundleError("Inga paketändringar angavs", status_code=400)
+
+    title = _optional_title(data)
+    price_amount_cents = _optional_price_amount(data)
+    course_ids = _optional_course_ids(data)
+    return CourseBundleUpdateRequest(
+        title=title,
+        price_amount_cents=price_amount_cents,
+        course_ids=course_ids,
+    )
+
+
+def parse_attach_request(payload: Any) -> tuple[str, int | None]:
+    data = _payload_mapping(payload)
+    _reject_unauthorized_fields(data, allowed_fields=_ATTACH_FIELDS)
+    raw_course_id = data.get("course_id")
+    if not isinstance(raw_course_id, str) or not raw_course_id.strip():
+        raise CourseBundleError("Kurs-id krävs", status_code=400)
+
+    position: int | None = None
+    if "position" in data and data["position"] is not None:
+        raw_position = data["position"]
+        if isinstance(raw_position, bool) or not isinstance(raw_position, int):
+            raise CourseBundleError("Kursens position är ogiltig", status_code=400)
+        if raw_position < 1:
+            raise CourseBundleError("Kursens position är ogiltig", status_code=400)
+        position = raw_position
+
+    return raw_course_id, position
+
+
 def map_bundle_database_error(exc: PsycopgError) -> CourseBundleError:
     if isinstance(exc, (psycopg_errors.UndefinedColumn, psycopg_errors.UndefinedTable)):
         return CourseBundleError(
@@ -58,17 +120,89 @@ def map_bundle_database_error(exc: PsycopgError) -> CourseBundleError:
             psycopg_errors.UniqueViolation,
         ),
     ):
-        return CourseBundleError(
-            "Paketet kunde inte sparas med angivna uppgifter",
+        return CourseBundleError("Paketet kunde inte sparas med angivna uppgifter", status_code=400)
+    return CourseBundleError("Paketet kunde inte hanteras just nu", status_code=503)
+
+
+def _payload_mapping(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise CourseBundleError("Paketförfrågan är ogiltig", status_code=400)
+    return dict(payload)
+
+
+def _reject_unauthorized_fields(
+    data: Mapping[str, Any],
+    *,
+    allowed_fields: frozenset[str],
+) -> None:
+    unauthorized_fields = set(data) - allowed_fields
+    if unauthorized_fields:
+        raise CourseBundleError(
+            "Paketförfrågan innehåller otillåtna fält",
             status_code=400,
         )
-    return CourseBundleError("Paketet kunde inte hanteras just nu", status_code=503)
+
+
+def _required_title(data: Mapping[str, Any]) -> str:
+    if "title" not in data:
+        raise CourseBundleError("Paketets titel krävs", status_code=400)
+    return _validated_title(data["title"])
+
+
+def _optional_title(data: Mapping[str, Any]) -> str | None:
+    if "title" not in data:
+        return None
+    return _validated_title(data["title"])
+
+
+def _validated_title(value: Any) -> str:
+    if not isinstance(value, str):
+        raise CourseBundleError("Paketets titel är ogiltig", status_code=400)
+    title = value.strip()
+    if len(title) < 2:
+        raise CourseBundleError("Paketets titel är ogiltig", status_code=400)
+    return title
+
+
+def _required_price_amount(data: Mapping[str, Any]) -> int:
+    if "price_amount_cents" not in data:
+        raise CourseBundleError("Paketpris krävs", status_code=400)
+    return _validate_bundle_price_amount(data["price_amount_cents"])
+
+
+def _optional_price_amount(data: Mapping[str, Any]) -> int | None:
+    if "price_amount_cents" not in data:
+        return None
+    return _validate_bundle_price_amount(data["price_amount_cents"])
+
+
+def _required_course_ids(data: Mapping[str, Any]) -> list[str]:
+    if "course_ids" not in data:
+        raise CourseBundleError("Paketet måste innehålla minst två kurser", status_code=400)
+    return _validated_course_id_list(data["course_ids"])
+
+
+def _optional_course_ids(data: Mapping[str, Any]) -> list[str] | None:
+    if "course_ids" not in data:
+        return None
+    return _validated_course_id_list(data["course_ids"])
+
+
+def _validated_course_id_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        raise CourseBundleError("Paketets kurslista är ogiltig", status_code=400)
+    course_ids: list[str] = []
+    for course_id in value:
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise CourseBundleError("Kurs-id är ogiltigt", status_code=400)
+        course_ids.append(course_id.strip())
+    return course_ids
 
 
 def _is_bundle_sellable_subject(
     bundle: Mapping[str, Any],
     *,
-    has_courses: bool,
+    courses: Sequence[Mapping[str, Any]],
 ) -> bool:
     teacher_id = str(bundle.get("teacher_id") or "").strip()
     amount_cents = int(bundle.get("price_amount_cents") or 0)
@@ -79,7 +213,7 @@ def _is_bundle_sellable_subject(
         and amount_cents > 0
         and bool(stripe_product_id)
         and bool(active_price_id)
-        and has_courses
+        and _bundle_courses_are_sellable(courses, teacher_id=teacher_id)
     )
 
 
@@ -93,6 +227,7 @@ async def create_bundle(
         payload.course_ids,
         teacher_id=teacher_id,
         minimum_count=2,
+        require_sellable=True,
     )
     bundle = await bundle_repo.create_bundle(
         teacher_id=teacher_id,
@@ -109,6 +244,64 @@ async def create_bundle(
     detailed = await get_bundle(bundle["id"], include_inactive=True)
     if not detailed:
         raise CourseBundleError("Paketet kunde inte skapas", status_code=500)
+    return detailed
+
+
+async def update_bundle(
+    current_user: Mapping[str, Any],
+    bundle_id: str,
+    payload: CourseBundleUpdateRequest,
+) -> CourseBundleResponse:
+    if (
+        payload.title is None
+        and payload.price_amount_cents is None
+        and payload.course_ids is None
+    ):
+        raise CourseBundleError("Inga paketändringar angavs", status_code=400)
+
+    teacher_id = str(current_user["id"])
+    bundle = await bundle_repo.get_bundle_mapping_subject(bundle_id)
+    if not bundle:
+        raise CourseBundleError("Paketet saknas", status_code=404)
+    if str(bundle.get("teacher_id")) != teacher_id:
+        raise CourseBundleError("Du kan bara ändra dina egna paket", status_code=403)
+
+    current_courses = await bundle_repo.list_bundle_courses_composition(bundle_id)
+    requested_course_ids = (
+        list(payload.course_ids)
+        if payload.course_ids is not None
+        else [str(row["course_id"]) for row in current_courses]
+    )
+    validated_course_ids = await _validate_bundle_course_candidates(
+        requested_course_ids,
+        teacher_id=teacher_id,
+        minimum_count=2,
+        require_sellable=True,
+    )
+
+    price_amount_cents = (
+        _validate_bundle_price_amount(payload.price_amount_cents)
+        if payload.price_amount_cents is not None
+        else None
+    )
+    updated = await bundle_repo.update_bundle_details(
+        bundle_id,
+        title=payload.title,
+        price_amount_cents=price_amount_cents,
+    )
+    if updated is None:
+        raise CourseBundleError("Paketet saknas", status_code=404)
+
+    if payload.course_ids is not None:
+        await bundle_repo.replace_bundle_courses(bundle_id, validated_course_ids)
+    if price_amount_cents is not None:
+        await bundle_repo.update_bundle_sellability(bundle_id, sellable=False)
+
+    await ensure_bundle_stripe_mapping(bundle_id, teacher_id)
+    await refresh_bundle_sellability(bundle_id)
+    detailed = await get_bundle(bundle_id, include_inactive=True)
+    if not detailed:
+        raise CourseBundleError("Paketet kunde inte uppdateras", status_code=500)
     return detailed
 
 
@@ -129,6 +322,7 @@ async def attach_course(
         [course_id],
         teacher_id=teacher_id,
         minimum_count=1,
+        require_sellable=True,
     )
     current_courses = await bundle_repo.list_bundle_courses_composition(bundle_id)
     next_course_ids = _bundle_course_ids_after_attach(
@@ -136,7 +330,13 @@ async def attach_course(
         validated_course_ids[0],
         position=position,
     )
-    await bundle_repo.replace_bundle_courses(bundle_id, next_course_ids)
+    validated_next_course_ids = await _validate_bundle_course_candidates(
+        next_course_ids,
+        teacher_id=teacher_id,
+        minimum_count=2,
+        require_sellable=True,
+    )
+    await bundle_repo.replace_bundle_courses(bundle_id, validated_next_course_ids)
     await refresh_bundle_sellability(bundle_id)
     detailed = await get_bundle(bundle_id, include_inactive=True)
     if not detailed:
@@ -185,7 +385,7 @@ async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> Cours
 async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> CheckoutCreateResponse:
     _require_stripe()
 
-    bundle = await bundle_repo.get_bundle_mapping_subject(bundle_id)
+    bundle = await refresh_bundle_sellability(bundle_id)
     if not bundle or not bool(bundle.get("sellable")):
         raise CourseBundleError("Paketet är inte tillgängligt just nu", status_code=404)
 
@@ -282,12 +482,15 @@ async def _validate_bundle_course_candidates(
     *,
     teacher_id: str,
     minimum_count: int,
+    require_sellable: bool,
 ) -> list[str]:
     exact_course_ids: list[str] = []
     for course_id in course_ids:
-        raw_course_id = str(course_id or "").strip()
+        if not isinstance(course_id, str):
+            raise CourseBundleError("Kurs-id är ogiltigt", status_code=400)
+        raw_course_id = course_id.strip()
         if not raw_course_id:
-            continue
+            raise CourseBundleError("Kurs-id är ogiltigt", status_code=400)
         try:
             exact_course_ids.append(str(UUID(raw_course_id)))
         except ValueError as exc:
@@ -309,16 +512,16 @@ async def _validate_bundle_course_candidates(
             status_code=400,
         )
 
-    ownership_rows = await courses_repo.list_course_ownership_rows(exact_course_ids)
-    ownership_by_course_id = {
+    course_rows = await bundle_repo.list_bundle_candidate_courses(exact_course_ids)
+    course_by_id = {
         str(row["id"]): dict(row)
-        for row in ownership_rows
+        for row in course_rows
         if row.get("id") is not None
     }
 
     validated_course_ids: list[str] = []
     for course_id in exact_course_ids:
-        row = ownership_by_course_id.get(course_id)
+        row = course_by_id.get(course_id)
         if row is None:
             raise CourseBundleError("Kursen saknas", status_code=404)
 
@@ -327,9 +530,57 @@ async def _validate_bundle_course_candidates(
             raise CourseBundleError("Kursen saknar giltig lärarägare", status_code=422)
         if course_teacher_id != teacher_id:
             raise CourseBundleError("Kursen tillhör inte dig", status_code=403)
+        if require_sellable:
+            _validate_bundle_course_eligibility(row)
         validated_course_ids.append(course_id)
 
     return validated_course_ids
+
+
+def _validate_bundle_course_eligibility(course: Mapping[str, Any]) -> None:
+    if course.get("content_ready") is not True:
+        raise CourseBundleError("Paketet innehåller en kurs som inte är redo", status_code=400)
+    visibility = str(course.get("visibility") or "").strip()
+    if visibility != "public":
+        raise CourseBundleError(
+            "Paketet innehåller en kurs som inte är publicerad",
+            status_code=400,
+        )
+    if _course_sellable_value(course) is not True:
+        raise CourseBundleError(
+            "Paketet innehåller en kurs som inte kan säljas",
+            status_code=400,
+        )
+
+
+def _course_sellable_value(course: Mapping[str, Any]) -> bool:
+    if "course_sellable" in course:
+        return course.get("course_sellable") is True
+    return course.get("sellable") is True
+
+
+def _bundle_courses_are_sellable(
+    courses: Sequence[Mapping[str, Any]],
+    *,
+    teacher_id: str,
+) -> bool:
+    if len(courses) < 2:
+        return False
+    seen_course_ids: set[str] = set()
+    for course in courses:
+        course_id = str(course.get("course_id") or course.get("id") or "").strip()
+        if not course_id or course_id in seen_course_ids:
+            return False
+        seen_course_ids.add(course_id)
+        if str(course.get("teacher_id") or "").strip() != teacher_id:
+            return False
+        if course.get("content_ready") is not True:
+            return False
+        if str(course.get("visibility") or "").strip() != "public":
+            return False
+        if _course_sellable_value(course) is not True:
+            return False
+    return True
 
 
 def _bundle_course_ids_after_attach(
@@ -355,7 +606,9 @@ def _bundle_course_ids_after_attach(
 
 
 def _validate_bundle_price_amount(price_amount_cents: int) -> int:
-    normalized_amount = int(price_amount_cents)
+    if isinstance(price_amount_cents, bool) or not isinstance(price_amount_cents, int):
+        raise CourseBundleError("Paketpriset är ogiltigt", status_code=400)
+    normalized_amount = price_amount_cents
     if normalized_amount <= 0:
         raise CourseBundleError("Paketpriset måste vara större än noll", status_code=400)
     return normalized_amount
@@ -512,7 +765,7 @@ async def refresh_bundle_sellability(bundle_id: str) -> Mapping[str, Any] | None
     courses = await bundle_repo.list_bundle_courses_composition(normalized_bundle_id)
     target_sellable = _is_bundle_sellable_subject(
         bundle,
-        has_courses=bool(courses),
+        courses=courses,
     )
     current_sellable = bool(bundle.get("sellable"))
     if current_sellable != target_sellable:
@@ -552,7 +805,11 @@ def _payment_link(bundle_id: str) -> str:
 
 
 __all__ = [
+    "parse_create_request",
+    "parse_update_request",
+    "parse_attach_request",
     "create_bundle",
+    "update_bundle",
     "attach_course",
     "get_bundle",
     "list_teacher_bundles",

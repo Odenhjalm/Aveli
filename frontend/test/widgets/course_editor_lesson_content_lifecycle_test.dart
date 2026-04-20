@@ -168,7 +168,6 @@ StudioLessonMediaItem _placementImage(String lessonMediaId) {
       state: 'ready',
       resolvedUrl: _canonicalLessonMediaUrl,
     ),
-    originalName: 'canonical-lesson-image.webp',
   );
 }
 
@@ -186,7 +185,6 @@ StudioLessonMediaItem _placementDocument(String lessonMediaId) {
       state: 'ready',
       resolvedUrl: _canonicalTrailingDocumentUrl,
     ),
-    originalName: 'canonical-lesson-document.pdf',
   );
 }
 
@@ -355,7 +353,7 @@ void main() {
       await _pumpCourseEditor(tester, repo: repo);
       await _pumpUntilDocumentContains(tester, 'Persisted content');
 
-      verify(() => repo.readLessonContent('lesson-1')).called(1);
+      verify(() => repo.readLessonContent('lesson-1')).called(2);
       _insertAtDocumentEnd(' updated');
       await tester.pump();
 
@@ -379,6 +377,73 @@ void main() {
           position: any(named: 'position'),
         ),
       ).called(1);
+    },
+  );
+
+  testWidgets(
+    'selected lesson media list is reconstructed from canonical placements',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const imageId = 'lesson-media-image-1';
+      const documentId = 'lesson-media-document-1';
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        readContent: (lessonId) async => _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: 'Persisted content with canonical media',
+          media: const [
+            StudioLessonContentMediaItem(
+              lessonMediaId: documentId,
+              position: 2,
+              mediaType: 'document',
+              state: 'ready',
+              mediaAssetId: 'asset-$documentId',
+            ),
+            StudioLessonContentMediaItem(
+              lessonMediaId: imageId,
+              position: 1,
+              mediaType: 'image',
+              state: 'ready',
+              mediaAssetId: 'asset-$imageId',
+            ),
+          ],
+          etag: '"content-v1"',
+        ),
+      );
+      when(() => repo.fetchLessonMediaPlacements(any())).thenAnswer((
+        invocation,
+      ) async {
+        final ids = List<String>.from(
+          invocation.positionalArguments.single as List,
+        );
+        final placements = [
+          for (final id in ids)
+            id == documentId ? _placementDocument(id) : _placementImage(id),
+        ];
+        placements.sort((a, b) => a.position.compareTo(b.position));
+        return placements;
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilDocumentContains(
+        tester,
+        'Persisted content with canonical media',
+      );
+      await _pumpUntilFinderFound(tester, find.text('media_$imageId'));
+      await _pumpUntilFinderFound(tester, find.text('media_$documentId'));
+
+      expect(
+        tester.getTopLeft(find.text('media_$imageId')).dy,
+        lessThan(tester.getTopLeft(find.text('media_$documentId')).dy),
+      );
+      final placementRead = verify(
+        () => repo.fetchLessonMediaPlacements(captureAny()),
+      )..called(1);
+      expect(placementRead.captured.single, [documentId, imageId]);
+      verifyNever(() => repo.listLessonMedia(any()));
     },
   );
 
@@ -455,7 +520,10 @@ void main() {
     await tester.pump();
 
     expect(_networkImageFinder(_courseCoverUrl), findsOneWidget);
-    expect(_networkImageFinder(_canonicalLessonMediaUrl), findsNothing);
+    expect(
+      _networkImageFinder(_canonicalLessonMediaUrl),
+      findsAtLeastNWidgets(1),
+    );
 
     clearInteractions(repo);
     _insertAtDocumentEnd(' unsaved draft');
@@ -486,7 +554,10 @@ void main() {
       find.textContaining('unsaved draft', findRichText: true),
       findsNothing,
     );
-    expect(_networkImageFinder(_canonicalLessonMediaUrl), findsOneWidget);
+    expect(
+      _networkImageFinder(_canonicalLessonMediaUrl),
+      findsAtLeastNWidgets(2),
+    );
     expect(_networkImageFinder(_courseCoverUrl), findsAtLeastNWidgets(2));
 
     final placementRead = verify(
@@ -599,7 +670,7 @@ void main() {
     _insertAtDocumentEnd(' forbidden edit');
     await tester.pump();
 
-    verify(() => repo.readLessonContent('lesson-1')).called(1);
+    verify(() => repo.readLessonContent('lesson-1')).called(2);
     verifyNever(
       () => repo.updateLessonContent(
         'lesson-1',
@@ -738,8 +809,8 @@ void main() {
     final document = editor_test_bridge.getDocument();
     expect(document, contains('Second persisted content'));
     expect(document, isNot(contains('Persisted content\n')));
-    verify(() => repo.readLessonContent('lesson-1')).called(1);
-    verify(() => repo.readLessonContent('lesson-2')).called(1);
+    verify(() => repo.readLessonContent('lesson-1')).called(2);
+    verify(() => repo.readLessonContent('lesson-2')).called(2);
     verifyNever(
       () => repo.updateLessonContent(
         any(),

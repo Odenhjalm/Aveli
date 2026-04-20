@@ -1,6 +1,3 @@
-import 'dart:typed_data';
-
-import 'package:file_selector/file_selector.dart' as fs;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,81 +6,16 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/profile.dart';
-import 'package:aveli/features/media/application/media_providers.dart';
-import 'package:aveli/features/media/data/profile_avatar_repository.dart';
+import 'package:aveli/features/media/application/profile_avatar_upload_controller.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/app_avatar.dart';
 
-class OnboardingAvatarFile {
-  const OnboardingAvatarFile({
-    required this.name,
-    required this.mimeType,
-    required this.bytes,
-  });
+typedef OnboardingAvatarFile = ProfileAvatarUploadFile;
+typedef OnboardingAvatarPicker = ProfileAvatarPicker;
 
-  final String name;
-  final String mimeType;
-  final Uint8List bytes;
-
-  int get sizeBytes => bytes.length;
-}
-
-typedef OnboardingAvatarPicker = Future<OnboardingAvatarFile?> Function();
-
-final onboardingAvatarPickerProvider = Provider<OnboardingAvatarPicker>(
-  (_) => _pickOnboardingAvatarFile,
-);
-
-enum _AvatarUploadStage {
-  empty,
-  picked,
-  initializing,
-  uploading,
-  completing,
-  waitingForReady,
-  attaching,
-  attached,
-  failed,
-}
-
-const _avatarReadyPollAttempts = 12;
-const _avatarReadyPollInterval = Duration(seconds: 1);
-const _supportedAvatarMimeTypes = {'image/jpeg', 'image/png', 'image/webp'};
-
-Future<OnboardingAvatarFile?> _pickOnboardingAvatarFile() async {
-  final typeGroup = fs.XTypeGroup(
-    label: 'profilbild',
-    extensions: const ['jpg', 'jpeg', 'png', 'webp'],
-  );
-  final file = await fs.openFile(acceptedTypeGroups: [typeGroup]);
-  if (file == null) return null;
-  final mimeType = _avatarMimeTypeFromFilename(file.name);
-  if (mimeType == null) {
-    throw StateError('Endast JPG, PNG eller WebP stöds.');
-  }
-  final bytes = await file.readAsBytes();
-  return OnboardingAvatarFile(
-    name: file.name,
-    mimeType: mimeType,
-    bytes: bytes,
-  );
-}
-
-String? _avatarMimeTypeFromFilename(String filename) {
-  final lower = filename.trim().toLowerCase();
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-    return 'image/jpeg';
-  }
-  if (lower.endsWith('.png')) {
-    return 'image/png';
-  }
-  if (lower.endsWith('.webp')) {
-    return 'image/webp';
-  }
-  return null;
-}
+final onboardingAvatarPickerProvider = profileAvatarPickerProvider;
 
 class OnboardingProfilePage extends ConsumerStatefulWidget {
   const OnboardingProfilePage({super.key, this.referralCode});
@@ -102,25 +34,11 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
   bool _isHydratingControllers = false;
   String? _hydratedProfileId;
   String? _nameError;
-  _AvatarUploadStage _avatarStage = _AvatarUploadStage.empty;
-  Uint8List? _avatarPreviewBytes;
-  double _avatarProgress = 0;
-  String? _avatarStatus;
-  String? _avatarError;
-  String? _attachedAvatarMediaId;
+  ProfileAvatarUploadSnapshot _avatarUpload =
+      const ProfileAvatarUploadSnapshot.empty();
 
   bool get _isNameValid => _displayNameCtrl.text.trim().isNotEmpty;
-  bool get _isAvatarBusy {
-    return switch (_avatarStage) {
-      _AvatarUploadStage.picked ||
-      _AvatarUploadStage.initializing ||
-      _AvatarUploadStage.uploading ||
-      _AvatarUploadStage.completing ||
-      _AvatarUploadStage.waitingForReady ||
-      _AvatarUploadStage.attaching => true,
-      _ => false,
-    };
-  }
+  bool get _isAvatarBusy => _avatarUpload.isBusy;
 
   @override
   void initState() {
@@ -257,21 +175,22 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
     final colorScheme = theme.colorScheme;
     final photoUrl = profile?.photoUrl?.trim();
     final hasSavedAvatar =
-        _attachedAvatarMediaId?.trim().isNotEmpty == true ||
+        _avatarUpload.attachedAvatarMediaId?.trim().isNotEmpty == true ||
         profile?.avatarMediaId?.trim().isNotEmpty == true;
     final effectiveStage =
-        _avatarStage == _AvatarUploadStage.empty && hasSavedAvatar
-        ? _AvatarUploadStage.attached
-        : _avatarStage;
+        _avatarUpload.stage == ProfileAvatarUploadStage.empty && hasSavedAvatar
+        ? ProfileAvatarUploadStage.attached
+        : _avatarUpload.stage;
     final canPickAvatar = !_isAvatarBusy && !_isSubmitting;
-    final progress = _avatarProgress <= 0 || _avatarProgress >= 1
+    final progress = _avatarUpload.progress <= 0 || _avatarUpload.progress >= 1
         ? null
-        : _avatarProgress;
+        : _avatarUpload.progress;
 
     Widget image;
-    if (_avatarPreviewBytes != null && _avatarPreviewBytes!.isNotEmpty) {
+    if (_avatarUpload.previewBytes != null &&
+        _avatarUpload.previewBytes!.isNotEmpty) {
       image = Image.memory(
-        _avatarPreviewBytes!,
+        _avatarUpload.previewBytes!,
         fit: BoxFit.cover,
         width: 112,
         height: 112,
@@ -311,7 +230,9 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
                         color: colorScheme.surfaceContainerHighest,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: _avatarStage == _AvatarUploadStage.failed
+                          color:
+                              _avatarUpload.stage ==
+                                  ProfileAvatarUploadStage.failed
                               ? colorScheme.error
                               : colorScheme.outlineVariant,
                           width: 2,
@@ -319,7 +240,8 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
                       ),
                       child: ClipOval(child: Center(child: image)),
                     ),
-                    if (_avatarStage == _AvatarUploadStage.uploading)
+                    if (_avatarUpload.stage ==
+                        ProfileAvatarUploadStage.uploading)
                       SizedBox(
                         width: 122,
                         height: 122,
@@ -355,10 +277,11 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
             color: colorScheme.onSurfaceVariant,
           ),
         ),
-        if (_avatarError != null && _avatarError!.isNotEmpty) ...[
+        if (_avatarUpload.errorMessage != null &&
+            _avatarUpload.errorMessage!.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
-            _avatarError!,
+            _avatarUpload.errorMessage!,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: colorScheme.error,
@@ -370,32 +293,12 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
     );
   }
 
-  String _avatarActionText(_AvatarUploadStage stage) {
-    return switch (stage) {
-      _AvatarUploadStage.empty => 'Lägg till profilbild',
-      _AvatarUploadStage.picked => 'Bild vald',
-      _AvatarUploadStage.initializing => 'Förbereder uppladdning',
-      _AvatarUploadStage.uploading => 'Laddar upp profilbild',
-      _AvatarUploadStage.completing => 'Verifierar bilden',
-      _AvatarUploadStage.waitingForReady => 'Bearbetar bilden',
-      _AvatarUploadStage.attaching => 'Sparar profilbild',
-      _AvatarUploadStage.attached => 'Profilbilden är sparad',
-      _AvatarUploadStage.failed => 'Försök igen',
-    };
+  String _avatarActionText(ProfileAvatarUploadStage stage) {
+    return profileAvatarActionText(stage);
   }
 
-  String _avatarStatusText(_AvatarUploadStage stage) {
-    if (_avatarStatus != null && _avatarStatus!.isNotEmpty) {
-      return _avatarStatus!;
-    }
-    return switch (stage) {
-      _AvatarUploadStage.empty =>
-        'Tryck på cirkeln för att välja en bild från din enhet.',
-      _AvatarUploadStage.attached => 'Tryck igen om du vill byta profilbild.',
-      _AvatarUploadStage.failed =>
-        'Profilbild är valfritt. Du kan fortsätta utan bild.',
-      _ => 'Vänta medan bilden sparas.',
-    };
+  String _avatarStatusText(ProfileAvatarUploadStage stage) {
+    return profileAvatarVisibleStatus(_avatarUpload.copyWith(stage: stage));
   }
 
   Future<void> _pickAndUploadAvatar() async {
@@ -404,137 +307,36 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
       final picker = ref.read(onboardingAvatarPickerProvider);
       final picked = await picker();
       if (!mounted || picked == null) return;
-      final mimeType = picked.mimeType.trim().toLowerCase();
-      if (!_supportedAvatarMimeTypes.contains(mimeType)) {
-        throw StateError('Endast JPG, PNG eller WebP stöds.');
-      }
-      if (picked.bytes.isEmpty) {
-        throw StateError('Bildfilen är tom.');
-      }
-
+      final controller = ref.read(profileAvatarUploadControllerProvider);
+      final profile = await controller.uploadAndAttach(
+        picked,
+        onSnapshot: (snapshot) {
+          if (!mounted) return;
+          setState(() => _avatarUpload = snapshot);
+        },
+      );
+      if (!mounted) return;
       setState(() {
-        _avatarStage = _AvatarUploadStage.picked;
-        _avatarPreviewBytes = picked.bytes;
-        _avatarProgress = 0;
-        _avatarStatus = 'Bild vald. Förbereder uppladdning...';
-        _avatarError = null;
+        _avatarUpload = _avatarUpload.copyWith(
+          stage: ProfileAvatarUploadStage.attached,
+          attachedAvatarMediaId:
+              profile.avatarMediaId ?? _avatarUpload.attachedAvatarMediaId,
+          status: 'Profilbilden är sparad.',
+          clearErrorMessage: true,
+        );
       });
-
-      final repo = ref.read(profileAvatarRepositoryProvider);
-      await _uploadAndAttachAvatar(repo, picked, mimeType);
     } catch (error, stackTrace) {
       _handleAvatarFailure(error, stackTrace);
     }
   }
 
-  Future<void> _uploadAndAttachAvatar(
-    ProfileAvatarRepository repo,
-    OnboardingAvatarFile picked,
-    String mimeType,
-  ) async {
-    if (!mounted) return;
-    setState(() {
-      _avatarStage = _AvatarUploadStage.initializing;
-      _avatarStatus = 'Begär uppladdning...';
-      _avatarProgress = 0;
-    });
-
-    final target = await repo.initUpload(
-      filename: picked.name,
-      mimeType: mimeType,
-      sizeBytes: picked.sizeBytes,
-    );
-    if (!mounted) return;
-    setState(() {
-      _avatarStage = _AvatarUploadStage.uploading;
-      _avatarStatus = 'Laddar upp profilbild...';
-    });
-
-    await repo.uploadBytes(
-      target: target,
-      bytes: picked.bytes,
-      contentType: mimeType,
-      onSendProgress: (sent, total) {
-        if (!mounted) return;
-        final resolvedTotal = total > 0 ? total : picked.sizeBytes;
-        final progress = resolvedTotal <= 0 ? 0.0 : sent / resolvedTotal;
-        setState(() => _avatarProgress = progress.clamp(0.0, 1.0));
-      },
-    );
-    if (!mounted) return;
-    setState(() {
-      _avatarStage = _AvatarUploadStage.completing;
-      _avatarStatus = 'Verifierar uppladdningen...';
-      _avatarProgress = 1;
-    });
-
-    final completed = await repo.completeUpload(mediaAssetId: target.mediaId);
-    if (completed.mediaId != target.mediaId || completed.state != 'uploaded') {
-      throw StateError('Profilbildens uppladdning kunde inte verifieras.');
-    }
-    if (!mounted) return;
-    setState(() {
-      _avatarStage = _AvatarUploadStage.waitingForReady;
-      _avatarStatus = 'Bearbetar bilden...';
-    });
-
-    await _waitForAvatarReady(repo, target.mediaId);
-    if (!mounted) return;
-    setState(() {
-      _avatarStage = _AvatarUploadStage.attaching;
-      _avatarStatus = 'Sparar profilbilden...';
-    });
-
-    final profile = await repo.attachAvatar(mediaAssetId: target.mediaId);
-    if (!mounted) return;
-    setState(() {
-      _avatarStage = _AvatarUploadStage.attached;
-      _attachedAvatarMediaId = profile.avatarMediaId ?? target.mediaId;
-      _avatarStatus = 'Profilbilden är sparad.';
-      _avatarError = null;
-      _avatarProgress = 1;
-    });
-  }
-
-  Future<void> _waitForAvatarReady(
-    ProfileAvatarRepository repo,
-    String mediaAssetId,
-  ) async {
-    for (var attempt = 0; attempt < _avatarReadyPollAttempts; attempt += 1) {
-      final status = await repo.fetchStatus(mediaAssetId: mediaAssetId);
-      if (status.mediaId != mediaAssetId) {
-        throw StateError('Statussvaret gäller fel mediafil.');
-      }
-      switch (status.state) {
-        case 'ready':
-          return;
-        case 'failed':
-          throw StateError(
-            status.errorMessage?.isNotEmpty == true
-                ? status.errorMessage!
-                : 'Profilbilden kunde inte bearbetas.',
-          );
-        default:
-          if (attempt < _avatarReadyPollAttempts - 1) {
-            await Future<void>.delayed(_avatarReadyPollInterval);
-          }
-      }
-    }
-    throw StateError(
-      'Profilbilden bearbetas fortfarande. Försök igen om en stund.',
-    );
-  }
-
   void _handleAvatarFailure(Object error, StackTrace stackTrace) {
     if (!mounted) return;
-    final failure = AppFailure.from(error, stackTrace);
+    AppFailure.from(error, stackTrace);
     setState(() {
-      _avatarStage = _AvatarUploadStage.failed;
-      _avatarStatus = 'Profilbilden kunde inte sparas.';
-      _avatarError = failure.message;
-      _avatarProgress = 0;
+      _avatarUpload = _avatarUpload.asFailed();
     });
-    showSnack(context, 'Kunde inte spara profilbilden: ${failure.message}');
+    showSnack(context, 'Kunde inte spara profilbilden. Försök igen.');
   }
 
   Future<void> _saveProfile() async {
@@ -575,22 +377,14 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
 class _AvatarBadge extends StatelessWidget {
   const _AvatarBadge({required this.stage});
 
-  final _AvatarUploadStage stage;
+  final ProfileAvatarUploadStage stage;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final isError = stage == _AvatarUploadStage.failed;
-    final isDone = stage == _AvatarUploadStage.attached;
-    final isBusy = switch (stage) {
-      _AvatarUploadStage.picked ||
-      _AvatarUploadStage.initializing ||
-      _AvatarUploadStage.uploading ||
-      _AvatarUploadStage.completing ||
-      _AvatarUploadStage.waitingForReady ||
-      _AvatarUploadStage.attaching => true,
-      _ => false,
-    };
+    final isError = stage == ProfileAvatarUploadStage.failed;
+    final isDone = stage == ProfileAvatarUploadStage.attached;
+    final isBusy = stage.isBusy;
 
     final icon = isError
         ? Icons.priority_high

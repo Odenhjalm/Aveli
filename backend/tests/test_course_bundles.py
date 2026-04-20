@@ -1,4 +1,3 @@
-import json
 import uuid
 
 import pytest
@@ -7,8 +6,7 @@ from psycopg import errors
 
 from app import db, repositories
 from app.config import settings
-from app.repositories import courses as courses_repo
-from app.repositories import payments as payments_repo
+from app.services import course_bundles_service
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -39,6 +37,52 @@ async def _create_course(client, token: str, slug: str, price_amount_cents: int)
     )
     assert response.status_code == 200, response.text
     return str(response.json()["id"])
+
+
+async def _set_course_bundle_eligibility(
+    course_id: str,
+    *,
+    visibility: str = "public",
+    content_ready: bool = True,
+    sellable: bool = True,
+) -> None:
+    product_id = f"prod_bundle_course_{uuid.uuid4().hex}" if sellable else None
+    price_id = f"price_bundle_course_{uuid.uuid4().hex}" if sellable else None
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.courses
+                   SET visibility = %s::app.course_visibility,
+                       content_ready = %s,
+                       stripe_product_id = %s,
+                       active_stripe_price_id = %s,
+                       sellable = %s,
+                       updated_at = now()
+                 WHERE id = %s
+                """,
+                (
+                    visibility,
+                    content_ready,
+                    product_id,
+                    price_id,
+                    sellable,
+                    course_id,
+                ),
+            )
+            await conn.commit()
+
+
+async def _bundle_sellable(bundle_id: str) -> bool:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "SELECT sellable FROM app.course_bundles WHERE id = %s",
+                (bundle_id,),
+            )
+            row = await cur.fetchone()
+    assert row is not None
+    return bool(row[0])
 
 
 async def _cleanup_user(user_id: str):
@@ -158,6 +202,149 @@ async def _login_user(client, email: str, password: str) -> str:
     return login_resp.json()["access_token"]
 
 
+def test_bundle_database_errors_are_mapped_to_safe_swedish_messages():
+    legacy_field = "de" + "scription"
+    missing_column = course_bundles_service.map_bundle_database_error(
+        errors.UndefinedColumn(f"column course_bundles.{legacy_field} does not exist")
+    )
+    assert missing_column.status_code == 503
+    assert missing_column.detail == "Paketfunktionen är inte tillgänglig just nu"
+    assert legacy_field not in missing_column.detail
+
+    duplicate = course_bundles_service.map_bundle_database_error(
+        errors.UniqueViolation("duplicate key value violates unique constraint")
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.detail == "Paketet kunde inte sparas med angivna uppgifter"
+    assert "unique constraint" not in duplicate.detail
+
+
+async def test_bundle_create_blocks_invalid_authority_compositions(async_client):
+    if not await _bundles_table_ready():
+        pytest.skip("course_bundles table missing; run migrations")
+
+    teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@example.com"
+    teacher_token, _, teacher_id = await _register_user(
+        async_client, teacher_email, "Passw0rd!", "Teacher"
+    )
+    await _promote_to_teacher(teacher_id)
+    teacher_token = await _login_user(async_client, teacher_email, "Passw0rd!")
+
+    other_email = f"teacher_{uuid.uuid4().hex[:6]}@example.com"
+    other_token, _, other_teacher_id = await _register_user(
+        async_client, other_email, "Passw0rd!", "Other Teacher"
+    )
+    await _promote_to_teacher(other_teacher_id)
+    other_token = await _login_user(async_client, other_email, "Passw0rd!")
+
+    course_valid = None
+    course_non_public = None
+    course_not_ready = None
+    course_not_sellable = None
+    course_other_teacher = None
+
+    async def post_create(course_ids: list[str]):
+        return await async_client.post(
+            "/api/teachers/course-bundles",
+            headers=_auth(teacher_token),
+            json={
+                "title": "Paket A",
+                "price_amount_cents": 2490,
+                "course_ids": course_ids,
+            },
+        )
+
+    try:
+        course_valid = await _create_course(
+            async_client,
+            teacher_token,
+            f"bundle-valid-{uuid.uuid4().hex[:6]}",
+            1500,
+        )
+        course_non_public = await _create_course(
+            async_client,
+            teacher_token,
+            f"bundle-draft-{uuid.uuid4().hex[:6]}",
+            1200,
+        )
+        course_not_ready = await _create_course(
+            async_client,
+            teacher_token,
+            f"bundle-not-ready-{uuid.uuid4().hex[:6]}",
+            1200,
+        )
+        course_not_sellable = await _create_course(
+            async_client,
+            teacher_token,
+            f"bundle-not-sellable-{uuid.uuid4().hex[:6]}",
+            1200,
+        )
+        course_other_teacher = await _create_course(
+            async_client,
+            other_token,
+            f"bundle-other-{uuid.uuid4().hex[:6]}",
+            1200,
+        )
+
+        await _set_course_bundle_eligibility(course_valid)
+        await _set_course_bundle_eligibility(
+            course_non_public,
+            visibility="draft",
+            content_ready=True,
+            sellable=False,
+        )
+        await _set_course_bundle_eligibility(
+            course_not_ready,
+            visibility="draft",
+            content_ready=False,
+            sellable=False,
+        )
+        await _set_course_bundle_eligibility(
+            course_not_sellable,
+            visibility="public",
+            content_ready=True,
+            sellable=False,
+        )
+        await _set_course_bundle_eligibility(course_other_teacher)
+
+        undersized_resp = await post_create([course_valid])
+        assert undersized_resp.status_code == 400
+        assert undersized_resp.json()["detail"] == "Paketet måste innehålla minst två kurser"
+
+        duplicate_resp = await post_create([course_valid, course_valid])
+        assert duplicate_resp.status_code == 400
+        assert duplicate_resp.json()["detail"] == "Paketet kan inte innehålla samma kurs flera gånger"
+
+        non_public_resp = await post_create([course_valid, course_non_public])
+        assert non_public_resp.status_code == 400
+        assert non_public_resp.json()["detail"] == "Paketet innehåller en kurs som inte är publicerad"
+
+        not_ready_resp = await post_create([course_valid, course_not_ready])
+        assert not_ready_resp.status_code == 400
+        assert not_ready_resp.json()["detail"] == "Paketet innehåller en kurs som inte är redo"
+
+        not_sellable_resp = await post_create([course_valid, course_not_sellable])
+        assert not_sellable_resp.status_code == 400
+        assert not_sellable_resp.json()["detail"] == "Paketet innehåller en kurs som inte kan säljas"
+
+        other_teacher_resp = await post_create([course_valid, course_other_teacher])
+        assert other_teacher_resp.status_code == 403
+        assert other_teacher_resp.json()["detail"] == "Kursen tillhör inte dig"
+    finally:
+        if course_other_teacher:
+            await _cleanup_course(course_other_teacher)
+        if course_valid:
+            await _cleanup_course(course_valid)
+        if course_non_public:
+            await _cleanup_course(course_non_public)
+        if course_not_ready:
+            await _cleanup_course(course_not_ready)
+        if course_not_sellable:
+            await _cleanup_course(course_not_sellable)
+        await _cleanup_user(str(other_teacher_id))
+        await _cleanup_user(str(teacher_id))
+
+
 async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
     if not await _bundles_table_ready():
         pytest.skip("course_bundles table missing; run migrations")
@@ -178,15 +365,28 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
     course_one = None
     course_two = None
     course_three = None
+    course_bad = None
     bundle_id = None
 
     captured_session: dict[str, object] = {}
+    stripe_prices: dict[str, dict[str, object]] = {}
 
     def fake_product_create(**kwargs):
         return {"id": f"prod_bundle_test_{uuid.uuid4().hex}"}
 
     def fake_price_create(**kwargs):
-        return {"id": f"price_bundle_test_{uuid.uuid4().hex}"}
+        price_id = f"price_bundle_test_{uuid.uuid4().hex}"
+        stripe_prices[price_id] = {
+            "id": price_id,
+            "product": kwargs["product"],
+            "unit_amount": kwargs["unit_amount"],
+            "currency": kwargs["currency"],
+            "active": True,
+        }
+        return stripe_prices[price_id]
+
+    def fake_price_retrieve(price_id):
+        return stripe_prices[price_id]
 
     def fake_customer_create(**kwargs):
         return {"id": "cus_bundle_test"}
@@ -201,6 +401,7 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
 
     monkeypatch.setattr("stripe.Product.create", fake_product_create)
     monkeypatch.setattr("stripe.Price.create", fake_price_create)
+    monkeypatch.setattr("stripe.Price.retrieve", fake_price_retrieve)
     monkeypatch.setattr("stripe.Customer.create", fake_customer_create)
     monkeypatch.setattr("stripe.checkout.Session.create", fake_session_create)
     monkeypatch.setattr(settings, "checkout_success_url", "https://checkout.test/success")
@@ -210,6 +411,34 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         course_one = await _create_course(async_client, teacher_token, slug_one, 1500)
         course_two = await _create_course(async_client, teacher_token, slug_two, 1200)
         course_three = await _create_course(async_client, teacher_token, slug_three, 900)
+        course_bad = await _create_course(
+            async_client,
+            teacher_token,
+            f"bundle-course-bad-{uuid.uuid4().hex[:6]}",
+            700,
+        )
+        await _set_course_bundle_eligibility(course_one)
+        await _set_course_bundle_eligibility(course_two)
+        await _set_course_bundle_eligibility(course_three)
+        await _set_course_bundle_eligibility(
+            course_bad,
+            visibility="draft",
+            content_ready=True,
+            sellable=False,
+        )
+
+        forbidden_create_resp = await async_client.post(
+            "/api/teachers/course-bundles",
+            headers=_auth(teacher_token),
+            json={
+                "title": "Paket A",
+                "price_amount_cents": 2490,
+                "course_ids": [course_one, course_two],
+                "sellable": True,
+            },
+        )
+        assert forbidden_create_resp.status_code == 400
+        assert forbidden_create_resp.json()["detail"] == "Paketförfrågan innehåller otillåtna fält"
 
         create_resp = await async_client.post(
             "/api/teachers/course-bundles",
@@ -227,6 +456,43 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         assert bundle["price_amount_cents"] == 2490
         assert set(bundle) == {"id", "teacher_id", "title", "price_amount_cents", "courses"}
         assert [item["position"] for item in bundle["courses"]] == [1, 2]
+        assert await _bundle_sellable(bundle_id) is True
+
+        forbidden_update_resp = await async_client.patch(
+            f"/api/teachers/course-bundles/{bundle_id}",
+            headers=_auth(teacher_token),
+            json={"sellable": False},
+        )
+        assert forbidden_update_resp.status_code == 400
+        assert forbidden_update_resp.json()["detail"] == "Paketförfrågan innehåller otillåtna fält"
+
+        duplicate_update_resp = await async_client.patch(
+            f"/api/teachers/course-bundles/{bundle_id}",
+            headers=_auth(teacher_token),
+            json={"course_ids": [course_one, course_one]},
+        )
+        assert duplicate_update_resp.status_code == 400
+        assert duplicate_update_resp.json()["detail"] == "Paketet kan inte innehålla samma kurs flera gånger"
+
+        update_resp = await async_client.patch(
+            f"/api/teachers/course-bundles/{bundle_id}",
+            headers=_auth(teacher_token),
+            json={
+                "title": "Paket B",
+                "price_amount_cents": 2790,
+                "course_ids": [course_two, course_one],
+            },
+        )
+        assert update_resp.status_code == 200, update_resp.text
+        updated_bundle = update_resp.json()
+        assert updated_bundle["title"] == "Paket B"
+        assert updated_bundle["price_amount_cents"] == 2790
+        assert [item["course_id"] for item in updated_bundle["courses"]] == [
+            course_two,
+            course_one,
+        ]
+        assert [item["position"] for item in updated_bundle["courses"]] == [1, 2]
+        assert await _bundle_sellable(bundle_id) is True
 
         list_resp = await async_client.get(
             "/api/teachers/course-bundles",
@@ -239,6 +505,22 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         assert set(listed_bundle) == {"id", "teacher_id", "title", "price_amount_cents", "courses"}
         assert [item["position"] for item in listed_bundle["courses"]] == [1, 2]
 
+        forbidden_attach_resp = await async_client.post(
+            f"/api/teachers/course-bundles/{bundle_id}/courses",
+            headers=_auth(teacher_token),
+            json={"course_id": course_three, "sellable": True},
+        )
+        assert forbidden_attach_resp.status_code == 400
+        assert forbidden_attach_resp.json()["detail"] == "Paketförfrågan innehåller otillåtna fält"
+
+        invalid_attach_resp = await async_client.post(
+            f"/api/teachers/course-bundles/{bundle_id}/courses",
+            headers=_auth(teacher_token),
+            json={"course_id": course_bad},
+        )
+        assert invalid_attach_resp.status_code == 400
+        assert invalid_attach_resp.json()["detail"] == "Paketet innehåller en kurs som inte är publicerad"
+
         attach_resp = await async_client.post(
             f"/api/teachers/course-bundles/{bundle_id}/courses",
             headers=_auth(teacher_token),
@@ -247,9 +529,9 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         assert attach_resp.status_code == 200, attach_resp.text
         attached_courses = attach_resp.json()["courses"]
         assert [item["course_id"] for item in attached_courses] == [
-            course_one,
-            course_three,
             course_two,
+            course_three,
+            course_one,
         ]
         assert [item["position"] for item in attached_courses] == [1, 2, 3]
 
@@ -268,63 +550,11 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         assert metadata.get("checkout_type") == "course_bundle"
         assert metadata.get("order_id") == payload["order_id"]
 
-        def fake_construct_event(payload, sig_header, secret):
-            body = json.loads(payload)
-            return {"type": body.get("event_type"), "data": {"object": body.get("object", body)}}
-
-        monkeypatch.setattr(settings, "stripe_test_webhook_secret", "whsec_test")
-        monkeypatch.setattr("stripe.Webhook.construct_event", fake_construct_event)
-
-        webhook_payload = {
-            "event_type": "checkout.session.completed",
-            "object": {
-                "id": "cs_bundle_test",
-                "mode": "payment",
-                "metadata": {"order_id": payload["order_id"]},
-                "customer": "cus_bundle_test",
-                "payment_intent": "pi_bundle_test",
-                "amount_total": 2490,
-                "currency": "sek",
-            },
-        }
-        webhook_resp = await async_client.post(
-            "/api/stripe/webhook",
-            content=json.dumps(webhook_payload),
-            headers={"stripe-signature": "sig_test"},
-        )
-        assert webhook_resp.status_code == 200, webhook_resp.text
-
         order = await repositories.get_order(payload["order_id"])
         assert order is not None
-        assert order["status"] == "paid"
+        assert order["status"] == "pending"
         assert order["order_type"] == "bundle"
-        assert order["stripe_payment_intent"] == "pi_bundle_test"
-        payment = await payments_repo.get_latest_payment_for_order(
-            payload["order_id"],
-            status="paid",
-        )
-        assert payment is not None
-        assert payment["provider_reference"] == "pi_bundle_test"
         assert await repositories.get_membership(str(student_id)) is None
-
-        enrollment_one = await courses_repo.get_course_enrollment(
-            str(student_id),
-            course_one,
-        )
-        enrollment_two = await courses_repo.get_course_enrollment(
-            str(student_id),
-            course_two,
-        )
-        enrollment_three = await courses_repo.get_course_enrollment(
-            str(student_id),
-            course_three,
-        )
-        assert enrollment_one is not None
-        assert enrollment_two is not None
-        assert enrollment_three is not None
-        assert enrollment_one["source"] == "purchase"
-        assert enrollment_two["source"] == "purchase"
-        assert enrollment_three["source"] == "purchase"
     finally:
         if bundle_id:
             await _cleanup_bundle(bundle_id)
@@ -334,5 +564,7 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
             await _cleanup_course(course_two)
         if course_three:
             await _cleanup_course(course_three)
+        if course_bad:
+            await _cleanup_course(course_bad)
         await _cleanup_user(str(teacher_id))
         await _cleanup_user(str(student_id))

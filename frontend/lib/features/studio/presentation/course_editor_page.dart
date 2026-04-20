@@ -1514,7 +1514,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       });
     }
     try {
-      final media = await _studioRepo.listLessonMedia(selectedLessonId);
+      final media = await _readCanonicalLessonMedia(selectedLessonId);
       if (_isStaleRequest(
         requestId: requestId,
         currentId: _lessonMediaRequestId,
@@ -1622,7 +1622,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final courseId = _selectedCourseId;
     final requestId = ++_lessonMediaRequestId;
     try {
-      final media = await _studioRepo.listLessonMedia(lessonId);
+      final media = await _readCanonicalLessonMedia(lessonId);
       if (_isStaleRequest(
         requestId: requestId,
         currentId: _lessonMediaRequestId,
@@ -1981,6 +1981,31 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  List<String> _lessonMediaIdsFromContent(StudioLessonContentRead content) {
+    final ids = <String>[];
+    final seen = <String>{};
+    for (final media in content.media) {
+      final id = media.lessonMediaId.trim();
+      if (id.isEmpty || !seen.add(id)) {
+        continue;
+      }
+      ids.add(id);
+    }
+    return ids;
+  }
+
+  Future<List<StudioLessonMediaItem>> _readCanonicalLessonMedia(
+    String lessonId,
+  ) async {
+    final content = await _studioRepo.readLessonContent(lessonId);
+    if (content.lessonId != lessonId) {
+      throw StateError('Lektionsinnehållet hör till fel lektion.');
+    }
+    return _studioRepo.fetchLessonMediaPlacements(
+      _lessonMediaIdsFromContent(content),
+    );
+  }
+
   String _prepareLessonMarkdownForEditing(String markdown) {
     return markdown_to_editor.canonicalizeMarkdownForEditor(
       markdown: markdown,
@@ -2041,10 +2066,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       throw StateError('Lektionsinnehållet hör till fel lektion.');
     }
 
-    final lessonMediaIds = content.media
-        .map((media) => media.lessonMediaId)
-        .where((id) => id.isNotEmpty)
-        .toList(growable: false);
+    final lessonMediaIds = _lessonMediaIdsFromContent(content);
     final placements = await _studioRepo.fetchLessonMediaPlacements(
       lessonMediaIds,
     );
@@ -2110,6 +2132,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         LessonMediaPreviewState.ready;
   }
 
+  bool _hasCanonicalDeliveryMedia(StudioLessonMediaItem media) {
+    return media.state == 'ready' && _canonicalLessonMediaUrl(media) != null;
+  }
+
   bool _canInsertLessonMedia(StudioLessonMediaItem media) {
     if (media.lessonMediaId.isEmpty) {
       return false;
@@ -2118,7 +2144,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return false;
     }
     if (_isDocumentMedia(media)) {
-      return true;
+      return _hasCanonicalDeliveryMedia(media);
     }
     return _isAuthoritativelyReadyForEditor(media);
   }
@@ -2145,7 +2171,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return false;
       }
     }
-    return true;
+    return _hasCanonicalDeliveryMedia(media);
   }
 
   Set<String> _lessonMediaIdsFromRows(
@@ -2218,7 +2244,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return <String>[
       media.lessonMediaId,
       media.mediaType,
-      media.originalName ?? '',
       media.state,
     ].join('|');
   }
@@ -4203,13 +4228,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   bool _isWavMedia(StudioLessonMediaItem media) {
-    final originalName = media.originalName;
-    final isWavSource = originalName != null && originalName.endsWith('.wav');
     if (media.state == 'ready') {
       return false;
-    }
-    if (isWavSource) {
-      return true;
     }
     return media.mediaType == 'audio';
   }
@@ -5282,18 +5302,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  String _fileNameFromMedia(
-    StudioLessonMediaItem media, [
-    LessonMediaPreviewData? preview,
-  ]) {
-    final originalName = media.originalName;
-    if (originalName != null && originalName.isNotEmpty) {
-      return originalName;
-    }
-    final previewName = preview?.fileName;
-    if (previewName != null) {
-      return previewName;
-    }
+  String _fileNameFromMedia(StudioLessonMediaItem media) {
     return 'media_${media.lessonMediaId}';
   }
 
@@ -6250,7 +6259,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         final isDocument = _isDocumentMedia(
                                           media,
                                         );
-                                        final canDownload = !isWavMedia;
+                                        final canDownload =
+                                            !isWavMedia &&
+                                            _hasCanonicalDeliveryMedia(media);
 
                                         Widget leading;
                                         leading = ClipRRect(

@@ -21,20 +21,6 @@ class _StudioLessonMediaScope {
     throw StateError('$label field "$field" must be a non-empty string');
   }
 
-  Future<List<StudioLessonMediaItem>> listLessonMedia(String lessonId) async {
-    final response = await _client.raw.get<Object?>(
-      '/api/lesson-media/$lessonId',
-    );
-    final list = StudioRepository._requiredResponseListField(
-      response.data,
-      'items',
-      'Lesson media list',
-    );
-    return list
-        .map((e) => StudioLessonMediaItem.fromResponse(e))
-        .toList(growable: false);
-  }
-
   Future<StudioLessonMediaPreviewBatch> fetchLessonMediaPreviews(
     List<String> lessonMediaIds,
   ) async {

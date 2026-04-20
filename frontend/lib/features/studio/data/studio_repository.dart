@@ -220,8 +220,30 @@ class StudioRepository {
     await _client.delete('/studio/lessons/$lessonId');
   }
 
-  Future<List<StudioLessonMediaItem>> listLessonMedia(String lessonId) =>
-      _lessonMedia.listLessonMedia(lessonId);
+  static List<String> _lessonMediaIdsFromContent(
+    StudioLessonContentRead content,
+  ) {
+    final ids = <String>[];
+    final seen = <String>{};
+    for (final media in content.media) {
+      final id = media.lessonMediaId.trim();
+      if (id.isEmpty || !seen.add(id)) {
+        continue;
+      }
+      ids.add(id);
+    }
+    return ids;
+  }
+
+  Future<List<StudioLessonMediaItem>> listLessonMedia(String lessonId) async {
+    final content = await readLessonContent(lessonId);
+    if (content.lessonId != lessonId) {
+      throw StateError('Lektionsinnehållet hör till fel lektion.');
+    }
+    return _lessonMedia.fetchLessonMediaPlacements(
+      _lessonMediaIdsFromContent(content),
+    );
+  }
 
   Future<StudioLessonMediaPreviewBatch> fetchLessonMediaPreviews(
     List<String> lessonMediaIds,
