@@ -85,6 +85,15 @@ void main() {
       expect(freeNonZero.isIntroCourse, isTrue);
     });
 
+    test('rejects legacy step progression field', () {
+      expect(
+        () => CourseSummary.fromResponse(
+          _coursePayload(extra: const {'step': 'intro'}),
+        ),
+        throwsStateError,
+      );
+    });
+
     test('preserves backend-authored teacher identity', () {
       final summary = CourseSummary.fromResponse(_coursePayload());
 
@@ -222,6 +231,15 @@ void main() {
       expect(state.enrollment, isNull);
       expect(adapter.requestsFor('/courses/course-2/access'), hasLength(1));
     });
+
+    test('rejects legacy step progression field', () {
+      expect(
+        () => CourseAccessData.fromResponse(
+          _accessPayload(extra: const {'step': 'intro'}),
+        ),
+        throwsStateError,
+      );
+    });
   });
 
   group('CoursesRepository.fetchCourseDetailBySlug', () {
@@ -288,6 +306,51 @@ void main() {
       expect(adapter.requestsFor('/courses/by-slug/$slug'), hasLength(1));
     });
   });
+
+  group('CoursesRepository.fetchLessonDetail', () {
+    test('maps null lesson body as safe absence', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/lessons/lesson-1') {
+          return _jsonResponse(statusCode: 200, body: _lessonPayload());
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      final detail = await repo.fetchLessonDetail('lesson-1');
+
+      expect(detail.lesson.contentMarkdown, isNull);
+      expect(detail.media, isEmpty);
+      expect(adapter.requestsFor('/courses/lessons/lesson-1'), hasLength(1));
+    });
+
+    test('wraps malformed lesson payload before render', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/lessons/lesson-1') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: _lessonPayload(
+              lesson: const {
+                'id': 'lesson-1',
+                'course_id': 'course-1',
+                'lesson_title': '',
+                'position': 1,
+                'content_markdown': '# Lesson',
+              },
+            ),
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      await expectLater(
+        repo.fetchLessonDetail('lesson-1'),
+        throwsA(isA<AppFailure>()),
+      );
+      expect(adapter.requestsFor('/courses/lessons/lesson-1'), hasLength(1));
+    });
+  });
 }
 
 CoursesRepository _repository(_RecordingAdapter adapter) {
@@ -341,6 +404,7 @@ Map<String, Object?> _accessPayload({
   String? requiredEnrollmentSource = 'purchase',
   bool enrollable = false,
   bool purchasable = true,
+  Map<String, Object?> extra = const {},
 }) {
   return {
     'course_id': courseId,
@@ -349,6 +413,7 @@ Map<String, Object?> _accessPayload({
     'enrollable': enrollable,
     'purchasable': purchasable,
     'enrollment': enrollment,
+    ...extra,
   };
 }
 
@@ -361,6 +426,26 @@ const Map<String, Object?> _defaultEnrollment = {
   'drip_started_at': '2024-01-10T12:00:00Z',
   'current_unlock_position': 1,
 };
+
+Map<String, Object?> _lessonPayload({
+  Object? lesson = const {
+    'id': 'lesson-1',
+    'course_id': 'course-1',
+    'lesson_title': 'Lesson',
+    'position': 1,
+    'content_markdown': null,
+  },
+  Object? media = const [],
+}) {
+  return {
+    'lesson': lesson,
+    'course_id': 'course-1',
+    'lessons': const [
+      {'id': 'lesson-1', 'lesson_title': 'Lesson', 'position': 1},
+    ],
+    'media': media,
+  };
+}
 
 ResponseBody _jsonResponse({
   required int statusCode,

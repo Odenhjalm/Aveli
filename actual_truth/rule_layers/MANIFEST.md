@@ -430,7 +430,7 @@ RULE_ID: MANIFEST_0072
 SOURCE_FILE: aveli_system_manifest.json:584
 CATEGORY: MANIFEST
 EXACT TEXT:
-        "grouping_semantics": "progression_set_ordered_by_step",
+        "grouping_semantics": "progression_set_ordered_by_group_position",
 
 RULE_ID: MANIFEST_0073
 SOURCE_FILE: aveli_system_manifest.json:585
@@ -778,7 +778,7 @@ RULE_ID: MANIFEST_0130
 SOURCE_FILE: aveli_system_manifest.json:644
 CATEGORY: MANIFEST
 EXACT TEXT:
-        "course_progression_field": "step",
+        "course_progression_field": "group_position",
 
 RULE_ID: MANIFEST_0131
 SOURCE_FILE: aveli_system_manifest.json:645

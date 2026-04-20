@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException
 
 from app.routes import courses as course_routes
 
@@ -148,3 +149,93 @@ async def test_lesson_detail_returns_ready_resolved_media(monkeypatch):
     assert item.media.media_id == UUID(MEDIA_ASSET_ID)
     assert item.media.state == "ready"
     assert item.media.resolved_url == "https://stream.local/lesson.mp3"
+
+
+async def test_lesson_detail_rejects_malformed_protected_lesson(monkeypatch):
+    async def _protected_content(lesson_id: str, *, user_id: str):
+        assert lesson_id == LESSON_ID
+        assert user_id == USER_ID
+        return {
+            "lesson": {
+                "id": LESSON_ID,
+                "course_id": COURSE_ID,
+                "lesson_title": None,
+                "position": 1,
+                "content_markdown": "# Lesson",
+            },
+            "media": [],
+        }
+
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "read_canonical_lesson_access",
+        _allow_lesson_access,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "read_protected_lesson_content_surface",
+        _protected_content,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "list_course_lesson_structure",
+        _lesson_structure,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
+
+    assert excinfo.value.status_code == 503
+
+
+async def test_lesson_detail_rejects_malformed_structure_row(monkeypatch):
+    async def _protected_content(lesson_id: str, *, user_id: str):
+        assert lesson_id == LESSON_ID
+        assert user_id == USER_ID
+        return {
+            "lesson": {
+                "id": LESSON_ID,
+                "course_id": COURSE_ID,
+                "lesson_title": "Lesson",
+                "position": 1,
+                "content_markdown": "# Lesson",
+            },
+            "media": [],
+        }
+
+    async def _malformed_lesson_structure(course_id: str):
+        assert course_id == COURSE_ID
+        return [
+            {
+                "id": LESSON_ID,
+                "lesson_title": "",
+                "position": 1,
+            }
+        ]
+
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "read_canonical_lesson_access",
+        _allow_lesson_access,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "read_protected_lesson_content_surface",
+        _protected_content,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "list_course_lesson_structure",
+        _malformed_lesson_structure,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
+
+    assert excinfo.value.status_code == 503

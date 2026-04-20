@@ -16,7 +16,7 @@ This contract defines no domain ownership, public-surface semantic ownership, me
 - `title`
 - `teacher`
 - `course_group_id`
-- `step`
+- `group_position`
 - `cover_media_id`
 - `cover`
 - `price_amount_cents`
@@ -29,6 +29,8 @@ Field rules:
 - `teacher` MUST be serialized as `{ user_id, display_name } | null`
 - `teacher.user_id` MUST be backend-authored from canonical course ownership
 - `teacher.display_name` MUST be backend-authored from profile projection data
+- `group_position` MUST be present and MUST be the only course progression field
+- The legacy course progression field `step` MUST NOT be emitted
 - `cover_media_id: UUID | null`
 - `cover` MUST be present and MUST be `{ media_id, state, resolved_url } | null`
 - `cover` MUST be `null` when no contract-valid resolved cover object exists

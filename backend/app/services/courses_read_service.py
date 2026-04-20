@@ -25,6 +25,7 @@ _CANONICAL_COURSE_FIELDS = (
 
 def _canonical_course_payload(course: Mapping[str, Any]) -> dict[str, Any]:
     courses_service.reject_legacy_course_cover_output_fields(course)
+    courses_service.reject_legacy_course_progression_output_fields(course)
     normalized = dict(course)
     courses_service.attach_course_access_model(normalized)
     courses_service.attach_course_teacher_read_contract(normalized)

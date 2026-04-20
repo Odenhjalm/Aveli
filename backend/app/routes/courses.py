@@ -2,6 +2,7 @@ from typing import Any, Mapping
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import ValidationError
 
 from .. import schemas
 from ..auth import AppEntryUser, OptionalCurrentUser
@@ -30,6 +31,7 @@ _CANONICAL_COURSE_FIELDS = (
 
 def _canonical_course_payload(course: Mapping[str, Any]) -> dict[str, Any]:
     courses_service.reject_legacy_course_cover_output_fields(course)
+    courses_service.reject_legacy_course_progression_output_fields(course)
     normalized = dict(course)
     courses_service.attach_course_access_model(normalized)
     courses_service.attach_course_teacher_read_contract(normalized)
@@ -46,11 +48,38 @@ def _course_list_response(
     return schemas.CourseListResponse(items=[_course_response(row) for row in rows])
 
 
+def _lesson_content_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Canonical lesson content is unavailable",
+    )
+
+
+def _require_lesson_string(row: Mapping[str, Any], field: str) -> str:
+    normalized = str(row.get(field) or "").strip()
+    if not normalized:
+        raise _lesson_content_unavailable()
+    return normalized
+
+
+def _require_lesson_position(row: Mapping[str, Any], field: str) -> int:
+    value = row.get(field)
+    if isinstance(value, bool) or value is None:
+        raise _lesson_content_unavailable()
+    try:
+        position = int(value)
+    except (TypeError, ValueError) as exc:
+        raise _lesson_content_unavailable() from exc
+    if position < 1:
+        raise _lesson_content_unavailable()
+    return position
+
+
 def _lesson_structure_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        "id": row.get("id"),
-        "lesson_title": row.get("lesson_title"),
-        "position": row.get("position"),
+        "id": _require_lesson_string(row, "id"),
+        "lesson_title": _require_lesson_string(row, "lesson_title"),
+        "position": _require_lesson_position(row, "position"),
     }
 
 
@@ -98,15 +127,18 @@ def _lesson_content_response(
     lessons: list[dict] | tuple[dict, ...],
     media_rows: list[dict] | tuple[dict, ...],
 ) -> schemas.LessonContentResponse:
-    return schemas.LessonContentResponse(
-        lesson=schemas.LessonContentItem(**lesson),
-        course_id=course_id,
-        lessons=[
-            schemas.LessonStructureItem(**_lesson_structure_payload(row))
-            for row in lessons
-        ],
-        media=[schemas.LearnerLessonMediaItem(**row) for row in media_rows],
-    )
+    try:
+        return schemas.LessonContentResponse(
+            lesson=schemas.LessonContentItem(**lesson),
+            course_id=course_id,
+            lessons=[
+                schemas.LessonStructureItem(**_lesson_structure_payload(row))
+                for row in lessons
+            ],
+            media=[schemas.LearnerLessonMediaItem(**row) for row in media_rows],
+        )
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise _lesson_content_unavailable() from exc
 
 
 @router.get("", response_model=schemas.CourseListResponse)
@@ -169,12 +201,21 @@ async def lesson_detail(lesson_id: str, current: AppEntryUser):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Canonical lesson content is unavailable",
         )
+    protected_lesson = protected_content.get("lesson")
+    if not isinstance(protected_lesson, dict):
+        raise _lesson_content_unavailable()
+    protected_course_id = str(protected_lesson.get("course_id") or "").strip()
+    if protected_course_id != course_id:
+        raise _lesson_content_unavailable()
+    protected_media = protected_content.get("media")
+    if not isinstance(protected_media, list):
+        raise _lesson_content_unavailable()
     lessons = await courses_service.list_course_lesson_structure(course_id)
     return _lesson_content_response(
-        lesson=protected_content["lesson"],
+        lesson=protected_lesson,
         course_id=course_id,
         lessons=list(lessons),
-        media_rows=list(protected_content["media"]),
+        media_rows=protected_media,
     )
 
 

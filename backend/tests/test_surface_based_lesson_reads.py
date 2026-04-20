@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException
 
 from app.routes import courses as course_routes
 from app.services import courses_service
@@ -158,6 +159,77 @@ async def test_read_protected_lesson_content_surface_filters_non_ready_media(
     assert result is not None
     assert result["lesson"]["content_markdown"] == "# Surface content"
     assert result["media"] == []
+
+
+async def test_read_protected_lesson_content_surface_allows_missing_lesson_body(
+    monkeypatch,
+) -> None:
+    async def _fake_get_surface_rows(*, lesson_id: str, user_id: str):
+        assert lesson_id == LESSON_ID
+        assert user_id == USER_ID
+        return [
+            {
+                "id": LESSON_ID,
+                "course_id": COURSE_ID,
+                "lesson_title": "Lesson",
+                "position": 1,
+                "content_markdown": None,
+                "lesson_media_id": None,
+                "media_asset_id": None,
+                "lesson_media_position": None,
+            }
+        ]
+
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "get_lesson_content_surface_rows",
+        _fake_get_surface_rows,
+        raising=True,
+    )
+
+    result = await courses_service.read_protected_lesson_content_surface(
+        LESSON_ID,
+        user_id=USER_ID,
+    )
+
+    assert result is not None
+    assert result["lesson"]["content_markdown"] is None
+    assert result["media"] == []
+
+
+async def test_read_protected_lesson_content_surface_rejects_malformed_lesson_row(
+    monkeypatch,
+) -> None:
+    async def _fake_get_surface_rows(*, lesson_id: str, user_id: str):
+        assert lesson_id == LESSON_ID
+        assert user_id == USER_ID
+        return [
+            {
+                "id": LESSON_ID,
+                "course_id": COURSE_ID,
+                "lesson_title": None,
+                "position": 1,
+                "content_markdown": "# Surface content",
+                "lesson_media_id": None,
+                "media_asset_id": None,
+                "lesson_media_position": None,
+            }
+        ]
+
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "get_lesson_content_surface_rows",
+        _fake_get_surface_rows,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await courses_service.read_protected_lesson_content_surface(
+            LESSON_ID,
+            user_id=USER_ID,
+        )
+
+    assert excinfo.value.status_code == 503
 
 
 async def test_lesson_detail_uses_surface_based_content_and_structure(monkeypatch):

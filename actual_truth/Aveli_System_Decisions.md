@@ -179,12 +179,12 @@
 ## Course Model (Canonical)
 
 - course contains lessons directly
-- `course.step` is the only canonical progression field
+- `course.group_position` is the only canonical progression field
 - `course.course_group_id` is the only canonical grouping field
 - `course.drip_enabled` and `course.drip_interval_days` are the only canonical drip-configuration fields
 - `course.course_group_id` represents a progression set of courses
 - courses within the same `course_group_id` belong to the same product progression
-- progression within a `course_group_id` is strictly ordered by `course.step`
+- progression within a `course_group_id` is strictly ordered by `course.group_position`
 - `course.course_group_id` is used only for progression linkage and UI sequencing
 - `course.course_group_id` must not be used for categories, tags, or arbitrary grouping
 - drip behavior is course-level configuration only and must not be inferred from course type or enrollment source
@@ -551,7 +551,7 @@ Frontend must render only and must not resolve or construct media.
 - returning `lesson_content_surface` data from course-detail endpoints
 - treating any rule that does not require `course_enrollments` AND `lesson.position <= current_unlock_position` as sufficient authority for `lesson_content_surface`
 - entitlement fallback paths
-- step-based ownership logic
+- progression-position-based ownership logic
 - runtime-derived progression
 - runtime-derived unlock state
 - drip logic tied to `intro_enrollment` vs `purchase`

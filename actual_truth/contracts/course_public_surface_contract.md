@@ -83,7 +83,7 @@ Lesson content read context may additionally include:
       "display_name": "string | null"
     },
     "course_group_id": "uuid",
-    "step": "intro | step1 | step2 | step3",
+    "group_position": 0,
     "cover_media_id": "uuid | null",
     "cover": {
       "media_id": "string",
@@ -119,6 +119,8 @@ Rules:
 - `teacher.user_id` is derived from `app.courses.teacher_id`
 - `teacher.display_name` is derived from `app.profiles.display_name`
 - Frontend MUST NOT infer or synthesize teacher display data
+- `group_position` is the only canonical course progression field
+- The legacy progression field `step` MUST NOT be emitted or consumed
 
 ## 6. CONTENT READ CONTRACT
 

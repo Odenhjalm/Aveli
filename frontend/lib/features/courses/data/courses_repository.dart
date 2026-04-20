@@ -16,6 +16,8 @@ const Set<String> _legacyCourseCoverFields = <String>{
   'signedCoverUrlExpiresAt',
 };
 
+const Set<String> _legacyCourseProgressionFields = <String>{'step'};
+
 Object? _requiredField(Object? payload, String fieldName) {
   switch (payload) {
     case final Map data when data.containsKey(fieldName):
@@ -32,6 +34,16 @@ void _rejectLegacyCourseCoverFields(Object? payload, String context) {
     for (final field in _legacyCourseCoverFields) {
       if (data.containsKey(field)) {
         throw StateError('Invalid course cover field in $context');
+      }
+    }
+  }
+}
+
+void _rejectLegacyCourseProgressionFields(Object? payload, String context) {
+  if (payload case final Map data) {
+    for (final field in _legacyCourseProgressionFields) {
+      if (data.containsKey(field)) {
+        throw StateError('Ogiltigt kursprogressionsf\u00e4lt i $context');
       }
     }
   }
@@ -350,6 +362,7 @@ class CourseAccessData {
   bool get hasEnrollment => enrollment != null;
 
   factory CourseAccessData.fromResponse(Object? payload) {
+    _rejectLegacyCourseProgressionFields(payload, 'course_access');
     final enrollmentPayload = _requiredField(payload, 'enrollment');
     return CourseAccessData(
       courseId: _requireString(
@@ -452,6 +465,7 @@ class CourseSummary {
 
   factory CourseSummary.fromResponse(Object? payload) {
     _rejectLegacyCourseCoverFields(payload, 'course');
+    _rejectLegacyCourseProgressionFields(payload, 'course');
     return CourseSummary(
       id: _requireString(_requiredField(payload, 'id'), 'id'),
       slug: _requireString(_requiredField(payload, 'slug'), 'slug'),

@@ -63,7 +63,7 @@ Course structure contains only:
 - `slug`
 - `title`
 - `course_group_id`
-- `step`
+- `group_position`
 - `cover_media_id`
 - `price_amount_cents`
 - `drip_enabled`
@@ -159,7 +159,7 @@ Request:
   "title": "string",
   "slug": "string",
   "course_group_id": "uuid",
-  "step": "intro | step1 | step2 | step3",
+  "group_position": 0,
   "price_amount_cents": 123,
   "drip_enabled": true,
   "drip_interval_days": 7,
@@ -175,7 +175,7 @@ Response:
   "slug": "string",
   "title": "string",
   "course_group_id": "uuid",
-  "step": "intro | step1 | step2 | step3",
+  "group_position": 0,
   "cover_media_id": "uuid | null",
   "cover": {
     "media_id": "string",
@@ -210,7 +210,7 @@ Request:
   "title": "string",
   "slug": "string",
   "course_group_id": "uuid",
-  "step": "intro | step1 | step2 | step3",
+  "group_position": 0,
   "price_amount_cents": 123,
   "drip_enabled": true,
   "drip_interval_days": 7,
@@ -504,7 +504,7 @@ Validation law:
       "slug": "string",
       "title": "string",
       "course_group_id": "uuid",
-      "step": "intro | step1 | step2 | step3",
+      "group_position": 0,
       "cover_media_id": "uuid | null",
       "cover": {
         "media_id": "string",

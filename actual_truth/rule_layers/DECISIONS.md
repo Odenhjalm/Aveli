@@ -720,7 +720,7 @@ RULE_ID: DECISIONS_0119
 SOURCE_FILE: Aveli_System_Decisions.md:156
 CATEGORY: DECISIONS
 EXACT TEXT:
-- `course.step` is the only canonical progression field
+- `course.group_position` is the only canonical progression field
 
 RULE_ID: DECISIONS_0120
 SOURCE_FILE: Aveli_System_Decisions.md:157
@@ -750,7 +750,7 @@ RULE_ID: DECISIONS_0124
 SOURCE_FILE: Aveli_System_Decisions.md:161
 CATEGORY: DECISIONS
 EXACT TEXT:
-- progression within a `course_group_id` is strictly ordered by `course.step`
+- progression within a `course_group_id` is strictly ordered by `course.group_position`
 
 RULE_ID: DECISIONS_0125
 SOURCE_FILE: Aveli_System_Decisions.md:162
@@ -2548,7 +2548,7 @@ RULE_ID: DECISIONS_0423
 SOURCE_FILE: Aveli_System_Decisions.md:522
 CATEGORY: DECISIONS
 EXACT TEXT:
-- step-based ownership logic
+- progression-position-based ownership logic
 
 RULE_ID: DECISIONS_0424
 SOURCE_FILE: Aveli_System_Decisions.md:523

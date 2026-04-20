@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 
 from app import schemas
 from app.routes import courses as course_routes
@@ -46,6 +48,26 @@ def _cover_payload() -> dict[str, str | None]:
         "state": "ready",
         "resolved_url": "https://cdn.test/course-cover.jpg",
     }
+
+
+def test_course_progression_authority_documents_use_group_position():
+    root = Path(__file__).resolve().parents[1].parent
+    paths = [
+        root / "actual_truth/Aveli_System_Decisions.md",
+        root / "actual_truth/aveli_system_manifest.json",
+        root / "actual_truth/contracts/AVELI_COURSE_DOMAIN_SPEC.md",
+        root / "actual_truth/contracts/course_public_surface_contract.md",
+        root / "actual_truth/contracts/course_lesson_editor_contract.md",
+        root / "actual_truth/contracts/learner_public_edge_contract.md",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+    assert "group_position" in text
+    assert "`course.step` is the only canonical progression field" not in text
+    assert "`app.courses.step`" not in text
+    assert '"course_progression_field": "step"' not in text
+    assert '"progression_set_ordered_by_step"' not in text
+    assert '"step": "intro | step1 | step2 | step3"' not in text
 
 
 def _detail_response(
@@ -124,6 +146,7 @@ async def test_course_detail_http_shape_contains_cover_and_null_sibling_content(
         "user_id": TEACHER_ID,
         "display_name": "Aveli Teacher",
     }
+    assert "step" not in body["course"]
     assert set(body["lessons"][0].keys()) == {"id", "lesson_title", "position"}
     for forbidden_key in (
         "lesson_content",
@@ -255,6 +278,49 @@ async def test_list_public_courses_reads_public_discovery_surface(monkeypatch):
     assert rows[0]["id"] == COURSE_ID
     assert rows[0]["enrollable"] is True
     assert rows[0]["purchasable"] is False
+
+
+async def test_course_route_rejects_legacy_step_field(monkeypatch):
+    async def fake_list_public_courses(*, search: str | None = None, limit: int | None = None):
+        del search, limit
+        return [{**_course_payload(cover=None), "step": "intro"}]
+
+    async def fake_attach_course_cover_read_contract(courses):
+        rows = [courses] if isinstance(courses, dict) else list(courses)
+        for row in rows:
+            row["cover"] = None
+
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "list_public_courses",
+        fake_list_public_courses,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "attach_course_cover_read_contract",
+        fake_attach_course_cover_read_contract,
+        raising=True,
+    )
+
+    with pytest.raises(ValueError, match="legacy course progression"):
+        await course_routes.list_courses()
+
+
+def test_course_schemas_reject_legacy_step_field():
+    with pytest.raises(ValidationError):
+        schemas.Course(**{**_course_payload(cover=None), "step": "intro"})
+
+    with pytest.raises(ValidationError):
+        schemas.CourseAccessStateResponse(
+            course_id=COURSE_ID,
+            group_position=0,
+            step="intro",
+            required_enrollment_source="intro_enrollment",
+            enrollable=True,
+            purchasable=False,
+            enrollment=None,
+        )
 
 
 async def test_read_course_detail_composes_teacher_cover_and_short_description(monkeypatch):

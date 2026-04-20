@@ -77,9 +77,7 @@ class _LessonPageState extends ConsumerState<LessonPage> {
         title: 'Lektion',
         body: Center(
           child: Text(
-            error is AppFailure
-                ? error.message
-                : 'Laddning av lektionen misslyckades.',
+            _lessonLoadErrorMessage(error),
             textAlign: TextAlign.center,
           ),
         ),
@@ -99,24 +97,31 @@ class _LessonContent extends ConsumerWidget {
     if (parsed != null &&
         parsed.pathSegments.contains('pay') &&
         parsed.pathSegments.contains('bundle')) {
-      throw StateError('Paketköp är inte tillgängligt i appen.');
+      _showLessonActionError(
+        context,
+        'Paketk\u00f6p \u00e4r inte tillg\u00e4ngligt i appen.',
+      );
+      return;
     }
 
     final lessonMediaId = lessonMediaIdFromDocumentLinkUrl(url);
     if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
-      final item = detail.media.firstWhere(
-        (media) => media.id == lessonMediaId,
-        orElse: () => throw StateError('Dokumentet saknar backend-rad.'),
+      final item = _findLessonMediaItem(
+        detail.media,
+        lessonMediaId,
+        expectedMediaType: 'document',
       );
+      if (item == null) {
+        _showLessonActionError(context, 'Dokumentet kunde inte \u00f6ppnas.');
+        return;
+      }
       final resolvedUrl = item.media?.resolvedUrl?.trim();
       if (resolvedUrl == null || resolvedUrl.isEmpty) {
-        throw StateError('Dokumentet saknar backend-authored resolved_url.');
+        _showLessonActionError(context, 'Dokumentet kunde inte \u00f6ppnas.');
+        return;
       }
-      if (!await launchUrlString(
-        resolvedUrl,
-        mode: LaunchMode.externalApplication,
-      )) {
-        throw StateError('Dokumentet kunde inte öppnas.');
+      if (!await _tryLaunchExternal(resolvedUrl) && context.mounted) {
+        _showLessonActionError(context, 'Dokumentet kunde inte \u00f6ppnas.');
       }
       return;
     }
@@ -128,11 +133,15 @@ class _LessonContent extends ConsumerWidget {
         rawSource: url,
         reason: 'noncanonical_link_target',
       );
-      throw StateError('Endast backend-auktoriserade dokumentlänkar stöds.');
+      _showLessonActionError(
+        context,
+        'Endast backend-auktoriserade dokumentl\u00e4nkar st\u00f6ds.',
+      );
+      return;
     }
 
-    if (!await launchUrlString(url, mode: LaunchMode.externalApplication)) {
-      throw StateError('Länken kunde inte öppnas.');
+    if (!await _tryLaunchExternal(url) && context.mounted) {
+      _showLessonActionError(context, 'L\u00e4nken kunde inte \u00f6ppnas.');
     }
   }
 
@@ -160,19 +169,21 @@ class _LessonContent extends ConsumerWidget {
     }
 
     final markdownContent = lesson.contentMarkdown;
-    if (markdownContent == null || markdownContent.isEmpty) {
-      throw StateError('Lektionsinnehåll saknas.');
-    }
+    final hasLessonContent =
+        markdownContent != null && markdownContent.trim().isNotEmpty;
     final coreContent = MouseRegion(
       cursor: SystemMouseCursors.basic,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          LearnerLessonContentRenderer(
-            markdown: markdownContent,
-            lessonMedia: detail.media,
-            onLaunchUrl: (url) => unawaited(_handleLinkTap(context, url)),
-          ),
+          if (hasLessonContent)
+            LearnerLessonContentRenderer(
+              markdown: markdownContent,
+              lessonMedia: detail.media,
+              onLaunchUrl: (url) => unawaited(_handleLinkTap(context, url)),
+            )
+          else
+            const _LessonEmptyContentState(),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -223,6 +234,65 @@ class _LessonContent extends ConsumerWidget {
   }
 }
 
+String _lessonLoadErrorMessage(Object error) {
+  if (error is AppFailure) {
+    switch (error.kind) {
+      case AppFailureKind.unauthorized:
+        return 'Du har inte \u00e5tkomst till den h\u00e4r lektionen.';
+      case AppFailureKind.notFound:
+        return 'Lektionen kunde inte hittas.';
+      case AppFailureKind.network:
+      case AppFailureKind.timeout:
+        return 'Lektionen kunde inte laddas. Kontrollera uppkopplingen och f\u00f6rs\u00f6k igen.';
+      case AppFailureKind.server:
+      case AppFailureKind.validation:
+      case AppFailureKind.configuration:
+      case AppFailureKind.unexpected:
+        return 'Lektionen kunde inte laddas.';
+    }
+  }
+  return 'Lektionen kunde inte laddas.';
+}
+
+Future<bool> _tryLaunchExternal(String url) async {
+  try {
+    return await launchUrlString(url, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    return false;
+  }
+}
+
+void _showLessonActionError(BuildContext context, String message) {
+  if (!context.mounted) return;
+  ScaffoldMessenger.maybeOf(context)
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(message)));
+}
+
+class _LessonEmptyContentState extends StatelessWidget {
+  const _LessonEmptyContentState();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      opacity: 0.16,
+      sigmaX: 10,
+      sigmaY: 10,
+      borderRadius: BorderRadius.circular(22),
+      borderColor: Colors.white.withValues(alpha: 0.16),
+      child: Text(
+        'Lektionsinneh\u00e5llet saknas.',
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurface,
+        ),
+      ),
+    );
+  }
+}
+
 List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
   final visible = lessons
       .where(
@@ -236,7 +306,55 @@ List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
 }
 
 bool _isAllowedTrailingLessonMediaType(LessonMediaItem item) {
-  return lessonMediaTypeOf(item) == CanonicalLessonMediaType.document;
+  return _safeLessonMediaTypeOf(item) == CanonicalLessonMediaType.document;
+}
+
+CanonicalLessonMediaType? _safeLessonMediaTypeOf(LessonMediaItem item) {
+  try {
+    return lessonMediaTypeOf(item);
+  } catch (_) {
+    return null;
+  }
+}
+
+LessonMediaItem? _findLessonMediaItem(
+  Iterable<LessonMediaItem> lessonMedia,
+  String? lessonMediaId, {
+  required String expectedMediaType,
+}) {
+  final normalizedLessonMediaId = lessonMediaId?.trim() ?? '';
+  if (normalizedLessonMediaId.isEmpty) {
+    logMissingLessonMediaIdRender(
+      surface: 'lesson_page_render',
+      mediaType: expectedMediaType,
+      rawSource: null,
+    );
+    return null;
+  }
+  for (final media in lessonMedia) {
+    if (media.id != normalizedLessonMediaId) {
+      continue;
+    }
+    if (media.mediaType != expectedMediaType) {
+      logUnresolvedLessonMediaRender(
+        event: 'UNRESOLVED_LESSON_MEDIA_RENDER',
+        surface: 'lesson_page_render',
+        mediaType: expectedMediaType,
+        lessonMediaId: normalizedLessonMediaId,
+        error: StateError('Lektionsmedia har fel typ.'),
+      );
+      return null;
+    }
+    return media;
+  }
+  logUnresolvedLessonMediaRender(
+    event: 'UNRESOLVED_LESSON_MEDIA_RENDER',
+    surface: 'lesson_page_render',
+    mediaType: expectedMediaType,
+    lessonMediaId: normalizedLessonMediaId,
+    error: StateError('Lektionsmedia saknar backend-rad.'),
+  );
+  return null;
 }
 
 class LearnerLessonContentRenderer extends StatelessWidget {
@@ -373,7 +491,7 @@ class _LessonPageRendererState extends ConsumerState<LessonPageRenderer> {
           markdown: prepared,
           lessonMedia: widget.lessonMedia,
           onLaunchUrl:
-              widget.onLaunchUrl ?? (url) => unawaited(launchUrlString(url)),
+              widget.onLaunchUrl ?? (url) => unawaited(_tryLaunchExternal(url)),
         );
       },
     );
@@ -440,12 +558,13 @@ class _LessonQuillContent extends StatefulWidget {
 class _LessonQuillContentState extends State<_LessonQuillContent> {
   late quill.QuillController _controller;
   late String _markdown;
+  bool _controllerReady = true;
 
   @override
   void initState() {
     super.initState();
     _markdown = widget.markdown;
-    _controller = _buildController(_markdown);
+    _controller = _buildSafeController(_markdown);
   }
 
   @override
@@ -454,7 +573,7 @@ class _LessonQuillContentState extends State<_LessonQuillContent> {
     if (widget.markdown == _markdown) return;
     _controller.dispose();
     _markdown = widget.markdown;
-    _controller = _buildController(_markdown);
+    _controller = _buildSafeController(_markdown);
   }
 
   @override
@@ -474,8 +593,32 @@ class _LessonQuillContentState extends State<_LessonQuillContent> {
     );
   }
 
+  quill.QuillController _buildEmptyController() {
+    return quill.QuillController(
+      document: quill.Document(),
+      selection: const TextSelection.collapsed(offset: 0),
+      readOnly: true,
+    );
+  }
+
+  quill.QuillController _buildSafeController(String markdown) {
+    try {
+      final controller = _buildController(markdown);
+      _controllerReady = true;
+      return controller;
+    } catch (_) {
+      _controllerReady = false;
+      return _buildEmptyController();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_controllerReady) {
+      return const _LessonRendererErrorState(
+        message: 'Lektionsinneh\u00e5llet kunde inte renderas.',
+      );
+    }
     final defaultEmbedBuilders = FlutterQuillEmbeds.editorBuilders(
       videoEmbedConfig: null,
     );
@@ -580,6 +723,11 @@ class _LessonResolvedMediaState extends ConsumerState<_LessonResolvedMedia> {
       );
       return Future<String>.error(StateError('Lektionsmedia saknar ID.'));
     }
+    if (widget.item.state != 'ready') {
+      return Future<String>.error(
+        StateError('Lektionsmedia \u00e4r inte redo.'),
+      );
+    }
     final resolvedUrl = widget.item.media?.resolvedUrl?.trim();
     if (resolvedUrl == null || resolvedUrl.isEmpty) {
       return Future<String>.error(
@@ -621,17 +769,15 @@ class _LessonResolvedMediaState extends ConsumerState<_LessonResolvedMedia> {
   }
 }
 
-LessonMediaItem _embeddedLessonMediaItem(
+LessonMediaItem? _embeddedLessonMediaItem(
   Iterable<LessonMediaItem> lessonMedia,
   String? lessonMediaId,
+  String mediaType,
 ) {
-  final normalizedLessonMediaId = lessonMediaId?.trim() ?? '';
-  if (normalizedLessonMediaId.isEmpty) {
-    throw StateError('Embedded media saknar lesson_media_id.');
-  }
-  return lessonMedia.firstWhere(
-    (media) => media.id == normalizedLessonMediaId,
-    orElse: () => throw StateError('Embedded media saknar backend-rad.'),
+  return _findLessonMediaItem(
+    lessonMedia,
+    lessonMediaId,
+    expectedMediaType: mediaType,
   );
 }
 
@@ -796,7 +942,13 @@ class _LessonImageEmbedBuilder implements quill.EmbedBuilder {
     final dynamic value = embedContext.node.value.data;
     final lessonMediaId = lessonMediaIdFromEmbedValue(value);
     final alt = lessonMediaAltFromEmbedValue(value);
-    final item = _embeddedLessonMediaItem(lessonMedia, lessonMediaId);
+    final item = _embeddedLessonMediaItem(lessonMedia, lessonMediaId, 'image');
+    if (item == null) {
+      return const _LessonMediaErrorState(
+        mediaType: 'image',
+        message: 'Lektionsmedia kunde inte laddas.',
+      );
+    }
     return _LessonResolvedMedia(
       item: item,
       mediaType: 'image',
@@ -873,7 +1025,13 @@ class _LessonAudioEmbedBuilder implements quill.EmbedBuilder {
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
     final lessonMediaId = lessonMediaIdFromEmbedValue(value);
-    final item = _embeddedLessonMediaItem(lessonMedia, lessonMediaId);
+    final item = _embeddedLessonMediaItem(lessonMedia, lessonMediaId, 'audio');
+    if (item == null) {
+      return const _LessonMediaErrorState(
+        mediaType: 'audio',
+        message: 'Lektionsmedia kunde inte laddas.',
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: _LessonGlassMediaWrapper(
@@ -905,7 +1063,13 @@ class _LessonVideoEmbedBuilder implements quill.EmbedBuilder {
   Widget build(BuildContext context, quill.EmbedContext embedContext) {
     final dynamic value = embedContext.node.value.data;
     final lessonMediaId = lessonMediaIdFromEmbedValue(value);
-    final item = _embeddedLessonMediaItem(lessonMedia, lessonMediaId);
+    final item = _embeddedLessonMediaItem(lessonMedia, lessonMediaId, 'video');
+    if (item == null) {
+      return const _LessonMediaErrorState(
+        mediaType: 'video',
+        message: 'Lektionsmedia kunde inte laddas.',
+      );
+    }
     return _LessonResolvedVideoPlayer(item: item);
   }
 }
@@ -918,7 +1082,13 @@ class _MediaItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final mediaType = lessonMediaTypeOf(item);
+    final mediaType = _safeLessonMediaTypeOf(item);
+    if (mediaType == null) {
+      return _LessonMediaErrorState(
+        mediaType: item.mediaType,
+        message: 'Lektionsmedia kunde inte laddas.',
+      );
+    }
     final normalizedLessonMediaId = item.id;
     if (normalizedLessonMediaId.isEmpty) {
       logMissingLessonMediaIdRender(
@@ -926,10 +1096,13 @@ class _MediaItem extends ConsumerWidget {
         mediaType: item.mediaType,
         rawSource: null,
       );
-      throw StateError('Lektionsmedia saknar ID.');
+      return _LessonMediaErrorState(
+        mediaType: mediaType.name,
+        message: 'Lektionsmedia kunde inte laddas.',
+      );
     }
     final resolvedUrl = item.media?.resolvedUrl;
-    if (resolvedUrl == null || resolvedUrl.isEmpty) {
+    if (item.state != 'ready' || resolvedUrl == null || resolvedUrl.isEmpty) {
       return _LessonMediaErrorState(
         mediaType: mediaType.name,
         message: 'Lektionsmedia kunde inte laddas.',
@@ -948,10 +1121,6 @@ class _MediaItem extends ConsumerWidget {
           ),
         );
       case CanonicalLessonMediaType.audio:
-        final state = item.state;
-        if (state != 'ready') {
-          throw StateError('Ljudmedia är inte redo: $state.');
-        }
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: _LessonGlassMediaWrapper(

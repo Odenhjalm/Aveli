@@ -1248,7 +1248,7 @@ RULE_ID: CONTRACT_LEARNER_PUBLIC_EDGE_CONTRACT_0207
 SOURCE_FILE: actual_truth/contracts/learner_public_edge_contract.md:19
 CATEGORY: CONTRACT
 EXACT TEXT:
-- `step`
+- `group_position`
 
 RULE_ID: CONTRACT_LEARNER_PUBLIC_EDGE_CONTRACT_0208
 SOURCE_FILE: actual_truth/contracts/learner_public_edge_contract.md:20

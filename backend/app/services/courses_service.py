@@ -55,6 +55,7 @@ _COURSE_COVER_FORBIDDEN_PUBLIC_FIELDS = frozenset(
         "signedCoverUrlExpiresAt",
     }
 )
+_COURSE_PROGRESSION_FORBIDDEN_PUBLIC_FIELDS = frozenset({"step"})
 
 
 class LessonContentPreconditionRequired(Exception):
@@ -177,6 +178,17 @@ def reject_legacy_course_cover_output_fields(row: Mapping[str, Any]) -> None:
     if forbidden:
         raise ValueError(
             "legacy course cover public fields are forbidden: "
+            + ", ".join(forbidden)
+        )
+
+
+def reject_legacy_course_progression_output_fields(row: Mapping[str, Any]) -> None:
+    forbidden = sorted(
+        field for field in _COURSE_PROGRESSION_FORBIDDEN_PUBLIC_FIELDS if field in row
+    )
+    if forbidden:
+        raise ValueError(
+            "legacy course progression public fields are forbidden: "
             + ", ".join(forbidden)
         )
 
@@ -456,6 +468,52 @@ def _normalized_surface_media_state(value: Any) -> str:
     return normalized
 
 
+def _canonical_lesson_surface_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Canonical lesson content is unavailable",
+    )
+
+
+def _require_lesson_surface_string(value: Any) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        raise _canonical_lesson_surface_unavailable()
+    return normalized
+
+
+def _require_lesson_surface_position(value: Any) -> int:
+    if isinstance(value, bool) or value is None:
+        raise _canonical_lesson_surface_unavailable()
+    try:
+        position = int(value)
+    except (TypeError, ValueError) as exc:
+        raise _canonical_lesson_surface_unavailable() from exc
+    if position < 1:
+        raise _canonical_lesson_surface_unavailable()
+    return position
+
+
+def _normalize_lesson_surface_markdown(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    raise _canonical_lesson_surface_unavailable()
+
+
+def _canonical_lesson_surface_lesson(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "id": _require_lesson_surface_string(row.get("id")),
+        "course_id": _require_lesson_surface_string(row.get("course_id")),
+        "lesson_title": _require_lesson_surface_string(row.get("lesson_title")),
+        "position": _require_lesson_surface_position(row.get("position")),
+        "content_markdown": _normalize_lesson_surface_markdown(
+            row.get("content_markdown")
+        ),
+    }
+
+
 async def read_protected_lesson_content_surface(
     lesson_id: str,
     *,
@@ -475,13 +533,7 @@ async def read_protected_lesson_content_surface(
     if not rows:
         return None
 
-    lesson = {
-        "id": rows[0]["id"],
-        "course_id": rows[0]["course_id"],
-        "lesson_title": rows[0]["lesson_title"],
-        "position": rows[0]["position"],
-        "content_markdown": rows[0].get("content_markdown"),
-    }
+    lesson = _canonical_lesson_surface_lesson(rows[0])
 
     media_rows: list[dict[str, Any]] = []
     seen_lesson_media_ids: set[str] = set()
@@ -490,7 +542,7 @@ async def read_protected_lesson_content_surface(
         if lesson_media_id is None:
             continue
 
-        normalized_lesson_media_id = str(lesson_media_id)
+        normalized_lesson_media_id = _require_lesson_surface_string(lesson_media_id)
         if normalized_lesson_media_id in seen_lesson_media_ids:
             continue
         seen_lesson_media_ids.add(normalized_lesson_media_id)
@@ -522,10 +574,12 @@ async def read_protected_lesson_content_surface(
 
         media_rows.append(
             {
-                "id": lesson_media_id,
-                "lesson_id": row["id"],
+                "id": normalized_lesson_media_id,
+                "lesson_id": lesson["id"],
                 "media_asset_id": str(resolution.media_asset_id),
-                "position": row.get("lesson_media_position") or 0,
+                "position": _require_lesson_surface_position(
+                    row.get("lesson_media_position")
+                ),
                 "media_type": media_type,
                 "state": media_state,
                 "media": {

@@ -87,7 +87,7 @@ and lesson unlock position.
 - `slug`: canonical course lookup/display slug.
 - `title`: canonical course display title.
 - `course_group_id`: canonical course progression-group identity.
-- `step`: canonical course progression step.
+- `group_position`: canonical course progression position.
 - `cover_media_id`: canonical course-cover media asset identity, or `null`.
 - `price_amount_cents`: canonical course price amount for course display and
   course pricing rules.
@@ -198,7 +198,7 @@ only authority allowed to produce frontend-facing governed media output.
 The authoritative course-domain relation graph is:
 
 ```text
-app.courses.course_group_id + app.courses.step
+app.courses.course_group_id + app.courses.group_position
   -> course progression set and course progression order
 
 app.courses.id
@@ -312,18 +312,24 @@ Media ingest and media worker behavior MUST NOT assign, replace, or clear
 Course progression is defined only by:
 
 - `app.courses.course_group_id`
-- `app.courses.step`
+- `app.courses.group_position`
 
-Valid `step` values are:
+Valid `group_position` values are non-negative integers:
 
-- `intro`
-- `step1`
-- `step2`
-- `step3`
+- `0` is a valid progression position
+- `1..n` are valid ordered progression positions
 
-Within a `course_group_id`, progression order is strictly defined by `step`.
+`group_position` alone MUST NOT decide whether a course is intro/free,
+purchasable, or enrollable. Access metadata remains the only authority for
+those states.
+
+Within a `course_group_id`, progression order is strictly defined by
+`group_position`.
 `course_group_id` MUST NOT be used for categories, tags, discovery filters, or
 arbitrary grouping.
+
+The legacy public/domain field name `step` MUST NOT be emitted or accepted as a
+course progression authority.
 
 Lesson ordering is defined only by `app.lessons.position`.
 
