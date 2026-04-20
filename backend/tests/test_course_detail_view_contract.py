@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app import schemas
@@ -436,3 +437,29 @@ async def test_course_public_content_route_reads_through_public_detail_surface(
         "course_id": COURSE_ID,
         "short_description": "Short description",
     }
+
+
+async def test_course_detail_missing_course_uses_swedish_safe_error(
+    monkeypatch,
+) -> None:
+    async def fake_read_course_detail(
+        *,
+        course_id: str | None = None,
+        slug: str | None = None,
+    ):
+        del course_id, slug
+        return None
+
+    monkeypatch.setattr(
+        course_routes.courses_read_service,
+        "read_course_detail",
+        fake_read_course_detail,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await course_routes.course_detail_by_slug("missing-course", None)
+
+    assert excinfo.value.status_code == 404
+    assert excinfo.value.detail == "Kursen kunde inte hittas."
+    assert "course not found" not in str(excinfo.value.detail).lower()

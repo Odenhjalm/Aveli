@@ -11,21 +11,6 @@ from .utils import auth_header, fetch_auth_subject, register_auth_user
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-@pytest.fixture(autouse=True)
-def _stable_password_hashing_for_onboarding_tests(monkeypatch):
-    from app import models
-    from app.routes import auth as auth_routes
-
-    def _hash_password(password: str) -> str:
-        return f"test-hash:{password}"
-
-    def _verify_password(password: str, hashed: str) -> bool:
-        return hashed == _hash_password(password)
-
-    monkeypatch.setattr(models, "hash_password", _hash_password)
-    monkeypatch.setattr(auth_routes, "verify_password", _verify_password)
-
-
 async def _event_types_for(user_id: str) -> list[str]:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -43,6 +28,9 @@ async def _event_types_for(user_id: str) -> list[str]:
 
 
 async def _set_profile_display_name(user_id: str, display_name: str | None) -> None:
+    normalized_display_name = (
+        display_name.strip() if display_name is not None else None
+    ) or None
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -52,7 +40,7 @@ async def _set_profile_display_name(user_id: str, display_name: str | None) -> N
                        updated_at = now()
                  WHERE user_id = %s
                 """,
-                (display_name, user_id),
+                (normalized_display_name, user_id),
             )
             await conn.commit()
 

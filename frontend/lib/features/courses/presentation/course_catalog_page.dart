@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
@@ -163,6 +164,7 @@ class _ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final detailMessage = _courseCatalogErrorDetail(error);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -177,17 +179,36 @@ class _ErrorState extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
-          if (error != null)
-            Text(
-              error.toString(),
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
+          Text(
+            detailMessage,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
+  }
+}
+
+String _courseCatalogErrorDetail(Object? error) {
+  if (error == null) {
+    return 'Försök igen om en stund.';
+  }
+  final failure = AppFailure.from(error);
+  switch (failure.kind) {
+    case AppFailureKind.network:
+    case AppFailureKind.timeout:
+      return 'Kontrollera uppkopplingen och försök igen.';
+    case AppFailureKind.unauthorized:
+      return 'Logga in igen och försök en gång till.';
+    case AppFailureKind.notFound:
+    case AppFailureKind.server:
+    case AppFailureKind.validation:
+    case AppFailureKind.configuration:
+    case AppFailureKind.unexpected:
+      return 'Försök igen om en stund.';
   }
 }
 

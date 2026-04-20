@@ -337,4 +337,35 @@ void main() {
     );
     expect(tester.takeException(), isA<NetworkImageLoadException>());
   });
+
+  testWidgets('course page load error hides raw backend or parser text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              subscriptionsEnabled: true,
+            ),
+          ),
+          authOverride(),
+          courseDetailProvider.overrideWith(
+            (ref, slug) async =>
+                throw StateError('Course not found: backend internal text'),
+          ),
+        ],
+        child: const MaterialApp(home: CoursePage(slug: 'missing-course')),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Kursen kunde inte laddas.'), findsOneWidget);
+    expect(find.textContaining('StateError'), findsNothing);
+    expect(find.textContaining('Course not found'), findsNothing);
+    expect(find.textContaining('backend internal'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

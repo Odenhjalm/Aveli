@@ -17,7 +17,6 @@ from ..auth import (
     create_refresh_token,
     decode_jwt,
     is_token_expired,
-    verify_password,
 )
 from ..db import pool
 from ..repositories import auth_subjects as auth_subjects_repo
@@ -26,6 +25,7 @@ from ..services.email_verification import (
     InvalidPasswordResetTokenError,
     reset_password_with_token,
 )
+from ..services import supabase_auth
 
 _ONBOARDING_CONFLICT_PATHS = frozenset(
     {
@@ -141,9 +141,6 @@ async def _record_auth_event(
 
 async def _token_claims(user_id: str) -> dict[str, Any]:
     """Return non-authoritative convenience claims for the issued token."""
-    user = await models.get_user_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="user_not_found")
     auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
     if not auth_subject:
         raise HTTPException(status_code=404, detail="subject_not_found")
@@ -194,10 +191,11 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
             detail="rate_limited",
         )
 
-    existing = await models.get_user_by_email(payload.email)
-    if existing:
+    try:
+        user_id = await models.create_user(payload.email, payload.password)
+    except supabase_auth.SupabaseAuthConflictError as exc:
         await _record_auth_event(
-            user_id=str(existing["id"]),
+            user_id=None,
             email=payload.email,
             event="register_conflict",
             request=request,
@@ -205,9 +203,13 @@ async def register(payload: schemas.AuthRegisterRequest, request: Request):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="email_already_registered",
-        )
+        ) from exc
+    except supabase_auth.SupabaseAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="auth_provider_unavailable",
+        ) from exc
 
-    user_id = await models.create_user(payload.email, payload.password)
     user_id_str = str(user_id)
     claims = await _token_claims(user_id_str)
     access_token = create_access_token(user_id_str, claims=claims)
@@ -240,27 +242,36 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
             detail="rate_limited",
         )
 
-    user = await models.get_user_by_email(payload.email)
-    if not user:
+    try:
+        user_id = await models.authenticate_user(payload.email, payload.password)
+    except (
+        supabase_auth.SupabaseAuthInvalidCredentialsError,
+        supabase_auth.SupabaseAuthEmailNotConfirmedError,
+    ) as exc:
         await _record_auth_event(
             user_id=None,
             email=payload.email,
-            event="login_invalid_user",
+            event="login_invalid_credentials",
             request=request,
         )
-        raise HTTPException(status_code=401, detail="invalid_credentials")
+        raise HTTPException(status_code=401, detail="invalid_credentials") from exc
+    except supabase_auth.SupabaseAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="auth_provider_unavailable",
+        ) from exc
 
-    hashed = user.get("encrypted_password")
-    if not hashed or not verify_password(payload.password, hashed):
+    auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
+    if not auth_subject:
         await _record_auth_event(
-            user_id=str(user["id"]),
+            user_id=str(user_id),
             email=payload.email,
-            event="login_invalid_password",
+            event="login_missing_auth_subject",
             request=request,
         )
         raise HTTPException(status_code=401, detail="invalid_credentials")
 
-    user_id = str(user["id"])
+    user_id = str(user_id)
     claims = await _token_claims(user_id)
     access_token = create_access_token(user_id, claims=claims)
     refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id)

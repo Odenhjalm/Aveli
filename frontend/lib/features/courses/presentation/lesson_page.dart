@@ -135,7 +135,7 @@ class _LessonContent extends ConsumerWidget {
       );
       _showLessonActionError(
         context,
-        'Endast backend-auktoriserade dokumentl\u00e4nkar st\u00f6ds.',
+        'Dokumentl\u00e4nken kunde inte \u00f6ppnas.',
       );
       return;
     }
@@ -731,7 +731,7 @@ class _LessonResolvedMediaState extends ConsumerState<_LessonResolvedMedia> {
     final resolvedUrl = widget.item.media?.resolvedUrl?.trim();
     if (resolvedUrl == null || resolvedUrl.isEmpty) {
       return Future<String>.error(
-        StateError('Lektionsmedia saknar backend-authored resolved_url.'),
+        StateError('Lektionsmedia saknar spelbar adress.'),
       );
     }
     return Future<String>.value(resolvedUrl);

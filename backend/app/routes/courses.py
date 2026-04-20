@@ -28,6 +28,14 @@ _CANONICAL_COURSE_FIELDS = (
     "purchasable",
 )
 
+_COURSE_NOT_FOUND_DETAIL = "Kursen kunde inte hittas."
+_COURSE_PUBLIC_CONTENT_NOT_FOUND_DETAIL = "Kursinnehållet kunde inte hittas."
+_COURSE_PRICING_UNAVAILABLE_DETAIL = "Priset är inte tillgängligt just nu."
+_COURSE_PURCHASE_REQUIRED_DETAIL = "Kursen kräver köp innan du kan fortsätta."
+_LESSON_NOT_FOUND_DETAIL = "Lektionen kunde inte hittas."
+_LESSON_ACCESS_DENIED_DETAIL = "Du har inte åtkomst till den här lektionen."
+_LESSON_CONTENT_UNAVAILABLE_DETAIL = "Lektionen kunde inte laddas just nu."
+
 
 def _canonical_course_payload(course: Mapping[str, Any]) -> dict[str, Any]:
     courses_service.reject_legacy_course_cover_output_fields(course)
@@ -51,7 +59,7 @@ def _course_list_response(
 def _lesson_content_unavailable() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Canonical lesson content is unavailable",
+        detail=_LESSON_CONTENT_UNAVAILABLE_DETAIL,
     )
 
 
@@ -90,17 +98,17 @@ async def _assert_can_access_lesson(user: dict | None, lesson_id: str) -> dict:
     )
     lesson = access["lesson"]
     if lesson is None:
-        raise HTTPException(status_code=404, detail="Lesson not found")
+        raise HTTPException(status_code=404, detail=_LESSON_NOT_FOUND_DETAIL)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden",
+            detail=_LESSON_ACCESS_DENIED_DETAIL,
         )
     if access["can_access"]:
         return lesson
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Forbidden",
+        detail=_LESSON_ACCESS_DENIED_DETAIL,
     )
 
 
@@ -162,7 +170,7 @@ def _course_pricing_response(payload: dict) -> schemas.CoursePricingResponse:
     if amount_cents is None or int(amount_cents) <= 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Course pricing is not configured",
+            detail=_COURSE_PRICING_UNAVAILABLE_DETAIL,
         )
     return schemas.CoursePricingResponse(
         amount_cents=amount_cents,
@@ -174,7 +182,7 @@ def _course_pricing_response(payload: dict) -> schemas.CoursePricingResponse:
 async def course_pricing(slug: str):
     row = await courses_service.fetch_course_pricing(slug)
     if not row:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL)
     return _course_pricing_response(row)
 
 
@@ -190,7 +198,7 @@ async def lesson_detail(lesson_id: str, current: AppEntryUser):
     if course_id == "":
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Lesson course_id is required",
+            detail=_LESSON_CONTENT_UNAVAILABLE_DETAIL,
         )
     protected_content = await courses_service.read_protected_lesson_content_surface(
         lesson_id,
@@ -199,7 +207,7 @@ async def lesson_detail(lesson_id: str, current: AppEntryUser):
     if protected_content is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Canonical lesson content is unavailable",
+            detail=_LESSON_CONTENT_UNAVAILABLE_DETAIL,
         )
     protected_lesson = protected_content.get("lesson")
     if not isinstance(protected_lesson, dict):
@@ -230,7 +238,7 @@ async def my_courses(current: AppEntryUser):
 async def _read_course_state_or_404(*, user_id: str, course_id: str) -> dict:
     state = await courses_service.read_canonical_course_state(user_id, course_id)
     if state is None:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL)
     return state
 
 
@@ -265,11 +273,11 @@ async def enroll_course(course_id: UUID, current: AppEntryUser):
         )
         return _course_access_response(state)
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail="Course not found") from exc
+        raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL) from exc
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(exc),
+            detail=_COURSE_PURCHASE_REQUIRED_DETAIL,
         ) from exc
 
 
@@ -278,7 +286,7 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     del current
     detail = await courses_read_service.read_course_detail(slug=slug)
     if not detail:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL)
     return detail
 
 
@@ -286,7 +294,10 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
 async def course_public_content(course_id: UUID):
     row = await courses_read_service.read_public_course_content(str(course_id))
     if not row:
-        raise HTTPException(status_code=404, detail="Public content not found")
+        raise HTTPException(
+            status_code=404,
+            detail=_COURSE_PUBLIC_CONTENT_NOT_FOUND_DETAIL,
+        )
     return schemas.CoursePublicContent(**row)
 
 
@@ -295,5 +306,5 @@ async def course_detail(course_id: UUID, current: OptionalCurrentUser = None):
     del current
     detail = await courses_read_service.read_course_detail(course_id=str(course_id))
     if not detail:
-        raise HTTPException(status_code=404, detail="Course not found")
+        raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL)
     return detail

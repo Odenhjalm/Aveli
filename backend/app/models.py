@@ -11,7 +11,6 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .db import get_conn, pool
-from .auth import hash_password
 from .repositories import (
     auth_subjects as auth_subjects_repo,
     create_order as repo_create_order,
@@ -30,6 +29,7 @@ from .repositories import (
 )
 from .repositories.orders import get_order as repo_get_order
 from .services import courses_service
+from .services import supabase_auth
 from .services import storage_service
 from .config import settings
 from .utils import media_signer
@@ -378,13 +378,18 @@ async def create_user(
     password: str,
     display_name: str | None = None,
 ):
-    hashed = hash_password(password)
+    identity = await supabase_auth.signup(email, password)
     result = await repo_create_user(
+        user_id=identity.user_id,
         email=email,
-        hashed_password=hashed,
         display_name=display_name,
     )
     return result["user"]["id"]
+
+
+async def authenticate_user(email: str, password: str) -> str:
+    session = await supabase_auth.login_password(email, password)
+    return session.user_id
 
 
 async def is_teacher_user(user_id: str) -> bool:
@@ -430,17 +435,7 @@ async def teacher_status(user_id: str) -> dict:
 
 
 async def update_user_password(user_id: str, password: str) -> None:
-    hashed = hash_password(password)
-    async with get_conn() as cur:
-        await cur.execute(
-            """
-            UPDATE auth.users
-            SET encrypted_password = %s,
-                updated_at = now()
-            WHERE id = %s
-            """,
-            (hashed, user_id),
-        )
+    await supabase_auth.update_user_password(user_id, password)
 
 
 async def revoke_refresh_tokens_for_user(user_id: str) -> None:
@@ -497,10 +492,9 @@ async def list_teachers(limit: int = 20) -> Iterable[dict]:
               {_profile_photo_url_sql("prof")} AS photo_url,
               prof.bio
             FROM app.profiles prof
-            LEFT JOIN auth.users u ON u.id = prof.user_id
             LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
             WHERE ({teacher_role_sql}) = 'teacher'
-              AND lower(u.email) = lower(%s)
+              AND lower(subj.email) = lower(%s)
             ORDER BY prof.display_name NULLS LAST
             LIMIT %s
             """,
@@ -594,7 +588,7 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
         SELECT
             prof.user_id AS teacher_id,
             prof.display_name,
-            u.email AS email,
+            subj.email AS email,
             {_profile_photo_url_sql("prof")} AS photo_url,
             100 AS priority,
             NULL::text AS notes,
@@ -604,14 +598,12 @@ async def list_teacher_course_priorities(limit: int | None = None) -> list[dict]
             COALESCE(stats.total_courses, 0) AS total_courses,
             COALESCE(stats.published_courses, 0) AS published_courses
         FROM app.profiles prof
-        LEFT JOIN auth.users u
-          ON u.id = prof.user_id
         LEFT JOIN app.auth_subjects subj
           ON subj.user_id = prof.user_id
         LEFT JOIN course_stats stats
           ON stats.teacher_id = prof.user_id
         WHERE ({teacher_role_sql}) = 'teacher'
-        ORDER BY lower(COALESCE(prof.display_name, u.email))
+        ORDER BY lower(COALESCE(prof.display_name, subj.email))
     """
     params: tuple = ()
     if limit is not None:
@@ -644,7 +636,7 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                 SELECT
                     prof.user_id AS teacher_id,
                     prof.display_name,
-                    u.email AS email,
+                    subj.email AS email,
                     {_profile_photo_url_sql("prof")} AS photo_url,
                     100 AS priority,
                     NULL::text AS notes,
@@ -654,8 +646,6 @@ async def get_teacher_course_priority(teacher_id: str) -> dict | None:
                     COALESCE(stats.total_courses, 0) AS total_courses,
                     COALESCE(stats.published_courses, 0) AS published_courses
                 FROM app.profiles prof
-                LEFT JOIN auth.users u
-                  ON u.id = prof.user_id
                 LEFT JOIN app.auth_subjects subj
                   ON subj.user_id = prof.user_id
                 LEFT JOIN course_stats stats
@@ -1115,7 +1105,7 @@ async def set_order_checkout_reference(
 async def get_user_email(user_id: str) -> str | None:
     async with get_conn() as cur:
         await cur.execute(
-            "SELECT email FROM auth.users WHERE id = %s LIMIT 1",
+            "SELECT email FROM app.auth_subjects WHERE user_id = %s LIMIT 1",
             (user_id,),
         )
         row = await _fetchone(cur)
@@ -1370,11 +1360,10 @@ async def get_teacher_directory_item(user_id: str) -> dict | None:
                        prof.bio,
                        prof.created_at
                 FROM app.profiles prof
-                LEFT JOIN auth.users u ON u.id = prof.user_id
                 LEFT JOIN app.auth_subjects subj ON subj.user_id = prof.user_id
                 WHERE prof.user_id = %s
                   AND ({_effective_role_sql("subj")}) = 'teacher'
-                  AND lower(u.email) = lower(%s)
+                  AND lower(subj.email) = lower(%s)
                 LIMIT 1
                 """,
                 (user_id, "avelibooks@gmail.com"),

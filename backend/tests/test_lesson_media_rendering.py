@@ -189,6 +189,8 @@ async def test_lesson_detail_rejects_malformed_protected_lesson(monkeypatch):
         await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
     assert excinfo.value.status_code == 503
+    assert excinfo.value.detail == "Lektionen kunde inte laddas just nu."
+    assert "canonical" not in str(excinfo.value.detail).lower()
 
 
 async def test_lesson_detail_rejects_malformed_structure_row(monkeypatch):
@@ -239,3 +241,5 @@ async def test_lesson_detail_rejects_malformed_structure_row(monkeypatch):
         await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
     assert excinfo.value.status_code == 503
+    assert excinfo.value.detail == "Lektionen kunde inte laddas just nu."
+    assert "canonical" not in str(excinfo.value.detail).lower()

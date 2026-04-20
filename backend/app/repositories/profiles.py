@@ -17,14 +17,14 @@ async def get_profile(user_id: str | UUID) -> dict[str, Any] | None:
         await cur.execute(
             """
             SELECT p.user_id,
-                   u.email,
+                   s.email,
                    p.display_name,
                    p.bio,
                    p.avatar_media_id,
                    p.created_at,
                    p.updated_at
             FROM app.profiles p
-            JOIN auth.users u ON u.id = p.user_id
+            JOIN app.auth_subjects s ON s.user_id = p.user_id
             WHERE p.user_id = %s
             LIMIT 1
             """,
@@ -68,9 +68,11 @@ async def update_profile(
     async with pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
-            await cur.fetchone()
+            row = await cur.fetchone()
             await conn.commit()
-            return await get_profile(user_id)
+    if row is None:
+        return None
+    return await get_profile(user_id)
 
 
 async def update_avatar_media_projection(

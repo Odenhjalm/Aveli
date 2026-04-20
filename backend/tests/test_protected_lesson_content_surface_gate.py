@@ -184,6 +184,38 @@ async def test_lesson_detail_denies_before_media_or_structure_reads(monkeypatch)
         await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
     assert excinfo.value.status_code == 403
+    assert excinfo.value.detail == "Du har inte åtkomst till den här lektionen."
+    assert "forbidden" not in str(excinfo.value.detail).lower()
+
+
+async def test_lesson_detail_missing_lesson_uses_swedish_safe_error(
+    monkeypatch,
+):
+    async def fake_read_canonical_lesson_access(user_id: str, lesson_id: str):
+        assert user_id == USER_ID
+        assert lesson_id == LESSON_ID
+        return {
+            "lesson": None,
+            "course": None,
+            "enrollment": None,
+            "expected_source": None,
+            "current_unlock_position": 0,
+            "can_access": False,
+        }
+
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "read_canonical_lesson_access",
+        fake_read_canonical_lesson_access,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
+
+    assert excinfo.value.status_code == 404
+    assert excinfo.value.detail == "Lektionen kunde inte hittas."
+    assert "lesson not found" not in str(excinfo.value.detail).lower()
 
 
 async def test_lesson_detail_denies_admin_without_course_enrollment(monkeypatch):
@@ -241,6 +273,8 @@ async def test_lesson_detail_denies_admin_without_course_enrollment(monkeypatch)
         )
 
     assert excinfo.value.status_code == 403
+    assert excinfo.value.detail == "Du har inte åtkomst till den här lektionen."
+    assert "forbidden" not in str(excinfo.value.detail).lower()
 
 
 async def test_course_enrollment_cannot_substitute_for_global_app_entry(

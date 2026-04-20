@@ -106,7 +106,19 @@ class _CourseIntroRedirectPageState
   }
 
   String _messageForError(Object error) {
-    if (error is AppFailure) return error.message;
-    return 'Kunde inte hitta en introduktionskurs just nu.';
+    final failure = AppFailure.from(error);
+    switch (failure.kind) {
+      case AppFailureKind.network:
+      case AppFailureKind.timeout:
+        return 'Introduktionskursen kunde inte laddas. Kontrollera uppkopplingen och försök igen.';
+      case AppFailureKind.notFound:
+        return 'Kunde inte hitta en introduktionskurs just nu.';
+      case AppFailureKind.unauthorized:
+      case AppFailureKind.server:
+      case AppFailureKind.validation:
+      case AppFailureKind.configuration:
+      case AppFailureKind.unexpected:
+        return 'Kunde inte hitta en introduktionskurs just nu.';
+    }
   }
 }

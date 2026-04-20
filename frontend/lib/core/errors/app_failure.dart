@@ -61,7 +61,7 @@ sealed class AppFailure implements Exception {
     }
 
     return UnexpectedFailure(
-      message: error.toString(),
+      message: 'Något gick fel. Försök igen.',
       original: error,
       stackTrace: stackTrace,
     );
@@ -218,6 +218,19 @@ String _localizeDetail(String detail) {
     case 'not_allowed':
     case 'admin_required':
       return 'Du har inte behörighet att utföra den här åtgärden.';
+    case 'course not found':
+      return 'Kursen kunde inte hittas.';
+    case 'lesson not found':
+      return 'Lektionen kunde inte hittas.';
+    case 'public content not found':
+      return 'Kursinnehållet kunde inte hittas.';
+    case 'canonical lesson content is unavailable':
+    case 'lesson course_id is required':
+      return 'Lektionen kunde inte laddas just nu.';
+    case 'course pricing is not configured':
+      return 'Priset är inte tillgängligt just nu.';
+    case 'purchase enrollment required':
+      return 'Kursen kräver köp innan du kan fortsätta.';
     case 'payment required':
     case 'payment_failed':
     case 'payment_failed_error':

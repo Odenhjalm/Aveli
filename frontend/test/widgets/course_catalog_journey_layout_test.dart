@@ -377,6 +377,40 @@ void main() {
       expect(exception, isA<NetworkImageLoadException>());
     }
   });
+
+  testWidgets('catalog error state hides raw backend or parser text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'https://api.test',
+              subscriptionsEnabled: false,
+            ),
+          ),
+          authControllerProvider.overrideWith(
+            (ref) => _FakeAuthController(const AuthState()),
+          ),
+          coursesProvider.overrideWith(
+            (ref) async =>
+                throw StateError('Course not found: backend internal text'),
+          ),
+        ],
+        child: const MaterialApp(home: CourseCatalogPage()),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Kunde inte hämta kurser just nu.'), findsOneWidget);
+    expect(find.text('Försök igen om en stund.'), findsOneWidget);
+    expect(find.textContaining('StateError'), findsNothing);
+    expect(find.textContaining('Course not found'), findsNothing);
+    expect(find.textContaining('backend internal'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _FakeAuthController extends AuthController {

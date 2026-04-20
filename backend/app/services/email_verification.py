@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 
 from .. import models, repositories
 from ..config import settings
+from . import supabase_auth
 from .onboarding_state import sync_onboarding_state
 from .email_service import send_email
 from .email_templates import render_template
@@ -54,15 +55,23 @@ async def verify_email_token_and_mark_user(token: str) -> dict[str, str]:
     if not user:
         raise InvalidEmailVerificationTokenError("invalid_or_expired_token")
 
-    if _is_user_verified(user):
+    try:
+        auth_user = await supabase_auth.get_user(str(user["id"]))
+    except supabase_auth.SupabaseAuthError as exc:
+        raise InvalidEmailVerificationTokenError("invalid_or_expired_token") from exc
+
+    if _is_user_verified(auth_user):
         await sync_onboarding_state(str(user["id"]))
         return {"status": "already_verified", "email": email}
 
-    updated = await repositories.mark_user_email_verified(email)
+    try:
+        updated = await supabase_auth.confirm_user_email(str(user["id"]))
+    except supabase_auth.SupabaseAuthError as exc:
+        raise InvalidEmailVerificationTokenError("invalid_or_expired_token") from exc
     if not updated:
         raise InvalidEmailVerificationTokenError("invalid_or_expired_token")
 
-    await sync_onboarding_state(str(updated["id"]))
+    await sync_onboarding_state(str(user["id"]))
 
     return {"status": "verified", "email": email}
 

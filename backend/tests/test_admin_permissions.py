@@ -33,6 +33,13 @@ async def _event_types_for(user_id: str) -> list[str]:
 
 
 async def _grant_app_entry(async_client, user: dict[str, str]) -> None:
+    create_profile_resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(user["access_token"]),
+        json={"display_name": "Admin Permission User"},
+    )
+    assert create_profile_resp.status_code == 200, create_profile_resp.text
+
     onboarding_resp = await async_client.post(
         "/auth/onboarding/complete",
         headers=auth_header(user["access_token"]),
@@ -41,7 +48,7 @@ async def _grant_app_entry(async_client, user: dict[str, str]) -> None:
     await memberships_repo.upsert_membership_record(
         user["user_id"],
         status="active",
-        source="test",
+        source="coupon",
     )
 
 

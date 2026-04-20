@@ -81,8 +81,12 @@ async def test_verify_email_is_idempotent(auth_client, monkeypatch):
         assert requested_email == email
         return dict(state["user"])
 
-    async def fake_mark_user_email_verified(requested_email: str):
-        assert requested_email == email
+    async def fake_get_user(user_id: str):
+        assert user_id == "user-123"
+        return dict(state["user"])
+
+    async def fake_confirm_user_email(user_id: str):
+        assert user_id == "user-123"
         if state["user"]["email_confirmed_at"] is None:
             state["user"]["email_confirmed_at"] = confirmed_at
             state["user"]["confirmed_at"] = confirmed_at
@@ -93,8 +97,12 @@ async def test_verify_email_is_idempotent(auth_client, monkeypatch):
         fake_get_user_by_email,
     )
     monkeypatch.setattr(
-        "app.services.email_verification.repositories.mark_user_email_verified",
-        fake_mark_user_email_verified,
+        "app.services.email_verification.supabase_auth.get_user",
+        fake_get_user,
+    )
+    monkeypatch.setattr(
+        "app.services.email_verification.supabase_auth.confirm_user_email",
+        fake_confirm_user_email,
     )
     async def fake_sync_onboarding_state(user_id: str):
         return user_id

@@ -45,7 +45,6 @@ import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from psycopg import connect  # noqa: E402
 from app.config import settings  # noqa: E402
-from app.auth import hash_password  # noqa: E402
 from app import db as app_db  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -131,5 +130,107 @@ def _temp_media_root(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _local_supabase_registration_stub():
+def _local_supabase_registration_stub(monkeypatch):
+    from app.services import supabase_auth
+
+    users_by_email: dict[str, dict[str, str]] = {}
+    users_by_id: dict[str, dict[str, str]] = {}
+
+    async def _ensure_local_auth_user(user_id: str, email: str) -> None:
+        async with app_db.pool.connection() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    """
+                    INSERT INTO auth.users (
+                        id,
+                        email,
+                        encrypted_password,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (%s::uuid, %s, %s, now(), now())
+                    ON CONFLICT (id) DO UPDATE
+                      SET email = excluded.email,
+                          updated_at = now()
+                    """,
+                    (user_id, email, "supabase-auth-managed-test-placeholder"),
+                )
+                await conn.commit()
+
+    async def fake_signup(email: str, password: str):
+        normalized_email = email.strip().lower()
+        if normalized_email in users_by_email:
+            raise supabase_auth.SupabaseAuthConflictError("User already registered")
+        user_id = str(uuid4())
+        user = {
+            "id": user_id,
+            "email": normalized_email,
+            "email_confirmed_at": None,
+            "confirmed_at": None,
+        }
+        record = {"user_id": user_id, "email": normalized_email, "password": password}
+        users_by_email[normalized_email] = record
+        users_by_id[user_id] = record
+        await _ensure_local_auth_user(user_id, normalized_email)
+        return supabase_auth.SupabaseAuthIdentity(
+            user_id=user_id,
+            email=normalized_email,
+            user=user,
+            session=None,
+            raw={"user": user},
+        )
+
+    async def fake_login_password(email: str, password: str):
+        normalized_email = email.strip().lower()
+        record = users_by_email.get(normalized_email)
+        if not record or record["password"] != password:
+            raise supabase_auth.SupabaseAuthInvalidCredentialsError("Invalid login credentials")
+        user = {"id": record["user_id"], "email": normalized_email}
+        return supabase_auth.SupabaseAuthSession(
+            user_id=record["user_id"],
+            email=normalized_email,
+            access_token=f"supabase-access-{record['user_id']}",
+            refresh_token=f"supabase-refresh-{record['user_id']}",
+            token_type="bearer",
+            expires_in=3600,
+            user=user,
+            raw={"user": user},
+        )
+
+    async def fake_get_user(user_id: str):
+        record = users_by_id.get(str(user_id))
+        if not record:
+            raise supabase_auth.SupabaseAuthError("User not found", status_code=404)
+        return {
+            "id": record["user_id"],
+            "email": record["email"],
+            "email_confirmed_at": record.get("email_confirmed_at"),
+            "confirmed_at": record.get("confirmed_at"),
+        }
+
+    async def fake_update_user_password(user_id: str, password: str):
+        record = users_by_id.get(str(user_id))
+        if not record:
+            raise supabase_auth.SupabaseAuthError("User not found", status_code=404)
+        record["password"] = password
+        return {"id": record["user_id"], "email": record["email"]}
+
+    async def fake_confirm_user_email(user_id: str):
+        record = users_by_id.get(str(user_id))
+        if not record:
+            raise supabase_auth.SupabaseAuthError("User not found", status_code=404)
+        record["email_confirmed_at"] = "2026-04-20T00:00:00+00:00"
+        record["confirmed_at"] = "2026-04-20T00:00:00+00:00"
+        return {
+            "id": record["user_id"],
+            "email": record["email"],
+            "email_confirmed_at": record["email_confirmed_at"],
+            "confirmed_at": record["confirmed_at"],
+        }
+
+    monkeypatch.setattr(supabase_auth, "signup", fake_signup)
+    monkeypatch.setattr(supabase_auth, "login_password", fake_login_password)
+    monkeypatch.setattr(supabase_auth, "get_user", fake_get_user)
+    monkeypatch.setattr(supabase_auth, "update_user_password", fake_update_user_password)
+    monkeypatch.setattr(supabase_auth, "confirm_user_email", fake_confirm_user_email)
     yield

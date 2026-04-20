@@ -34,7 +34,12 @@ class _CoursePageState extends ConsumerState<CoursePage> {
       ),
       error: (error, _) => AppScaffold(
         title: 'Kurs',
-        body: Center(child: Text(_friendlyError(error))),
+        body: Center(
+          child: Text(
+            _courseLoadErrorMessage(error),
+            textAlign: TextAlign.center,
+          ),
+        ),
       ),
       data: (detail) {
         final courseCoverImageUrlFuture = Future<String?>.value(
@@ -76,7 +81,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
       },
       error: (error, _) {
         if (!mounted || !context.mounted) return;
-        showSnack(context, 'Kunde inte anmäla: ${_friendlyError(error)}');
+        showSnack(context, _courseEnrollmentErrorMessage(error));
       },
       loading: () {},
     );
@@ -113,8 +118,42 @@ class _CoursePageState extends ConsumerState<CoursePage> {
       return RoutePath.home;
     }
   }
+}
 
-  String _friendlyError(Object error) => AppFailure.from(error).message;
+String _courseLoadErrorMessage(Object error) {
+  final failure = AppFailure.from(error);
+  switch (failure.kind) {
+    case AppFailureKind.notFound:
+      return 'Kursen kunde inte hittas.';
+    case AppFailureKind.unauthorized:
+      return 'Du har inte åtkomst till den här kursen.';
+    case AppFailureKind.network:
+    case AppFailureKind.timeout:
+      return 'Kursen kunde inte laddas. Kontrollera uppkopplingen och försök igen.';
+    case AppFailureKind.server:
+    case AppFailureKind.validation:
+    case AppFailureKind.configuration:
+    case AppFailureKind.unexpected:
+      return 'Kursen kunde inte laddas.';
+  }
+}
+
+String _courseEnrollmentErrorMessage(Object error) {
+  final failure = AppFailure.from(error);
+  switch (failure.kind) {
+    case AppFailureKind.unauthorized:
+      return 'Kursen kräver köp innan du kan fortsätta.';
+    case AppFailureKind.notFound:
+      return 'Kursen kunde inte hittas.';
+    case AppFailureKind.network:
+    case AppFailureKind.timeout:
+      return 'Kursen kunde inte startas. Kontrollera uppkopplingen och försök igen.';
+    case AppFailureKind.server:
+    case AppFailureKind.validation:
+    case AppFailureKind.configuration:
+    case AppFailureKind.unexpected:
+      return 'Kursen kunde inte startas just nu.';
+  }
 }
 
 class _CourseContent extends StatelessWidget {
@@ -257,7 +296,7 @@ class _CourseContent extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                      _friendlyError(enrollError),
+                      _courseEnrollmentErrorMessage(enrollError),
                       style: t.bodyMedium?.copyWith(color: cs.error),
                     ),
                   ),
@@ -339,8 +378,6 @@ class _CourseContent extends StatelessWidget {
       },
     );
   }
-
-  String _friendlyError(Object error) => AppFailure.from(error).message;
 }
 
 List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {

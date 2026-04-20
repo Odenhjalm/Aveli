@@ -5,6 +5,7 @@ import pytest
 
 from app.config import settings
 from app import db
+from app.repositories import memberships as memberships_repo
 
 
 def _set_stripe_test_env(
@@ -43,7 +44,6 @@ async def test_backend_api_smoke(async_client, monkeypatch):
         json={
             "email": email,
             "password": password,
-            "display_name": "Smoke Tester",
         },
     )
     assert register_resp.status_code == 201, register_resp.text
@@ -63,6 +63,13 @@ async def test_backend_api_smoke(async_client, monkeypatch):
     assert refresh_resp.status_code == 200
     new_tokens = refresh_resp.json()
     assert new_tokens["access_token"]
+
+    create_profile_resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_headers,
+        json={"display_name": "Smoke Tester"},
+    )
+    assert create_profile_resp.status_code == 200, create_profile_resp.text
 
     onboarding_resp = await async_client.post(
         "/auth/onboarding/complete",
@@ -97,7 +104,6 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
             json={
                 "email": email,
                 "password": password,
-                "display_name": display_name,
             },
         )
         assert register_resp.status_code == 201, register_resp.text
@@ -105,7 +111,24 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
         headers = {"Authorization": f"Bearer {tokens['access_token']}"}
         profile_resp = await async_client.get("/profiles/me", headers=headers)
         assert profile_resp.status_code == 200, profile_resp.text
-        return tokens, headers, profile_resp.json()["user_id"]
+        user_id = profile_resp.json()["user_id"]
+        create_profile_resp = await async_client.post(
+            "/auth/onboarding/create-profile",
+            headers=headers,
+            json={"display_name": display_name},
+        )
+        assert create_profile_resp.status_code == 200, create_profile_resp.text
+        complete_resp = await async_client.post(
+            "/auth/onboarding/complete",
+            headers=headers,
+        )
+        assert complete_resp.status_code == 200, complete_resp.text
+        await memberships_repo.upsert_membership_record(
+            user_id,
+            status="active",
+            source="coupon",
+        )
+        return tokens, headers, user_id
 
     teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@wisdom.dev"
     student_email = f"student_{uuid.uuid4().hex[:6]}@wisdom.dev"
@@ -119,12 +142,15 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
     )
 
     captured_session: dict[str, object] = {}
+    customer_ids: list[str] = []
 
     def fail_stripe_entity_create(**_):
         raise AssertionError("course create/update must not create Stripe entities")
 
     def fake_customer_create(**_):
-        return {"id": "cus_test"}
+        customer_id = f"cus_test_{uuid.uuid4().hex}"
+        customer_ids.append(customer_id)
+        return {"id": customer_id}
 
     def fake_checkout_create(**kwargs):
         captured_session.update(kwargs)
@@ -212,7 +238,7 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
             "payment_intent": "pi_test_course",
             "amount_total": 12900,
             "currency": "sek",
-            "customer": "cus_test",
+            "customer": customer_ids[-1] if customer_ids else "cus_test_missing",
         }
         webhook_resp = await async_client.post(
             "/api/stripe/webhook",

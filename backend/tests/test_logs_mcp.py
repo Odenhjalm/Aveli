@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from app import db
-from app.auth import create_access_token, hash_password
+from app.auth import create_access_token
 from app.repositories import courses as courses_repo
 
 
@@ -46,18 +46,33 @@ async def _register_teacher(async_client) -> tuple[dict[str, str], str]:
                 )
                 VALUES (%s::uuid, %s, %s, now(), now())
                 """,
-                (user_id, email, hash_password(password)),
+                (user_id, email, "supabase-auth-managed-test-placeholder"),
             )
             await cur.execute(
                 """
                 INSERT INTO app.auth_subjects (
                   user_id,
+                  email,
                   onboarding_state,
-                  role,
+                  role
                 )
-                VALUES (%s::uuid, 'incomplete', 'teacher')
+                VALUES (%s::uuid, %s, 'completed', 'teacher')
                 """,
-                (user_id,),
+                (user_id, email),
+            )
+            await cur.execute(
+                """
+                INSERT INTO app.memberships (
+                  membership_id,
+                  user_id,
+                  status,
+                  source,
+                  created_at,
+                  updated_at
+                )
+                VALUES (%s::uuid, %s::uuid, 'active', 'coupon', now(), now())
+                """,
+                (str(uuid.uuid4()), user_id),
             )
             await cur.execute(
                 """

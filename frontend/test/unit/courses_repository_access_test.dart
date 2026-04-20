@@ -276,6 +276,35 @@ void main() {
       expect(adapter.requestsFor('/courses/course-1/access'), isEmpty);
     });
 
+    test(
+      'maps legacy English course-not-found detail to Swedish failure',
+      () async {
+        const slug = 'missing-course';
+        final adapter = _RecordingAdapter((options) {
+          if (options.path == '/courses/by-slug/$slug') {
+            return _jsonResponse(
+              statusCode: 404,
+              body: {'detail': 'Course not found'},
+            );
+          }
+          return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+        });
+        final repo = _repository(adapter);
+
+        await expectLater(
+          repo.fetchCourseDetailBySlug(slug),
+          throwsA(
+            isA<AppFailure>().having(
+              (failure) => failure.message,
+              'message',
+              'Kursen kunde inte hittas.',
+            ),
+          ),
+        );
+        expect(adapter.requestsFor('/courses/by-slug/$slug'), hasLength(1));
+      },
+    );
+
     test('detail rejects legacy alternate cover fields', () async {
       const slug = 'legacy-course';
       final adapter = _RecordingAdapter((options) {

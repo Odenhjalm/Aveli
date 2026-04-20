@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-import uuid
 from typing import Any
 from uuid import UUID
 
@@ -58,81 +57,53 @@ async def _upsert_profile_row(
 
 async def create_user(
     *,
+    user_id: str | UUID,
     email: str,
-    hashed_password: str,
     display_name: str | None,
 ) -> dict[str, Any]:
-    """Insert a new auth user + profile."""
-    new_id = uuid.uuid4()
+    """Create Aveli app projections for a Supabase Auth user."""
     normalized_email = email.strip().lower()
     canonical_onboarding_state = "incomplete"
     canonical_role = "learner"
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            try:
-                await cur.execute(
-                    """
-                    INSERT INTO auth.users (id, email, encrypted_password, created_at, updated_at)
-                    VALUES (%s, %s, %s, now(), now())
-                    RETURNING id, email, created_at, updated_at
-                    """,
-                    (new_id, normalized_email, hashed_password),
-                )
-            except errors.UniqueViolation as exc:
-                await conn.rollback()
-                raise UniqueViolationError from exc
+    try:
+        auth_subject = await ensure_auth_subject(
+            user_id,
+            email=normalized_email,
+            onboarding_state=canonical_onboarding_state,
+            role=canonical_role,
+        )
+    except errors.UniqueViolation as exc:
+        raise UniqueViolationError from exc
 
-            user_row = await cur.fetchone()
-            user_id = user_row["id"]
-            await cur.execute(
-                """
-                INSERT INTO app.auth_subjects (
-                    user_id,
-                    email,
-                    onboarding_state,
-                    role
-                )
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (user_id) DO NOTHING
-                """,
-                (
-                    user_id,
-                    normalized_email,
-                    canonical_onboarding_state,
-                    canonical_role,
-                ),
-            )
-
-            await conn.commit()
-            await ensure_auth_subject(
-                user_id,
-                email=normalized_email,
-                onboarding_state=canonical_onboarding_state,
-                role=canonical_role,
-            )
-            await _upsert_profile_row(
-                user_id=user_id,
-                display_name=display_name,
-            )
-            profile_row = await get_profile_for_user(user_id)
-            return {
-                "user": dict(user_row),
-                "profile": profile_row,
-            }
+    await _upsert_profile_row(
+        user_id=user_id,
+        display_name=display_name,
+    )
+    profile_row = await get_profile_for_user(user_id)
+    return {
+        "user": {
+            "id": str(user_id),
+            "email": normalized_email,
+            "onboarding_state": (
+                auth_subject or {}
+            ).get("onboarding_state", canonical_onboarding_state),
+            "role": (auth_subject or {}).get("role", canonical_role),
+        },
+        "profile": profile_row,
+    }
 
 
 async def get_user_by_email(email: str) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT id,
+            SELECT user_id AS id,
                    email,
-                   encrypted_password,
-                   email_confirmed_at,
-                   confirmed_at,
                    created_at,
-                   updated_at
-            FROM auth.users
+                   updated_at,
+                   onboarding_state,
+                   role::text AS role
+            FROM app.auth_subjects
             WHERE lower(email) = lower(%s)
             LIMIT 1
             """,
@@ -149,15 +120,14 @@ async def get_user_by_id(user_id: str | UUID) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT id,
+            SELECT user_id AS id,
                    email,
-                   encrypted_password,
-                   email_confirmed_at,
-                   confirmed_at,
                    created_at,
-                   updated_at
-            FROM auth.users
-            WHERE id = %s
+                   updated_at,
+                   onboarding_state,
+                   role::text AS role
+            FROM app.auth_subjects
+            WHERE user_id = %s
             LIMIT 1
             """,
             (user_id,),
@@ -170,23 +140,7 @@ async def get_user_by_id(user_id: str | UUID) -> dict[str, Any] | None:
 
 
 async def mark_user_email_verified(email: str) -> dict[str, Any] | None:
-    normalized_email = email.strip().lower()
-    async with pool.connection() as conn:  # type: ignore[attr-defined]
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                """
-                UPDATE auth.users
-                   SET email_confirmed_at = COALESCE(email_confirmed_at, now()),
-                       confirmed_at = COALESCE(confirmed_at, now()),
-                       updated_at = now()
-                 WHERE lower(email) = lower(%s)
-                 RETURNING id, email, email_confirmed_at, confirmed_at
-                """,
-                (normalized_email,),
-            )
-            row = await cur.fetchone()
-            await conn.commit()
-            return dict(row) if row else None
+    return await get_user_by_email(email)
 
 
 async def upsert_refresh_token(

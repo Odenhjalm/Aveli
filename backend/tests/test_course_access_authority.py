@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import UUID
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 
+from app.routes import courses as course_routes
 from app.services import courses_service, lesson_playback_service
 
 
@@ -263,6 +265,31 @@ async def test_sellable_group_position_zero_is_purchasable_not_auto_enrollable(
         )
 
     create_course_enrollment.assert_not_awaited()
+
+
+async def test_enroll_route_maps_purchase_required_to_swedish_safe_error(
+    monkeypatch,
+) -> None:
+    async def _fake_create_intro_course_enrollment(*, user_id: str, course_id: str):
+        del user_id, course_id
+        raise PermissionError("purchase enrollment required")
+
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "create_intro_course_enrollment",
+        _fake_create_intro_course_enrollment,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await course_routes.enroll_course(
+            UUID("77777777-7777-7777-7777-777777777777"),
+            {"id": UUID("88888888-8888-8888-8888-888888888888")},
+        )
+
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.detail == "Kursen kräver köp innan du kan fortsätta."
+    assert "purchase" not in str(excinfo.value.detail).lower()
 
 
 async def test_priced_unsellable_course_is_not_actionable_for_access(

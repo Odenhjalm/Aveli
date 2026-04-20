@@ -1,6 +1,7 @@
 import uuid
 
 from app import db as app_db
+from app.repositories import auth_subjects as auth_subjects_repo
 
 _SESSION_HEADER = app_db.TEST_SESSION_HEADER
 _get_session = getattr(app_db, "get_test" "_session" "_id")
@@ -92,7 +93,12 @@ async def ensure_admin_user(
         await bootstrap_first_admin(candidate["user_id"])
         return candidate
     except Exception:
-        pass
+        promoted = await auth_subjects_repo.set_role_authority(
+            candidate["user_id"],
+            role="admin",
+        )
+        if promoted:
+            return candidate
 
     async with app_db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
