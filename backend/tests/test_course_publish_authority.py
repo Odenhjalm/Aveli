@@ -2,6 +2,11 @@ import inspect
 
 import pytest
 
+from app.media_control_plane.services.media_resolver_service import (
+    LessonMediaPlaybackMode,
+    RuntimeMediaResolution,
+    RuntimeMediaResolutionReason,
+)
 from app.routes import studio
 from app.services import courses_service
 
@@ -139,7 +144,9 @@ async def _install_publish_fakes(
         fake_publish_course_state,
         raising=True,
     )
-    monkeypatch.setattr(courses_service, "_require_stripe_for_course_mapping", lambda: None)
+    monkeypatch.setattr(
+        courses_service, "_require_stripe_for_course_mapping", lambda: None
+    )
     return state
 
 
@@ -265,6 +272,60 @@ async def test_publish_fails_with_non_ready_referenced_media_before_stripe(monke
         },
     )
     _install_stripe_fail_fakes(monkeypatch)
+
+    with pytest.raises(ValueError, match="media"):
+        await courses_service.publish_course(COURSE_ID, teacher_id=TEACHER_ID)
+
+
+async def test_publish_fails_when_ready_media_is_not_runtime_resolvable(monkeypatch):
+    await _install_publish_fakes(
+        monkeypatch,
+        lessons=[_lesson(content_markdown="Bild !image(media_1)")],
+        media_by_lesson={
+            "lesson_publish_1": [
+                {
+                    "id": "media_1",
+                    "lesson_id": "lesson_publish_1",
+                    "media_asset_id": "asset_1",
+                    "media_type": "image",
+                    "kind": "image",
+                    "state": "ready",
+                }
+            ]
+        },
+    )
+    _install_stripe_fail_fakes(monkeypatch)
+
+    async def fake_resolve_lesson_media(
+        lesson_media_id: str,
+        *,
+        emit_logs: bool = True,
+    ):
+        assert lesson_media_id == "media_1"
+        assert emit_logs is False
+        return RuntimeMediaResolution(
+            lesson_media_id="media_1",
+            lesson_id="lesson_publish_1",
+            media_asset_id="asset_1",
+            media_type="image",
+            content_type="image/jpeg",
+            media_state="ready",
+            storage_bucket="course-media",
+            storage_path=None,
+            is_playable=False,
+            playback_mode=LessonMediaPlaybackMode.NONE,
+            failure_reason=RuntimeMediaResolutionReason.MISSING_STORAGE_OBJECT,
+            failure_detail="runtime_media playback_object_path is missing",
+            runtime_media_id="media_1",
+            course_id=COURSE_ID,
+        )
+
+    monkeypatch.setattr(
+        courses_service.canonical_media_resolver,
+        "resolve_lesson_media",
+        fake_resolve_lesson_media,
+        raising=True,
+    )
 
     with pytest.raises(ValueError, match="media"):
         await courses_service.publish_course(COURSE_ID, teacher_id=TEACHER_ID)

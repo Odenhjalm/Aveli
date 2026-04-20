@@ -119,6 +119,32 @@ const _courseWithCover = CourseStudio(
   priceAmountCents: 1200,
 );
 
+const _createdCourse = CourseStudio(
+  id: 'course-created',
+  title: 'Backendutkast',
+  slug: 'backend-draft',
+  courseGroupId: 'course-group-created',
+  groupPosition: 0,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: 49000,
+);
+
+const _publishedCourse = CourseStudio(
+  id: 'course-1',
+  title: 'Backendpublicerad',
+  slug: 'backend-publicerad',
+  courseGroupId: 'course-group-1',
+  groupPosition: 1,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: 1200,
+);
+
 const _canonicalLessonMediaUrl = 'https://cdn.test/canonical-lesson-image.webp';
 const _canonicalTrailingDocumentUrl =
     'https://cdn.test/canonical-lesson-document.pdf';
@@ -249,6 +275,11 @@ void _stubBaseStudioData(
   });
 }
 
+void _stubEmptyStudioData(_MockStudioRepository repo) {
+  when(() => repo.fetchStatus()).thenAnswer((_) async => _V2TeacherStatus());
+  when(() => repo.myCourses()).thenAnswer((_) async => const <CourseStudio>[]);
+}
+
 Future<void> _pumpCourseEditor(
   WidgetTester tester, {
   required _MockStudioRepository repo,
@@ -328,6 +359,165 @@ void _selectWholeDocumentForDeletion() {
 void main() {
   setUpAll(() {
     registerFallbackValue(<String>[]);
+  });
+
+  testWidgets('course create uses canonical backend response as editor state', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final repo = _MockStudioRepository();
+    when(() => repo.fetchStatus()).thenAnswer((_) async => _V2TeacherStatus());
+    var myCoursesCalls = 0;
+    when(() => repo.myCourses()).thenAnswer((_) async {
+      myCoursesCalls += 1;
+      return myCoursesCalls == 1
+          ? const <CourseStudio>[]
+          : const <CourseStudio>[_createdCourse];
+    });
+    when(
+      () => repo.createCourse(
+        title: any(named: 'title'),
+        slug: any(named: 'slug'),
+        courseGroupId: any(named: 'courseGroupId'),
+        groupPosition: any(named: 'groupPosition'),
+        priceAmountCents: any(named: 'priceAmountCents'),
+        dripEnabled: any(named: 'dripEnabled'),
+        dripIntervalDays: any(named: 'dripIntervalDays'),
+        coverMediaId: any(named: 'coverMediaId'),
+      ),
+    ).thenAnswer((_) async => _createdCourse);
+    when(
+      () => repo.fetchCourseMeta('course-created'),
+    ).thenAnswer((_) async => _createdCourse);
+    when(
+      () => repo.listCourseLessons('course-created'),
+    ).thenAnswer((_) async => const <LessonStudio>[]);
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilTextFound(tester, 'Skapa kurs');
+
+    await tester.tap(find.text('Skapa kurs'));
+    await tester.pumpAndSettle();
+    expect(find.text('Skapa ny kurs'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(0), 'Min kurs');
+    await tester.enterText(find.byType(TextField).at(1), 'min-kurs');
+    await tester.enterText(find.byType(TextField).at(2), '490');
+    await tester.tap(find.text('Skapa kurs').last);
+    await tester.pumpAndSettle();
+    await _pumpUntilTextFound(tester, 'Backendutkast');
+
+    final create = verify(
+      () => repo.createCourse(
+        title: 'Min kurs',
+        slug: 'min-kurs',
+        courseGroupId: captureAny(named: 'courseGroupId'),
+        groupPosition: 0,
+        priceAmountCents: 49000,
+        dripEnabled: false,
+        dripIntervalDays: null,
+        coverMediaId: null,
+      ),
+    )..called(1);
+    expect(create.captured.single as String, isNotEmpty);
+    verify(() => repo.fetchCourseMeta('course-created')).called(1);
+    verify(() => repo.listCourseLessons('course-created')).called(1);
+  });
+
+  testWidgets('course create failure does not fabricate a local draft', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final repo = _MockStudioRepository();
+    _stubEmptyStudioData(repo);
+    when(
+      () => repo.createCourse(
+        title: any(named: 'title'),
+        slug: any(named: 'slug'),
+        courseGroupId: any(named: 'courseGroupId'),
+        groupPosition: any(named: 'groupPosition'),
+        priceAmountCents: any(named: 'priceAmountCents'),
+        dripEnabled: any(named: 'dripEnabled'),
+        dripIntervalDays: any(named: 'dripIntervalDays'),
+        coverMediaId: any(named: 'coverMediaId'),
+      ),
+    ).thenThrow(StateError('backend unavailable'));
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilTextFound(tester, 'Skapa kurs');
+
+    await tester.tap(find.text('Skapa kurs'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), 'Min kurs');
+    await tester.enterText(find.byType(TextField).at(1), 'min-kurs');
+    await tester.tap(find.text('Skapa kurs').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Backendutkast'), findsNothing);
+    expect(find.textContaining('Kunde inte skapa kurs'), findsOneWidget);
+    verifyNever(() => repo.fetchCourseMeta(any()));
+    verifyNever(() => repo.listCourseLessons(any()));
+  });
+
+  testWidgets(
+    'course publish uses canonical backend response as editor state',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(repo);
+      var published = false;
+      when(() => repo.fetchCourseMeta('course-1')).thenAnswer((_) async {
+        return published ? _publishedCourse : _course;
+      });
+      when(() => repo.publishCourse('course-1')).thenAnswer((_) async {
+        published = true;
+        return _publishedCourse;
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Publicera kurs');
+
+      final publishButton = find.text('Publicera kurs');
+      await tester.ensureVisible(publishButton);
+      await tester.tap(publishButton);
+      await tester.pumpAndSettle();
+      await _pumpUntilTextFound(tester, 'Backendpublicerad');
+
+      verify(() => repo.publishCourse('course-1')).called(1);
+      verify(() => repo.fetchCourseMeta('course-1')).called(2);
+    },
+  );
+
+  testWidgets('course publish failure does not fabricate published state', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(repo);
+    when(
+      () => repo.publishCourse('course-1'),
+    ).thenThrow(StateError('backend unavailable'));
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilTextFound(tester, 'Publicera kurs');
+
+    final publishButton = find.text('Publicera kurs');
+    await tester.ensureVisible(publishButton);
+    await tester.tap(publishButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Backendpublicerad'), findsNothing);
+    expect(find.textContaining('Kunde inte publicera kurs'), findsOneWidget);
+    verify(() => repo.publishCourse('course-1')).called(1);
+    verify(() => repo.fetchCourseMeta('course-1')).called(1);
   });
 
   testWidgets(

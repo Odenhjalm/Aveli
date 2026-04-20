@@ -177,8 +177,7 @@ def reject_legacy_course_cover_output_fields(row: Mapping[str, Any]) -> None:
     )
     if forbidden:
         raise ValueError(
-            "legacy course cover public fields are forbidden: "
-            + ", ".join(forbidden)
+            "legacy course cover public fields are forbidden: " + ", ".join(forbidden)
         )
 
 
@@ -650,9 +649,7 @@ async def list_lesson_media(
     rows = [dict(row) for row in await courses_repo.list_lesson_media(lesson_id)]
     normalized_rows: list[dict[str, Any]] = []
     for row in rows:
-        media_type = str(
-            row.get("media_type") or row.get("kind") or ""
-        ).strip().lower()
+        media_type = str(row.get("media_type") or row.get("kind") or "").strip().lower()
         item = {
             "id": row["id"],
             "lesson_id": row["lesson_id"],
@@ -720,7 +717,9 @@ async def list_lesson_media(
 
 
 async def list_studio_lesson_media(lesson_id: str) -> Sequence[dict[str, Any]]:
-    rows = [dict(row) for row in await courses_repo.list_lesson_media_for_studio(lesson_id)]
+    rows = [
+        dict(row) for row in await courses_repo.list_lesson_media_for_studio(lesson_id)
+    ]
     return [
         {
             "lesson_media_id": row["lesson_media_id"],
@@ -804,8 +803,10 @@ async def list_home_audio_media(
     direct_rows = await home_audio_runtime_repo.list_home_audio_direct_upload_sources(
         limit=candidate_limit
     )
-    course_link_rows = await home_audio_runtime_repo.list_home_audio_course_link_sources(
-        limit=candidate_limit
+    course_link_rows = (
+        await home_audio_runtime_repo.list_home_audio_course_link_sources(
+            limit=candidate_limit
+        )
     )
 
     candidates = [
@@ -909,9 +910,7 @@ def _normalize_cover_media_id(value: Any) -> str | None:
 
 
 def _canonical_course_cover_source_prefix(course_id: str) -> str:
-    return (
-        Path("media") / "source" / "cover" / "courses" / course_id
-    ).as_posix() + "/"
+    return (Path("media") / "source" / "cover" / "courses" / course_id).as_posix() + "/"
 
 
 def _canonical_course_cover_derived_prefix(course_id: str) -> str:
@@ -1280,7 +1279,7 @@ def _validate_publish_lesson_order(lessons: Sequence[Mapping[str, Any]]) -> None
         _publish_validation_error("Lektionernas ordning är ogiltig")
 
 
-def _validate_referenced_lesson_media_ready(
+async def _validate_referenced_lesson_media_ready(
     *,
     markdown: str,
     media_rows: Sequence[Mapping[str, Any]],
@@ -1302,11 +1301,25 @@ def _validate_referenced_lesson_media_ready(
         if state != "ready":
             _publish_validation_error("Lektionens media är inte redo")
 
+        resolution = await canonical_media_resolver.resolve_lesson_media(
+            lesson_media_id,
+            emit_logs=False,
+        )
+        if (
+            not resolution.is_playable
+            or resolution.playback_mode != LessonMediaPlaybackMode.PIPELINE_ASSET
+            or resolution.media_state != "ready"
+            or not resolution.media_asset_id
+        ):
+            _publish_validation_error("Lektionens media är inte redo")
+        row_media_asset_id = str(row.get("media_asset_id") or "").strip()
+        if row_media_asset_id and row_media_asset_id != str(resolution.media_asset_id):
+            _publish_validation_error("Lektionens mediareferenser är ogiltiga")
+
 
 async def _derive_course_content_ready(course_id: str) -> bool:
     lessons = [
-        dict(row)
-        for row in await courses_repo.list_course_publish_lessons(course_id)
+        dict(row) for row in await courses_repo.list_course_publish_lessons(course_id)
     ]
     if not lessons:
         _publish_validation_error("Kursen saknar lektioner")
@@ -1343,7 +1356,7 @@ async def _derive_course_content_ready(course_id: str) -> bool:
 
         if normalized_markdown != content_markdown:
             _publish_validation_error("Lektionens innehåll är inte normaliserat")
-        _validate_referenced_lesson_media_ready(
+        await _validate_referenced_lesson_media_ready(
             markdown=content_markdown,
             media_rows=media_rows,
         )
@@ -1567,7 +1580,9 @@ async def refresh_course_sellability(course_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-async def ensure_course_stripe_mapping(course_id: str, teacher_id: str) -> dict[str, Any]:
+async def ensure_course_stripe_mapping(
+    course_id: str, teacher_id: str
+) -> dict[str, Any]:
     del course_id, teacher_id
     raise RuntimeError("Kursens Stripe-koppling hanteras endast via publicering")
 
@@ -1673,7 +1688,9 @@ async def update_lesson_content(
     }
 
 
-async def upsert_lesson(course_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+async def upsert_lesson(
+    course_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
     del course_id, payload
     raise RuntimeError(
         "Legacy mixed lesson upsert is disabled; use separate structure and content surfaces"
@@ -1775,7 +1792,9 @@ async def read_canonical_course_access(user_id: str, course_id: str) -> dict[str
     }
 
 
-async def read_canonical_course_state(user_id: str, course_id: str) -> dict[str, Any] | None:
+async def read_canonical_course_state(
+    user_id: str, course_id: str
+) -> dict[str, Any] | None:
     access = await read_canonical_course_access(user_id, course_id)
     course = access["course"]
     if course is None:

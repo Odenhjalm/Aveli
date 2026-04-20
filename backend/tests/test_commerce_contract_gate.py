@@ -1360,4 +1360,6 @@ async def test_bundle_guardrail_source_scan() -> None:
 
     assert "upsert_membership_record" not in bundle_service_source
     assert "grant_bundle_entitlements" not in webhook_source
-    assert "grant_bundle_entitlements" in bundle_webhook_source
+    assert "grant_bundle_entitlements" not in bundle_webhook_source
+    assert "fulfill_bundle_order_snapshot" in bundle_webhook_source
+    assert "list_bundle_checkout_courses" not in bundle_webhook_source

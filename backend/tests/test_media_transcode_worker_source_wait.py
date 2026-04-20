@@ -478,6 +478,289 @@ async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeyp
 
 
 @pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize(
+    (
+        "media_type",
+        "source_path",
+        "source_content_type",
+        "expected_source_bucket",
+        "expected_output_path",
+        "expected_format",
+        "expected_codec",
+        "expected_duration",
+    ),
+    [
+        (
+            "image",
+            "lessons/lesson-1/images/demo.jpeg",
+            "image/jpeg",
+            "public-media",
+            "media/derived/lesson-media/image/lessons/lesson-1/images/demo.jpg",
+            "jpg",
+            "jpeg",
+            None,
+        ),
+        (
+            "video",
+            "courses/course-1/lessons/lesson-1/video/demo.mp4",
+            "video/mp4",
+            "course-media",
+            "media/derived/lesson-media/video/courses/course-1/lessons/lesson-1/video/demo.mp4",
+            "mp4",
+            "mp4",
+            33,
+        ),
+        (
+            "document",
+            "courses/course-1/lessons/lesson-1/documents/guide.pdf",
+            "application/pdf",
+            "course-media",
+            "media/derived/lesson-media/document/courses/course-1/lessons/lesson-1/documents/guide.pdf",
+            "pdf",
+            "pdf",
+            None,
+        ),
+    ],
+)
+async def test_lesson_media_passthrough_marks_scoped_types_ready(
+    monkeypatch,
+    media_type,
+    source_path,
+    source_content_type,
+    expected_source_bucket,
+    expected_output_path,
+    expected_format,
+    expected_codec,
+    expected_duration,
+):
+    calls: dict[str, object] = {}
+
+    class DummySigned:
+        url = "https://example.invalid/source"
+
+    class DummyUpload:
+        url = "https://example.invalid/upload"
+        headers = {"content-type": source_content_type}
+
+    class DummyStorage:
+        def __init__(self, bucket: str):
+            self.bucket = bucket
+
+        async def get_presigned_url(self, path, **kwargs):
+            calls.setdefault("presigned", []).append((self.bucket, path, kwargs))
+            return DummySigned()
+
+        async def create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+            calls["upload_path"] = path
+            calls["upload_bucket"] = self.bucket
+            calls["upload_content_type"] = content_type
+            calls["upload_upsert"] = upsert
+            calls["upload_cache_seconds"] = cache_seconds
+            return DummyUpload()
+
+        async def inspect_object(self, path, *, ttl):
+            calls.setdefault("inspected", []).append((self.bucket, path, ttl))
+            if self.bucket == expected_source_bucket and path == source_path:
+                return worker.storage_service.StorageObjectMetadata(
+                    path=path,
+                    content_type=source_content_type,
+                    size_bytes=12,
+                )
+            if self.bucket == "course-media" and path == expected_output_path:
+                return worker.storage_service.StorageObjectMetadata(
+                    path=path,
+                    content_type=source_content_type,
+                    size_bytes=12,
+                )
+            raise worker.storage_service.StorageObjectNotFoundError("missing")
+
+        async def delete_object(self, path):
+            calls["deleted_path"] = path
+
+    def fake_get_storage_service(bucket):
+        calls.setdefault("storage_buckets", []).append(bucket)
+        return DummyStorage(bucket)
+
+    async def fake_download_to_file(url, destination):
+        calls["download_url"] = url
+        calls["download_destination"] = destination
+        destination.write_bytes(b"source-bytes")
+
+    async def fake_upload_file(url, source, headers):
+        calls["uploaded_url"] = url
+        calls["uploaded_source"] = source
+        calls["uploaded_headers"] = headers
+
+    async def fake_probe_duration(path):
+        calls["probe_path"] = path
+        return expected_duration
+
+    async def fake_mark_media_asset_ready_from_worker(**kwargs):
+        calls["mark_ready"] = kwargs
+        return {"id": kwargs["media_id"], "state": "ready"}
+
+    async def fake_consume_attempt():
+        calls["attempt_consumed"] = True
+
+    monkeypatch.setattr(
+        worker.storage_service,
+        "get_storage_service",
+        fake_get_storage_service,
+    )
+    monkeypatch.setattr(worker, "_download_to_file", fake_download_to_file)
+    monkeypatch.setattr(worker, "_upload_file", fake_upload_file)
+    monkeypatch.setattr(worker, "_probe_duration", fake_probe_duration)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "mark_media_asset_ready_from_worker",
+        fake_mark_media_asset_ready_from_worker,
+    )
+
+    await worker._transcode_lesson_passthrough_asset(
+        {
+            "id": f"{media_type}-asset-1",
+            "media_type": media_type,
+            "purpose": "lesson_media",
+            "original_object_path": source_path,
+        },
+        fake_consume_attempt,
+    )
+
+    assert calls["storage_buckets"] == [expected_source_bucket, "course-media"]
+    assert calls["attempt_consumed"] is True
+    assert calls["upload_bucket"] == "course-media"
+    assert calls["upload_path"] == expected_output_path
+    assert calls["upload_content_type"] == source_content_type
+    assert calls["upload_upsert"] is True
+    assert calls["uploaded_source"].name == f"output.{expected_format}"
+    if media_type == "video":
+        assert calls["probe_path"] == calls["uploaded_source"]
+    else:
+        assert "probe_path" not in calls
+    assert calls["mark_ready"] == {
+        "media_id": f"{media_type}-asset-1",
+        "playback_object_path": expected_output_path,
+        "playback_format": expected_format,
+        "duration_seconds": expected_duration,
+        "codec": expected_codec,
+        "playback_storage_bucket": "course-media",
+    }
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize(
+    ("media_type", "source_path", "source_content_type", "expected_error"),
+    [
+        (
+            "image",
+            "lessons/lesson-1/images/demo.webp",
+            "image/webp",
+            "Unsupported lesson image passthrough format",
+        ),
+        (
+            "video",
+            "courses/course-1/lessons/lesson-1/video/demo.webm",
+            "video/webm",
+            "Unsupported lesson video passthrough format",
+        ),
+        (
+            "document",
+            "courses/course-1/lessons/lesson-1/documents/guide.txt",
+            "text/plain",
+            "Unsupported lesson document passthrough format",
+        ),
+    ],
+)
+async def test_lesson_media_passthrough_failures_mark_failed_closed(
+    monkeypatch,
+    media_type,
+    source_path,
+    source_content_type,
+    expected_error,
+):
+    fixed_now = datetime(2026, 1, 25, tzinfo=timezone.utc)
+    calls: dict[str, object] = {}
+    source_bucket = "public-media" if media_type == "image" else "course-media"
+
+    class DummyStorage:
+        def __init__(self, bucket: str):
+            self.bucket = bucket
+
+        async def inspect_object(self, path, *, ttl):
+            assert self.bucket == source_bucket
+            assert path == source_path
+            return worker.storage_service.StorageObjectMetadata(
+                path=path,
+                content_type=source_content_type,
+                size_bytes=12,
+            )
+
+    async def fake_increment_processing_attempts(*, media_id: str):
+        calls["increment"] = media_id
+
+    async def fake_mark_media_asset_failed(**kwargs):
+        calls["failed"] = kwargs
+
+    async def fail_mark_ready(**kwargs):
+        raise AssertionError("unsupported passthrough must not mark ready")
+
+    monkeypatch.setattr(worker, "_now", lambda: fixed_now)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "compute_backoff",
+        lambda attempts, max_seconds: timedelta(seconds=30),
+    )
+    monkeypatch.setattr(
+        worker.storage_service,
+        "get_storage_service",
+        lambda bucket: DummyStorage(bucket),
+    )
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "increment_processing_attempts",
+        fake_increment_processing_attempts,
+    )
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "mark_media_asset_failed",
+        fake_mark_media_asset_failed,
+    )
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "mark_media_asset_ready_from_worker",
+        fail_mark_ready,
+    )
+
+    await worker._process_asset(
+        {
+            "id": f"{media_type}-asset-unsupported",
+            "processing_attempts": 0,
+            "media_type": media_type,
+            "purpose": "lesson_media",
+            "original_object_path": source_path,
+        }
+    )
+
+    assert calls["increment"] == f"{media_type}-asset-unsupported"
+    assert calls["failed"] == {
+        "media_id": f"{media_type}-asset-unsupported",
+        "error_message": expected_error,
+        "next_retry_at": fixed_now + timedelta(seconds=30),
+    }
+
+
+def test_worker_queue_claim_includes_lesson_image_video_document() -> None:
+    source = (
+        Path(__file__).resolve().parents[1] / "app/repositories/media_assets.py"
+    ).read_text(encoding="utf-8")
+
+    assert "'lesson_media'::app.media_purpose" in source
+    assert "'image'::app.media_type" in source
+    assert "'video'::app.media_type" in source
+    assert "'document'::app.media_type" in source
+
+
+@pytest.mark.anyio("asyncio")
 async def test_derived_upload_falls_back_to_local_storage_in_local_mode(
     monkeypatch,
     tmp_path,

@@ -89,8 +89,30 @@ class StudioRepository {
   Future<CourseStudio> createCourse({
     required String title,
     required String slug,
+    required String courseGroupId,
+    required int groupPosition,
+    required bool dripEnabled,
+    required int? dripIntervalDays,
+    int? priceAmountCents,
+    String? coverMediaId,
   }) async {
-    return _unsupportedRuntime('Studio course creation');
+    final response = await _client.raw.post<Object?>(
+      '/studio/courses',
+      data: <String, Object?>{
+        'title': title,
+        'slug': slug,
+        'course_group_id': courseGroupId,
+        'group_position': groupPosition,
+        'price_amount_cents': priceAmountCents,
+        'drip_enabled': dripEnabled,
+        'drip_interval_days': dripIntervalDays,
+        'cover_media_id': coverMediaId,
+      },
+    );
+    return CourseStudio.fromResponse(
+      response.data,
+      label: 'Created studio course',
+    );
   }
 
   Future<CourseStudio> fetchCourseMeta(String courseId) async {
@@ -111,6 +133,16 @@ class StudioRepository {
     return CourseStudio.fromResponse(
       response.data,
       label: 'Updated studio course',
+    );
+  }
+
+  Future<CourseStudio> publishCourse(String courseId) async {
+    final response = await _client.raw.post<Object?>(
+      '/studio/courses/$courseId/publish',
+    );
+    return CourseStudio.fromResponse(
+      response.data,
+      label: 'Published studio course',
     );
   }
 

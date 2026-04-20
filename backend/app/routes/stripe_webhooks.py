@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
 import sentry_sdk
 import stripe
@@ -23,6 +24,10 @@ CHECKOUT_SESSION_COMPLETION_EVENTS = {
     "checkout.session.completed",
     "checkout.session.async_payment_succeeded",
 }
+
+
+class CheckoutOrderResolutionError(RuntimeError):
+    pass
 
 
 def _sentry_enabled() -> bool:
@@ -192,10 +197,25 @@ async def stripe_payment_element_webhook(request: Request):
                 event_claim,
                 dict(event),
             )
+    except stripe_webhook_bundle_service.BundleFulfillmentError as exc:
+        _capture_exception(
+            str(event_type) if event_type else None,
+            str(event_id) if event_id else None,
+            exc,
+        )
+        logger.exception("Stripe bundle webhook fulfillment failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
     except HTTPException:
         raise
     except Exception as exc:  # pragma: no cover - defensive logging
-        _capture_exception(str(event_type) if event_type else None, str(event_id) if event_id else None, exc)
+        _capture_exception(
+            str(event_type) if event_type else None,
+            str(event_id) if event_id else None,
+            exc,
+        )
         logger.exception("Stripe webhook processing failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -221,14 +241,15 @@ async def _handle_checkout_session_completion(
     event_type: str,
 ) -> None:
     order = await _resolve_checkout_order(session, event_type)
-    if not order:
-        return
 
-    await _settle_checkout_order(order=order, session=session, event_type=event_type)
-
-    order_metadata = order.get("metadata")
-    if not isinstance(order_metadata, dict):
-        order_metadata = {}
+    if str(order.get("status") or "").strip().lower() != "paid":
+        settled_order = await _settle_checkout_order(
+            order=order,
+            session=session,
+            event_type=event_type,
+        )
+        if settled_order:
+            order = settled_order
 
     if order.get("course_id"):
         await stripe_webhook_course_service.handle_paid_checkout_order(
@@ -237,15 +258,9 @@ async def _handle_checkout_session_completion(
         )
         return
 
-    if order_metadata.get("bundle_id"):
-        payment_intent = session.get("payment_intent")
-        stripe_customer_id = (
-            str(session.get("customer")) if session.get("customer") else None
-        )
+    if str(order.get("order_type") or "").strip().lower() == "bundle":
         await stripe_webhook_bundle_service.handle_paid_checkout_order(
             order=order,
-            stripe_customer_id=stripe_customer_id,
-            payment_intent_id=str(payment_intent) if payment_intent else None,
             event_type=event_type,
         )
         return
@@ -260,24 +275,57 @@ async def _handle_checkout_session_completion(
 async def _resolve_checkout_order(
     session: dict[str, object],
     event_type: str,
-) -> dict[str, object] | None:
-    metadata = session.get("metadata") if isinstance(session.get("metadata"), dict) else {}
+) -> dict[str, object]:
+    metadata = (
+        session.get("metadata") if isinstance(session.get("metadata"), dict) else {}
+    )
     if not isinstance(metadata, dict):
         metadata = {}
+    checkout_id = session.get("id") if isinstance(session.get("id"), str) else None
+
+    if checkout_id:
+        order = await orders_repo.get_order_by_checkout_id(checkout_id)
+        if order:
+            return order
+
     order_id = metadata.get("order_id") or session.get("client_reference_id")
-    checkout_id = session.get("id")
 
     if not order_id:
-        logger.warning("Checkout session missing order_id; checkout=%s event=%s", checkout_id, event_type)
-        return None
+        logger.warning(
+            "Checkout session missing order_id; checkout=%s event=%s",
+            checkout_id,
+            event_type,
+        )
+        raise CheckoutOrderResolutionError("Checkout session saknar orderkoppling")
 
-    order = await orders_repo.get_order(order_id)
+    try:
+        normalized_order_id = str(UUID(str(order_id)))
+    except ValueError as exc:
+        logger.warning(
+            "Checkout session had invalid order_id; checkout=%s event=%s",
+            checkout_id,
+            event_type,
+        )
+        raise CheckoutOrderResolutionError("Checkout-sessionens orderkoppling är ogiltig") from exc
+
+    order = await orders_repo.get_order(normalized_order_id)
     if not order:
-        logger.warning("Checkout session could not resolve order; order_id=%s event=%s", order_id, event_type)
-        return None
-    if order.get("status") == "paid":
-        logger.info("Skipping already paid checkout session; order_id=%s event=%s", order_id, event_type)
-        return None
+        logger.warning(
+            "Checkout session could not resolve order; order_id=%s event=%s",
+            normalized_order_id,
+            event_type,
+        )
+        raise CheckoutOrderResolutionError("Checkout-sessionens order hittades inte")
+
+    order_checkout_id = str(order.get("stripe_checkout_id") or "").strip()
+    if checkout_id and order_checkout_id and order_checkout_id != checkout_id:
+        logger.warning(
+            "Checkout session correlation mismatch; order_id=%s checkout=%s event=%s",
+            order_id,
+            checkout_id,
+            event_type,
+        )
+        raise CheckoutOrderResolutionError("Checkout-sessionens orderkoppling är ogiltig")
     return order
 
 
@@ -286,17 +334,19 @@ async def _settle_checkout_order(
     order: dict[str, object],
     session: dict[str, object],
     event_type: str,
-) -> None:
+) -> dict[str, object] | None:
     payment_intent = session.get("payment_intent")
     checkout_id = session.get("id")
     amount_cents = int(session.get("amount_total") or 0)
     currency = (session.get("currency") or "sek").lower()
 
-    await payments_repo.mark_order_paid(
+    updated_order = await payments_repo.mark_order_paid(
         order["id"],
         payment_intent=str(payment_intent) if payment_intent else None,
         checkout_id=checkout_id if isinstance(checkout_id, str) else None,
-        subscription_id=str(session.get("subscription")) if session.get("subscription") else None,
+        subscription_id=(
+            str(session.get("subscription")) if session.get("subscription") else None
+        ),
         customer_id=str(session.get("customer")) if session.get("customer") else None,
     )
 
@@ -310,3 +360,5 @@ async def _settle_checkout_order(
         metadata={"event": event_type},
         payload=session if isinstance(session, dict) else {},
     )
+
+    return updated_order

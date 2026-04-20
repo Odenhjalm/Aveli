@@ -101,6 +101,63 @@ def _require_course_cover_ready_asset(
         raise RuntimeError("course cover ready requires playback_format jpg")
 
 
+def _require_worker_ready_asset(
+    *,
+    media_id: str,
+    asset: dict[str, Any],
+    playback_object_path: str,
+    playback_format: str,
+) -> None:
+    media_type = str(asset.get("media_type") or "").strip().lower()
+    purpose = str(asset.get("purpose") or "").strip().lower()
+    resolved_format = _required_ready_text(
+        playback_format,
+        "playback_format",
+    ).lower()
+    _required_ready_text(playback_object_path, "playback_object_path")
+    if not str(media_id or "").strip():
+        raise RuntimeError("canonical worker ready transition requires media_id")
+
+    if media_type == "audio":
+        if resolved_format != "mp3":
+            raise RuntimeError("audio ready requires playback_format mp3")
+        return
+
+    if media_type == "image" and purpose == "course_cover":
+        _require_course_cover_ready_asset(
+            media_id=media_id,
+            asset=asset,
+            playback_object_path=playback_object_path,
+            playback_format=resolved_format,
+        )
+        return
+
+    if media_type == "image" and purpose == "profile_media":
+        if resolved_format != "jpg":
+            raise RuntimeError("profile media image ready requires playback_format jpg")
+        return
+
+    if purpose != "lesson_media":
+        raise RuntimeError("unsupported canonical worker ready media purpose")
+
+    if media_type == "image":
+        if resolved_format not in {"jpg", "png"}:
+            raise RuntimeError("lesson image ready requires playback_format jpg or png")
+        return
+
+    if media_type == "video":
+        if resolved_format != "mp4":
+            raise RuntimeError("lesson video ready requires playback_format mp4")
+        return
+
+    if media_type == "document":
+        if resolved_format != "pdf":
+            raise RuntimeError("lesson document ready requires playback_format pdf")
+        return
+
+    raise RuntimeError("unsupported canonical worker ready media type")
+
+
 def _canonical_storage_bucket_for_access(row: dict[str, Any]) -> str | None:
     playback_object_path = (
         str(row.get("playback_object_path") or "").strip().lstrip("/")
@@ -459,6 +516,12 @@ async def mark_media_asset_ready_from_worker(
         raise RuntimeError(
             "canonical worker ready transition requires processing state"
         )
+    _require_worker_ready_asset(
+        media_id=media_id,
+        asset=media_asset,
+        playback_object_path=resolved_playback_object_path,
+        playback_format=resolved_playback_format,
+    )
     return await _call_canonical_worker_transition(
         media_id,
         target_state="ready",
@@ -691,8 +754,16 @@ async def fetch_and_lock_pending_media_assets(
                         media_type = 'image'::app.media_type
                         and purpose in (
                             'course_cover'::app.media_purpose,
-                            'profile_media'::app.media_purpose
+                            'profile_media'::app.media_purpose,
+                            'lesson_media'::app.media_purpose
                         )
+                    )
+                    or (
+                        media_type in (
+                            'video'::app.media_type,
+                            'document'::app.media_type
+                        )
+                        and purpose = 'lesson_media'::app.media_purpose
                     )
                 )
                   and state in (

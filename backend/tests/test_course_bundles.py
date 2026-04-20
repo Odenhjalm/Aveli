@@ -85,9 +85,59 @@ async def _bundle_sellable(bundle_id: str) -> bool:
     return bool(row[0])
 
 
+async def _bundle_snapshot_table_ready() -> bool:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute("select to_regclass('app.bundle_order_courses') as tbl limit 1")
+            row = await cur.fetchone()
+    return bool(row and row[0])
+
+
+async def _list_bundle_order_courses(order_id: str) -> list[dict]:
+    rows = await repositories.list_bundle_order_courses(order_id)
+    return [
+        {
+            "order_id": str(row["order_id"]),
+            "bundle_id": str(row["bundle_id"]),
+            "course_id": str(row["course_id"]),
+            "position": int(row["position"]),
+        }
+        for row in rows
+    ]
+
+
+async def _count_bundle_orders_for_user(user_id: str, bundle_id: str) -> int:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT count(*)::integer
+                  FROM app.orders
+                 WHERE user_id = %s
+                   AND bundle_id = %s
+                   AND order_type = 'bundle'
+                """,
+                (user_id, bundle_id),
+            )
+            row = await cur.fetchone()
+    return int(row[0] if row else 0)
+
+
 async def _cleanup_user(user_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            try:
+                await cur.execute(
+                    """
+                    DELETE FROM app.bundle_order_courses boc
+                     USING app.orders o
+                     WHERE boc.order_id = o.id
+                       AND o.user_id = %s
+                    """,
+                    (user_id,),
+                )
+            except errors.UndefinedTable:
+                await conn.rollback()
             await cur.execute("DELETE FROM app.orders WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM app.memberships WHERE user_id = %s", (user_id,))
             await cur.execute("DELETE FROM app.course_enrollments WHERE user_id = %s", (user_id,))
@@ -115,6 +165,10 @@ async def _cleanup_bundle(bundle_id: str):
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
             try:
+                await cur.execute(
+                    "DELETE FROM app.bundle_order_courses WHERE bundle_id = %s",
+                    (bundle_id,),
+                )
                 await cur.execute("DELETE FROM app.orders WHERE bundle_id = %s", (bundle_id,))
                 await cur.execute(
                     "DELETE FROM app.course_bundle_courses WHERE bundle_id = %s",
@@ -345,9 +399,226 @@ async def test_bundle_create_blocks_invalid_authority_compositions(async_client)
         await _cleanup_user(str(teacher_id))
 
 
+async def test_bundle_order_snapshot_failure_rolls_back_order(async_client, monkeypatch):
+    if not await _bundles_table_ready():
+        pytest.skip("course_bundles table missing; run migrations")
+    if not await _bundle_snapshot_table_ready():
+        pytest.skip("bundle_order_courses table missing; replay Baseline V2")
+    _set_stripe_test_env(monkeypatch)
+
+    teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@example.com"
+    teacher_token, _, teacher_id = await _register_user(
+        async_client, teacher_email, "Passw0rd!", "Teacher"
+    )
+    await _promote_to_teacher(teacher_id)
+    teacher_token = await _login_user(async_client, teacher_email, "Passw0rd!")
+    _, _, student_id = await _register_user(
+        async_client, f"student_{uuid.uuid4().hex[:6]}@example.com", "Passw0rd!", "Student"
+    )
+
+    course_one = None
+    course_two = None
+    bundle_id = None
+    stripe_prices: dict[str, dict[str, object]] = {}
+
+    def fake_product_create(**kwargs):
+        return {"id": f"prod_bundle_test_{uuid.uuid4().hex}"}
+
+    def fake_price_create(**kwargs):
+        price_id = f"price_bundle_test_{uuid.uuid4().hex}"
+        stripe_prices[price_id] = {
+            "id": price_id,
+            "product": kwargs["product"],
+            "unit_amount": kwargs["unit_amount"],
+            "currency": kwargs["currency"],
+            "active": True,
+        }
+        return stripe_prices[price_id]
+
+    def fake_price_retrieve(price_id):
+        return stripe_prices[price_id]
+
+    monkeypatch.setattr("stripe.Product.create", fake_product_create)
+    monkeypatch.setattr("stripe.Price.create", fake_price_create)
+    monkeypatch.setattr("stripe.Price.retrieve", fake_price_retrieve)
+
+    try:
+        course_one = await _create_course(
+            async_client,
+            teacher_token,
+            f"bundle-rollback-one-{uuid.uuid4().hex[:6]}",
+            1500,
+        )
+        course_two = await _create_course(
+            async_client,
+            teacher_token,
+            f"bundle-rollback-two-{uuid.uuid4().hex[:6]}",
+            1200,
+        )
+        await _set_course_bundle_eligibility(course_one)
+        await _set_course_bundle_eligibility(course_two)
+
+        create_resp = await async_client.post(
+            "/api/teachers/course-bundles",
+            headers=_auth(teacher_token),
+            json={
+                "title": "Paket A",
+                "price_amount_cents": 2490,
+                "course_ids": [course_one, course_two],
+            },
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        bundle_id = create_resp.json()["id"]
+
+        before_count = await _count_bundle_orders_for_user(str(student_id), bundle_id)
+        with pytest.raises(errors.UniqueViolation):
+            await repositories.create_bundle_order_with_snapshot(
+                user_id=str(student_id),
+                bundle_id=bundle_id,
+                amount_cents=2490,
+                currency="sek",
+                snapshot_courses=[
+                    {"course_id": course_one, "position": 1},
+                    {"course_id": course_one, "position": 2},
+                ],
+                metadata={"checkout_type": "bundle"},
+                stripe_customer_id="cus_rollback_test",
+            )
+        after_count = await _count_bundle_orders_for_user(str(student_id), bundle_id)
+        assert after_count == before_count
+    finally:
+        if bundle_id:
+            await _cleanup_bundle(bundle_id)
+        if course_one:
+            await _cleanup_course(course_one)
+        if course_two:
+            await _cleanup_course(course_two)
+        await _cleanup_user(str(teacher_id))
+        await _cleanup_user(str(student_id))
+
+
+async def test_bundle_checkout_stripe_failure_keeps_pending_order_snapshot(
+    async_client,
+    monkeypatch,
+):
+    if not await _bundles_table_ready():
+        pytest.skip("course_bundles table missing; run migrations")
+    if not await _bundle_snapshot_table_ready():
+        pytest.skip("bundle_order_courses table missing; replay Baseline V2")
+    _set_stripe_test_env(monkeypatch)
+
+    teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@example.com"
+    teacher_token, _, teacher_id = await _register_user(
+        async_client, teacher_email, "Passw0rd!", "Teacher"
+    )
+    await _promote_to_teacher(teacher_id)
+    teacher_token = await _login_user(async_client, teacher_email, "Passw0rd!")
+    student_token, _, student_id = await _register_user(
+        async_client, f"student_{uuid.uuid4().hex[:6]}@example.com", "Passw0rd!", "Student"
+    )
+
+    course_one = None
+    course_two = None
+    bundle_id = None
+    stripe_prices: dict[str, dict[str, object]] = {}
+
+    def fake_product_create(**kwargs):
+        return {"id": f"prod_bundle_test_{uuid.uuid4().hex}"}
+
+    def fake_price_create(**kwargs):
+        price_id = f"price_bundle_test_{uuid.uuid4().hex}"
+        stripe_prices[price_id] = {
+            "id": price_id,
+            "product": kwargs["product"],
+            "unit_amount": kwargs["unit_amount"],
+            "currency": kwargs["currency"],
+            "active": True,
+        }
+        return stripe_prices[price_id]
+
+    def fake_price_retrieve(price_id):
+        return stripe_prices[price_id]
+
+    def fake_customer_create(**kwargs):
+        return {"id": "cus_bundle_failure_test"}
+
+    def fake_session_create(**kwargs):
+        raise stripe.error.StripeError("checkout failed")
+
+    import stripe
+
+    monkeypatch.setattr("stripe.Product.create", fake_product_create)
+    monkeypatch.setattr("stripe.Price.create", fake_price_create)
+    monkeypatch.setattr("stripe.Price.retrieve", fake_price_retrieve)
+    monkeypatch.setattr("stripe.Customer.create", fake_customer_create)
+    monkeypatch.setattr("stripe.checkout.Session.create", fake_session_create)
+
+    try:
+        course_one = await _create_course(
+            async_client,
+            teacher_token,
+            f"bundle-stripe-fail-one-{uuid.uuid4().hex[:6]}",
+            1500,
+        )
+        course_two = await _create_course(
+            async_client,
+            teacher_token,
+            f"bundle-stripe-fail-two-{uuid.uuid4().hex[:6]}",
+            1200,
+        )
+        await _set_course_bundle_eligibility(course_one)
+        await _set_course_bundle_eligibility(course_two)
+
+        create_resp = await async_client.post(
+            "/api/teachers/course-bundles",
+            headers=_auth(teacher_token),
+            json={
+                "title": "Paket A",
+                "price_amount_cents": 2490,
+                "course_ids": [course_one, course_two],
+            },
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        bundle_id = create_resp.json()["id"]
+
+        checkout_resp = await async_client.post(
+            f"/api/course-bundles/{bundle_id}/checkout-session",
+            headers=_auth(student_token),
+        )
+        assert checkout_resp.status_code == 502
+        assert checkout_resp.json()["detail"] == "Kunde inte skapa Stripe-session"
+
+        orders = [
+            order
+            for order in await repositories.list_user_orders(str(student_id))
+            if str(order["bundle_id"]) == bundle_id
+        ]
+        assert len(orders) == 1
+        order = orders[0]
+        assert order["status"] == "pending"
+        assert order["stripe_checkout_id"] is None
+        assert order["stripe_payment_intent"] is None
+        assert order["metadata"] == {"checkout_type": "bundle"}
+
+        snapshot_rows = await _list_bundle_order_courses(str(order["id"]))
+        assert [row["course_id"] for row in snapshot_rows] == [course_one, course_two]
+        assert [row["position"] for row in snapshot_rows] == [1, 2]
+    finally:
+        if bundle_id:
+            await _cleanup_bundle(bundle_id)
+        if course_one:
+            await _cleanup_course(course_one)
+        if course_two:
+            await _cleanup_course(course_two)
+        await _cleanup_user(str(teacher_id))
+        await _cleanup_user(str(student_id))
+
+
 async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
     if not await _bundles_table_ready():
         pytest.skip("course_bundles table missing; run migrations")
+    if not await _bundle_snapshot_table_ready():
+        pytest.skip("bundle_order_courses table missing; replay Baseline V2")
     _set_stripe_test_env(monkeypatch)
     teacher_email = f"teacher_{uuid.uuid4().hex[:6]}@example.com"
     teacher_token, _, teacher_id = await _register_user(
@@ -547,13 +818,44 @@ async def test_create_bundle_and_checkout_flow(async_client, monkeypatch):
         assert captured_session.get("locale") == "sv"
         metadata = captured_session.get("metadata") or {}
         assert metadata.get("bundle_id") == bundle_id
-        assert metadata.get("checkout_type") == "course_bundle"
+        assert metadata.get("checkout_type") == "bundle"
         assert metadata.get("order_id") == payload["order_id"]
+        assert "course_ids" not in metadata
+        assert "course_slugs" not in metadata
+        assert "price_id" not in metadata
+        assert "user_id" not in metadata
 
         order = await repositories.get_order(payload["order_id"])
         assert order is not None
         assert order["status"] == "pending"
         assert order["order_type"] == "bundle"
+        assert str(order["bundle_id"]) == bundle_id
+        assert order["course_id"] is None
+        assert order["amount_cents"] == 2790
+        assert order["currency"] == "sek"
+        assert order["metadata"] == {"checkout_type": "bundle"}
+
+        snapshot_rows = await _list_bundle_order_courses(payload["order_id"])
+        assert [row["course_id"] for row in snapshot_rows] == [
+            course_two,
+            course_three,
+            course_one,
+        ]
+        assert [row["position"] for row in snapshot_rows] == [1, 2, 3]
+
+        live_change_resp = await async_client.patch(
+            f"/api/teachers/course-bundles/{bundle_id}",
+            headers=_auth(teacher_token),
+            json={"course_ids": [course_one, course_two]},
+        )
+        assert live_change_resp.status_code == 200, live_change_resp.text
+        unchanged_snapshot_rows = await _list_bundle_order_courses(payload["order_id"])
+        assert [row["course_id"] for row in unchanged_snapshot_rows] == [
+            course_two,
+            course_three,
+            course_one,
+        ]
+        assert [row["position"] for row in unchanged_snapshot_rows] == [1, 2, 3]
         assert await repositories.get_membership(str(student_id)) is None
     finally:
         if bundle_id:

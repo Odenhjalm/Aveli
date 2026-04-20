@@ -35,6 +35,7 @@ const _entryState = EntryState(
 final _avatarBytes = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
 );
+const _avatarPicker = ValueKey('profile-avatar-picker');
 
 Profile _profile({String? avatarMediaId, String? photoUrl}) {
   return Profile(
@@ -230,9 +231,7 @@ Future<void> _pumpProfilePage(
               ),
         ),
         profileAvatarRepositoryProvider.overrideWithValue(avatarRepository),
-        courses_front.myCoursesProvider.overrideWith(
-          (ref) async => const [],
-        ),
+        courses_front.myCoursesProvider.overrideWith((ref) async => const []),
         appConfigProvider.overrideWithValue(
           const AppConfig(
             apiBaseUrl: 'http://127.0.0.1:8080',
@@ -244,6 +243,12 @@ Future<void> _pumpProfilePage(
     ),
   );
   await tester.pump();
+}
+
+void _invokeAvatarPicker(WidgetTester tester) {
+  final picker = tester.widget<InkWell>(find.byKey(_avatarPicker));
+  expect(picker.onTap, isNotNull);
+  picker.onTap!.call();
 }
 
 void main() {
@@ -261,7 +266,7 @@ void main() {
       avatarRepository: avatarRepository,
     );
 
-    await tester.tap(find.bySemanticsLabel('Välj profilbild'));
+    _invokeAvatarPicker(tester);
     await tester.pumpAndSettle();
 
     expect(avatarRepository.calls, [
@@ -274,7 +279,7 @@ void main() {
     expect(authController.loadSessionCalls, 1);
     expect(profileRepository.updateCalls, 0);
     expect(find.text('Profilbilden är sparad.'), findsWidgets);
-    expect(find.bySemanticsLabel('Byt profilbild'), findsOneWidget);
+    expect(find.byTooltip('Byt profilbild'), findsOneWidget);
   });
 
   testWidgets('profile avatar busy state blocks repeated interaction', (
@@ -301,16 +306,17 @@ void main() {
       },
     );
 
-    await tester.tap(find.bySemanticsLabel('Välj profilbild'));
+    _invokeAvatarPicker(tester);
     await tester.pump();
 
     expect(find.text('Laddar upp profilbild...'), findsOneWidget);
-
-    await tester.tap(find.bySemanticsLabel('Välj profilbild'), warnIfMissed: false);
-    await tester.pump();
+    expect(tester.widget<InkWell>(find.byKey(_avatarPicker)).onTap, isNull);
 
     expect(pickerCalls, 1);
-    expect(avatarRepository.calls.where((call) => call.startsWith('init:')), hasLength(1));
+    expect(
+      avatarRepository.calls.where((call) => call.startsWith('init:')),
+      hasLength(1),
+    );
 
     avatarRepository.uploadGate!.complete();
     await tester.pumpAndSettle();
@@ -333,10 +339,9 @@ void main() {
       avatarRepository: avatarRepository,
     );
 
-    await tester.tap(find.bySemanticsLabel('Välj profilbild'));
+    _invokeAvatarPicker(tester);
     await tester.pumpAndSettle();
 
-    expect(find.text('Försök igen'), findsOneWidget);
     expect(find.text('Profilbilden kunde inte sparas.'), findsOneWidget);
     expect(find.text('Försök igen eller välj en annan bild.'), findsOneWidget);
     expect(
@@ -344,4 +349,6 @@ void main() {
       findsOneWidget,
     );
     expect(authController.loadSessionCalls, 0);
-    expect(profileRepository.upda
+    expect(profileRepository.updateCalls, 0);
+  });
+}

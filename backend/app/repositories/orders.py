@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping, Sequence
 from uuid import UUID
 
 from psycopg.rows import dict_row
@@ -105,6 +105,94 @@ async def create_order(
             return dict(row)
 
 
+async def create_bundle_order_with_snapshot(
+    *,
+    user_id: str | UUID,
+    bundle_id: str | UUID,
+    amount_cents: int,
+    currency: str,
+    snapshot_courses: Sequence[Mapping[str, Any]],
+    metadata: dict[str, Any] | None = None,
+    stripe_customer_id: str | None = None,
+) -> dict[str, Any]:
+    snapshot_rows = [
+        (bundle_id, row["course_id"], int(row["position"]))
+        for row in snapshot_courses
+    ]
+    if not snapshot_rows:
+        raise ValueError("bundle orders require a non-empty course snapshot")
+
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        try:
+            async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    """
+                    INSERT INTO app.orders (
+                        user_id,
+                        course_id,
+                        bundle_id,
+                        order_type,
+                        amount_cents,
+                        currency,
+                        status,
+                        stripe_checkout_id,
+                        stripe_payment_intent,
+                        stripe_subscription_id,
+                        stripe_customer_id,
+                        metadata
+                    )
+                    VALUES (%s, NULL, %s, 'bundle', %s, %s, 'pending', NULL, NULL, NULL, %s, %s)
+                    RETURNING id,
+                              user_id,
+                              course_id,
+                              bundle_id,
+                              order_type,
+                              amount_cents,
+                              currency,
+                              status,
+                              stripe_checkout_id,
+                              stripe_payment_intent,
+                              stripe_subscription_id,
+                              stripe_customer_id,
+                              metadata,
+                              created_at,
+                              updated_at
+                    """,
+                    (
+                        user_id,
+                        bundle_id,
+                        amount_cents,
+                        currency,
+                        stripe_customer_id,
+                        Jsonb(metadata or {}),
+                    ),
+                )
+                order = await cur.fetchone()
+                if order is None:
+                    raise RuntimeError("bundle order insert returned no row")
+
+                await cur.executemany(
+                    """
+                    INSERT INTO app.bundle_order_courses (
+                        order_id,
+                        bundle_id,
+                        course_id,
+                        position
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    [
+                        (order["id"], row_bundle_id, course_id, position)
+                        for row_bundle_id, course_id, position in snapshot_rows
+                    ],
+                )
+            await conn.commit()
+            return dict(order)
+        except Exception:
+            await conn.rollback()
+            raise
+
+
 async def get_order(order_id: str | UUID) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
@@ -117,6 +205,26 @@ async def get_order(order_id: str | UUID) -> dict[str, Any] | None:
         )
         row = await cur.fetchone()
         return dict(row) if row else None
+
+
+async def list_bundle_order_courses(order_id: str | UUID) -> list[dict[str, Any]]:
+    async with get_conn() as cur:
+        await cur.execute(
+            """
+            SELECT id,
+                   order_id,
+                   bundle_id,
+                   course_id,
+                   position,
+                   created_at
+              FROM app.bundle_order_courses
+             WHERE order_id = %s
+             ORDER BY position
+            """,
+            (order_id,),
+        )
+        rows = await cur.fetchall()
+    return [dict(row) for row in rows]
 
 
 async def get_user_order(

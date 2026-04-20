@@ -32,10 +32,12 @@ from .livekit_jobs import (
 from .media_assets import get_media_asset
 from .memberships import get_membership, upsert_membership_record
 from .orders import (
+    create_bundle_order_with_snapshot,
     create_order,
     get_order,
     get_order_by_payment_intent,
     get_user_order,
+    list_bundle_order_courses,
     list_user_orders,
     set_order_checkout_reference,
 )
@@ -69,6 +71,7 @@ from .teachers import get_teacher, update_teacher_status, upsert_teacher
 
 __all__ = [
     "create_order",
+    "create_bundle_order_with_snapshot",
     "create_session",
     "create_session_slot",
     "create_teacher_profile_media",
@@ -98,6 +101,7 @@ __all__ = [
     "insert_activity",
     "insert_auth_event",
     "list_feed",
+    "list_bundle_order_courses",
     "list_public_teacher_profile_media",
     "list_published_sessions",
     "list_services",

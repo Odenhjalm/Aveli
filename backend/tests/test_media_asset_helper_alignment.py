@@ -86,7 +86,9 @@ async def test_mark_media_asset_ready_passthrough_is_removed():
         )
 
 
-async def test_mark_media_asset_ready_from_worker_requires_processing_state(monkeypatch):
+async def test_mark_media_asset_ready_from_worker_requires_processing_state(
+    monkeypatch,
+):
     async def fake_get_media_asset(_: str):
         return {
             "id": str(uuid.uuid4()),
@@ -116,6 +118,95 @@ async def test_mark_media_asset_ready_from_worker_requires_processing_state(monk
             media_id=str(uuid.uuid4()),
             playback_object_path="media/derived/cover/courses/course-1/source.jpg",
             playback_format="jpg",
+        )
+
+
+@pytest.mark.parametrize(
+    ("media_type", "playback_format"),
+    [
+        ("image", "jpg"),
+        ("image", "png"),
+        ("video", "mp4"),
+        ("document", "pdf"),
+    ],
+)
+async def test_mark_media_asset_ready_from_worker_allows_lesson_media_formats(
+    monkeypatch,
+    media_type,
+    playback_format,
+):
+    media_id = str(uuid.uuid4())
+    calls: dict[str, object] = {}
+
+    async def fake_get_media_asset(_: str):
+        return {
+            "id": media_id,
+            "media_type": media_type,
+            "purpose": "lesson_media",
+            "original_object_path": f"source.{playback_format}",
+            "playback_object_path": None,
+            "playback_format": None,
+            "state": "processing",
+        }
+
+    async def fake_transition(*args, **kwargs):
+        calls["transition"] = kwargs
+        return {"id": media_id, "state": "ready"}
+
+    monkeypatch.setattr(media_assets_repo, "get_media_asset", fake_get_media_asset)
+    monkeypatch.setattr(
+        media_assets_repo,
+        "_call_canonical_worker_transition",
+        fake_transition,
+    )
+
+    result = await media_assets_repo.mark_media_asset_ready_from_worker(
+        media_id=media_id,
+        playback_object_path=(
+            f"media/derived/lesson-media/{media_type}/source.{playback_format}"
+        ),
+        playback_format=playback_format,
+    )
+
+    assert result == {"id": media_id, "state": "ready"}
+    assert calls["transition"]["target_state"] == "ready"
+    assert calls["transition"]["playback_format"] == playback_format
+
+
+async def test_mark_media_asset_ready_from_worker_rejects_invalid_lesson_video_format(
+    monkeypatch,
+):
+    media_id = str(uuid.uuid4())
+
+    async def fake_get_media_asset(_: str):
+        return {
+            "id": media_id,
+            "media_type": "video",
+            "purpose": "lesson_media",
+            "original_object_path": "source.webm",
+            "playback_object_path": None,
+            "playback_format": None,
+            "state": "processing",
+        }
+
+    async def fail_transition(*args, **kwargs):
+        raise AssertionError("invalid lesson video format must not transition ready")
+
+    monkeypatch.setattr(media_assets_repo, "get_media_asset", fake_get_media_asset)
+    monkeypatch.setattr(
+        media_assets_repo,
+        "_call_canonical_worker_transition",
+        fail_transition,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="lesson video ready requires playback_format mp4",
+    ):
+        await media_assets_repo.mark_media_asset_ready_from_worker(
+            media_id=media_id,
+            playback_object_path="media/derived/lesson-media/video/source.webm",
+            playback_format="webm",
         )
 
 

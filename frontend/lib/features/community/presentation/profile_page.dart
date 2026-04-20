@@ -381,6 +381,20 @@ class _IdentitySection extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (avatarUpload.errorMessage?.isNotEmpty == true) ...[
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: 112,
+                      child: Text(
+                        avatarUpload.errorMessage!,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(width: 16),
@@ -499,6 +513,7 @@ class _ProfileAvatar extends ConsumerWidget {
           color: Colors.transparent,
           shape: const CircleBorder(),
           child: InkWell(
+            key: const ValueKey('profile-avatar-picker'),
             customBorder: const CircleBorder(),
             onTap: isBusy ? null : onTap,
             child: SizedBox(
@@ -818,19 +833,19 @@ class _PasswordResetSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return _GlassSection(
-      title: 'Byt lÃ¶senord',
+      title: 'Byt lösenord',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Byt losenord via glomt-losenord-flodet. Det ar den kanoniska authytan som fortfarande stods i frontend.',
+            'Byt lösenord via flödet för glömt lösenord.',
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 12),
           GradientButton.icon(
             onPressed: () => context.goNamed(AppRoute.forgotPassword),
             icon: const Icon(Icons.lock_reset_rounded),
-            label: const Text('Ga till glomt losenord'),
+            label: const Text('Gå till glömt lösenord'),
           ),
         ],
       ),

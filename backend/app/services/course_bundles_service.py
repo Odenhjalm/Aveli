@@ -124,6 +124,15 @@ def map_bundle_database_error(exc: PsycopgError) -> CourseBundleError:
     return CourseBundleError("Paketet kunde inte hanteras just nu", status_code=503)
 
 
+def map_bundle_snapshot_database_error(exc: PsycopgError) -> CourseBundleError:
+    if isinstance(exc, (psycopg_errors.UndefinedColumn, psycopg_errors.UndefinedTable)):
+        return CourseBundleError(
+            "Paketfunktionen är inte tillgänglig just nu",
+            status_code=503,
+        )
+    return CourseBundleError("Paketköpet kunde inte förberedas just nu", status_code=503)
+
+
 def _payload_mapping(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         raise CourseBundleError("Paketförfrågan är ogiltig", status_code=400)
@@ -385,43 +394,47 @@ async def get_bundle(bundle_id: str, *, include_inactive: bool = False) -> Cours
 async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> CheckoutCreateResponse:
     _require_stripe()
 
-    bundle = await refresh_bundle_sellability(bundle_id)
-    if not bundle or not bool(bundle.get("sellable")):
-        raise CourseBundleError("Paketet är inte tillgängligt just nu", status_code=404)
-
-    courses = await bundle_repo.list_bundle_checkout_courses(bundle_id)
-    if not courses:
-        raise CourseBundleError("Paketet saknar kurser", status_code=400)
-
+    bundle = await bundle_repo.get_bundle_mapping_subject(bundle_id)
+    if not bundle:
+        raise CourseBundleError("Paketet hittades inte", status_code=404)
+    amount_cents = _checkout_bundle_price_amount(bundle)
     product_id = str(bundle.get("stripe_product_id") or "").strip()
     price_id = str(bundle.get("active_stripe_price_id") or "").strip()
     if not product_id or not price_id:
-        raise CourseBundleError("Stripe-mappning saknas för paketet", status_code=400)
+        raise CourseBundleError("Paketets pris är inte tillgängligt just nu", status_code=400)
+
+    courses = await bundle_repo.list_bundle_checkout_courses(bundle_id)
+    snapshot_courses = _checkout_bundle_snapshot_courses(bundle, courses)
+    target_sellable = _is_bundle_sellable_subject(bundle, courses=courses)
+    if bool(bundle.get("sellable")) != target_sellable:
+        await bundle_repo.update_bundle_sellability(
+            bundle_id,
+            sellable=target_sellable,
+        )
+    if not target_sellable:
+        raise CourseBundleError("Paketet är inte tillgängligt just nu", status_code=404)
 
     customer_id = await _ensure_customer_id(user)
     user_id = str(user["id"])
 
-    metadata: dict[str, Any] = {
-        "user_id": user_id,
-        "bundle_id": str(bundle_id),
-        "checkout_type": "course_bundle",
-        "course_ids": ",".join(str(row["course_id"]) for row in courses),
-        "course_slugs": ",".join(str(row.get("slug") or "") for row in courses),
-        "price_id": price_id,
-    }
+    try:
+        order = await repositories.create_bundle_order_with_snapshot(
+            user_id=user_id,
+            bundle_id=str(bundle_id),
+            amount_cents=amount_cents,
+            currency=_CANONICAL_BUNDLE_STRIPE_CURRENCY,
+            snapshot_courses=snapshot_courses,
+            metadata={"checkout_type": "bundle"},
+            stripe_customer_id=customer_id,
+        )
+    except PsycopgError as exc:
+        raise map_bundle_snapshot_database_error(exc) from exc
 
-    order = await repositories.create_order(
-        user_id=user_id,
-        course_id=None,
-        bundle_id=str(bundle_id),
-        amount_cents=int(bundle.get("price_amount_cents") or 0),
-        currency=_CANONICAL_BUNDLE_STRIPE_CURRENCY,
-        order_type="bundle",
-        metadata=metadata,
-        stripe_customer_id=customer_id,
-        stripe_subscription_id=None,
-    )
-    metadata["order_id"] = str(order["id"])
+    metadata: dict[str, Any] = {
+        "order_id": str(order["id"]),
+        "bundle_id": str(bundle_id),
+        "checkout_type": "bundle",
+    }
 
     success_url, cancel_url = _default_checkout_urls()
     try:
@@ -455,26 +468,6 @@ async def create_checkout_session(user: Mapping[str, Any], bundle_id: str) -> Ch
         session_id=session.get("id"),
         order_id=str(order["id"]),
     )
-
-
-async def grant_bundle_entitlements(
-    bundle_id: str,
-    user_id: str,
-    *,
-    stripe_customer_id: str | None,
-    payment_intent_id: str | None,
-) -> None:
-    courses = await bundle_repo.list_bundle_checkout_courses(bundle_id)
-    if not courses:
-        return
-    for course in courses:
-        course_id = course.get("course_id")
-        if course_id:
-            await courses_repo.create_course_enrollment(
-                user_id=user_id,
-                course_id=str(course_id),
-                source="purchase",
-            )
 
 
 async def _validate_bundle_course_candidates(
@@ -612,6 +605,55 @@ def _validate_bundle_price_amount(price_amount_cents: int) -> int:
     if normalized_amount <= 0:
         raise CourseBundleError("Paketpriset måste vara större än noll", status_code=400)
     return normalized_amount
+
+
+def _checkout_bundle_price_amount(bundle: Mapping[str, Any]) -> int:
+    try:
+        return _validate_bundle_price_amount(bundle.get("price_amount_cents"))
+    except CourseBundleError as exc:
+        raise CourseBundleError(
+            "Paketets pris är inte tillgängligt just nu",
+            status_code=400,
+        ) from exc
+
+
+def _checkout_bundle_snapshot_courses(
+    bundle: Mapping[str, Any],
+    courses: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    if len(courses) < 2:
+        raise CourseBundleError("Paketet måste innehålla minst två kurser", status_code=400)
+
+    teacher_id = str(bundle.get("teacher_id") or "").strip()
+    if not teacher_id:
+        raise CourseBundleError("Paketägare krävs", status_code=403)
+
+    snapshot_courses: list[dict[str, Any]] = []
+    seen_course_ids: set[str] = set()
+    for expected_position, course in enumerate(courses, start=1):
+        position = course.get("position")
+        if isinstance(position, bool) or not isinstance(position, int):
+            raise CourseBundleError("Paketets kursordning är ogiltig", status_code=400)
+        if position != expected_position:
+            raise CourseBundleError("Paketets kursordning är ogiltig", status_code=400)
+
+        course_id = str(course.get("course_id") or "").strip()
+        if not course_id:
+            raise CourseBundleError("Paketet innehåller en ogiltig kurs", status_code=400)
+        if course_id in seen_course_ids:
+            raise CourseBundleError(
+                "Paketet kan inte innehålla samma kurs flera gånger",
+                status_code=400,
+            )
+        seen_course_ids.add(course_id)
+
+        if str(course.get("teacher_id") or "").strip() != teacher_id:
+            raise CourseBundleError("Paketet innehåller en kurs med fel ägare", status_code=403)
+
+        _validate_bundle_course_eligibility(course)
+        snapshot_courses.append({"course_id": course_id, "position": position})
+
+    return snapshot_courses
 
 
 async def _ensure_customer_id(user: Mapping[str, Any]) -> str:
@@ -816,8 +858,8 @@ __all__ = [
     "refresh_bundle_sellability",
     "ensure_bundle_stripe_mapping",
     "create_checkout_session",
-    "grant_bundle_entitlements",
     "CourseBundleError",
     "CourseBundleConfigError",
     "map_bundle_database_error",
+    "map_bundle_snapshot_database_error",
 ]

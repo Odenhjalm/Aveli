@@ -433,6 +433,15 @@ def _derive_profile_media_output_path(source_path: str, ext: str) -> str:
     return Path(normalized).with_suffix(f".{ext}").as_posix()
 
 
+def _derive_lesson_media_output_path(
+    source_path: str, media_type: str, ext: str
+) -> str:
+    normalized = source_path.lstrip("/")
+    normalized_media_type = str(media_type or "").strip().lower() or "media"
+    derived = f"media/derived/lesson-media/{normalized_media_type}/{normalized}"
+    return Path(derived).with_suffix(f".{ext}").as_posix()
+
+
 def _audio_source_suffix(asset: dict) -> str:
     for raw in (
         asset.get("original_filename"),
@@ -481,6 +490,9 @@ def _local_storage_object_metadata(
     content_type = {
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
         ".mp3": "audio/mpeg",
         ".mp4": "video/mp4",
         ".pdf": "application/pdf",
@@ -541,9 +553,7 @@ async def _verify_storage_ready_object(
     expected = _normalized_content_type(expected_content_type)
     actual = _normalized_content_type(metadata.content_type)
     if expected is not None and actual != expected:
-        raise RuntimeError(
-            "Ready verification failed: playback content_type mismatch"
-        )
+        raise RuntimeError("Ready verification failed: playback content_type mismatch")
 
 
 async def _verify_ready_contract(
@@ -595,6 +605,44 @@ async def _verify_ready_contract(
             object_path=resolved_preview_path,
         ):
             raise RuntimeError("Ready verification failed: preview object is missing")
+
+
+def _lesson_passthrough_ready_contract(
+    *,
+    asset: dict,
+    source_metadata: storage_service.StorageObjectMetadata,
+) -> tuple[str, str, str]:
+    media_type = str(asset.get("media_type") or "").strip().lower()
+    content_type = _normalized_content_type(source_metadata.content_type)
+    if content_type is None:
+        raise RuntimeError("Source verification failed: content_type is missing")
+    if source_metadata.size_bytes is not None and source_metadata.size_bytes <= 0:
+        raise RuntimeError("Source verification failed: source object is empty")
+
+    if media_type == "image":
+        if content_type == "image/jpeg":
+            return "jpg", "image/jpeg", "jpeg"
+        if content_type == "image/png":
+            return "png", "image/png", "png"
+        raise RuntimeError("Unsupported lesson image passthrough format")
+
+    if media_type == "video":
+        if content_type != "video/mp4":
+            raise RuntimeError("Unsupported lesson video passthrough format")
+        return "mp4", "video/mp4", "mp4"
+
+    if media_type == "document":
+        if content_type != "application/pdf":
+            raise RuntimeError("Unsupported lesson document passthrough format")
+        return "pdf", "application/pdf", "pdf"
+
+    raise RuntimeError(f"Unsupported lesson media passthrough type: {media_type}")
+
+
+async def _copy_passthrough_source_to_output(source: Path, destination: Path) -> None:
+    await asyncio.to_thread(shutil.copyfile, source, destination)
+    if not destination.exists() or destination.stat().st_size <= 0:
+        raise RuntimeError("Lesson media passthrough produced an empty output")
 
 
 async def _verification_idle_loop() -> None:
@@ -838,7 +886,114 @@ async def _transcode_asset(asset: dict, consume_attempt: ConsumeAttemptFn) -> No
     if media_type == "image" and purpose == "profile_media":
         await _transcode_profile_media_image_asset(asset, consume_attempt)
         return
+    if purpose == "lesson_media" and media_type in {"image", "video", "document"}:
+        await _transcode_lesson_passthrough_asset(asset, consume_attempt)
+        return
     raise RuntimeError(f"Unsupported media asset type: {media_type}/{purpose}")
+
+
+async def _transcode_lesson_passthrough_asset(
+    asset: dict, consume_attempt: ConsumeAttemptFn
+) -> None:
+    source_path = asset.get("original_object_path")
+    if not source_path:
+        raise RuntimeError("Missing source object path")
+
+    media_type = str(asset.get("media_type") or "").strip().lower()
+    purpose = str(asset.get("purpose") or "").strip().lower()
+    if purpose != "lesson_media" or media_type not in {"image", "video", "document"}:
+        raise RuntimeError(
+            f"Unsupported lesson passthrough asset: {media_type}/{purpose}"
+        )
+
+    source_bucket = asset.get(
+        "storage_bucket"
+    ) or storage_service.canonical_upload_bucket_for_media_asset(asset)
+    playback_bucket = storage_service.canonical_source_bucket_for_media_asset(asset)
+    source_storage = storage_service.get_storage_service(source_bucket)
+    playback_storage = storage_service.get_storage_service(playback_bucket)
+
+    source_metadata = await _inspect_storage_object(
+        storage=source_storage,
+        object_path=str(source_path),
+    )
+    if source_metadata is None:
+        raise SourceNotReadyError("Source object is missing")
+    playback_format, playback_content_type, codec = _lesson_passthrough_ready_contract(
+        asset=asset,
+        source_metadata=source_metadata,
+    )
+    output_path = _derive_lesson_media_output_path(
+        str(source_path),
+        media_type,
+        playback_format,
+    )
+    duration: int | None = None
+
+    with tempfile.TemporaryDirectory(prefix="aveli_lesson_media_") as temp_dir:
+        temp_root = Path(temp_dir)
+        input_file = temp_root / f"source.{playback_format}"
+        output_file = temp_root / f"output.{playback_format}"
+
+        await _materialize_source_file(
+            asset=asset,
+            source_storage=source_storage,
+            source_path=str(source_path),
+            destination=input_file,
+        )
+        await consume_attempt()
+        await _copy_passthrough_source_to_output(input_file, output_file)
+        if media_type == "video":
+            duration = await _probe_duration(output_file)
+
+        await _upload_derived_file(
+            storage=playback_storage,
+            object_path=output_path,
+            source=output_file,
+            content_type=playback_content_type,
+            upsert=True,
+            cache_seconds=settings.media_public_cache_seconds,
+        )
+
+    await _verify_ready_contract(
+        asset=asset,
+        playback_storage=playback_storage,
+        playback_object_path=output_path,
+        playback_format=playback_format,
+        playback_content_type=playback_content_type,
+        duration_seconds=duration,
+    )
+
+    updated = await media_assets_repo.mark_media_asset_ready_from_worker(
+        media_id=str(asset["id"]),
+        playback_object_path=output_path,
+        playback_format=playback_format,
+        duration_seconds=duration,
+        codec=codec,
+        playback_storage_bucket=playback_storage.bucket,
+    )
+    if not updated:
+        try:
+            await playback_storage.delete_object(output_path)
+        except storage_service.StorageServiceError as exc:
+            logger.warning(
+                "Failed to cleanup derived lesson media after missing media asset %s (%s): %s",
+                asset.get("id"),
+                output_path,
+                exc,
+            )
+        logger.info(
+            "Media asset missing after lesson media processing; cleaned up derived output media_id=%s output=%s",
+            asset.get("id"),
+            output_path,
+        )
+        return
+    logger.info(
+        "Lesson media ready media_id=%s media_type=%s output=%s",
+        asset["id"],
+        media_type,
+        output_path,
+    )
 
 
 async def _transcode_audio_asset(

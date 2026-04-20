@@ -159,6 +159,137 @@ class _PersistedLessonPreviewSnapshot {
   final String? coverResolvedUrl;
 }
 
+class _CourseCreateInput {
+  const _CourseCreateInput({
+    required this.title,
+    required this.slug,
+    required this.priceAmountCents,
+  });
+
+  final String title;
+  final String slug;
+  final int? priceAmountCents;
+}
+
+class _CourseCreateDialog extends StatefulWidget {
+  const _CourseCreateDialog({required this.defaultSlug});
+
+  final String defaultSlug;
+
+  @override
+  State<_CourseCreateDialog> createState() => _CourseCreateDialogState();
+}
+
+class _CourseCreateDialogState extends State<_CourseCreateDialog> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _slugController;
+  late final TextEditingController _priceController;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: 'Ny kurs');
+    _slugController = TextEditingController(text: widget.defaultSlug);
+    _priceController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _slugController.dispose();
+    _priceController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final title = _titleController.text.trim();
+    final slug = _slugController.text.trim();
+    final rawPriceText = _priceController.text.trim();
+    final priceAmountCents = rawPriceText.isEmpty
+        ? null
+        : parseSekInputToOre(rawPriceText);
+
+    if (title.isEmpty) {
+      setState(() => _errorText = 'Titel krävs.');
+      return;
+    }
+    if (slug.isEmpty) {
+      setState(() => _errorText = 'Kursadress krävs.');
+      return;
+    }
+    if (rawPriceText.isNotEmpty &&
+        (priceAmountCents == null || priceAmountCents < 0)) {
+      setState(
+        () => _errorText =
+            'Pris måste vara ett tal ≥ 0 (t.ex. 490 eller 490.00).',
+      );
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _CourseCreateInput(
+        title: title,
+        slug: slug,
+        priceAmountCents: priceAmountCents,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Skapa ny kurs'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _titleController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'Titel'),
+            ),
+            gap12,
+            TextField(
+              controller: _slugController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'Kursadress'),
+            ),
+            gap12,
+            TextField(
+              controller: _priceController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              onSubmitted: (_) => _submit(),
+              decoration: const InputDecoration(
+                labelText: 'Pris (SEK)',
+                helperText: 'Lämna tomt om kursen inte ska prissättas än.',
+              ),
+            ),
+            if (_errorText != null) ...[
+              gap12,
+              Text(
+                _errorText!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Avbryt'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Skapa kurs')),
+      ],
+    );
+  }
+}
+
 class _AudioEmbedBuilder implements quill.EmbedBuilder {
   const _AudioEmbedBuilder({this.hydrationListenable});
 
@@ -379,6 +510,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   bool _courseMetaLoading = false;
   bool _savingCourseMeta = false;
+  bool _creatingCourse = false;
+  bool _publishingCourse = false;
   String? _courseCoverPath;
   bool _updatingCourseCover = false;
   String? _coverPipelineMediaId;
@@ -400,6 +533,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _lessonMediaRequestId = 0;
   int _lessonContentRequestId = 0;
   int _saveCourseRequestId = 0;
+  int _publishCourseRequestId = 0;
 
   quill.QuillController get _lessonContentController =>
       _editorSession.controller;
@@ -1805,6 +1939,24 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (item.id == id) return item;
     }
     return null;
+  }
+
+  List<CourseStudio> _adoptCourseById(
+    List<CourseStudio> courses,
+    CourseStudio course,
+  ) {
+    var replaced = false;
+    final merged = courses
+        .map((existing) {
+          if (existing.id != course.id) return existing;
+          replaced = true;
+          return course;
+        })
+        .toList(growable: true);
+    if (!replaced) {
+      merged.insert(0, course);
+    }
+    return merged;
   }
 
   String? _firstCourseId(List<CourseStudio> items) {
@@ -5755,6 +5907,73 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return parseSekInputToOre(text);
   }
 
+  String _defaultDraftCourseSlug() {
+    final suffix = _uuid.v4().replaceAll('-', '').substring(0, 8);
+    return 'ny-kurs-$suffix';
+  }
+
+  Future<_CourseCreateInput?> _showCourseCreateDialog() async {
+    return showDialog<_CourseCreateInput>(
+      context: context,
+      builder: (_) =>
+          _CourseCreateDialog(defaultSlug: _defaultDraftCourseSlug()),
+    );
+  }
+
+  Future<void> _promptCreateCourse() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
+    if (_creatingCourse) return;
+    if (!await _maybeSaveLessonEdits()) return;
+    if (!mounted) return;
+
+    final input = await _showCourseCreateDialog();
+    if (input == null || !mounted) return;
+
+    setState(() => _creatingCourse = true);
+    try {
+      final created = await _studioRepo.createCourse(
+        title: input.title,
+        slug: input.slug,
+        courseGroupId: _uuid.v4(),
+        groupPosition: 0,
+        priceAmountCents: input.priceAmountCents,
+        dripEnabled: false,
+        dripIntervalDays: null,
+        coverMediaId: null,
+      );
+      final refreshedCourses = await _studioRepo.myCourses();
+      final canonicalCourse =
+          _courseById(created.id, refreshedCourses) ?? created;
+      if (!mounted) return;
+      setState(() {
+        _resetCourseContext(clearLists: true);
+        _courses = _adoptCourseById(refreshedCourses, canonicalCourse);
+        _selectedCourseId = canonicalCourse.id;
+        _courseTitleCtrl.text = canonicalCourse.title;
+        _courseSlugCtrl.text = canonicalCourse.slug;
+        final priceOre = canonicalCourse.priceAmountCents;
+        _coursePriceCtrl.text = priceOre == null
+            ? ''
+            : formatSekInputFromOre(priceOre);
+        _courseCoverPath = canonicalCourse.cover?.resolvedUrl;
+      });
+      ref.invalidate(myCoursesProvider);
+      ref.invalidate(studioCoursesProvider);
+      ref.invalidate(landing.popularCoursesProvider);
+      ref.invalidate(coursesProvider);
+      await _loadCourseMeta();
+      await _loadLessons(preserveSelection: false);
+      if (!mounted || !context.mounted) return;
+      showSnack(context, 'Kurs skapad.');
+    } catch (e, stackTrace) {
+      _showFriendlyErrorSnack('Kunde inte skapa kurs', e, stackTrace);
+    } finally {
+      if (mounted) setState(() => _creatingCourse = false);
+    }
+  }
+
   Future<void> _saveCourseMeta() async {
     if (!_requireEditModeForMutation()) {
       return;
@@ -5823,6 +6042,57 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _showFriendlyErrorSnack('Kunde inte spara kurs', e, stackTrace);
     } finally {
       if (mounted) setState(() => _savingCourseMeta = false);
+    }
+  }
+
+  Future<void> _publishSelectedCourse() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
+    final courseId = _selectedCourseId;
+    if (courseId == null || _publishingCourse) return;
+    if (!await _maybeSaveLessonEdits()) return;
+    if (!mounted) return;
+
+    final requestId = ++_publishCourseRequestId;
+    setState(() => _publishingCourse = true);
+    try {
+      final published = await _studioRepo.publishCourse(courseId);
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _publishCourseRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
+      setState(() {
+        _courses = _adoptCourseById(_courses, published);
+        _courseTitleCtrl.text = published.title;
+        _courseSlugCtrl.text = published.slug;
+        final priceOre = published.priceAmountCents;
+        _coursePriceCtrl.text = priceOre == null
+            ? ''
+            : formatSekInputFromOre(priceOre);
+        _courseCoverPath = published.cover?.resolvedUrl;
+      });
+      ref.invalidate(myCoursesProvider);
+      ref.invalidate(studioCoursesProvider);
+      ref.invalidate(landing.popularCoursesProvider);
+      ref.invalidate(coursesProvider);
+      await _loadCourseMeta();
+      if (!mounted || !context.mounted) return;
+      showSnack(context, 'Kurs publicerad.');
+    } catch (e, stackTrace) {
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _publishCourseRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
+      _showFriendlyErrorSnack('Kunde inte publicera kurs', e, stackTrace);
+    } finally {
+      if (mounted) setState(() => _publishingCourse = false);
     }
   }
 
@@ -5906,6 +6176,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               children: [
                 _SectionCard(
                   title: 'Välj kurs',
+                  actions: [
+                    OutlinedButton.icon(
+                      onPressed: _creatingCourse || _lessonPreviewMode
+                          ? null
+                          : _promptCreateCourse,
+                      icon: _creatingCourse
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add),
+                      label: const Text('Skapa kurs'),
+                    ),
+                  ],
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -5983,7 +6268,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                   labelText: 'Pris (SEK)',
                                 ),
                               ),
-                              Row(
+                              Wrap(
+                                spacing: 12,
+                                runSpacing: 8,
                                 children: [
                                   GradientButton.icon(
                                     onPressed:
@@ -6001,7 +6288,28 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                         : const Icon(Icons.save_outlined),
                                     label: const Text('Spara kurs'),
                                   ),
-                                  const SizedBox(width: 12),
+                                  OutlinedButton.icon(
+                                    onPressed:
+                                        _publishingCourse ||
+                                            _savingCourseMeta ||
+                                            _lessonPreviewMode
+                                        ? null
+                                        : _publishSelectedCourse,
+                                    icon: _publishingCourse
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.publish_outlined),
+                                    label: Text(
+                                      _publishingCourse
+                                          ? 'Publicerar...'
+                                          : 'Publicera kurs',
+                                    ),
+                                  ),
                                 ],
                               ),
                             ],
