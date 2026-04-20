@@ -17,14 +17,14 @@ async def get_profile(user_id: str | UUID) -> dict[str, Any] | None:
         await cur.execute(
             """
             SELECT p.user_id,
-                   s.email,
+                   u.email,
                    p.display_name,
                    p.bio,
                    p.avatar_media_id,
                    p.created_at,
                    p.updated_at
             FROM app.profiles p
-            JOIN app.auth_subjects s ON s.user_id = p.user_id
+            JOIN auth.users u ON u.id = p.user_id
             WHERE p.user_id = %s
             LIMIT 1
             """,

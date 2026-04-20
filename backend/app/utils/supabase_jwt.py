@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Sequence
+from typing import Any
 
 import httpx
 from jose import JWTError, jwk, jwt
 
 _DEFAULT_JWKS_CACHE_SECONDS = 300
+_SUPPORTED_ASYMMETRIC_ALGORITHMS = frozenset({"ES256", "RS256"})
 _JWKS_CACHE: dict[str, Any] = {
     "url": None,
     "expires_at": 0.0,
@@ -57,40 +58,12 @@ def _get_cached_keys(url: str, *, force_refresh: bool = False) -> dict[str, dict
     return keys
 
 
-def _verify_hs256_access_token(
-    token: str,
-    *,
-    issuer: str | None = None,
-    jwt_secrets: Sequence[str] | None = None,
-) -> dict[str, Any]:
-    secrets = [str(secret).strip() for secret in (jwt_secrets or ()) if str(secret).strip()]
-    if not secrets:
-        raise SupabaseJwtError("SUPABASE_JWT_SECRET is required for HS256 token verification")
-
-    options = {
-        "verify_aud": False,
-        "verify_iss": bool(issuer),
-    }
-    for secret in secrets:
-        try:
-            return jwt.decode(
-                token,
-                secret,
-                algorithms=["HS256"],
-                issuer=issuer,
-                options=options,
-            )
-        except JWTError:
-            continue
-    raise SupabaseJwtError("JWT verification failed")
-
-
 def verify_supabase_access_token(
     token: str,
     *,
-    jwks_url: str | None = None,
-    issuer: str | None = None,
-    jwt_secrets: Sequence[str] | None = None,
+    jwks_url: str,
+    issuer: str,
+    audience: str,
 ) -> dict[str, Any]:
     try:
         header = jwt.get_unverified_header(token)
@@ -98,13 +71,7 @@ def verify_supabase_access_token(
         raise SupabaseJwtError("Invalid token header") from exc
 
     alg = header.get("alg")
-    if alg == "HS256":
-        return _verify_hs256_access_token(
-            token,
-            issuer=issuer,
-            jwt_secrets=jwt_secrets,
-        )
-    if alg not in ("RS256", "ES256"):
+    if alg not in _SUPPORTED_ASYMMETRIC_ALGORITHMS:
         raise SupabaseJwtError(f"Unsupported JWT alg: {alg}")
     if not jwks_url:
         raise SupabaseJwtError("SUPABASE_JWKS_URL is required for asymmetric JWT verification")
@@ -119,11 +86,18 @@ def verify_supabase_access_token(
         key_data = keys.get(kid)
     if not key_data:
         raise SupabaseJwtError("JWT kid not found in JWKS")
+    key_alg = key_data.get("alg")
+    if key_alg and key_alg != alg:
+        raise SupabaseJwtError("JWT alg does not match JWKS key")
+    if alg == "ES256" and (
+        key_data.get("kty") != "EC" or key_data.get("crv") != "P-256"
+    ):
+        raise SupabaseJwtError("JWT key is not a P-256 EC key")
 
     key = jwk.construct(key_data, alg)
     options = {
-        "verify_aud": False,
-        "verify_iss": bool(issuer),
+        "verify_aud": True,
+        "verify_iss": True,
     }
     try:
         return jwt.decode(
@@ -131,6 +105,7 @@ def verify_supabase_access_token(
             key,
             algorithms=[alg],
             issuer=issuer,
+            audience=audience,
             options=options,
         )
     except JWTError as exc:

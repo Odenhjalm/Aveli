@@ -9,60 +9,54 @@ from jose import jwt, JWTError
 
 from .config import settings
 from .utils.supabase_jwt import SupabaseJwtError, verify_supabase_access_token
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_optional_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 _CANONICAL_APP_ENTRY_REQUIRED = "canonical_app_entry_required"
+SUPABASE_PROJECT_URL = "https://ihirfhnpjtetdmdvqvyu.supabase.co"
+SUPABASE_JWKS_URL = f"{SUPABASE_PROJECT_URL}/auth/v1/.well-known/jwks.json"
+SUPABASE_JWT_ISSUER = f"{SUPABASE_PROJECT_URL}/auth/v1"
+SUPABASE_JWT_AUDIENCE = "authenticated"
 
 
 def decode_jwt(token: str) -> dict[str, Any]:
-    """Decode JWT without triggering python-jose exp verification."""
+    """Decode an Aveli-local JWT without triggering python-jose exp verification."""
     return jwt.decode(
         token,
         settings.jwt_secret,
         algorithms=[settings.jwt_algorithm],
-        options={"verify_signature": True, "verify_exp": False},
+        options={"verify_signature": True, "verify_exp": False, "verify_aud": False},
     )
-
-
-def _supabase_jwks_url() -> str | None:
-    if settings.supabase_jwks_url:
-        return str(settings.supabase_jwks_url)
-    if settings.supabase_url is None:
-        return None
-    base = settings.supabase_url.unicode_string().rstrip("/")
-    return f"{base}/auth/v1/.well-known/jwks.json"
-
-
-def _supabase_jwt_issuer() -> str | None:
-    if settings.supabase_jwt_issuer:
-        return settings.supabase_jwt_issuer
-    if settings.supabase_url is None:
-        return None
-    base = settings.supabase_url.unicode_string().rstrip("/")
-    return f"{base}/auth/v1"
 
 
 def _decode_access_token(token: str) -> tuple[dict[str, Any], str]:
     try:
-        return decode_jwt(token), "local"
+        header = jwt.get_unverified_header(token)
     except JWTError as exc:
-        jwks_url = _supabase_jwks_url()
-        jwt_secrets = settings.supabase_jwt_secrets
-        if not jwks_url and not jwt_secrets:
-            raise exc
-        if not jwks_url:
-            jwks_url = None
-        issuer = _supabase_jwt_issuer()
+        raise JWTError("Invalid JWT header") from exc
+
+    alg = str(header.get("alg") or "").strip()
+    if alg == settings.jwt_algorithm:
+        try:
+            payload = decode_jwt(token)
+        except JWTError:
+            payload = None
+        if payload and payload.get("token_type") == "access":
+            return payload, "local"
+
+    if alg in {"ES256", "RS256"}:
         try:
             payload = verify_supabase_access_token(
                 token,
-                jwks_url=jwks_url,
-                issuer=issuer,
-                jwt_secrets=jwt_secrets,
+                jwks_url=SUPABASE_JWKS_URL,
+                issuer=SUPABASE_JWT_ISSUER,
+                audience=SUPABASE_JWT_AUDIENCE,
             )
         except SupabaseJwtError as sup_exc:
             raise JWTError("Supabase JWT verification failed") from sup_exc
         return payload, "supabase"
+
+    raise JWTError(f"Unsupported JWT alg: {alg}")
 
 
 def is_token_expired(payload: dict[str, Any], *, now: datetime | None = None) -> bool:

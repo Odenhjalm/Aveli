@@ -2,6 +2,8 @@ import uuid
 
 import pytest
 
+from app import db
+
 from .utils import auth_header, register_auth_user
 
 
@@ -25,6 +27,41 @@ async def _create_profile(
     )
     assert resp.status_code == 200, resp.text
     return resp.json()
+
+
+async def _clear_auth_subject_email(user_id: str) -> None:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                UPDATE app.auth_subjects
+                   SET email = NULL,
+                       updated_at = now()
+                 WHERE user_id = %s::uuid
+                """,
+                (user_id,),
+            )
+            await conn.commit()
+
+
+async def test_profiles_me_email_comes_from_auth_users_not_subject_projection(
+    async_client,
+):
+    email = f"canonical_email_{uuid.uuid4().hex[:8]}@example.com"
+    user = await register_auth_user(
+        async_client,
+        email=email,
+        password="Passw0rd!",
+        display_name="Canonical Email",
+    )
+    await _clear_auth_subject_email(user["user_id"])
+
+    me_resp = await async_client.get(
+        "/profiles/me",
+        headers=auth_header(user["access_token"]),
+    )
+    assert me_resp.status_code == 200, me_resp.text
+    assert me_resp.json()["email"] == email
 
 
 async def test_profiles_me_limits_updates_to_the_authenticated_user(async_client):
