@@ -441,6 +441,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   static const int _coverStatusMaxAttempts = 12;
   static const Duration _coverStatusTimeout = Duration(minutes: 2);
   static const String _lessonEditorTestId = 'lesson-editor';
+  static const bool _lessonEditorWebTestIdsEnabled = bool.fromEnvironment(
+    'AVELI_LESSON_EDITOR_WEB_TEST_IDS',
+  );
   static const Duration _lessonEditorTestIdRetryDelay = Duration(
     milliseconds: 250,
   );
@@ -642,14 +645,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   void _ensureLessonEditorWebTestIdSupport() {
-    if (!kIsWeb) return;
+    if (!kIsWeb || !_lessonEditorWebTestIdsEnabled) return;
     _lessonEditorSemanticsHandle ??= SemanticsBinding.instance
         .ensureSemantics();
     _scheduleLessonEditorTestIdSync(resetAttempts: true);
   }
 
   void _scheduleLessonEditorTestIdSync({bool resetAttempts = false}) {
-    if (!kIsWeb || _lessonEditorTestIdSyncScheduled) return;
+    if (!kIsWeb ||
+        !_lessonEditorWebTestIdsEnabled ||
+        _lessonEditorTestIdSyncScheduled) {
+      return;
+    }
     if (resetAttempts) {
       _lessonEditorTestIdSyncAttempts = 0;
       _lessonEditorTestIdRetryTimer?.cancel();
@@ -675,11 +682,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   // Mirror Flutter's semantics identifier to Playwright's expected selector.
   bool _syncLessonEditorTestId() {
-    if (!kIsWeb) return false;
+    if (!kIsWeb || !_lessonEditorWebTestIdsEnabled) return false;
     _lessonEditorTestIdSyncAttempts += 1;
     return lesson_editor_test_id_dom.syncLessonEditorTestId(
       testId: _lessonEditorTestId,
     );
+  }
+
+  Widget _wrapLessonEditorForWebTestIds(Widget child) {
+    if (!_lessonEditorWebTestIdsEnabled) {
+      return child;
+    }
+    return Semantics(identifier: _lessonEditorTestId, child: child);
   }
 
   void _resetLessonPreviewHydrationValues({bool bumpRevision = false}) {
@@ -3142,9 +3156,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             borderRadius: BorderRadius.circular(16),
             child: Container(
               key: const ValueKey<String>(_lessonEditorTestId),
-              child: Semantics(
-                identifier: _lessonEditorTestId,
-                child: KeyedSubtree(
+              child: _wrapLessonEditorForWebTestIds(
+                KeyedSubtree(
                   key: ValueKey<int>(_controllerIdentity(controller)),
                   child: RepaintBoundary(
                     child: quill.QuillEditor.basic(
