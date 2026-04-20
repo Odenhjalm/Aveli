@@ -263,6 +263,8 @@ async def _insert_course(
                   slug,
                   course_group_id,
                   group_position,
+                  visibility,
+                  content_ready,
                   price_amount_cents,
                   drip_enabled,
                   drip_interval_days,
@@ -276,6 +278,8 @@ async def _insert_course(
                   %s,
                   %s::uuid,
                   1,
+                  %s::app.course_visibility,
+                  %s,
                   1000,
                   false,
                   null,
@@ -284,20 +288,16 @@ async def _insert_course(
                   %s::uuid
                 )
                 """,
-                (course_id, title, slug, str(uuid.uuid4()), owner_id),
+                (
+                    course_id,
+                    title,
+                    slug,
+                    str(uuid.uuid4()),
+                    "public" if is_published else "draft",
+                    is_published,
+                    owner_id,
+                ),
             )
-            if is_published:
-                await cur.execute(
-                    """
-                    insert into app.course_public_content (
-                      course_id,
-                      short_description
-                    )
-                    values (%s::uuid, %s)
-                    on conflict (course_id) do nothing
-                    """,
-                    (course_id, "Public course"),
-                )
             await conn.commit()
 
 
@@ -572,7 +572,7 @@ async def test_home_audio_db_direct_upload_respects_active_owner_and_media_asset
         visible = _find_item(items, active_asset_id)
         assert visible is not None
         assert visible["source_type"] == "direct_upload"
-        assert visible["title"] == "Hemljud"
+        assert visible["title"] == "Active direct upload"
         assert visible["teacher_id"] == teacher_id
         assert visible["media"]["media_id"] == active_asset_id
         assert visible["media"]["state"] == "ready"
@@ -623,11 +623,16 @@ async def test_home_audio_db_course_link_respects_enabled_and_canonical_lesson_a
     media_asset_id = str(uuid.uuid4())
     lesson_media_id = str(uuid.uuid4())
     link_id = str(uuid.uuid4())
-    course_ids.append(course_id)
-    lesson_ids.append(lesson_id)
-    media_asset_ids.append(media_asset_id)
-    lesson_media_ids.append(lesson_media_id)
-    link_ids.append(link_id)
+    non_public_course_id = str(uuid.uuid4())
+    non_public_lesson_id = str(uuid.uuid4())
+    non_public_media_asset_id = str(uuid.uuid4())
+    non_public_lesson_media_id = str(uuid.uuid4())
+    non_public_link_id = str(uuid.uuid4())
+    course_ids.extend([course_id, non_public_course_id])
+    lesson_ids.extend([lesson_id, non_public_lesson_id])
+    media_asset_ids.extend([media_asset_id, non_public_media_asset_id])
+    lesson_media_ids.extend([lesson_media_id, non_public_lesson_media_id])
+    link_ids.extend([link_id, non_public_link_id])
 
     try:
         await _insert_course(
@@ -664,6 +669,54 @@ async def test_home_audio_db_course_link_respects_enabled_and_canonical_lesson_a
             enabled=True,
             course_title_snapshot="Home Audio Course",
         )
+        await _insert_course(
+            course_id=non_public_course_id,
+            owner_id=teacher_id,
+            slug=f"home-audio-draft-{uuid.uuid4().hex[:8]}",
+            title="Draft Home Audio Course",
+            is_published=False,
+        )
+        async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    """
+                    insert into app.course_public_content (
+                      course_id,
+                      short_description
+                    )
+                    values (%s::uuid, %s)
+                    on conflict (course_id) do nothing
+                    """,
+                    (non_public_course_id, "Draft course public content"),
+                )
+                await conn.commit()
+        await _insert_lesson(
+            lesson_id=non_public_lesson_id,
+            course_id=non_public_course_id,
+            title="Draft Lesson",
+            position=1,
+        )
+        await _insert_media_asset(
+            media_asset_id=non_public_media_asset_id,
+            owner_id=teacher_id,
+            course_id=non_public_course_id,
+            lesson_id=non_public_lesson_id,
+            purpose="lesson_media",
+            state="uploaded",
+        )
+        await _insert_lesson_media(
+            lesson_media_id=non_public_lesson_media_id,
+            lesson_id=non_public_lesson_id,
+            media_asset_id=non_public_media_asset_id,
+        )
+        await _insert_home_player_course_link(
+            link_id=non_public_link_id,
+            teacher_id=teacher_id,
+            lesson_media_id=non_public_lesson_media_id,
+            title="Draft course-linked track",
+            enabled=True,
+            course_title_snapshot="Draft Home Audio Course",
+        )
 
         teacher_resp = await async_client.get("/home/audio", headers=teacher_headers)
         assert teacher_resp.status_code == 200, teacher_resp.text
@@ -675,14 +728,21 @@ async def test_home_audio_db_course_link_respects_enabled_and_canonical_lesson_a
             course_id=course_id,
             source="purchase",
         )
+        await courses_repo.create_course_enrollment(
+            user_id=teacher_id,
+            course_id=non_public_course_id,
+            source="purchase",
+        )
         teacher_enrolled_resp = await async_client.get("/home/audio", headers=teacher_headers)
         assert teacher_enrolled_resp.status_code == 200, teacher_enrolled_resp.text
-        teacher_item = _find_item(teacher_enrolled_resp.json()["items"], media_asset_id)
+        teacher_items = teacher_enrolled_resp.json()["items"]
+        teacher_item = _find_item(teacher_items, media_asset_id)
         assert teacher_item is not None
         assert teacher_item["source_type"] == "course_link"
         assert teacher_item["teacher_id"] == teacher_id
         assert teacher_item["media"]["state"] == "uploaded"
         assert teacher_item["media"]["resolved_url"] is None
+        assert _find_item(teacher_items, non_public_media_asset_id) is None
 
         student_resp = await async_client.get("/home/audio", headers=student_headers)
         assert student_resp.status_code == 200, student_resp.text

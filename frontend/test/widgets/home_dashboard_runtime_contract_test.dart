@@ -9,10 +9,8 @@ import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/profile.dart';
-import 'package:aveli/data/models/service.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
@@ -95,11 +93,6 @@ Future<void> _pumpDashboard(WidgetTester tester) async {
         name: AppRoute.login,
         builder: (context, state) => const SizedBox.shrink(),
       ),
-      GoRoute(
-        path: '/services/:id',
-        name: AppRoute.serviceDetail,
-        builder: (context, state) => const SizedBox.shrink(),
-      ),
     ],
   );
 
@@ -118,8 +111,6 @@ Future<void> _pumpDashboard(WidgetTester tester) async {
         backendAssetResolverProvider.overrideWith(
           (ref) => TestBackendAssetResolver(),
         ),
-        homeFeedProvider.overrideWith((ref) async => const []),
-        homeServicesProvider.overrideWith((ref) async => const <Service>[]),
         coursesProvider.overrideWith((ref) async => const []),
         landing.popularCoursesProvider.overrideWith(
           (ref) async => const landing.LandingSection<CourseSummary>(items: []),
@@ -136,16 +127,15 @@ Future<void> _pumpDashboard(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets(
-    'home dashboard renders current runtime sections without audio provider',
-    (tester) async {
-      await _pumpDashboard(tester);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+  testWidgets('home dashboard renders MVP course exploration only', (
+    tester,
+  ) async {
+    await _pumpDashboard(tester);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('Utforska kurser'), findsOneWidget);
-      expect(find.text('Gemensam vägg'), findsOneWidget);
-      expect(find.text('Tjänster'), findsOneWidget);
-    },
-  );
+    expect(find.text('Utforska kurser'), findsOneWidget);
+    expect(find.text('Gemensam vägg'), findsNothing);
+    expect(find.text('Tjänster'), findsNothing);
+  });
 }

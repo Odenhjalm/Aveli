@@ -47,7 +47,7 @@ def _install_runtime_fake_conn(monkeypatch, cursor: _FakeCursor) -> None:
     monkeypatch.setattr(runtime_repo, "get_conn", lambda: _FakeConn(cursor))
 
 
-async def test_home_audio_course_link_feed_query_uses_source_without_runtime_media(
+async def test_home_audio_course_link_feed_query_uses_source_and_public_visibility_without_runtime_media(
     monkeypatch,
 ):
     cursor = _FakeCursor()
@@ -62,7 +62,8 @@ async def test_home_audio_course_link_feed_query_uses_source_without_runtime_med
     assert "from app.home_player_course_links hpcl" in normalized_query
     assert "join app.lesson_media lm on lm.id = hpcl.lesson_media_id" in normalized_query
     assert "join app.media_assets ma on ma.id = lm.media_asset_id" in normalized_query
-    assert "join app.course_public_content cpc on cpc.course_id = c.id" in normalized_query
+    assert "join app.course_public_content" not in normalized_query
+    assert "c.visibility = 'public'::app.course_visibility" in normalized_query
     assert "c.teacher_id as teacher_id" in normalized_query
     assert "prof.user_id = c.teacher_id" in normalized_query
     assert "hpcl.teacher_id" not in normalized_query

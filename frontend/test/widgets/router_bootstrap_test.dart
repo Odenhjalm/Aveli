@@ -9,14 +9,12 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/env/app_config.dart';
-import 'package:aveli/data/models/activity.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/auth/presentation/login_page.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/home/application/home_providers.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
@@ -196,8 +194,6 @@ List<Override> _commonOverrides(AuthState authState) {
     backendAssetResolverProvider.overrideWith(
       (ref) => TestBackendAssetResolver(),
     ),
-    homeFeedProvider.overrideWith((ref) => Future.value(const <Activity>[])),
-    homeServicesProvider.overrideWith((ref) => Future.value(const <Service>[])),
     landing.popularCoursesProvider.overrideWith(
       (ref) =>
           Future.value(const landing.LandingSection<CourseSummary>(items: [])),
