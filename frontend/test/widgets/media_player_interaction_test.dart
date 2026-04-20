@@ -497,7 +497,7 @@ void main() {
           body: InlineVideoPlayer(
             playback: VideoPlaybackState(
               mediaId: 'test-inline-player-invalid-url',
-              url: 'ftp://cdn.example.com/video.mp4',
+              url: 'http://[::1',
               title: 'Testvideo',
               controlsMode: InlineVideoControlsMode.custom,
               controlChrome: InlineVideoControlChrome.hidden,
@@ -514,7 +514,7 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Media saknas eller stöds inte längre'), findsOneWidget);
+    expect(find.textContaining('ogiltig'), findsOneWidget);
     expect(find.text('Laddar ström...'), findsNothing);
   });
 }
