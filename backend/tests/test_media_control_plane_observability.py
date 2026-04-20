@@ -154,6 +154,30 @@ def _playable_resolution(
     )
 
 
+def _unplayable_resolution(
+    runtime_media_id: str,
+    *,
+    lesson_media_id: str = "lm-1",
+    lesson_id: str = "lesson-1",
+    asset_id: str = "asset-1",
+) -> RuntimeMediaResolution:
+    return RuntimeMediaResolution(
+        lesson_media_id=lesson_media_id,
+        media_asset_id=asset_id,
+        media_type="audio",
+        content_type="audio/mpeg",
+        media_state="processing",
+        storage_bucket=None,
+        storage_path=None,
+        is_playable=False,
+        playback_mode=RuntimeMediaPlaybackMode.NONE,
+        failure_reason=RuntimeMediaResolutionReason.ASSET_NOT_READY,
+        failure_detail="media_asset state is processing",
+        lesson_id=lesson_id,
+        runtime_media_id=runtime_media_id,
+    )
+
+
 async def _storage_catalog_present(
     pairs: list[tuple[str, str]],
 ) -> tuple[dict[tuple[str, str], dict | None], bool]:
@@ -239,6 +263,24 @@ async def test_list_lesson_media_for_asset_reads_authored_placement_only(monkeyp
     assert "lm.storage_path" not in cursor.executed[0][0]
 
 
+async def test_runtime_resolution_normalization_uses_row_active_contract():
+    inactive_projection = service._normalize_runtime_resolution(
+        _runtime_row("rm-inactive", active=False),
+        _unplayable_resolution("rm-inactive"),
+    )
+    active_projection = service._normalize_runtime_resolution(
+        _runtime_row("rm-active", active=True),
+        _unplayable_resolution("rm-active"),
+    )
+
+    assert inactive_projection["active"] is False
+    assert inactive_projection["state_classification"] == "inactive"
+    assert "active" not in inactive_projection["resolution"]
+    assert active_projection["active"] is True
+    assert active_projection["state_classification"] == "unplayable"
+    assert "active" not in active_projection["resolution"]
+
+
 async def test_validate_runtime_projection_reports_field_level_contract_diffs(monkeypatch):
     lesson_row = {
         "id": "lesson-1",
@@ -315,6 +357,7 @@ async def test_validate_runtime_projection_reports_field_level_contract_diffs(mo
     }
     assert result["state_classification"] == "inconsistent"
     assert item["state_classification"] == "inconsistent"
+    assert "active" not in item["runtime_projection"]["resolution"]
     assert item["expected_runtime_contract"] == {
         "reference_type": "lesson_media",
         "auth_scope": "lesson_course",

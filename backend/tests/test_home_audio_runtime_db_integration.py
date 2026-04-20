@@ -266,6 +266,7 @@ async def _insert_course(
                   price_amount_cents,
                   drip_enabled,
                   drip_interval_days,
+                  required_enrollment_source,
                   cover_media_id,
                   teacher_id
                 )
@@ -278,6 +279,7 @@ async def _insert_course(
                   1000,
                   false,
                   null,
+                  'purchase'::app.course_enrollment_source,
                   null,
                   %s::uuid
                 )
@@ -475,6 +477,29 @@ def _find_item(items: list[dict], media_asset_id: str) -> dict | None:
 
 
 @pytest.mark.anyio("asyncio")
+async def test_home_audio_course_link_schema_does_not_require_teacher_mirror_columns(
+    async_client,
+):
+    del async_client
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                select column_name
+                  from information_schema.columns
+                 where table_schema = 'app'
+                   and table_name = 'home_player_course_links'
+                 order by ordinal_position
+                """
+            )
+            columns = {row[0] for row in await cur.fetchall()}
+
+    assert "lesson_media_id" in columns
+    assert "teacher_id" not in columns
+    assert "course_title_snapshot" not in columns
+
+
+@pytest.mark.anyio("asyncio")
 async def test_home_audio_db_direct_upload_respects_active_owner_and_media_asset_playback(
     async_client,
     local_storage_signer,
@@ -655,6 +680,7 @@ async def test_home_audio_db_course_link_respects_enabled_and_canonical_lesson_a
         teacher_item = _find_item(teacher_enrolled_resp.json()["items"], media_asset_id)
         assert teacher_item is not None
         assert teacher_item["source_type"] == "course_link"
+        assert teacher_item["teacher_id"] == teacher_id
         assert teacher_item["media"]["state"] == "uploaded"
         assert teacher_item["media"]["resolved_url"] is None
 
@@ -671,6 +697,7 @@ async def test_home_audio_db_course_link_respects_enabled_and_canonical_lesson_a
         assert student_enrolled_resp.status_code == 200, student_enrolled_resp.text
         student_item = _find_item(student_enrolled_resp.json()["items"], media_asset_id)
         assert student_item is not None
+        assert student_item["teacher_id"] == teacher_id
         assert student_item["media"]["media_id"] == media_asset_id
 
         async with db.pool.connection() as conn:  # type: ignore[attr-defined]

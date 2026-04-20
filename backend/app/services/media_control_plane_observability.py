@@ -284,7 +284,7 @@ def _projection_state_classification(
         return "inactive" if not bool(row.get("active")) else "unvalidated"
     if resolution.is_playable:
         return "playable"
-    if not resolution.active:
+    if not bool(row.get("active")):
         return "inactive"
     return "unplayable"
 
@@ -318,7 +318,6 @@ def _normalize_runtime_resolution(
             if resolution.failure_detail
             else None
         ),
-        "active": bool(resolution.active),
         "duration_seconds": resolution.duration_seconds,
         "resolved_storage": {
             "bucket": resolution.storage_bucket,

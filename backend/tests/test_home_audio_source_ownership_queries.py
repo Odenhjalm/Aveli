@@ -63,6 +63,9 @@ async def test_home_audio_course_link_feed_query_uses_source_without_runtime_med
     assert "join app.lesson_media lm on lm.id = hpcl.lesson_media_id" in normalized_query
     assert "join app.media_assets ma on ma.id = lm.media_asset_id" in normalized_query
     assert "join app.course_public_content cpc on cpc.course_id = c.id" in normalized_query
+    assert "c.teacher_id as teacher_id" in normalized_query
+    assert "prof.user_id = c.teacher_id" in normalized_query
+    assert "hpcl.teacher_id" not in normalized_query
     assert "runtime_media" not in normalized_query
     assert "is_published" not in normalized_query
 

@@ -34,9 +34,9 @@ async def list_home_audio_direct_upload_sources(*, limit: int = 100) -> list[dic
 
 
 async def list_home_audio_course_link_sources(*, limit: int = 100) -> list[dict[str, Any]]:
-    query = f"""
+    query = """
         SELECT
-          hpcl.teacher_id,
+          c.teacher_id AS teacher_id,
           hpcl.title,
           hpcl.created_at,
           prof.display_name AS teacher_name,
@@ -53,7 +53,7 @@ async def list_home_audio_course_link_sources(*, limit: int = 100) -> list[dict[
         JOIN app.courses c ON c.id = l.course_id
         JOIN app.course_public_content cpc ON cpc.course_id = c.id
         JOIN app.media_assets ma ON ma.id = lm.media_asset_id
-        LEFT JOIN app.profiles prof ON prof.user_id = hpcl.teacher_id
+        LEFT JOIN app.profiles prof ON prof.user_id = c.teacher_id
         WHERE hpcl.enabled = true
           AND ma.media_type = 'audio'::app.media_type
         ORDER BY hpcl.created_at DESC, hpcl.id DESC
