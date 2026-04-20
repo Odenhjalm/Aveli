@@ -37,6 +37,8 @@ def _explicit_local_runtime() -> bool:
 def _is_cloud_runtime() -> bool:
     if _explicit_local_runtime():
         return False
+    if _app_env_lower() in _PRODUCTION_ENVS:
+        return True
     return any(os.environ.get(key) for key in _CLOUD_RUNTIME_ENV_KEYS)
 
 
@@ -378,27 +380,50 @@ class Settings(BaseSettings):
                 )
             self.database_url = self.mcp_production_database_url
         else:
-            db_fields = {
-                "DATABASE_HOST": _normalize_db_component(self.database_host),
-                "DATABASE_PORT": self.database_port,
-                "DATABASE_NAME": _normalize_db_component(self.database_name),
-                "DATABASE_USER": _normalize_db_component(self.database_user),
-                "DATABASE_PASSWORD": _normalize_db_component(self.database_password),
-            }
-            missing = [key for key, value in db_fields.items() if value in (None, "")]
-            if missing:
-                raise ValueError(
-                    "Local database configuration requires explicit "
-                    + ", ".join(missing)
-                )
-            derived_url = _build_database_url(
-                host=str(db_fields["DATABASE_HOST"]),
-                port=int(db_fields["DATABASE_PORT"]),
-                name=str(db_fields["DATABASE_NAME"]),
-                user=str(db_fields["DATABASE_USER"]),
-                password=str(db_fields["DATABASE_PASSWORD"]),
+            explicit_database_url = _normalize_db_component(
+                os.environ.get("DATABASE_URL")
             )
-            self.database_url = _ANY_URL_ADAPTER.validate_python(derived_url)
+            if explicit_database_url:
+                explicit_host = (
+                    urlparse(explicit_database_url).hostname or ""
+                ).strip().lower()
+                if explicit_host not in _LOCAL_DB_HOSTS:
+                    target = _db_target(explicit_database_url)
+                    raise ValueError(
+                        "Refusing to start local runtime with non-local database target "
+                        f"(target={target}). Point DATABASE_URL to the local "
+                        "Postgres clone or use MCP_MODE=production with an explicit "
+                        "production database URL."
+                    )
+                self.database_url = _ANY_URL_ADAPTER.validate_python(
+                    explicit_database_url
+                )
+            else:
+                db_fields = {
+                    "DATABASE_HOST": _normalize_db_component(self.database_host),
+                    "DATABASE_PORT": self.database_port,
+                    "DATABASE_NAME": _normalize_db_component(self.database_name),
+                    "DATABASE_USER": _normalize_db_component(self.database_user),
+                    "DATABASE_PASSWORD": _normalize_db_component(
+                        self.database_password
+                    ),
+                }
+                missing = [
+                    key for key, value in db_fields.items() if value in (None, "")
+                ]
+                if missing:
+                    raise ValueError(
+                        "Local database configuration requires explicit "
+                        + ", ".join(missing)
+                    )
+                derived_url = _build_database_url(
+                    host=str(db_fields["DATABASE_HOST"]),
+                    port=int(db_fields["DATABASE_PORT"]),
+                    name=str(db_fields["DATABASE_NAME"]),
+                    user=str(db_fields["DATABASE_USER"]),
+                    password=str(db_fields["DATABASE_PASSWORD"]),
+                )
+                self.database_url = _ANY_URL_ADAPTER.validate_python(derived_url)
 
         db_url = self.database_url.unicode_string()
         parsed = urlparse(db_url)

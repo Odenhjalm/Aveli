@@ -28,6 +28,9 @@ def parse_env_file(path: Path) -> dict:
 
 def cloud_runtime_active() -> bool:
     app_env = str(os.getenv("APP_ENV") or "").strip().lower()
+    mcp_mode = str(os.getenv("MCP_MODE") or "").strip().lower()
+    if app_env == "local" and mcp_mode == "local":
+        return False
     return app_env in PRODUCTION_ENV_VALUES or any(os.getenv(key) for key in CLOUD_RUNTIME_ENV_KEYS)
 
 

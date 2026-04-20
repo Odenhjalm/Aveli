@@ -269,6 +269,9 @@ def _parse_postgresql_database_url(database_url: str):
 
 def _cloud_runtime_active() -> bool:
     app_env = str(os.environ.get("APP_ENV") or "").strip().lower()
+    mcp_mode = str(os.environ.get("MCP_MODE") or "").strip().lower()
+    if app_env == "local" and mcp_mode == "local":
+        return False
     return app_env in PRODUCTION_ENV_VALUES or any(os.environ.get(key) for key in CLOUD_RUNTIME_ENV_KEYS)
 
 

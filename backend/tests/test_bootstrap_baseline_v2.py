@@ -29,6 +29,18 @@ def test_baseline_profile_defaults_to_hosted_supabase_in_cloud(monkeypatch) -> N
     assert baseline_v2.baseline_profile() == "hosted_supabase"
 
 
+def test_baseline_profile_keeps_explicit_local_mode_with_supabase_infrastructure(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("BASELINE_PROFILE", raising=False)
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+
+    assert baseline_v2.baseline_profile() == "local_dev"
+
+
 def test_ensure_v2_baseline_rejects_unsupported_mode(monkeypatch) -> None:
     monkeypatch.setenv("BASELINE_MODE", "legacy")
 

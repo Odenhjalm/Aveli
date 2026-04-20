@@ -22,6 +22,12 @@ def _clear_cloud_runtime_env(monkeypatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
+def _set_supabase_infrastructure_env(monkeypatch) -> None:
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_API_KEY", "sb_publishable_dummy")
+    monkeypatch.setenv("SUPABASE_SECRET_API_KEY", "sb_secret_dummy")
+
+
 def test_settings_use_explicit_production_database_for_mcp_mode(monkeypatch):
     _clear_cloud_runtime_env(monkeypatch)
     _set_local_db_env(monkeypatch)
@@ -65,7 +71,7 @@ def test_settings_require_explicit_production_database_for_mcp_mode(monkeypatch)
 def test_settings_derive_local_database_url_from_components(monkeypatch):
     _clear_cloud_runtime_env(monkeypatch)
     _set_local_db_env(monkeypatch)
-    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:pw@aveli-db:5432/ignored_by_settings")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("MCP_MODE", "local")
     monkeypatch.delenv("MCP_PRODUCTION_DATABASE_URL", raising=False)
     monkeypatch.delenv("MCP_PRODUCTION_SUPABASE_DB_URL", raising=False)
@@ -77,6 +83,64 @@ def test_settings_derive_local_database_url_from_components(monkeypatch):
         settings.database_url.unicode_string()
         == "postgresql://postgres:pw@localhost:5432/aveli_local"
     )
+
+
+def test_settings_local_mode_allows_supabase_infrastructure_with_local_database_url(
+    monkeypatch,
+):
+    _clear_cloud_runtime_env(monkeypatch)
+    _set_supabase_infrastructure_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://postgres:pw@127.0.0.1:5432/aveli_local",
+    )
+    for key in (
+        "DATABASE_HOST",
+        "DATABASE_PORT",
+        "DATABASE_NAME",
+        "DATABASE_USER",
+        "DATABASE_PASSWORD",
+        "MCP_PRODUCTION_DATABASE_URL",
+        "MCP_PRODUCTION_SUPABASE_DB_URL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.cloud_runtime is False
+    assert settings.database_url is not None
+    assert (
+        settings.database_url.unicode_string()
+        == "postgresql://postgres:pw@127.0.0.1:5432/aveli_local"
+    )
+
+
+def test_settings_local_mode_rejects_remote_database_even_with_supabase_infrastructure(
+    monkeypatch,
+):
+    _clear_cloud_runtime_env(monkeypatch)
+    _set_supabase_infrastructure_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://postgres.prodref:pw@db.prodref.supabase.co:5432/postgres",
+    )
+    for key in (
+        "DATABASE_HOST",
+        "DATABASE_PORT",
+        "DATABASE_NAME",
+        "DATABASE_USER",
+        "DATABASE_PASSWORD",
+        "MCP_PRODUCTION_DATABASE_URL",
+        "MCP_PRODUCTION_SUPABASE_DB_URL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    with pytest.raises(ValueError, match="non-local database target"):
+        Settings(_env_file=None)
 
 
 def test_settings_use_database_url_in_cloud_runtime_without_mcp_production(monkeypatch):
@@ -129,8 +193,30 @@ def test_settings_reject_cloud_runtime_with_local_database_url(monkeypatch):
         Settings(_env_file=None)
 
 
+def test_settings_reject_production_env_with_local_database_without_local_override(
+    monkeypatch,
+):
+    _clear_cloud_runtime_env(monkeypatch)
+    _set_local_db_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://postgres:pw@127.0.0.1:5432/aveli_local",
+    )
+    monkeypatch.delenv("MCP_PRODUCTION_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PRODUCTION_SUPABASE_DB_URL", raising=False)
+
+    with pytest.raises(
+        ValueError,
+        match="Refusing to start cloud runtime with local database target",
+    ):
+        Settings(_env_file=None)
+
+
 def test_settings_local_mode_ignores_inherited_cloud_runtime_flags(monkeypatch):
     _set_local_db_env(monkeypatch)
+    _set_supabase_infrastructure_env(monkeypatch)
     monkeypatch.setenv("APP_ENV", "local")
     monkeypatch.setenv("MCP_MODE", "local")
     monkeypatch.setenv("FLY_APP_NAME", "aveli")
