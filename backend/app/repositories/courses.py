@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 from typing import Any, Sequence
 
+from psycopg import Error as PsycopgError
 from psycopg.rows import dict_row
 
 from ..db import get_conn, pool
@@ -10,6 +12,7 @@ from ..db import get_conn, pool
 
 CourseRow = dict[str, Any]
 LessonRow = dict[str, Any]
+logger = logging.getLogger(__name__)
 
 _COURSE_COLUMNS = """
     c.id,
@@ -49,6 +52,44 @@ _PUBLIC_DISCOVERY_COLUMNS = """
 _MEDIA_ORIGINAL_NAME_SQL = """
     nullif(regexp_replace(ma.original_object_path, '^.*/', ''), '') as original_name
 """
+
+
+class CourseCreateDatabaseError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        title: str | None,
+        slug: str | None,
+        cause: PsycopgError,
+    ) -> None:
+        super().__init__("course create database error")
+        self.title = title
+        self.slug = slug
+        self.cause = cause
+
+
+def _safe_course_create_log_value(value: Any, *, limit: int = 160) -> str | None:
+    if value is None:
+        return None
+    text = str(value).replace("\r", " ").replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3]}..."
+
+
+def _course_create_db_log_context(
+    payload: dict[str, Any],
+    exc: PsycopgError,
+) -> dict[str, Any]:
+    diag = getattr(exc, "diag", None)
+    return {
+        "course_create_title": _safe_course_create_log_value(payload.get("title")),
+        "course_create_slug": _safe_course_create_log_value(payload.get("slug")),
+        "db_error_type": exc.__class__.__name__,
+        "db_sqlstate": getattr(exc, "sqlstate", None),
+        "db_constraint_name": getattr(diag, "constraint_name", None),
+        "db_message": _safe_course_create_log_value(exc, limit=500),
+    }
 
 
 def _lesson_columns(include_content: bool) -> str:
@@ -387,12 +428,21 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
         payload["drip_interval_days"],
         str(payload["cover_media_id"]) if payload.get("cover_media_id") else None,
     )
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, params)
-            await cur.fetchone()
-            await conn.commit()
-    row = await get_course(course_id=course_id)
+    try:
+        async with pool.connection() as conn:  # type: ignore
+            async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+                await cur.execute(query, params)
+                await cur.fetchone()
+                await conn.commit()
+        row = await get_course(course_id=course_id)
+    except PsycopgError as exc:
+        context = _course_create_db_log_context(payload, exc)
+        logger.exception("Course create database error", extra=context)
+        raise CourseCreateDatabaseError(
+            title=context["course_create_title"],
+            slug=context["course_create_slug"],
+            cause=exc,
+        ) from exc
     if row is None:
         raise RuntimeError("created course was not returned")
     return row

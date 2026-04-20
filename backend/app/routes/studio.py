@@ -898,12 +898,25 @@ async def create_course(payload: schemas.StudioCourseCreate, current: TeacherEnt
             payload.model_dump(),
             teacher_id=str(current["id"]),
         )
+    except courses_service.CourseCreationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.exception("Course create runtime error")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=courses_service.COURSE_CREATE_TECHNICAL_DETAIL,
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        logger.warning("Course create validation error: %s", exc)
+        raise HTTPException(
+            status_code=422,
+            detail=courses_service.COURSE_CREATE_INVALID_DATA_DETAIL,
+        ) from exc
     if not row:
-        raise HTTPException(status_code=400, detail="Failed to create course")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=courses_service.COURSE_CREATE_INVALID_DATA_DETAIL,
+        )
     await _apply_course_read_contract(row)
     return _course_response(row)
 

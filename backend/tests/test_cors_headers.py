@@ -1,10 +1,41 @@
 import pytest
+from fastapi import Response
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app, fastapi_app
 
 
 pytestmark = pytest.mark.anyio("asyncio")
+
+
+async def test_cors_exposes_etag_header_to_browser_clients():
+    async def etag_response(response: Response):
+        response.headers["ETag"] = '"cors-test-etag"'
+        return {"ok": True}
+
+    original_routes = list(fastapi_app.router.routes)
+    fastapi_app.add_api_route(
+        "/__tests__/cors-etag",
+        etag_response,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get(
+                "/__tests__/cors-etag",
+                headers={"Origin": "https://app.aveli.app"},
+            )
+    finally:
+        fastapi_app.router.routes[:] = original_routes
+        fastapi_app.openapi_schema = None
+
+    assert response.status_code == 200
+    assert response.headers.get("etag") == '"cors-test-etag"'
+    assert response.headers.get("access-control-allow-origin") == "https://app.aveli.app"
+    assert response.headers.get("access-control-expose-headers") == "ETag"
 
 
 async def test_cors_header_present_on_error():

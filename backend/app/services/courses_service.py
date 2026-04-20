@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 import stripe
 from fastapi import HTTPException, status
+from psycopg import DataError, Error as PsycopgError, IntegrityError
 from psycopg import errors as psycopg_errors
 from starlette.concurrency import run_in_threadpool
 
@@ -30,6 +31,10 @@ from . import storage_service
 logger = logging.getLogger(__name__)
 _CANONICAL_COURSE_STRIPE_CURRENCY = "sek"
 _COURSE_DELETE_BLOCKED_DETAIL = "Course delete blocked by dependent rows"
+COURSE_CREATE_SLUG_CONFLICT_DETAIL = "Kursens identifierare är redan upptagen"
+COURSE_CREATE_INVALID_DATA_DETAIL = "Kursen kunde inte skapas"
+COURSE_CREATE_TECHNICAL_DETAIL = "Ett tekniskt fel uppstod vid skapande av kurs"
+_COURSE_SLUG_UNIQUE_CONSTRAINT = "courses_slug_key"
 _LESSON_MEDIA_TOKEN_PATTERN = re.compile(
     r"!(image|audio|video|document)\(([A-Za-z0-9_-]+(?:-[A-Za-z0-9_-]+)*)\)",
     re.IGNORECASE,
@@ -54,12 +59,87 @@ _COURSE_COVER_FORBIDDEN_PUBLIC_FIELDS = frozenset(
 _COURSE_PROGRESSION_FORBIDDEN_PUBLIC_FIELDS = frozenset({"step"})
 
 
+class CourseCreationError(Exception):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def __init__(self, detail: str, *, status_code: int | None = None) -> None:
+        super().__init__(detail)
+        if status_code is not None:
+            self.status_code = status_code
+        self.detail = detail
+
+
 class LessonContentPreconditionRequired(Exception):
     pass
 
 
 class LessonContentPreconditionFailed(Exception):
     pass
+
+
+def _safe_course_create_log_value(value: Any, *, limit: int = 160) -> str | None:
+    if value is None:
+        return None
+    text = str(value).replace("\r", " ").replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3]}..."
+
+
+def _course_create_db_constraint_name(exc: BaseException) -> str | None:
+    diag = getattr(exc, "diag", None)
+    constraint_name = getattr(diag, "constraint_name", None)
+    if isinstance(constraint_name, str) and constraint_name:
+        return constraint_name
+    return None
+
+
+def _course_create_db_log_context(
+    payload: Mapping[str, Any],
+    exc: BaseException,
+    *,
+    mapped_detail: str | None = None,
+    repository_title: str | None = None,
+    repository_slug: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "course_create_title": repository_title
+        if repository_title is not None
+        else _safe_course_create_log_value(payload.get("title")),
+        "course_create_slug": repository_slug
+        if repository_slug is not None
+        else _safe_course_create_log_value(payload.get("slug")),
+        "db_error_type": exc.__class__.__name__,
+        "db_sqlstate": getattr(exc, "sqlstate", None),
+        "db_constraint_name": _course_create_db_constraint_name(exc),
+        "db_mapped_detail": mapped_detail,
+    }
+
+
+def _is_course_slug_conflict(exc: BaseException) -> bool:
+    if not isinstance(exc, psycopg_errors.UniqueViolation):
+        return False
+    constraint_name = _course_create_db_constraint_name(exc)
+    if constraint_name == _COURSE_SLUG_UNIQUE_CONSTRAINT:
+        return True
+    return _COURSE_SLUG_UNIQUE_CONSTRAINT in str(exc)
+
+
+def map_course_create_database_error(exc: PsycopgError) -> CourseCreationError:
+    if _is_course_slug_conflict(exc):
+        return CourseCreationError(
+            COURSE_CREATE_SLUG_CONFLICT_DETAIL,
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    if isinstance(exc, (DataError, IntegrityError)):
+        return CourseCreationError(
+            COURSE_CREATE_INVALID_DATA_DETAIL,
+            status_code=422,
+        )
+    return CourseCreationError(
+        COURSE_CREATE_TECHNICAL_DETAIL,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
 
 
 def build_lesson_content_etag(lesson_id: str, content_markdown: str) -> str:
@@ -1008,13 +1088,50 @@ async def create_course(
     if "cover_media_id" in create_payload:
         if create_payload["cover_media_id"] is not None:
             create_payload.setdefault("id", str(uuid4()))
-            create_payload["cover_media_id"] = await _validate_course_cover_assignment(
-                course_id=str(create_payload["id"]),
-                cover_media_id=create_payload["cover_media_id"],
-            )
+            try:
+                create_payload["cover_media_id"] = await _validate_course_cover_assignment(
+                    course_id=str(create_payload["id"]),
+                    cover_media_id=create_payload["cover_media_id"],
+                )
+            except PsycopgError as exc:
+                mapped_error = map_course_create_database_error(exc)
+                logger.exception(
+                    "Course create cover validation database error",
+                    extra=_course_create_db_log_context(
+                        create_payload,
+                        exc,
+                        mapped_detail=mapped_error.detail,
+                    ),
+                )
+                raise mapped_error from exc
         else:
             create_payload["cover_media_id"] = None
-    row = await courses_repo.create_course(create_payload)
+    try:
+        row = await courses_repo.create_course(create_payload)
+    except courses_repo.CourseCreateDatabaseError as exc:
+        mapped_error = map_course_create_database_error(exc.cause)
+        logger.warning(
+            "Course create database error mapped",
+            extra=_course_create_db_log_context(
+                create_payload,
+                exc.cause,
+                mapped_detail=mapped_error.detail,
+                repository_title=exc.title,
+                repository_slug=exc.slug,
+            ),
+        )
+        raise mapped_error from exc
+    except PsycopgError as exc:
+        mapped_error = map_course_create_database_error(exc)
+        logger.exception(
+            "Course create database error",
+            extra=_course_create_db_log_context(
+                create_payload,
+                exc,
+                mapped_detail=mapped_error.detail,
+            ),
+        )
+        raise mapped_error from exc
     course = dict(row)
     return course
 

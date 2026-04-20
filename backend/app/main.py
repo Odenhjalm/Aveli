@@ -82,6 +82,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 _CORS_ALLOW_METHODS = "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT"
+_CORS_EXPOSE_HEADERS = "ETag"
 _WorkerStop = Callable[[], Awaitable[None]]
 _WorkerStart = Callable[..., Awaitable[None]]
 
@@ -198,6 +199,7 @@ def _cors_error_headers(request: Request) -> dict[str, str]:
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods": _CORS_ALLOW_METHODS,
         "Access-Control-Allow-Headers": requested_headers,
+        "Access-Control-Expose-Headers": _CORS_EXPOSE_HEADERS,
         "Vary": "Origin",
     }
 
@@ -214,6 +216,7 @@ def _configure_middleware(app: FastAPI) -> None:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[_CORS_EXPOSE_HEADERS],
     )
 
 

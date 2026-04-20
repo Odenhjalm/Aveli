@@ -3,6 +3,7 @@ from app.config import Settings
 
 def _settings(**overrides) -> Settings:
     return Settings(
+        _env_file=None,
         database_host="localhost",
         database_port=5432,
         database_name="aveli_test",
