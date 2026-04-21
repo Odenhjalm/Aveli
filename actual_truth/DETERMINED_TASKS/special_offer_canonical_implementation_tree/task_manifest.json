@@ -1,0 +1,150 @@
+{
+  "tree_id": "special_offer_canonical_implementation_tree",
+  "status": "READY",
+  "source_of_truth": "accepted_special_offer_contract_stack_plus_accepted_special_offer_substrate",
+  "mode": "generate",
+  "mutation_scope": "task_definition_files_only",
+  "source_contracts": [
+    "actual_truth/contracts/SYSTEM_LAWS.md",
+    "actual_truth/contracts/special_offer_domain_contract.md",
+    "actual_truth/contracts/special_offer_composite_image_contract.md",
+    "actual_truth/contracts/special_offer_execution_contract.md",
+    "actual_truth/contracts/media_unified_authority_contract.md",
+    "actual_truth/contracts/media_lifecycle_contract.md",
+    "actual_truth/contracts/storage_lifecycle_contract.md",
+    "actual_truth/contracts/media_pipeline_contract.md",
+    "actual_truth/contracts/course_monetization_contract.md",
+    "actual_truth/contracts/commerce_membership_contract.md",
+    "actual_truth/contracts/backend_text_catalog_contract.md",
+    "actual_truth/AVELI_DATABASE_BASELINE_MANIFEST.md"
+  ],
+  "tasks": [
+    {
+      "id": "SOI-000",
+      "title": "MEDIA_RUNTIME_PRECONDITION_GATE",
+      "phase": "PHASE 0 - MEDIA RUNTIME PRECONDITION",
+      "group": "BASELINE AND RUNTIME-MEDIA ALIGNMENT",
+      "type": "OWNER",
+      "depends_on": [],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-001",
+      "title": "BACKEND_DOMAIN_REPOSITORY_FOUNDATION",
+      "phase": "PHASE 1 - BACKEND DOMAIN IMPLEMENTATION",
+      "group": "REPOSITORY FOUNDATION",
+      "type": "OWNER",
+      "depends_on": [],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-002",
+      "title": "DOMAIN_VALIDATION_AND_STATE_HASH_ENFORCEMENT",
+      "phase": "PHASE 1 - BACKEND DOMAIN IMPLEMENTATION",
+      "group": "VALIDATION AND DETERMINISTIC STATE",
+      "type": "OWNER",
+      "depends_on": ["SOI-001"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-003",
+      "title": "SOURCE_RESOLUTION_FROM_GOVERNED_COURSE_COVERS",
+      "phase": "PHASE 2 - COMPOSITE IMAGE GENERATION PIPELINE",
+      "group": "GOVERNED SOURCE RESOLUTION",
+      "type": "OWNER",
+      "depends_on": ["SOI-002"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-004",
+      "title": "DETERMINISTIC_COMPOSITION_SERVICE",
+      "phase": "PHASE 2 - COMPOSITE IMAGE GENERATION PIPELINE",
+      "group": "PURE DETERMINISTIC COMPOSITION",
+      "type": "OWNER",
+      "depends_on": ["SOI-003"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-005",
+      "title": "MEDIA_ASSET_STORAGE_AND_OUTPUT_BINDING",
+      "phase": "PHASE 3 - MEDIA INTEGRATION",
+      "group": "GOVERNED OUTPUT MEDIA INTEGRATION",
+      "type": "OWNER",
+      "depends_on": ["SOI-000", "SOI-004"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-006",
+      "title": "GENERATE_EXECUTION_ORCHESTRATION",
+      "phase": "PHASE 4 - GENERATION EXECUTION FLOW",
+      "group": "EXPLICIT GENERATE FLOW",
+      "type": "OWNER",
+      "depends_on": ["SOI-002", "SOI-004", "SOI-005"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-007",
+      "title": "REGENERATE_CONFIRMATION_AND_FAILURE_PRESERVATION",
+      "phase": "PHASE 4 - GENERATION EXECUTION FLOW",
+      "group": "EXPLICIT REGENERATE AND OVERWRITE SAFETY",
+      "type": "OWNER",
+      "depends_on": ["SOI-006"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-008",
+      "title": "RUNTIME_READ_COMPOSITION_AND_STATUS_PROJECTION",
+      "phase": "PHASE 5 - RUNTIME READ PROJECTION",
+      "group": "BACKEND-OWNED READ COMPOSITION",
+      "type": "OWNER",
+      "depends_on": ["SOI-000", "SOI-002", "SOI-006", "SOI-007"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-009",
+      "title": "TEXT_AUTHORITY_AND_SWEDISH_TEXT_IDS",
+      "phase": "PHASE 6 - TEXT AUTHORITY INTEGRATION",
+      "group": "SPECIAL-OFFER TEXT NAMESPACE ALIGNMENT",
+      "type": "OWNER",
+      "depends_on": ["SOI-006", "SOI-007", "SOI-008"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-010",
+      "title": "FRONTEND_RENDER_ONLY_TRIGGER_ALIGNMENT",
+      "phase": "PHASE 7 - FRONTEND INTEGRATION",
+      "group": "RENDER-ONLY TEACHER FLOW ALIGNMENT",
+      "type": "OWNER",
+      "depends_on": ["SOI-008", "SOI-009"],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-011",
+      "title": "TEST_AND_AUTHORITY_VERIFICATION",
+      "phase": "PHASE 8 - FINAL SYSTEM VERIFICATION",
+      "group": "DETERMINISM AND AUTHORITY VERIFICATION",
+      "type": "OWNER",
+      "depends_on": [
+        "SOI-000",
+        "SOI-002",
+        "SOI-004",
+        "SOI-005",
+        "SOI-006",
+        "SOI-007",
+        "SOI-008",
+        "SOI-009",
+        "SOI-010"
+      ],
+      "launch_classification": "BLOCKER"
+    },
+    {
+      "id": "SOI-012",
+      "title": "FINAL_SYSTEM_GO_GATE",
+      "phase": "PHASE 8 - FINAL SYSTEM VERIFICATION",
+      "group": "AGGREGATE STOP-GO GATE",
+      "type": "GATE",
+      "depends_on": ["SOI-011"],
+      "launch_classification": "BLOCKER"
+    }
+  ]
+}

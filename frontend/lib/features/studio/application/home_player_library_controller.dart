@@ -15,6 +15,7 @@ class HomePlayerLibraryState extends Equatable {
     required this.uploads,
     required this.courseLinks,
     required this.courseMedia,
+    required this.textBundle,
   });
 
   factory HomePlayerLibraryState.fromPayload(HomePlayerLibraryPayload payload) {
@@ -22,6 +23,7 @@ class HomePlayerLibraryState extends Equatable {
       uploads: _sortedUploads(payload.uploads),
       courseLinks: _sortedCourseLinks(payload.courseLinks),
       courseMedia: _sortedCourseMedia(payload.courseMedia),
+      textBundle: payload.textBundle,
     );
   }
 
@@ -29,14 +31,16 @@ class HomePlayerLibraryState extends Equatable {
     uploads: [],
     courseLinks: [],
     courseMedia: [],
+    textBundle: HomePlayerTextBundle(),
   );
 
   final List<HomePlayerUploadItem> uploads;
   final List<HomePlayerCourseLinkItem> courseLinks;
   final List<TeacherProfileLessonSource> courseMedia;
+  final HomePlayerTextBundle textBundle;
 
   @override
-  List<Object?> get props => [uploads, courseLinks, courseMedia];
+  List<Object?> get props => [uploads, courseLinks, courseMedia, textBundle];
 
   static List<HomePlayerUploadItem> _sortedUploads(
     List<HomePlayerUploadItem> items,
@@ -108,6 +112,7 @@ class HomePlayerLibraryController
         uploads: uploads,
         courseLinks: snapshot.courseLinks,
         courseMedia: snapshot.courseMedia,
+        textBundle: snapshot.textBundle,
       ),
     );
   }

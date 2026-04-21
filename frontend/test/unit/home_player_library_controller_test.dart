@@ -55,6 +55,7 @@ class _RecordingStudioRepository extends StudioRepository {
       uploads: uploads,
       courseLinks: _payload.courseLinks,
       courseMedia: _payload.courseMedia,
+      textBundle: _payload.textBundle,
     );
     return uploads.firstWhere((upload) => upload.id == uploadId);
   }
@@ -68,6 +69,7 @@ class _RecordingStudioRepository extends StudioRepository {
           .toList(growable: false),
       courseLinks: _payload.courseLinks,
       courseMedia: _payload.courseMedia,
+      textBundle: _payload.textBundle,
     );
   }
 
@@ -92,6 +94,7 @@ class _RecordingStudioRepository extends StudioRepository {
       uploads: _payload.uploads,
       courseLinks: <HomePlayerCourseLinkItem>[..._payload.courseLinks, created],
       courseMedia: _payload.courseMedia,
+      textBundle: _payload.textBundle,
     );
     return created;
   }
@@ -125,6 +128,7 @@ class _RecordingStudioRepository extends StudioRepository {
       uploads: _payload.uploads,
       courseLinks: links,
       courseMedia: _payload.courseMedia,
+      textBundle: _payload.textBundle,
     );
     return links.firstWhere((link) => link.id == linkId);
   }
@@ -138,6 +142,7 @@ class _RecordingStudioRepository extends StudioRepository {
           .where((link) => link.id != linkId)
           .toList(growable: false),
       courseMedia: _payload.courseMedia,
+      textBundle: _payload.textBundle,
     );
   }
 }
@@ -292,5 +297,25 @@ HomePlayerLibraryPayload _payload() {
         contentType: 'audio/wav',
       ),
     ],
+    textBundle: HomePlayerTextBundle(
+      entries: const {
+        'studio_editor.profile_media.home_player_library_title':
+            HomePlayerCatalogTextValue(
+              surfaceId: 'TXT-SURF-071',
+              textId: 'studio_editor.profile_media.home_player_library_title',
+              authorityClass: 'contract_text',
+              canonicalOwner: 'backend_text_catalog',
+              sourceContract:
+                  'actual_truth/contracts/backend_text_catalog_contract.md',
+              backendNamespace: 'backend_text_catalog.studio_editor',
+              apiSurface: '/studio/home-player/library',
+              deliverySurface: '/studio/home-player/library',
+              renderSurface:
+                  'frontend/lib/features/studio/presentation/profile_media_page.dart',
+              language: 'sv',
+              value: 'Home-spelarens bibliotek',
+            ),
+      },
+    ),
   );
 }

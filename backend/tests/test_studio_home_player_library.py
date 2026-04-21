@@ -191,7 +191,25 @@ async def test_studio_home_player_library_endpoint_returns_canonical_groups(
         )
         assert response.status_code == 200, response.text
         payload = response.json()
-        assert set(payload) == {"uploads", "course_links", "course_media"}
+        assert set(payload) == {"uploads", "course_links", "course_media", "text_bundle"}
+        assert isinstance(payload["text_bundle"], dict)
+        assert "studio_editor.profile_media.home_player_library_title" in payload["text_bundle"]
+        title_text = payload["text_bundle"]["studio_editor.profile_media.home_player_library_title"]
+        assert title_text == {
+            "surface_id": "TXT-SURF-071",
+            "text_id": "studio_editor.profile_media.home_player_library_title",
+            "authority_class": "contract_text",
+            "canonical_owner": "backend_text_catalog",
+            "source_contract": "actual_truth/contracts/backend_text_catalog_contract.md",
+            "backend_namespace": "backend_text_catalog.studio_editor",
+            "api_surface": "/studio/home-player/library",
+            "delivery_surface": "/studio/home-player/library",
+            "render_surface": "frontend/lib/features/studio/presentation/profile_media_page.dart",
+            "language": "sv",
+            "interpolation_keys": [],
+            "forbidden_render_fields": [],
+            "value": "Home-spelarens bibliotek",
+        }
 
         upload = payload["uploads"][0]
         assert set(upload) == {
@@ -279,11 +297,19 @@ async def test_studio_home_player_library_endpoint_runs_against_baseline_schema(
             headers=headers,
         )
         assert response.status_code == 200, response.text
-        assert response.json() == {
+        payload = response.json()
+        assert payload == {
             "uploads": [],
             "course_links": [],
             "course_media": [],
+            "text_bundle": payload["text_bundle"],
         }
+        assert payload["text_bundle"]["home.player_upload.title"]["value"] == (
+            "Lägg till ljud i hemspelaren"
+        )
+        assert payload["text_bundle"]["home.player_upload.title"]["authority_class"] == (
+            "contract_text"
+        )
     finally:
         await _cleanup_user(user_id)
 

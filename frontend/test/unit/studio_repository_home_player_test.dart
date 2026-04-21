@@ -47,6 +47,12 @@ void main() {
     expect(payload.courseMedia.single.courseSlug, 'course-title');
     expect(payload.courseMedia.single.kind, 'audio');
     expect(payload.courseMedia.single.media, isNull);
+    expect(
+      payload.textBundle.requireValue(
+        'studio_editor.profile_media.home_player_library_title',
+      ),
+      'Home-spelarens bibliotek',
+    );
 
     final requests = harness.adapter.requestsFor('/studio/home-player/library');
     expect(requests, hasLength(1));
@@ -275,6 +281,25 @@ class _Harness {
                 'media': null,
               },
             ],
+            'text_bundle': {
+              'studio_editor.profile_media.home_player_library_title': {
+                'surface_id': 'TXT-SURF-071',
+                'text_id': 'studio_editor.profile_media.home_player_library_title',
+                'authority_class': 'contract_text',
+                'canonical_owner': 'backend_text_catalog',
+                'source_contract':
+                    'actual_truth/contracts/backend_text_catalog_contract.md',
+                'backend_namespace': 'backend_text_catalog.studio_editor',
+                'api_surface': '/studio/home-player/library',
+                'delivery_surface': '/studio/home-player/library',
+                'render_surface':
+                    'frontend/lib/features/studio/presentation/profile_media_page.dart',
+                'language': 'sv',
+                'interpolation_keys': const [],
+                'forbidden_render_fields': const [],
+                'value': 'Home-spelarens bibliotek',
+              },
+            },
           },
         );
       }

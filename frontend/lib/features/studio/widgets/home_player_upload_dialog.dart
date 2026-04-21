@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/studio/application/home_player_library_controller.dart';
@@ -21,12 +22,14 @@ class HomePlayerUploadDialog extends ConsumerStatefulWidget {
     required this.file,
     required this.title,
     required this.contentType,
+    required this.textBundle,
     this.active = true,
   });
 
   final WavUploadFile file;
   final String title;
   final String contentType;
+  final HomePlayerTextBundle textBundle;
   final bool active;
 
   @override
@@ -72,7 +75,7 @@ class _HomePlayerUploadDialogState
     setState(() {
       _progress = 0.0;
       _error = null;
-      _status = 'Förbereder uppladdning...';
+      _status = widget.textBundle.requireValue('home.player_upload.prepare_status');
       _uploading = true;
       _processing = false;
     });
@@ -81,11 +84,12 @@ class _HomePlayerUploadDialogState
       mimeType: widget.contentType,
       filename: widget.file.name,
     );
-    final error = homePlayerUploadUnsupportedMessage(route);
-    if (error.isNotEmpty) {
+    final errorTextId = homePlayerUploadUnsupportedTextId(route);
+    if (errorTextId != null) {
       if (!mounted) return;
       setState(() {
         _uploading = false;
+        final error = widget.textBundle.requireValue(errorTextId);
         _error = error;
         _status = error;
       });
@@ -110,7 +114,9 @@ class _HomePlayerUploadDialogState
         : _normalizeWavMimeType(widget.contentType, widget.file.name);
 
     if (!normalizedMime.startsWith('audio/')) {
-      const message = 'Home-spelaren stöder bara ljudfiler.';
+      final message = widget.textBundle.requireValue(
+        'home.player_upload.audio_only_error',
+      );
       if (!mounted) return;
       setState(() {
         _uploading = false;
@@ -139,12 +145,16 @@ class _HomePlayerUploadDialogState
         uploadPayload,
       );
       if (upload.uploadEndpoint.isEmpty || upload.uploadSessionId.isEmpty) {
-        throw StateError('Uppladdningssession saknas.');
+        throw StateError('home_player_upload_session_missing');
       }
       mediaId = upload.mediaId;
 
       if (mounted) {
-        setState(() => _status = 'Laddar upp...');
+        setState(
+          () => _status = widget.textBundle.requireValue(
+            'home.player_upload.uploading_status',
+          ),
+        );
       }
 
       await pipelineRepo.uploadBytes(
@@ -161,7 +171,9 @@ class _HomePlayerUploadDialogState
       );
     } on DioException catch (error, stackTrace) {
       if (error.type == DioExceptionType.cancel) {
-        _showUploadFailure('Uppladdningen avbröts.');
+        _showUploadFailure(
+          widget.textBundle.requireValue('home.player_upload.cancelled_status'),
+        );
         return;
       }
       _showUploadFailure(_messageForUploadStartFailure(error, stackTrace));
@@ -178,7 +190,9 @@ class _HomePlayerUploadDialogState
     setState(() {
       _uploading = false;
       _processing = true;
-      _status = 'Registrerar ljudfil...';
+      _status = widget.textBundle.requireValue(
+        'home.player_upload.registering_status',
+      );
       _cancelToken = null;
     });
 
@@ -191,11 +205,16 @@ class _HomePlayerUploadDialogState
       );
       if (!mounted) return;
       ref.invalidate(homePlayerLibraryProvider);
-      setState(() => _status = 'Bearbetar ljud...');
+      setState(
+        () => _status = widget.textBundle.requireValue(
+          'home.player_upload.processing_status',
+        ),
+      );
       _startPolling(mediaId);
     } catch (error, stackTrace) {
-      final failure = AppFailure.from(error, stackTrace);
-      final message = 'Kunde inte spara uppladdningen: ${failure.message}';
+      final message =
+          _canonicalBackendMessage(error, stackTrace) ??
+          widget.textBundle.requireValue('home.player_upload.save_failed_error');
       if (!mounted) return;
       setState(() {
         _processing = false;
@@ -206,29 +225,17 @@ class _HomePlayerUploadDialogState
   }
 
   String _messageForUploadStartFailure(Object error, StackTrace stackTrace) {
+    return _canonicalBackendMessage(error, stackTrace) ??
+        widget.textBundle.requireValue('home.player_upload.start_failed_error');
+  }
+
+  String? _canonicalBackendMessage(Object error, StackTrace stackTrace) {
     final failure = AppFailure.from(error, stackTrace);
-    var message = 'Kunde inte starta uppladdningen. Försök igen.';
-    if (failure is ValidationFailure) {
-      final detail = failure.message.trim();
-      if (detail.isNotEmpty) {
-        message = detail.startsWith('File too large')
-            ? detail.replaceFirst('File too large', 'Filen är för stor')
-            : detail;
-      }
-    } else if (failure is ServerFailure ||
-        failure is NetworkFailure ||
-        failure is TimeoutFailure ||
-        failure is UnauthorizedFailure ||
-        failure is NotFoundFailure ||
-        failure is ConfigurationFailure) {
-      message = failure.message;
-    } else {
-      final detail = failure.message.trim();
-      if (detail.isNotEmpty) {
-        message = 'Kunde inte starta uppladdningen: $detail';
-      }
+    final message = failure.message.trim();
+    if (failure.code != null && message.isNotEmpty) {
+      return message;
     }
-    return message;
+    return null;
   }
 
   void _showUploadFailure(String message) {
@@ -258,7 +265,7 @@ class _HomePlayerUploadDialogState
         ref.invalidate(homePlayerLibraryProvider);
         setState(() {
           _processing = false;
-          _status = 'Ljudfilen är klar för uppspelning.';
+          _status = widget.textBundle.requireValue('home.player_upload.ready_status');
         });
         _pollTimer?.cancel();
         _pollTimer = null;
@@ -272,19 +279,27 @@ class _HomePlayerUploadDialogState
         ref.invalidate(homePlayerLibraryProvider);
         setState(() {
           _processing = false;
-          _error = 'Bearbetningen misslyckades.';
-          _status = 'Bearbetningen misslyckades.';
+          _error = widget.textBundle.requireValue(
+            'home.player_upload.processing_failed_error',
+          );
+          _status = widget.textBundle.requireValue(
+            'home.player_upload.processing_failed_error',
+          );
         });
         return;
       }
 
       setState(() {
-        _status = 'Bearbetar ljud...';
+        _status = widget.textBundle.requireValue(
+          'home.player_upload.processing_status',
+        );
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kunde inte uppdatera statusen just nu.';
+        _error = widget.textBundle.requireValue(
+          'home.player_upload.refresh_failed_error',
+        );
       });
     }
   }
@@ -314,13 +329,17 @@ class _HomePlayerUploadDialogState
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Vänta tills uppladdningen är klar eller avbryt.'),
+          SnackBar(
+            content: Text(
+              widget.textBundle.requireValue(
+                'home.player_upload.wait_until_complete_status',
+              ),
+            ),
           ),
         );
       },
       child: AlertDialog(
-        title: const Text('Laddar upp ljud'),
+        title: Text(widget.textBundle.requireValue('home.player_upload.title')),
         content: SizedBox(
           width: 420,
           child: Column(
@@ -343,7 +362,13 @@ class _HomePlayerUploadDialogState
                   Expanded(
                     child: Text(
                       _status ??
-                          (_uploading ? 'Laddar upp...' : 'Förbereder...'),
+                          (_uploading
+                              ? widget.textBundle.requireValue(
+                                  'home.player_upload.uploading_status',
+                                )
+                              : widget.textBundle.requireValue(
+                                  'home.player_upload.prepare_status',
+                                )),
                       style: theme.textTheme.bodySmall,
                     ),
                   ),
@@ -368,19 +393,25 @@ class _HomePlayerUploadDialogState
             onPressed: !_uploading
                 ? () => Navigator.of(context).pop(false)
                 : null,
-            child: const Text('Stäng'),
+            child: Text(
+              widget.textBundle.requireValue('home.player_upload.close_action'),
+            ),
           ),
           if (_uploading)
             FilledButton.icon(
               onPressed: _cancelUpload,
               icon: const Icon(Icons.stop_circle_outlined),
-              label: const Text('Avbryt'),
+              label: Text(
+                widget.textBundle.requireValue('home.player_upload.cancel_action'),
+              ),
             )
           else if (_error != null && !_processing)
             FilledButton.icon(
               onPressed: _start,
               icon: const Icon(Icons.refresh),
-              label: const Text('Försök igen'),
+              label: Text(
+                widget.textBundle.requireValue('home.player_upload.retry_action'),
+              ),
             ),
         ],
       ),

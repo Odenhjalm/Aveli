@@ -133,6 +133,7 @@ void main() {
                           file: file,
                           title: 'Morgonljud',
                           contentType: 'audio/mpeg',
+                          textBundle: _textBundle(),
                         ),
                       );
                     },
@@ -172,6 +173,136 @@ void main() {
       );
       expect(statusRequests, hasLength(1));
       expect(statusRequests.single.method, 'GET');
+    },
+  );
+}
+
+HomePlayerTextBundle _textBundle() {
+  const sourceContract = 'actual_truth/contracts/backend_text_catalog_contract.md';
+  const apiSurface = '/studio/home-player/library';
+  HomePlayerCatalogTextValue entry(
+    String textId,
+    String authorityClass,
+    String value,
+  ) {
+    return HomePlayerCatalogTextValue(
+      surfaceId: 'TXT-SURF-075',
+      textId: textId,
+      authorityClass: authorityClass,
+      canonicalOwner: 'backend_text_catalog',
+      sourceContract: sourceContract,
+      backendNamespace: 'backend_text_catalog.home',
+      apiSurface: apiSurface,
+      deliverySurface: apiSurface,
+      renderSurface:
+          'frontend/lib/features/studio/widgets/home_player_upload_dialog.dart',
+      language: 'sv',
+      value: value,
+    );
+  }
+
+  return HomePlayerTextBundle(
+    entries: <String, HomePlayerCatalogTextValue>{
+      'home.player_upload.title': entry(
+        'home.player_upload.title',
+        'contract_text',
+        'Lägg till ljud i hemspelaren',
+      ),
+      'home.player_upload.prepare_status': entry(
+        'home.player_upload.prepare_status',
+        'backend_status_text',
+        'Förbereder uppladdning...',
+      ),
+      'home.player_upload.uploading_status': entry(
+        'home.player_upload.uploading_status',
+        'backend_status_text',
+        'Laddar upp ljud...',
+      ),
+      'home.player_upload.registering_status': entry(
+        'home.player_upload.registering_status',
+        'backend_status_text',
+        'Registrerar ljudfil...',
+      ),
+      'home.player_upload.processing_status': entry(
+        'home.player_upload.processing_status',
+        'backend_status_text',
+        'Ljudet bearbetas...',
+      ),
+      'home.player_upload.ready_status': entry(
+        'home.player_upload.ready_status',
+        'backend_status_text',
+        'Ljudet är redo.',
+      ),
+      'home.player_upload.failed_error': entry(
+        'home.player_upload.failed_error',
+        'backend_error_text',
+        'Ljudet kunde inte laddas upp.',
+      ),
+      'home.player_upload.wait_until_complete_status': entry(
+        'home.player_upload.wait_until_complete_status',
+        'backend_status_text',
+        'Vänta tills uppladdningen är klar eller avbryt.',
+      ),
+      'home.player_upload.close_action': entry(
+        'home.player_upload.close_action',
+        'contract_text',
+        'Stäng',
+      ),
+      'home.player_upload.cancel_action': entry(
+        'home.player_upload.cancel_action',
+        'contract_text',
+        'Avbryt',
+      ),
+      'home.player_upload.retry_action': entry(
+        'home.player_upload.retry_action',
+        'contract_text',
+        'Försök igen',
+      ),
+      'home.player_upload.cancelled_status': entry(
+        'home.player_upload.cancelled_status',
+        'backend_status_text',
+        'Uppladdningen avbröts.',
+      ),
+      'home.player_upload.audio_only_error': entry(
+        'home.player_upload.audio_only_error',
+        'backend_error_text',
+        'Home-spelaren stöder bara ljudfiler.',
+      ),
+      'home.player_upload.start_failed_error': entry(
+        'home.player_upload.start_failed_error',
+        'backend_error_text',
+        'Kunde inte starta uppladdningen. Försök igen.',
+      ),
+      'home.player_upload.save_failed_error': entry(
+        'home.player_upload.save_failed_error',
+        'backend_error_text',
+        'Kunde inte spara uppladdningen. Försök igen.',
+      ),
+      'home.player_upload.processing_failed_error': entry(
+        'home.player_upload.processing_failed_error',
+        'backend_error_text',
+        'Bearbetningen misslyckades.',
+      ),
+      'home.player_upload.refresh_failed_error': entry(
+        'home.player_upload.refresh_failed_error',
+        'backend_error_text',
+        'Kunde inte uppdatera statusen just nu.',
+      ),
+      'home.player_upload.unsupported_audio_error': entry(
+        'home.player_upload.unsupported_audio_error',
+        'backend_error_text',
+        'Endast WAV eller MP3 stöds för ljud i Home-spelaren.',
+      ),
+      'home.player_upload.unsupported_video_error': entry(
+        'home.player_upload.unsupported_video_error',
+        'backend_error_text',
+        'Home-spelaren stöder bara ljud. Välj en WAV- eller MP3-fil.',
+      ),
+      'home.player_upload.unsupported_other_error': entry(
+        'home.player_upload.unsupported_other_error',
+        'backend_error_text',
+        'Välj en WAV- eller MP3-fil.',
+      ),
     },
   );
 }

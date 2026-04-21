@@ -61,9 +61,12 @@ class _StudioProfilePageState extends ConsumerState<StudioProfilePage> {
     _syncHomeUploadPolling(asyncState);
 
     final cached = asyncState.valueOrNull;
+    final title = cached?.textBundle.requireValue(
+      'studio_editor.profile_media.home_player_library_title',
+    ) ?? '';
     if (cached != null) {
       return AppScaffold(
-        title: 'Home-spelarens bibliotek',
+        title: title,
         extendBodyBehindAppBar: true,
         onBack: () => context.goNamed(AppRoute.home),
         contentPadding: const EdgeInsets.fromLTRB(16, 120, 16, 32),
@@ -76,18 +79,18 @@ class _StudioProfilePageState extends ConsumerState<StudioProfilePage> {
     }
 
     return AppScaffold(
-      title: 'Home-spelarens bibliotek',
+      title: title,
       extendBodyBehindAppBar: true,
       onBack: () => context.goNamed(AppRoute.home),
       contentPadding: const EdgeInsets.fromLTRB(16, 120, 16, 32),
       background: const HeroBackground(
-        assetPath: 'images/bakgrund.png',
-        opacity: 0.65,
+          assetPath: 'images/bakgrund.png',
+          opacity: 0.65,
       ),
       body: asyncState.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ErrorView(
-          message: AppFailure.from(error).message,
+          message: _backendOwnedErrorMessage(error),
           onRetry: () => ref.invalidate(homePlayerLibraryProvider),
         ),
         data: (data) => _HomePlayerLibraryBody(state: data, isBusy: false),
@@ -107,29 +110,39 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
     final controller = ref.read(homePlayerLibraryProvider.notifier);
     final uploads = state.uploads;
     final links = state.courseLinks;
+    final texts = state.textBundle;
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _SectionCard(
-            title: 'Ljud för Home-spelaren',
-            subtitle:
-                'Ladda upp ljud direkt för Home-spelaren. Dessa filer är fristående från kurser. Tar du bort en fil här raderas den helt.',
+            title: texts.requireValue(
+              'studio_editor.profile_media.home_player_uploads_title',
+            ),
+            subtitle: texts.requireValue(
+              'studio_editor.profile_media.home_player_uploads_description',
+            ),
             primary: true,
             isBusy: isBusy,
             onRefresh: () async => ref.invalidate(homePlayerLibraryProvider),
+            refreshLabel: texts.requireValue(
+              'studio_editor.profile_media.refresh_action',
+            ),
             actions: [
               FilledButton.icon(
                 onPressed: isBusy
                     ? null
-                    : () async => await _uploadHomeMedia(context, ref),
+                    : () async => await _uploadHomeMedia(context, ref, texts),
                 icon: const Icon(Icons.upload_file_outlined),
-                label: const Text('Ladda upp ljud'),
+                label: Text(
+                  texts.requireValue('home.player_upload.submit_action'),
+                ),
               ),
             ],
             child: uploads.isEmpty
-                ? const _HomeUploadsEmptyState()
+                ? _HomeUploadsEmptyState(texts: texts)
                 : _HomeUploadsList(
+                    texts: texts,
                     uploads: uploads,
                     disabled: isBusy,
                     onToggle: (id, value) async {
@@ -137,7 +150,12 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
                         await controller.toggleUpload(id, value);
                       } catch (error) {
                         if (!context.mounted) return;
-                        _showErrorSnackBar(context, error);
+                        _showErrorSnackBar(
+                          context,
+                          error,
+                          texts,
+                          'studio_editor.profile_media.action_failed_error',
+                        );
                       }
                     },
                     onRename: (id, title) async {
@@ -145,47 +163,74 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
                         await controller.renameUpload(id, title);
                       } catch (error) {
                         if (!context.mounted) return;
-                        _showErrorSnackBar(context, error);
+                        _showErrorSnackBar(
+                          context,
+                          error,
+                          texts,
+                          'studio_editor.profile_media.action_failed_error',
+                        );
                       }
                     },
                     onDelete: (id, title) async {
                       final confirmed = await _confirm(
                         context,
-                        title: 'Ta bort uppladdad fil',
-                        message:
-                            'Vill du ta bort "$title" från Home-spelarens bibliotek?\n\nFilen raderas helt och går inte att ångra.',
-                        confirmLabel: 'Ta bort',
+                        texts: texts,
+                        title: texts.requireValue(
+                          'studio_editor.profile_media.upload_delete_title',
+                        ),
+                        message: texts.requireValue(
+                          'studio_editor.profile_media.upload_delete_message',
+                        ),
+                        confirmLabel: texts.requireValue(
+                          'studio_editor.profile_media.upload_delete_action',
+                        ),
                       );
                       if (confirmed != true) return;
                       try {
                         await controller.deleteUpload(id);
                       } catch (error) {
                         if (!context.mounted) return;
-                        _showErrorSnackBar(context, error);
+                        _showErrorSnackBar(
+                          context,
+                          error,
+                          texts,
+                          'studio_editor.profile_media.action_failed_error',
+                        );
                       }
                     },
                   ),
           ),
           const SizedBox(height: 18),
           _SectionCard(
-            title: 'Länkat ljud från kurser',
-            subtitle:
-                'Här ser du ljud som är länkat från kursmaterial. Du kan slå på eller av länken, eller ta bort den utan att påverka originalfilen.\nInga uppladdningar görs här.',
+            title: texts.requireValue(
+              'studio_editor.profile_media.home_player_links_title',
+            ),
+            subtitle: texts.requireValue(
+              'studio_editor.profile_media.home_player_links_description',
+            ),
             primary: false,
             isBusy: isBusy,
             onRefresh: () async => ref.invalidate(homePlayerLibraryProvider),
+            refreshLabel: texts.requireValue(
+              'studio_editor.profile_media.refresh_action',
+            ),
             actions: [
               OutlinedButton.icon(
                 onPressed: isBusy
                     ? null
-                    : () async => await _linkFromCourses(context, ref),
+                    : () async => await _linkFromCourses(context, ref, texts),
                 icon: const Icon(Icons.link_outlined),
-                label: const Text('Länka ljud'),
+                label: Text(
+                  texts.requireValue(
+                    'studio_editor.profile_media.home_player_link_action',
+                  ),
+                ),
               ),
             ],
             child: links.isEmpty
-                ? const _CourseLinksEmptyState()
+                ? _CourseLinksEmptyState(texts: texts)
                 : _CourseLinksList(
+                    texts: texts,
                     links: links,
                     disabled: isBusy,
                     onToggle: (id, value) async {
@@ -193,23 +238,39 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
                         await controller.toggleCourseLink(id, value);
                       } catch (error) {
                         if (!context.mounted) return;
-                        _showErrorSnackBar(context, error);
+                        _showErrorSnackBar(
+                          context,
+                          error,
+                          texts,
+                          'studio_editor.profile_media.action_failed_error',
+                        );
                       }
                     },
                     onDelete: (id, title) async {
                       final confirmed = await _confirm(
                         context,
-                        title: 'Ta bort länk',
-                        message:
-                            'Vill du ta bort länken "$title"?\n\nOriginalfilen i kursen påverkas inte.',
-                        confirmLabel: 'Ta bort länk',
+                        texts: texts,
+                        title: texts.requireValue(
+                          'studio_editor.profile_media.link_delete_title',
+                        ),
+                        message: texts.requireValue(
+                          'studio_editor.profile_media.link_delete_message',
+                        ),
+                        confirmLabel: texts.requireValue(
+                          'studio_editor.profile_media.link_delete_action',
+                        ),
                       );
                       if (confirmed != true) return;
                       try {
                         await controller.deleteCourseLink(id);
                       } catch (error) {
                         if (!context.mounted) return;
-                        _showErrorSnackBar(context, error);
+                        _showErrorSnackBar(
+                          context,
+                          error,
+                          texts,
+                          'studio_editor.profile_media.action_failed_error',
+                        );
                       }
                     },
                   ),
@@ -223,7 +284,7 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
 class _ErrorView extends StatelessWidget {
   const _ErrorView({required this.message, required this.onRetry});
 
-  final String message;
+  final String? message;
   final VoidCallback onRetry;
 
   @override
@@ -235,18 +296,18 @@ class _ErrorView extends StatelessWidget {
         children: [
           Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
           const SizedBox(height: 8),
-          Text(
-            message,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.error,
+          if (message != null && message!.trim().isNotEmpty)
+            Text(
+              message!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
           const SizedBox(height: 16),
-          ElevatedButton.icon(
+          IconButton(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),
-            label: const Text('Försök igen'),
           ),
         ],
       ),
@@ -254,11 +315,25 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-void _showErrorSnackBar(BuildContext context, Object error) {
+String? _backendOwnedErrorMessage(Object error) {
   final failure = AppFailure.from(error);
+  final message = failure.message.trim();
+  if (failure.code != null && message.isNotEmpty) {
+    return message;
+  }
+  return null;
+}
+
+void _showErrorSnackBar(
+  BuildContext context,
+  Object error,
+  HomePlayerTextBundle texts,
+  String fallbackTextId,
+) {
+  final message = _backendOwnedErrorMessage(error) ?? texts.requireValue(fallbackTextId);
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(failure.message),
+      content: Text(message),
       backgroundColor: Theme.of(context).colorScheme.error,
     ),
   );
@@ -272,6 +347,7 @@ class _SectionCard extends StatelessWidget {
     required this.primary,
     required this.isBusy,
     required this.onRefresh,
+    required this.refreshLabel,
     this.actions = const [],
   });
 
@@ -281,6 +357,7 @@ class _SectionCard extends StatelessWidget {
   final bool primary;
   final bool isBusy;
   final Future<void> Function() onRefresh;
+  final String refreshLabel;
   final List<Widget> actions;
 
   @override
@@ -310,7 +387,7 @@ class _SectionCard extends StatelessWidget {
               ...actions,
               const SizedBox(width: 8),
               IconButton(
-                tooltip: 'Uppdatera',
+                tooltip: refreshLabel,
                 onPressed: isBusy ? null : () async => await onRefresh(),
                 icon: const Icon(Icons.refresh),
               ),
@@ -327,7 +404,9 @@ class _SectionCard extends StatelessWidget {
 }
 
 class _HomeUploadsEmptyState extends StatelessWidget {
-  const _HomeUploadsEmptyState();
+  const _HomeUploadsEmptyState({required this.texts});
+
+  final HomePlayerTextBundle texts;
 
   @override
   Widget build(BuildContext context) {
@@ -343,7 +422,9 @@ class _HomeUploadsEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Inga uppladdningar ännu.',
+            texts.requireValue(
+              'studio_editor.profile_media.home_player_uploads_empty_title',
+            ),
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
             ),
@@ -351,7 +432,9 @@ class _HomeUploadsEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Ladda upp ljud som bara ska användas i Home-spelaren.',
+            texts.requireValue(
+              'studio_editor.profile_media.home_player_uploads_empty_status',
+            ),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -365,6 +448,7 @@ class _HomeUploadsEmptyState extends StatelessWidget {
 
 class _HomeUploadsList extends StatelessWidget {
   const _HomeUploadsList({
+    required this.texts,
     required this.uploads,
     required this.disabled,
     required this.onToggle,
@@ -372,6 +456,7 @@ class _HomeUploadsList extends StatelessWidget {
     required this.onDelete,
   });
 
+  final HomePlayerTextBundle texts;
   final List<HomePlayerUploadItem> uploads;
   final bool disabled;
   final Future<void> Function(String id, bool value) onToggle;
@@ -388,6 +473,7 @@ class _HomeUploadsList extends StatelessWidget {
         for (final upload in uploads) ...[
           _HomeUploadTile(
             key: ValueKey(upload.id),
+            texts: texts,
             upload: upload,
             disabled: disabled,
             onToggle: onToggle,
@@ -404,6 +490,7 @@ class _HomeUploadsList extends StatelessWidget {
 class _HomeUploadTile extends StatefulWidget {
   const _HomeUploadTile({
     super.key,
+    required this.texts,
     required this.upload,
     required this.disabled,
     required this.onToggle,
@@ -411,6 +498,7 @@ class _HomeUploadTile extends StatefulWidget {
     required this.onDelete,
   });
 
+  final HomePlayerTextBundle texts;
   final HomePlayerUploadItem upload;
   final bool disabled;
   final Future<void> Function(String id, bool value) onToggle;
@@ -483,7 +571,16 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
     final trimmed = _titleController.text.trim();
     if (trimmed.isEmpty) {
       _cancelEditing();
-      _showErrorSnackBar(context, 'Filnamn kan inte vara tomt.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.texts.requireValue(
+              'studio_editor.profile_media.title_required_error',
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
       return;
     }
     if (trimmed == widget.upload.title) {
@@ -509,7 +606,9 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     const icon = Icons.headphones;
-    const typeLabel = 'Ljud';
+    final typeLabel = widget.texts.requireValue(
+      'studio_editor.profile_media.audio_kind_label',
+    );
     final isDisabled = widget.disabled || _saving;
     final mediaAssetId = (widget.upload.mediaAssetId ?? '').trim();
     final mediaState = (widget.upload.mediaState ?? 'uploaded')
@@ -518,8 +617,12 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
     final showsProcessing = mediaAssetId.isNotEmpty && mediaState != 'ready';
     final processingError = mediaState == 'failed';
     final processingLabel = processingError
-        ? 'Bearbetningen misslyckades.'
-        : 'Bearbetar ljud…';
+        ? widget.texts.requireValue(
+            'studio_editor.profile_media.processing_failed_error',
+          )
+        : widget.texts.requireValue(
+            'studio_editor.profile_media.processing_status',
+          );
 
     final titleStyle = theme.textTheme.titleMedium?.copyWith(
       fontWeight: FontWeight.w700,
@@ -626,7 +729,9 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
               ),
             ),
             IconButton(
-              tooltip: 'Ta bort',
+              tooltip: widget.texts.requireValue(
+                'studio_editor.profile_media.upload_delete_action',
+              ),
               onPressed: isDisabled
                   ? null
                   : () async => await widget.onDelete(
@@ -650,7 +755,9 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
 }
 
 class _CourseLinksEmptyState extends StatelessWidget {
-  const _CourseLinksEmptyState();
+  const _CourseLinksEmptyState({required this.texts});
+
+  final HomePlayerTextBundle texts;
 
   @override
   Widget build(BuildContext context) {
@@ -666,7 +773,9 @@ class _CourseLinksEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Inga länkar ännu.',
+            texts.requireValue(
+              'studio_editor.profile_media.home_player_links_empty_title',
+            ),
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
             ),
@@ -674,7 +783,9 @@ class _CourseLinksEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Länka in ljud från dina kurser. Tar du bort originalfilen blir länken ogiltig och kan inte spelas.',
+            texts.requireValue(
+              'studio_editor.profile_media.home_player_links_empty_status',
+            ),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -688,12 +799,14 @@ class _CourseLinksEmptyState extends StatelessWidget {
 
 class _CourseLinksList extends StatelessWidget {
   const _CourseLinksList({
+    required this.texts,
     required this.links,
     required this.disabled,
     required this.onToggle,
     required this.onDelete,
   });
 
+  final HomePlayerTextBundle texts;
   final List<HomePlayerCourseLinkItem> links;
   final bool disabled;
   final Future<void> Function(String id, bool value) onToggle;
@@ -708,6 +821,7 @@ class _CourseLinksList extends StatelessWidget {
         Divider(height: 1, thickness: 1, color: dividerColor),
         for (final link in links) ...[
           _CourseLinkTile(
+            texts: texts,
             link: link,
             disabled: disabled,
             onToggle: onToggle,
@@ -722,12 +836,14 @@ class _CourseLinksList extends StatelessWidget {
 
 class _CourseLinkTile extends StatelessWidget {
   const _CourseLinkTile({
+    required this.texts,
     required this.link,
     required this.disabled,
     required this.onToggle,
     required this.onDelete,
   });
 
+  final HomePlayerTextBundle texts;
   final HomePlayerCourseLinkItem link;
   final bool disabled;
   final Future<void> Function(String id, bool value) onToggle;
@@ -741,7 +857,7 @@ class _CourseLinkTile extends StatelessWidget {
     final statusTone = _statusTone(link.status);
     final canToggle = link.status == HomePlayerCourseLinkStatus.active;
     final subtitleParts = <String>[
-      if (link.courseTitle.isNotEmpty) 'Kurs: ${link.courseTitle}',
+      if (link.courseTitle.isNotEmpty) link.courseTitle,
     ];
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 160),
@@ -788,7 +904,9 @@ class _CourseLinkTile extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Ta bort länk',
+              tooltip: texts.requireValue(
+                'studio_editor.profile_media.link_delete_action',
+              ),
               onPressed: disabled
                   ? null
                   : () async => await onDelete(link.id, link.title),
@@ -809,11 +927,17 @@ class _CourseLinkTile extends StatelessWidget {
   String _statusLabel(HomePlayerCourseLinkStatus status) {
     switch (status) {
       case HomePlayerCourseLinkStatus.active:
-        return 'Aktiv';
+        return texts.requireValue(
+          'studio_editor.profile_media.course_link_active_status',
+        );
       case HomePlayerCourseLinkStatus.sourceMissing:
-        return 'Källa saknas';
+        return texts.requireValue(
+          'studio_editor.profile_media.course_link_source_missing_error',
+        );
       case HomePlayerCourseLinkStatus.courseUnpublished:
-        return 'Kurs ej publicerad';
+        return texts.requireValue(
+          'studio_editor.profile_media.course_link_unpublished_status',
+        );
     }
   }
 
@@ -870,6 +994,7 @@ class _StatusChip extends StatelessWidget {
 
 Future<bool?> _confirm(
   BuildContext context, {
+  required HomePlayerTextBundle texts,
   required String title,
   required String message,
   required String confirmLabel,
@@ -882,7 +1007,9 @@ Future<bool?> _confirm(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Avbryt'),
+          child: Text(
+            texts.requireValue('studio_editor.profile_media.cancel_action'),
+          ),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(true),
@@ -893,7 +1020,11 @@ Future<bool?> _confirm(
   );
 }
 
-Future<void> _uploadHomeMedia(BuildContext context, WidgetRef ref) async {
+Future<void> _uploadHomeMedia(
+  BuildContext context,
+  WidgetRef ref,
+  HomePlayerTextBundle texts,
+) async {
   final picked = await pickMediaFile();
   if (picked == null) return;
   if (!context.mounted) return;
@@ -905,20 +1036,23 @@ Future<void> _uploadHomeMedia(BuildContext context, WidgetRef ref) async {
     mimeType: contentType,
     filename: picked.name,
   );
-  final error = homePlayerUploadUnsupportedMessage(route);
-  if (error.isNotEmpty) {
+  final errorTextId = homePlayerUploadUnsupportedTextId(route);
+  if (errorTextId != null) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(texts.requireValue(errorTextId))),
+    );
     return;
   }
 
   final suggested = _suggestTitleFromFilename(picked.name);
   final title = await _promptRequiredTitle(
     context,
-    title: 'Namn på ljudfil',
-    hint: 'T.ex. "Andningsövning"',
+    texts: texts,
+    title: texts.requireValue('studio_editor.profile_media.upload_prompt_title'),
+    hint: texts.requireValue('studio_editor.profile_media.upload_prompt_hint'),
     initialValue: suggested,
-    confirmLabel: 'Ladda upp',
+    confirmLabel: texts.requireValue('home.player_upload.submit_action'),
   );
   if (title == null) return;
   if (!context.mounted) return;
@@ -930,6 +1064,7 @@ Future<void> _uploadHomeMedia(BuildContext context, WidgetRef ref) async {
       file: picked,
       title: title,
       contentType: contentType,
+      textBundle: texts,
     ),
   );
 
@@ -937,11 +1072,21 @@ Future<void> _uploadHomeMedia(BuildContext context, WidgetRef ref) async {
     ref.invalidate(homePlayerLibraryProvider);
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Uppladdning klar.')));
+    ).showSnackBar(
+      SnackBar(
+        content: Text(
+          texts.requireValue('studio_editor.profile_media.upload_ready_status'),
+        ),
+      ),
+    );
   }
 }
 
-Future<void> _linkFromCourses(BuildContext context, WidgetRef ref) async {
+Future<void> _linkFromCourses(
+  BuildContext context,
+  WidgetRef ref,
+  HomePlayerTextBundle texts,
+) async {
   final state = ref.read(homePlayerLibraryProvider).valueOrNull;
   final sources = state?.courseMedia ?? const <TeacherProfileLessonSource>[];
   final audioSources = sources
@@ -950,22 +1095,33 @@ Future<void> _linkFromCourses(BuildContext context, WidgetRef ref) async {
   if (audioSources.isEmpty) {
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Inga kursljud hittades.')));
+    ).showSnackBar(
+      SnackBar(
+        content: Text(
+          texts.requireValue(
+            'studio_editor.profile_media.no_course_audio_status',
+          ),
+        ),
+      ),
+    );
     return;
   }
   if (!context.mounted) return;
 
-  final picked = await _pickCourseMedia(context, audioSources);
+  final picked = await _pickCourseMedia(context, audioSources, texts);
   if (picked == null) return;
   if (!context.mounted) return;
 
   final suggested = (picked.lessonTitle ?? '').trim();
   final title = await _promptRequiredTitle(
     context,
-    title: 'Namn på länkat ljud',
-    hint: 'T.ex. "Meditation kväll"',
-    initialValue: suggested.isNotEmpty ? suggested : 'Länkat ljud',
-    confirmLabel: 'Länka ljud',
+    texts: texts,
+    title: texts.requireValue('studio_editor.profile_media.link_prompt_title'),
+    hint: texts.requireValue('studio_editor.profile_media.link_prompt_hint'),
+    initialValue: suggested,
+    confirmLabel: texts.requireValue(
+      'studio_editor.profile_media.home_player_link_action',
+    ),
   );
   if (title == null) return;
   if (!context.mounted) return;
@@ -976,15 +1132,27 @@ Future<void> _linkFromCourses(BuildContext context, WidgetRef ref) async {
     if (!context.mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Ljudet har länkats.')));
+    ).showSnackBar(
+      SnackBar(
+        content: Text(
+          texts.requireValue('studio_editor.profile_media.link_created_status'),
+        ),
+      ),
+    );
   } catch (error) {
     if (!context.mounted) return;
-    _showErrorSnackBar(context, error);
+    _showErrorSnackBar(
+      context,
+      error,
+      texts,
+      'studio_editor.profile_media.action_failed_error',
+    );
   }
 }
 
 Future<String?> _promptRequiredTitle(
   BuildContext context, {
+  required HomePlayerTextBundle texts,
   required String title,
   required String hint,
   required String initialValue,
@@ -1005,7 +1173,9 @@ Future<String?> _promptRequiredTitle(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('Avbryt'),
+          child: Text(
+            texts.requireValue('studio_editor.profile_media.cancel_action'),
+          ),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(controller.text.trim()),
@@ -1022,6 +1192,7 @@ Future<String?> _promptRequiredTitle(
 Future<TeacherProfileLessonSource?> _pickCourseMedia(
   BuildContext context,
   List<TeacherProfileLessonSource> sources,
+  HomePlayerTextBundle texts,
 ) async {
   final audioSources = sources
       .where(_isHomeAudioCourseSource)
@@ -1054,7 +1225,9 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Välj kursljud att länka',
+                    texts.requireValue(
+                      'studio_editor.profile_media.course_picker_title',
+                    ),
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -1062,17 +1235,23 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
                   const SizedBox(height: 12),
                   TextField(
                     controller: searchController,
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search),
-                      hintText: 'Sök på kurs eller lektion...',
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      hintText: texts.requireValue(
+                        'studio_editor.profile_media.course_picker_search_hint',
+                      ),
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 12),
                   Expanded(
                     child: filtered.isEmpty
-                        ? const Center(
-                            child: Text('Inga ljudfiler matchar sökningen.'),
+                        ? Center(
+                            child: Text(
+                              texts.requireValue(
+                                'studio_editor.profile_media.course_picker_empty_status',
+                              ),
+                            ),
                           )
                         : ListView.separated(
                             itemCount: filtered.length,
@@ -1086,15 +1265,16 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
                                   .trim();
                               final subtitleParts = <String>[
                                 if (courseTitle.isNotEmpty) courseTitle,
-                                if (lessonTitle.isNotEmpty)
-                                  'Lektion: $lessonTitle',
+                                if (lessonTitle.isNotEmpty) lessonTitle,
                               ];
                               return ListTile(
                                 leading: const Icon(Icons.headphones),
                                 title: Text(
                                   lessonTitle.isNotEmpty
                                       ? lessonTitle
-                                      : 'Ljudfil',
+                                      : (courseTitle.isNotEmpty
+                                            ? courseTitle
+                                            : ''),
                                 ),
                                 subtitle: subtitleParts.isEmpty
                                     ? null
@@ -1121,7 +1301,7 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
 
 String _suggestTitleFromFilename(String filename) {
   final name = filename.trim();
-  if (name.isEmpty) return 'Ljudfil';
+  if (name.isEmpty) return '';
   final dot = name.lastIndexOf('.');
   if (dot <= 0) return name;
   return name.substring(0, dot);

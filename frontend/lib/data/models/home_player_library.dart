@@ -19,6 +19,115 @@ enum HomePlayerCourseLinkStatus {
   }
 }
 
+class HomePlayerCatalogTextValue extends Equatable {
+  const HomePlayerCatalogTextValue({
+    required this.surfaceId,
+    required this.textId,
+    required this.authorityClass,
+    required this.canonicalOwner,
+    required this.sourceContract,
+    required this.backendNamespace,
+    required this.apiSurface,
+    required this.deliverySurface,
+    required this.renderSurface,
+    required this.language,
+    required this.value,
+    this.interpolationKeys = const <String>[],
+    this.forbiddenRenderFields = const <String>[],
+  });
+
+  factory HomePlayerCatalogTextValue.fromJson(Map<String, dynamic> json) {
+    return HomePlayerCatalogTextValue(
+      surfaceId: (json['surface_id'] as String? ?? '').trim(),
+      textId: (json['text_id'] as String? ?? '').trim(),
+      authorityClass: (json['authority_class'] as String? ?? '').trim(),
+      canonicalOwner: (json['canonical_owner'] as String? ?? '').trim(),
+      sourceContract: (json['source_contract'] as String? ?? '').trim(),
+      backendNamespace: (json['backend_namespace'] as String? ?? '').trim(),
+      apiSurface: (json['api_surface'] as String? ?? '').trim(),
+      deliverySurface: (json['delivery_surface'] as String? ?? '').trim(),
+      renderSurface: (json['render_surface'] as String? ?? '').trim(),
+      language: (json['language'] as String? ?? '').trim(),
+      value: (json['value'] as String? ?? '').trim(),
+      interpolationKeys: (json['interpolation_keys'] as List? ?? const [])
+          .whereType<String>()
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false),
+      forbiddenRenderFields:
+          (json['forbidden_render_fields'] as List? ?? const [])
+              .whereType<String>()
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)
+              .toList(growable: false),
+    );
+  }
+
+  final String surfaceId;
+  final String textId;
+  final String authorityClass;
+  final String canonicalOwner;
+  final String sourceContract;
+  final String backendNamespace;
+  final String apiSurface;
+  final String deliverySurface;
+  final String renderSurface;
+  final String language;
+  final String value;
+  final List<String> interpolationKeys;
+  final List<String> forbiddenRenderFields;
+
+  @override
+  List<Object?> get props => [
+    surfaceId,
+    textId,
+    authorityClass,
+    canonicalOwner,
+    sourceContract,
+    backendNamespace,
+    apiSurface,
+    deliverySurface,
+    renderSurface,
+    language,
+    value,
+    interpolationKeys,
+    forbiddenRenderFields,
+  ];
+}
+
+class HomePlayerTextBundle extends Equatable {
+  const HomePlayerTextBundle({this.entries = const {}});
+
+  factory HomePlayerTextBundle.fromJson(Object? payload) {
+    if (payload is! Map) return const HomePlayerTextBundle();
+    final entries = <String, HomePlayerCatalogTextValue>{};
+    for (final entry in payload.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      if (key is! String || value is! Map) continue;
+      entries[key] = HomePlayerCatalogTextValue.fromJson(
+        Map<String, dynamic>.from(value),
+      );
+    }
+    return HomePlayerTextBundle(entries: Map.unmodifiable(entries));
+  }
+
+  final Map<String, HomePlayerCatalogTextValue> entries;
+
+  HomePlayerCatalogTextValue require(String textId) {
+    final entry = entries[textId];
+    if (entry == null) {
+      throw StateError('Missing canonical home player text: $textId');
+    }
+    return entry;
+  }
+
+  String requireValue(String textId) => require(textId).value;
+
+  @override
+  List<Object?> get props => [entries];
+}
+
 class HomePlayerUploadItem extends Equatable {
   const HomePlayerUploadItem({
     required this.id,
@@ -170,6 +279,7 @@ class HomePlayerLibraryPayload extends Equatable {
     this.uploads = const [],
     this.courseLinks = const [],
     this.courseMedia = const [],
+    this.textBundle = const HomePlayerTextBundle(),
   });
 
   factory HomePlayerLibraryPayload.fromJson(Map<String, dynamic> json) {
@@ -198,13 +308,15 @@ class HomePlayerLibraryPayload extends Equatable {
             ),
           )
           .toList(growable: false),
+      textBundle: HomePlayerTextBundle.fromJson(json['text_bundle']),
     );
   }
 
   final List<HomePlayerUploadItem> uploads;
   final List<HomePlayerCourseLinkItem> courseLinks;
   final List<TeacherProfileLessonSource> courseMedia;
+  final HomePlayerTextBundle textBundle;
 
   @override
-  List<Object?> get props => [uploads, courseLinks, courseMedia];
+  List<Object?> get props => [uploads, courseLinks, courseMedia, textBundle];
 }

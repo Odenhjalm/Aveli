@@ -36,6 +36,7 @@ from ..services import (
     studio_authority,
 )
 from ..services import media_cleanup
+from ..services import studio_home_player_text_catalog
 from ..utils.profile_media import profile_media_item_from_row
 from .media import _build_streaming_response
 from . import upload as upload_routes
@@ -1567,6 +1568,7 @@ async def studio_home_player_library(current: TeacherEntryUser):
     payload = await studio_home_player_library_repo.get_home_player_library(
         teacher_id=str(current["id"]),
     )
+    text_bundle = studio_home_player_text_catalog.build_studio_home_player_text_bundle()
     return schemas.HomePlayerLibraryResponse(
         uploads=[
             schemas.HomePlayerLibraryUploadItem(**item)
@@ -1580,6 +1582,10 @@ async def studio_home_player_library(current: TeacherEntryUser):
             schemas.HomePlayerLibraryCourseMediaItem(**item)
             for item in payload["course_media"]
         ],
+        text_bundle={
+            text_id: schemas.HomePlayerCatalogTextValue(**entry)
+            for text_id, entry in text_bundle.items()
+        },
     )
 
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import (
     AliasChoices,
@@ -517,12 +517,31 @@ class HomePlayerLibraryCourseMediaItem(BaseModel):
     media: Optional["ResolvedMedia"] = None
 
 
+class HomePlayerCatalogTextValue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    surface_id: str
+    text_id: str
+    authority_class: Literal["contract_text", "backend_status_text", "backend_error_text"]
+    canonical_owner: Literal["backend_text_catalog"]
+    source_contract: str
+    backend_namespace: str
+    api_surface: str
+    delivery_surface: str
+    render_surface: str
+    language: Literal["sv"]
+    interpolation_keys: List[str] = []
+    forbidden_render_fields: List[str] = []
+    value: str
+
+
 class HomePlayerLibraryResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     uploads: List[HomePlayerLibraryUploadItem]
     course_links: List[HomePlayerLibraryCourseLinkItem]
     course_media: List[HomePlayerLibraryCourseMediaItem]
+    text_bundle: Dict[str, HomePlayerCatalogTextValue]
 
 
 class SeminarDetailResponse(BaseModel):

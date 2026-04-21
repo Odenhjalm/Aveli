@@ -59,16 +59,16 @@ String homePlayerUploadNormalizedMimeType(HomePlayerUploadRoute route) {
   }
 }
 
-String homePlayerUploadUnsupportedMessage(HomePlayerUploadRoute route) {
+String? homePlayerUploadUnsupportedTextId(HomePlayerUploadRoute route) {
   switch (route) {
     case HomePlayerUploadRoute.unsupportedAudio:
-      return 'Endast WAV eller MP3 stöds för ljud i Home-spelaren.';
+      return 'home.player_upload.unsupported_audio_error';
     case HomePlayerUploadRoute.unsupportedVideo:
-      return 'Home-spelaren stöder bara ljud. Välj en WAV- eller MP3-fil.';
+      return 'home.player_upload.unsupported_video_error';
     case HomePlayerUploadRoute.unsupportedOther:
-      return 'Välj en WAV- eller MP3-fil.';
+      return 'home.player_upload.unsupported_other_error';
     case HomePlayerUploadRoute.wavPipeline:
     case HomePlayerUploadRoute.directMp3:
-      return '';
+      return null;
   }
 }

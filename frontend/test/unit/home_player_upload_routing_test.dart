@@ -57,8 +57,8 @@ void main() {
       );
       expect(videoRoute, HomePlayerUploadRoute.unsupportedVideo);
       expect(
-        homePlayerUploadUnsupportedMessage(videoRoute),
-        contains('bara ljud'),
+        homePlayerUploadUnsupportedTextId(videoRoute),
+        'home.player_upload.unsupported_video_error',
       );
     });
 
@@ -69,8 +69,8 @@ void main() {
       );
       expect(audioRoute, HomePlayerUploadRoute.unsupportedAudio);
       expect(
-        homePlayerUploadUnsupportedMessage(audioRoute),
-        contains('WAV eller MP3'),
+        homePlayerUploadUnsupportedTextId(audioRoute),
+        'home.player_upload.unsupported_audio_error',
       );
 
       final otherRoute = detectHomePlayerUploadRoute(
@@ -79,8 +79,8 @@ void main() {
       );
       expect(otherRoute, HomePlayerUploadRoute.unsupportedOther);
       expect(
-        homePlayerUploadUnsupportedMessage(otherRoute),
-        contains('WAV- eller MP3'),
+        homePlayerUploadUnsupportedTextId(otherRoute),
+        'home.player_upload.unsupported_other_error',
       );
     });
   });
