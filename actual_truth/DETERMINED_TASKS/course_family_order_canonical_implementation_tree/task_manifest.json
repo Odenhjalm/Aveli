@@ -1,0 +1,98 @@
+{
+  "tree_id": "course_family_order_canonical_implementation_tree",
+  "status": "READY",
+  "source_contracts": [
+    "actual_truth/contracts/SYSTEM_LAWS.md",
+    "actual_truth/contracts/AVELI_COURSE_DOMAIN_SPEC.md",
+    "actual_truth/contracts/course_lesson_editor_contract.md",
+    "actual_truth/contracts/course_access_contract.md",
+    "actual_truth/contracts/course_monetization_contract.md",
+    "actual_truth/contracts/commerce_membership_contract.md"
+  ],
+  "audit_mode": "verified_repository_retrieval",
+  "audit_inputs": [
+    "CFA-01",
+    "CFA-02",
+    "CFA-03",
+    "CFA-04",
+    "CFA-05",
+    "CFA-06",
+    "CFA-07",
+    "CFA-08",
+    "CFA-09",
+    "CFA-10"
+  ],
+  "tasks": [
+    {
+      "id": "CFO-000",
+      "title": "BASELINE_FAMILY_ORDER_FOUNDATION",
+      "type": "OWNER",
+      "group": "BASELINE",
+      "depends_on": [],
+      "audit_inputs": ["CFA-01", "CFA-02", "CFA-03"]
+    },
+    {
+      "id": "CFO-001",
+      "title": "BASELINE_REPLAY_FAMILY_ORDER_GATE",
+      "type": "GATE",
+      "group": "BASELINE",
+      "depends_on": ["CFO-000"],
+      "audit_inputs": ["CFA-02", "CFA-03", "CFA-10"]
+    },
+    {
+      "id": "CFO-002",
+      "title": "BACKEND_FAMILY_TRANSITION_FOUNDATION",
+      "type": "OWNER",
+      "group": "BACKEND SERVICE/REPOSITORY",
+      "depends_on": ["CFO-001"],
+      "audit_inputs": ["CFA-04", "CFA-05", "CFA-06"]
+    },
+    {
+      "id": "CFO-003",
+      "title": "STUDIO_API_FAMILY_POSITION_ALIGNMENT",
+      "type": "OWNER",
+      "group": "STUDIO API",
+      "depends_on": ["CFO-002"],
+      "audit_inputs": ["CFA-04", "CFA-05", "CFA-06", "CFA-10"]
+    },
+    {
+      "id": "CFO-004",
+      "title": "STUDIO_EDITOR_FAMILY_POSITION_AUTHORING",
+      "type": "OWNER",
+      "group": "FRONTEND STUDIO",
+      "depends_on": ["CFO-003"],
+      "audit_inputs": ["CFA-07", "CFA-08"]
+    },
+    {
+      "id": "CFO-005",
+      "title": "FRONTEND_RENDER_PROGRESSIVE_FAMILY_ALIGNMENT",
+      "type": "OWNER",
+      "group": "FRONTEND RENDER",
+      "depends_on": ["CFO-003"],
+      "audit_inputs": ["CFA-09"]
+    },
+    {
+      "id": "CFO-006",
+      "title": "VERIFICATION_AND_REGRESSION_GATE",
+      "type": "GATE",
+      "group": "VERIFY + GATE",
+      "depends_on": [
+        "CFO-001",
+        "CFO-002",
+        "CFO-003",
+        "CFO-004",
+        "CFO-005"
+      ],
+      "audit_inputs": ["CFA-01", "CFA-02", "CFA-04", "CFA-05", "CFA-06", "CFA-07", "CFA-08", "CFA-09", "CFA-10"]
+    },
+    {
+      "id": "CFO-007",
+      "title": "FINAL_GO_GATE",
+      "type": "AGGREGATE",
+      "group": "FINAL GATE",
+      "depends_on": ["CFO-006"],
+      "audit_inputs": ["CFA-01", "CFA-02", "CFA-03", "CFA-04", "CFA-05", "CFA-06", "CFA-07", "CFA-08", "CFA-09", "CFA-10"]
+    }
+  ]
+}
+

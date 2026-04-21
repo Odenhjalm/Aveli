@@ -1,0 +1,502 @@
+{
+  "tree_id": "home_player_frontend_dashboard_visibility_audit_tree",
+  "status": "READY",
+  "mode": "generate",
+  "scope": "no_code_audit_of_learner_dashboard_home_audio_mount_render_and_data_consumption",
+  "source_contracts": [
+    "codex/AVELI_OPERATING_SYSTEM.md",
+    "actual_truth/contracts/SYSTEM_LAWS.md",
+    "actual_truth/contracts/baseline_v2_authority_freeze_contract.md",
+    "actual_truth/contracts/home_audio_runtime_contract.md",
+    "actual_truth/contracts/home_audio_aggregation_contract.md",
+    "actual_truth/contracts/media_pipeline_contract.md",
+    "actual_truth/contracts/system_text_authority_contract.md",
+    "actual_truth/contracts/media_unified_authority_contract.md"
+  ],
+  "authority_load": {
+    "system_authority": [
+      {
+        "path": "codex/AVELI_OPERATING_SYSTEM.md",
+        "status": "LOADED",
+        "reason": "Defines no-code audit behavior and canonical evidence-first retrieval."
+      },
+      {
+        "path": "actual_truth/contracts/SYSTEM_LAWS.md",
+        "status": "LOADED",
+        "reason": "Required by the Home Player contract stack and Baseline V2 authority freeze."
+      },
+      {
+        "path": "actual_truth/contracts/baseline_v2_authority_freeze_contract.md",
+        "status": "LOADED",
+        "reason": "Confirms home_player_course_links source truth, backend read composition, read-only runtime_media, and Swedish product text."
+      }
+    ],
+    "home_player_contracts": [
+      {
+        "path": "actual_truth/contracts/home_audio_runtime_contract.md",
+        "status": "LOADED",
+        "key_assertions": [
+          "Mounted learner Home Player must consume GET /home/audio.",
+          "Frontend may consume only media = { media_id, state, resolved_url } | null.",
+          "Frontend must not use media_asset_id, storage fields, signed URLs, or alternate runtime endpoints."
+        ]
+      },
+      {
+        "path": "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "status": "LOADED",
+        "key_assertions": [
+          "Visibility is sourced from app.home_player_uploads and app.home_player_course_links.",
+          "Direct uploads require active=true and audio/home_player_audio.",
+          "Course links require enabled=true, published course, audio media, and canonical lesson access.",
+          "Invalid ready items are filtered before frontend response."
+        ]
+      },
+      {
+        "path": "actual_truth/contracts/media_pipeline_contract.md",
+        "status": "LOADED",
+        "key_assertions": [
+          "Ready audio playback must resolve from worker-owned derived playback.",
+          "Audio playback format for ready assets is MP3-only."
+        ]
+      },
+      {
+        "path": "actual_truth/contracts/system_text_authority_contract.md",
+        "status": "LOADED",
+        "key_assertions": [
+          "All user-facing product text must be Swedish.",
+          "Frontend is render-only for user-facing text.",
+          "Missing text authority must fail closed."
+        ]
+      },
+      {
+        "path": "actual_truth/contracts/media_unified_authority_contract.md",
+        "status": "LOADED",
+        "key_assertions": [
+          "runtime_media is read-only projection only.",
+          "Frontend must not resolve or infer media truth."
+        ]
+      }
+    ],
+    "authority_result": "TRACE COMPLETE"
+  },
+  "frontend_mounting_map": [
+    {
+      "stage": "dashboard_route_gate",
+      "from": "frontend/lib/core/routing/route_session.dart:17-26",
+      "to": "frontend/lib/core/routing/app_router.dart:76-103,319-322",
+      "status": "TRACED",
+      "behavior": "Route access to /home is granted from entryState.canEnterApp. Profile is not part of the router gate.",
+      "blocking_conditions": [
+        "entryState is still loading",
+        "entryState is missing",
+        "canEnterApp is false because onboarding or payment pre-entry flow still applies"
+      ]
+    },
+    {
+      "stage": "dashboard_widget_mount",
+      "from": "frontend/lib/features/home/presentation/home_dashboard_page.dart:29-35",
+      "to": "frontend/lib/features/home/presentation/home_dashboard_page.dart:98-100",
+      "status": "TRACED_WITH_BLOCKER",
+      "behavior": "HomeAudioSection is mounted inside the dashboard column.",
+      "blocking_conditions": [
+        "authState.profile == null returns AuthBootPage before the dashboard body is built"
+      ]
+    },
+    {
+      "stage": "controller_watch",
+      "from": "frontend/lib/features/home/presentation/widgets/home_audio_section.dart:22-39",
+      "to": "frontend/lib/features/home/application/home_audio_controller.dart:40-70",
+      "status": "TRACED",
+      "behavior": "Widget watches homeAudioProvider and switches between loading, error, empty, and populated states."
+    },
+    {
+      "stage": "repository_fetch",
+      "from": "frontend/lib/features/home/application/home_audio_controller.dart:48-54",
+      "to": "frontend/lib/features/home/data/home_audio_repository.dart:121-128",
+      "status": "TRACED",
+      "behavior": "Controller fetches GET /home/audio and converts payload into HomeAudioState."
+    },
+    {
+      "stage": "backend_api",
+      "from": "backend/app/routes/home.py:11-29",
+      "to": "backend/app/services/home_audio_service.py:70-176",
+      "status": "TRACED",
+      "behavior": "Backend returns items plus text_bundle for /home/audio."
+    },
+    {
+      "stage": "source_visibility_and_audio_enforcement",
+      "from": "backend/app/repositories/home_audio_runtime.py:21-33",
+      "to": "backend/app/repositories/home_audio_runtime.py:50-65",
+      "status": "TRACED",
+      "behavior": "Direct uploads require active=true and audio/home_player_audio. Course links require enabled=true, published courses, and audio media only."
+    },
+    {
+      "stage": "mp3_ready_playback_enforcement",
+      "from": "backend/app/services/home_audio_service.py:38-67,141-148",
+      "to": "backend/app/services/lesson_playback_service.py:145-203",
+      "status": "TRACED",
+      "behavior": "Ready items are surfaced only when resolved playback exists and playback_format is mp3."
+    }
+  ],
+  "conditional_flags_and_environment_evidence": {
+    "frontend_feature_flags": {
+      "status": "NONE FOUND",
+      "evidence": [
+        "frontend/lib/core/env/app_config.dart:5-16 exposes apiBaseUrl, subscriptionsEnabled, stripePublishableKey, and imageLoggingEnabled only.",
+        "Repo search found no home_audio/home_player-specific env key, feature flag, or toggle in learner dashboard code."
+      ]
+    },
+    "environment_dependencies": {
+      "status": "NON_BLOCKING_FOR_HOME_PLAYER_MOUNT",
+      "evidence": [
+        "frontend/lib/main.dart:304-314 mounts only EnvBanner when app-core env keys are missing; it does not suppress the home dashboard widget tree.",
+        "The learner dashboard has no AppConfig-based Home Player gate."
+      ]
+    },
+    "source_truth_conditions_that_control_item_visibility": {
+      "status": "ACTIVE",
+      "evidence": [
+        "backend/app/repositories/home_audio_runtime.py:24-26 requires home_player_uploads.active=true, ma.purpose=home_player_audio, ma.media_type=audio.",
+        "backend/app/repositories/home_audio_runtime.py:56-58 requires home_player_course_links.enabled=true, course visibility public, and ma.media_type=audio.",
+        "backend/app/services/home_audio_service.py:125-133 requires can_access=true for course_link rows.",
+        "backend/app/services/home_audio_service.py:39-59 and backend/app/services/lesson_playback_service.py:189-203 require ready playback to resolve as MP3."
+      ]
+    }
+  },
+  "identified_blockers": [
+    {
+      "blocker_id": "BLK-HP-FE-001",
+      "severity": "HIGH",
+      "title": "Dashboard mount is incorrectly gated on profile hydration",
+      "file_references": [
+        "frontend/lib/features/home/presentation/home_dashboard_page.dart:29-35",
+        "frontend/lib/core/auth/auth_controller.dart:84-94",
+        "frontend/lib/core/auth/auth_controller.dart:129-142",
+        "frontend/lib/core/routing/route_session.dart:17-26",
+        "frontend/lib/core/routing/app_router.dart:76-103,319-322"
+      ],
+      "state_condition": "routeSession.canEnterApp == true AND authState.profile == null",
+      "failure_mode": "HomeDashboardPage returns AuthBootPage before HomeAudioSection() at home_dashboard_page.dart:99 is built. homeAudioProvider is never watched, HomeAudioController.build() never runs, and /home/audio is never requested.",
+      "classification": "FRONTEND_MOUNT_BLOCKER",
+      "contract_impact": "Violates the mounted frontend consumer law in home_audio_runtime_contract.md whenever entry-state authorization succeeds but profile hydration is absent or fails."
+    },
+    {
+      "blocker_id": "BLK-HP-FE-002",
+      "severity": "MEDIUM",
+      "title": "Text-bundle completeness is a hard render dependency",
+      "file_references": [
+        "frontend/lib/data/models/home_player_library.dart:117-125",
+        "frontend/lib/features/home/presentation/widgets/home_audio_section.dart:39-110",
+        "backend/app/routes/home.py:23-29"
+      ],
+      "state_condition": "/home/audio succeeds but omits any required text_bundle entry used by HomeAudioSection",
+      "failure_mode": "HomePlayerTextBundle.requireValue throws StateError during widget build. The section cannot render because the frontend is not allowed to invent fallback text.",
+      "classification": "CONTRACT_FAIL_CLOSED_RENDER_BLOCKER",
+      "contract_impact": "Aligned with system_text_authority_contract.md fail-closed text rules, but still a precise learner-dashboard visibility failure point."
+    },
+    {
+      "blocker_id": "BLK-HP-FE-003",
+      "severity": "MEDIUM",
+      "title": "Payload contract drift collapses the controller path into an opaque error state",
+      "file_references": [
+        "frontend/lib/features/home/data/home_audio_repository.dart:37-40",
+        "frontend/lib/features/home/data/home_audio_repository.dart:95-105",
+        "frontend/lib/features/home/data/home_audio_repository.dart:142-184",
+        "frontend/lib/features/home/application/home_audio_controller.dart:48-64",
+        "frontend/lib/features/home/presentation/widgets/home_audio_section.dart:26-36",
+        "frontend/lib/features/home/presentation/widgets/home_audio_section.dart:383-392"
+      ],
+      "state_condition": "/home/audio emits forbidden runtime fields, invalid JSON shape, or any non-canonical item object",
+      "failure_mode": "Repository throws StateError, controller converts it to AppFailure, and the widget renders only the error chrome. Because _backendOwnedHomeAudioMessage requires failure.code, contract-drift failures can degrade to an icon-only error state.",
+      "classification": "CONTROLLER_PROPAGATION_AND_RENDER_DIAGNOSTIC_GAP",
+      "contract_impact": "Frontend correctly refuses forbidden authority, but the learner surface becomes operationally opaque."
+    },
+    {
+      "blocker_id": "BLK-HP-FE-004",
+      "severity": "INFO",
+      "title": "Empty Home Player can be caused by backend source truth rather than a frontend mount defect",
+      "file_references": [
+        "backend/app/repositories/home_audio_runtime.py:21-33",
+        "backend/app/repositories/home_audio_runtime.py:50-65",
+        "backend/app/services/home_audio_service.py:114-148",
+        "backend/app/services/lesson_playback_service.py:145-203",
+        "backend/tests/test_home_audio_runtime_db_integration.py:536-585"
+      ],
+      "state_condition": "No row satisfies active/enabled/public/access-ready MP3 visibility rules",
+      "failure_mode": "The dashboard mounts and renders HomeAudioSection, but state.items is empty and the learner sees only the empty state.",
+      "classification": "SOURCE_TRUTH_VISIBILITY_GATE",
+      "contract_impact": "This is expected under the contracts and must not be misclassified as a frontend rendering bug."
+    }
+  ],
+  "audit_verification": {
+    "tests_run": [
+      {
+        "command": "flutter test test/widgets/home_dashboard_runtime_contract_test.dart test/unit/home_audio_repository_test.dart",
+        "status": "PASS",
+        "evidence": "Current happy-path learner dashboard requests /home/audio and renders ready + processing items."
+      },
+      {
+        "command": "pytest backend/tests/test_home_audio_feed.py -q",
+        "status": "PASS",
+        "evidence": "Backend /home/audio route and contract-shaped payload are green in the targeted suite."
+      }
+    ],
+    "mp3_and_audio_only_evidence": [
+      "backend/app/repositories/home_audio_runtime.py:24-26 and 56-58 restrict Home Player source rows to audio media only.",
+      "backend/app/services/lesson_playback_service.py:189-203 rejects ready audio unless playback_format == mp3.",
+      "backend/tests/test_home_audio_feed.py:546-558 asserts ready /home/audio items resolve to a .mp3 URL.",
+      "backend/tests/test_home_audio_runtime_db_integration.py:541-544 and 550-553 create ready Home Player assets with derived .mp3 paths."
+    ],
+    "current_frontend_truth": "The learner dashboard chain is implemented and passes its happy-path tests. The primary remaining frontend defect is the profile-null mount gate."
+  },
+  "deterministic_topological_order": [
+    "HP-DASH-001",
+    "HP-DASH-002",
+    "HP-DASH-003",
+    "HP-DASH-004",
+    "HP-DASH-005"
+  ],
+  "dependency_spine": [
+    "HP-DASH-001 unlocks widget instantiation and repository invocation.",
+    "HP-DASH-001 -> HP-DASH-002",
+    "HP-DASH-001 -> HP-DASH-003",
+    "HP-DASH-001 + HP-DASH-003 -> HP-DASH-004",
+    "HP-DASH-001 + HP-DASH-002 + HP-DASH-003 + HP-DASH-004 -> HP-DASH-005"
+  ],
+  "tasks": [
+    {
+      "node_id": "HP-DASH-001",
+      "title": "Release learner dashboard mount from profile hydration",
+      "depends_on": [],
+      "scope": [
+        "Remove the profile-null short-circuit that returns AuthBootPage from HomeDashboardPage after routeSession.canEnterApp already granted access.",
+        "Keep learner dashboard access aligned to entryState/route session authority, not profile hydration timing.",
+        "Preserve render-only Home Player behavior and avoid introducing local text or alternate runtime endpoints."
+      ],
+      "target_files_and_backend_api_reliance": {
+        "frontend_files": [
+          "frontend/lib/features/home/presentation/home_dashboard_page.dart",
+          "frontend/lib/features/auth/application/user_access_provider.dart"
+        ],
+        "backend_api": [
+          "GET /home/audio"
+        ],
+        "contracts": [
+          "actual_truth/contracts/home_audio_runtime_contract.md",
+          "actual_truth/contracts/home_audio_aggregation_contract.md",
+          "actual_truth/contracts/system_text_authority_contract.md"
+        ]
+      },
+      "expected_outcome": [
+        "An authorized learner dashboard instantiates HomeAudioSection even when authState.profile is still null.",
+        "Repository invocation is no longer blocked by unrelated profile hydration.",
+        "The learner Home Player obeys the canonical /home/audio mount law under all canEnterApp states."
+      ],
+      "verification_steps": [
+        "Add a widget regression that sets entryState.canEnterApp=true with profile=null and proves /home/audio is requested.",
+        "Verify the dashboard still redirects away from /home when canEnterApp=false.",
+        "Confirm no alternate endpoint or local cache model is introduced while removing the profile gate."
+      ],
+      "go_condition": "GO when /home/audio is requested for an authorized learner dashboard regardless of profile hydration timing.",
+      "blocked_condition": "BLOCKED if HomeDashboardPage can still return AuthBootPage solely because profile is null after app entry is already authorized."
+    },
+    {
+      "node_id": "HP-DASH-002",
+      "title": "Add learner dashboard mount regressions for authorized profile-null state",
+      "depends_on": [
+        "HP-DASH-001"
+      ],
+      "scope": [
+        "Capture the exact route and auth state that previously suppressed Home Player mounting.",
+        "Extend learner dashboard tests so future regressions cannot silently reintroduce the profile hydration gate."
+      ],
+      "target_files_and_backend_api_reliance": {
+        "frontend_files": [
+          "frontend/test/widgets/home_dashboard_runtime_contract_test.dart",
+          "frontend/lib/core/routing/app_router.dart",
+          "frontend/lib/core/auth/auth_controller.dart"
+        ],
+        "backend_api": [
+          "GET /home/audio"
+        ],
+        "contracts": [
+          "actual_truth/contracts/home_audio_runtime_contract.md"
+        ]
+      },
+      "expected_outcome": [
+        "Automated coverage proves the mounted learner dashboard requests /home/audio under the exact authorized-but-profile-null state that currently fails.",
+        "The regression suite distinguishes route authorization from profile hydration."
+      ],
+      "verification_steps": [
+        "Add a dashboard test with AuthState(entryState=canEnterApp true, profile=null) and assert one GET /home/audio request.",
+        "Retain the current happy-path test that renders ready and processing items.",
+        "Confirm test fixtures do not rely on any alternate Home Player endpoint."
+      ],
+      "go_condition": "GO when the test suite would fail immediately if Home Player mounting becomes profile-dependent again.",
+      "blocked_condition": "BLOCKED if the regression suite still models HomeDashboardPage only with profile pre-hydrated."
+    },
+    {
+      "node_id": "HP-DASH-003",
+      "title": "Harden learner runtime payload admission and diagnostic visibility",
+      "depends_on": [
+        "HP-DASH-001"
+      ],
+      "scope": [
+        "Keep the frontend fail-closed on forbidden runtime/storage authority while making the failure mode deterministic and traceable.",
+        "Verify that HomeAudioSection never mistakes payload contract drift for a successful empty state.",
+        "Respect system text authority by avoiding frontend-authored fallback copy."
+      ],
+      "target_files_and_backend_api_reliance": {
+        "frontend_files": [
+          "frontend/lib/features/home/data/home_audio_repository.dart",
+          "frontend/lib/features/home/application/home_audio_controller.dart",
+          "frontend/lib/features/home/presentation/widgets/home_audio_section.dart",
+          "frontend/lib/data/models/home_player_library.dart",
+          "frontend/test/unit/home_audio_repository_test.dart",
+          "frontend/test/widgets/home_dashboard_runtime_contract_test.dart"
+        ],
+        "backend_api": [
+          "GET /home/audio"
+        ],
+        "contracts": [
+          "actual_truth/contracts/home_audio_runtime_contract.md",
+          "actual_truth/contracts/system_text_authority_contract.md",
+          "actual_truth/contracts/media_unified_authority_contract.md"
+        ]
+      },
+      "expected_outcome": [
+        "Forbidden fields still fail closed.",
+        "Missing or incomplete text_bundle remains a hard contract failure and is covered by explicit verification rather than being misread as a frontend omission.",
+        "Learner error rendering remains contract-safe and diagnosable."
+      ],
+      "verification_steps": [
+        "Add repository or widget tests for missing required text ids and forbidden runtime fields.",
+        "Assert that payload drift enters an explicit error state and never falls through to the empty-state path.",
+        "Search the learner Home Player surface for any frontend-authored error/status fallback text before closing the node."
+      ],
+      "go_condition": "GO when contract drift is surfaced as deterministic failure and not as invisible disappearance or false empty success.",
+      "blocked_condition": "BLOCKED if payload drift can still collapse into an undiagnosed blank section or if the remediation introduces frontend-owned copy."
+    },
+    {
+      "node_id": "HP-DASH-004",
+      "title": "Verify source-state visibility and MP3-ready runtime truth",
+      "depends_on": [
+        "HP-DASH-001",
+        "HP-DASH-003"
+      ],
+      "scope": [
+        "Distinguish frontend mount issues from backend/source-truth emptiness.",
+        "Verify that target data satisfies the canonical visibility gates required for at least one learner-visible Home Player item when the product expectation is non-empty content.",
+        "Confirm ready items resolve only from MP3-derived playback."
+      ],
+      "target_files_and_backend_api_reliance": {
+        "frontend_files": [
+          "frontend/test/widgets/home_dashboard_runtime_contract_test.dart"
+        ],
+        "backend_files": [
+          "backend/app/repositories/home_audio_runtime.py",
+          "backend/app/services/home_audio_service.py",
+          "backend/app/services/lesson_playback_service.py",
+          "backend/tests/test_home_audio_feed.py",
+          "backend/tests/test_home_audio_runtime_db_integration.py"
+        ],
+        "backend_api": [
+          "GET /home/audio"
+        ],
+        "contracts": [
+          "actual_truth/contracts/home_audio_aggregation_contract.md",
+          "actual_truth/contracts/home_audio_runtime_contract.md",
+          "actual_truth/contracts/media_pipeline_contract.md"
+        ]
+      },
+      "expected_outcome": [
+        "The audit can state with evidence whether the learner should see playable Home Player content, a processing row, or only the empty state.",
+        "Audio-only and MP3-only runtime law remains intact."
+      ],
+      "verification_steps": [
+        "Verify direct uploads and course links satisfy active/enabled/public/access rules before expecting visible items.",
+        "Verify at least one ready item resolves to MP3 when target environment is expected to be non-empty.",
+        "If target environment has no contract-valid rows, classify the result as source-truth empty state rather than frontend failure."
+      ],
+      "go_condition": "GO when item visibility expectations are reconciled with canonical source truth and MP3-ready playback evidence.",
+      "blocked_condition": "BLOCKED if product expectations require visible items but the source environment has no contract-valid Home Player rows."
+    },
+    {
+      "node_id": "HP-DASH-005",
+      "title": "Final learner dashboard contract verification",
+      "depends_on": [
+        "HP-DASH-001",
+        "HP-DASH-002",
+        "HP-DASH-003",
+        "HP-DASH-004"
+      ],
+      "scope": [
+        "Run the final stop-go verification for the learner-facing Home Player chain from dashboard route through /home/audio payload consumption.",
+        "Confirm Swedish user-facing text, frontend render-only media authority, audio-only runtime enforcement, and absence of alternate endpoint or storage authority."
+      ],
+      "target_files_and_backend_api_reliance": {
+        "frontend_files": [
+          "frontend/lib/features/home/presentation/home_dashboard_page.dart",
+          "frontend/lib/features/home/application/home_audio_controller.dart",
+          "frontend/lib/features/home/data/home_audio_repository.dart",
+          "frontend/lib/features/home/presentation/widgets/home_audio_section.dart",
+          "frontend/test/widgets/home_dashboard_runtime_contract_test.dart",
+          "frontend/test/unit/home_audio_repository_test.dart",
+          "frontend/test/unit/home_player_text_authority_test.dart"
+        ],
+        "backend_files": [
+          "backend/app/routes/home.py",
+          "backend/app/services/home_audio_service.py",
+          "backend/app/services/lesson_playback_service.py",
+          "backend/app/repositories/home_audio_runtime.py",
+          "backend/tests/test_home_audio_feed.py"
+        ],
+        "backend_api": [
+          "GET /home/audio"
+        ],
+        "contracts": [
+          "actual_truth/contracts/home_audio_runtime_contract.md",
+          "actual_truth/contracts/home_audio_aggregation_contract.md",
+          "actual_truth/contracts/media_pipeline_contract.md",
+          "actual_truth/contracts/system_text_authority_contract.md",
+          "actual_truth/contracts/media_unified_authority_contract.md"
+        ]
+      },
+      "expected_outcome": [
+        "The learner dashboard visibly mounts Home Player whenever the user is authorized to enter the app.",
+        "Data travels only through dashboard -> controller -> repository -> GET /home/audio.",
+        "Frontend remains render-only and does not invent playback, state, or text authority."
+      ],
+      "verification_steps": [
+        "Run the learner dashboard and repository test suites after the remediation nodes close.",
+        "Search the learner Home Player surface for runtime_media, storage_path, playback_object_path, playback_format, signed_url, download_url, and alternate endpoint usage.",
+        "Confirm all touched user-facing Home Player text remains Swedish and no prompt surfaces are introduced."
+      ],
+      "go_condition": "GO when the full learner dashboard chain is mounted, verified, contract-safe, and visibly functional under canonical /home/audio data.",
+      "blocked_condition": "BLOCKED if any prior node remains open, the dashboard still depends on profile hydration to mount Home Player, or any non-canonical authority survives."
+    }
+  ],
+  "recommended_next_step_for_each_blocker": [
+    {
+      "blocker_id": "BLK-HP-FE-001",
+      "next_step": "Execute HP-DASH-001 first. This is the only current code-level blocker that prevents HomeAudioSection from ever mounting in an authorized route state."
+    },
+    {
+      "blocker_id": "BLK-HP-FE-002",
+      "next_step": "Execute HP-DASH-003 after the mount fix so missing text authority is covered by explicit tests and cannot masquerade as a frontend omission."
+    },
+    {
+      "blocker_id": "BLK-HP-FE-003",
+      "next_step": "Execute HP-DASH-003 to add deterministic negative-path verification around forbidden fields and non-canonical payloads."
+    },
+    {
+      "blocker_id": "BLK-HP-FE-004",
+      "next_step": "Execute HP-DASH-004 only after the mount path is fixed. If the UI still appears empty, validate source truth rather than continuing frontend work blindly."
+    }
+  ],
+  "final_audit_conclusion": {
+    "summary": "The learner dashboard -> controller -> repository -> /home/audio chain exists and passes the current happy-path tests. The precise current frontend blocker is the profile-null gate in HomeDashboardPage, which suppresses HomeAudioSection even after route authorization has already succeeded.",
+    "stop_condition": "NONE",
+    "deterministic_execution_readiness": "READY"
+  }
+}
