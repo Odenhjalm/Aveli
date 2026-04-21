@@ -276,6 +276,11 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
       thumbShape: RoundSliderThumbShape(enabledThumbRadius: compact ? 5 : 6),
       overlayShape: RoundSliderOverlayShape(overlayRadius: compact ? 8 : 10),
     );
+    final homePlayerSliderTheme = sliderTheme.copyWith(
+      trackHeight: 1.75,
+      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4.5),
+      overlayShape: const RoundSliderOverlayShape(overlayRadius: 8),
+    );
     final padding = homePlayerUi
         ? EdgeInsets.zero
         : minimalUi
@@ -285,15 +290,7 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
         : const EdgeInsets.all(16);
 
     Widget playbackBody;
-    if (_initializing) {
-      playbackBody = Center(
-        child: SizedBox(
-          width: compact ? 22 : 28,
-          height: compact ? 22 : 28,
-          child: const CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    } else if (_error != null) {
+    if (_error != null) {
       playbackBody = homePlayerUi
           ? Icon(
               Icons.error_outline_rounded,
@@ -307,39 +304,71 @@ class _InlineAudioPlayerState extends ConsumerState<InlineAudioPlayer> {
               ),
             );
     } else if (homePlayerUi) {
-      playbackBody = Column(
-        children: [
-          Row(
-            children: [
-              IconButton(
-                key: const ValueKey('home-player-play-button'),
-                icon: Icon(
-                  _state == PlayerState.playing
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
-                  size: 24,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.76),
+      playbackBody = Opacity(
+        opacity: _initializing ? 0.64 : 1,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  key: const ValueKey('home-player-play-button'),
+                  icon: Icon(
+                    _state == PlayerState.playing
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    size: 22,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.76),
+                  ),
+                  onPressed: _initializing ? null : _toggle,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
                 ),
-                onPressed: _toggle,
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-              const Spacer(),
-            ],
-          ),
-          const SizedBox(height: 6),
-          SliderTheme(
-            data: volumeSliderTheme,
-            child: Slider(
-              key: const ValueKey('home-player-volume-slider'),
-              min: 0,
-              max: 1,
-              value: _volume,
-              onChanged: _setVolume,
+                const SizedBox(width: 4),
+                Expanded(
+                  child: SliderTheme(
+                    data: homePlayerSliderTheme,
+                    child: Slider(
+                      key: const ValueKey('home-player-position-slider'),
+                      min: 0,
+                      max: maxMillis.toDouble(),
+                      value: sliderValue,
+                      onChanged: _initializing || duration.inMilliseconds <= 0
+                          ? null
+                          : (value) => _player.seek(
+                              Duration(milliseconds: value.round()),
+                            ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 2),
+            SliderTheme(
+              data: homePlayerSliderTheme,
+              child: Slider(
+                key: const ValueKey('home-player-volume-slider'),
+                min: 0,
+                max: 1,
+                value: _volume,
+                onChanged: _initializing ? null : _setVolume,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (_initializing) {
+      playbackBody = Center(
+        child: SizedBox(
+          width: compact ? 22 : 28,
+          height: compact ? 22 : 28,
+          child: const CircularProgressIndicator(strokeWidth: 2),
+        ),
       );
     } else {
       playbackBody = Column(

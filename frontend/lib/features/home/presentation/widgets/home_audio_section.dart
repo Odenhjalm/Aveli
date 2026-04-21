@@ -48,7 +48,7 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
     final theme = Theme.of(context);
 
     return GlassCard(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       opacity: 0.14,
       sigmaX: 5,
       sigmaY: 5,
@@ -56,24 +56,43 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
       child: Column(
         key: const ValueKey('home-audio-section'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Stack(
-            alignment: Alignment.topRight,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: SizedBox(
-                    key: const ValueKey('home-audio-logo'),
-                    height: 88,
-                    child: Image(
-                      image: logoProvider,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                    ),
-                  ),
+              SizedBox(
+                key: const ValueKey('home-audio-logo'),
+                width: 86,
+                height: 32,
+                child: Image(
+                  image: logoProvider,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.centerLeft,
+                  filterQuality: FilterQuality.high,
                 ),
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: selectedItem == null
+                    ? const SizedBox(height: 34)
+                    : InlineAudioPlayer(
+                        key: ValueKey(
+                          'home-audio-player-${selectedItem.media.mediaId ?? 'unknown'}',
+                        ),
+                        url: selectedItem.media.resolvedUrl!,
+                        title: selectedItem.title,
+                        compact: true,
+                        homePlayerUi: true,
+                        initialVolumeState: _volumeState,
+                        onVolumeStateChanged: (nextState) {
+                          setState(() {
+                            _volumeState = nextState;
+                          });
+                        },
+                      ),
+              ),
+              const SizedBox(width: 2),
               IconButton(
                 key: const ValueKey('home-audio-track-list-toggle'),
                 onPressed: readyItems.isEmpty
@@ -87,30 +106,14 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
                   _trackListExpanded
                       ? Icons.keyboard_arrow_up_rounded
                       : Icons.keyboard_arrow_down_rounded,
-                  size: 20,
+                  size: 18,
                 ),
                 visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               ),
             ],
           ),
-          if (selectedItem != null) ...[
-            const SizedBox(height: 18),
-            InlineAudioPlayer(
-              key: ValueKey(
-                'home-audio-player-${selectedItem.media.mediaId ?? 'unknown'}',
-              ),
-              url: selectedItem.media.resolvedUrl!,
-              title: selectedItem.title,
-              compact: true,
-              homePlayerUi: true,
-              initialVolumeState: _volumeState,
-              onVolumeStateChanged: (nextState) {
-                setState(() {
-                  _volumeState = nextState;
-                });
-              },
-            ),
-          ],
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 180),
             switchInCurve: Curves.easeOut,
@@ -118,10 +121,10 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
             child: _trackListExpanded && readyItems.isNotEmpty
                 ? Container(
                     key: const ValueKey('home-audio-track-list'),
-                    margin: const EdgeInsets.only(top: 14),
+                    margin: const EdgeInsets.only(top: 8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(18),
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: theme.colorScheme.onSurface.withValues(
                           alpha: 0.06,
@@ -248,43 +251,41 @@ class _HomeAudioTrackRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final mediaId = item.media.mediaId ?? 'unknown';
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        key: ValueKey('home-audio-track-$mediaId'),
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                selected
-                    ? Icons.play_circle_fill_rounded
-                    : Icons.music_note_rounded,
-                size: 18,
-                color: theme.colorScheme.onSurface.withValues(
-                  alpha: selected ? 0.88 : 0.52,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+    return Semantics(
+      label: item.title,
+      button: true,
+      selected: selected,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey('home-audio-track-$mediaId'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              children: [
+                Icon(
+                  selected
+                      ? Icons.play_circle_fill_rounded
+                      : Icons.play_circle_outline_rounded,
+                  size: 18,
+                  color: theme.colorScheme.onSurface.withValues(
+                    alpha: selected ? 0.82 : 0.44,
                   ),
                 ),
-              ),
-              if (selected)
+                const Spacer(),
                 Icon(
-                  Icons.check_rounded,
-                  size: 18,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                  selected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  size: 16,
+                  color: theme.colorScheme.onSurface.withValues(
+                    alpha: selected ? 0.68 : 0.26,
+                  ),
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

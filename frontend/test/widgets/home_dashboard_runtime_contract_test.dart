@@ -158,6 +158,18 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(InlineAudioPlayer), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home-player-play-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home-player-position-slider')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home-player-volume-slider')),
+      findsOneWidget,
+    );
     expect(find.text('Ljud i Home-spelaren'), findsNothing);
     expect(find.text('Redo att spela'), findsNothing);
     expect(find.text('Ljudet bearbetas.'), findsNothing);
@@ -181,8 +193,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.byKey(const ValueKey('home-audio-track-list')), findsOneWidget);
-    expect(find.text('Kvällsmeditation'), findsOneWidget);
-    expect(find.text('Morgonandning'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home-audio-track-media-1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home-audio-track-media-3')),
+      findsOneWidget,
+    );
+    expect(find.text('Kvällsmeditation'), findsNothing);
+    expect(find.text('Morgonandning'), findsNothing);
     expect(find.text('Andning del 1'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('home-audio-track-media-3')));
