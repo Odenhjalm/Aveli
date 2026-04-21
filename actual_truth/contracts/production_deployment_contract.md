@@ -94,22 +94,29 @@ production target:
 
 Launch interpretation:
 
-- The production Supabase project-selection authority is `SUPABASE_PROJECT_REF`
-  only when it matches both `SUPABASE_URL` and the production database
-  URL-derived project ref.
-- The intended production Supabase project is `UNVERIFIED` until
-  `SUPABASE_PROJECT_REF`, `SUPABASE_URL`, and the production database URL-derived
-  project ref all match exactly.
-- If `SUPABASE_PROJECT_REF` is absent or mismatched, no other repo-local value
-  may become production project authority.
+- Repo-local targeting evidence remains non-authoritative for production
+  database selection.
+- Raw secret values MUST NOT be required for production target verification.
+- Production target classification is VERIFIED (`DERIVED_RUNTIME_AUTHORITY`)
+  when all of the following are satisfied:
+  - runtime `DATABASE_URL` resolves to project ref `X`
+  - runtime `SUPABASE_URL` resolves to project ref `X`
+  - both observations originate from Fly logs or runtime environment
+  - `DATABASE_URL` and `SUPABASE_DB_URL` are proven identical by deployed secret digest equality
+  - No conflicting project ref is observed across runtime authority surfaces
+- When those conditions are satisfied, verification must not classify the target as `BLOCKED`.
+- `SUPABASE_PROJECT_REF` is corroborating runtime evidence only when it is
+  present and matches the same runtime-derived project ref. Its absence alone
+  does not prevent VERIFIED (`DERIVED_RUNTIME_AUTHORITY`).
+- If runtime authority surfaces conflict, the production target remains
+  unverified until the conflict is reconciled.
 - The `.vscode/mcp.json` Supabase MCP target is not production database
   authority.
 - `backend/supabase/.temp/*` is repo-local targeting evidence only and is not
   sufficient by itself to prove production database authority.
-- Public launch is blocked until the Supabase project-ref mismatch is resolved
-  and the intended production project is written into the launch environment as
-  matching `SUPABASE_PROJECT_REF`, `SUPABASE_URL`, and production `DATABASE_URL`
-  / `SUPABASE_DB_URL` target evidence.
+- Public launch is blocked until production runtime authority resolves to one
+  exact Supabase project target through either explicit matching runtime
+  configuration or VERIFIED (`DERIVED_RUNTIME_AUTHORITY`).
 
 Backend runtime database authority:
 
@@ -246,11 +253,12 @@ Language and prompt gates:
   exposed outside the approved secret store.
 - Public launch is blocked until exposed production database credentials are
   rotated and all old connection strings are removed from runtime authority.
-- Public launch is blocked if `DATABASE_URL`, `SUPABASE_DB_URL`,
-  `MCP_PRODUCTION_DATABASE_URL`, or `MCP_PRODUCTION_SUPABASE_DB_URL` disagree on
-  the intended Supabase project target.
-- Public launch is blocked if `SUPABASE_PROJECT_REF` and `SUPABASE_URL` disagree
-  or cannot be derived to the same project ref.
+- Raw secret values are not required when runtime connection identity and
+  deployed secret digests already prove the production target.
+- Public launch is blocked if runtime authority surfaces or deployed digests
+  disagree on the intended Supabase project target.
+- Public launch is blocked if runtime `SUPABASE_PROJECT_REF` and runtime
+  `SUPABASE_URL` disagree or cannot be derived to the same project ref.
 - Public launch is blocked if stale Supabase project refs remain in canonical
   production runtime configuration.
 - No credential or connection string in `.vscode/`, `.temp/`, archive material,
@@ -268,8 +276,12 @@ The production deployment contract is satisfied only when all are true:
 - The `worker` process group is verified separately for launch-required worker
   domains.
 - The intended Supabase production project target is explicit and exact.
-- `SUPABASE_PROJECT_REF`, `SUPABASE_URL`, production `DATABASE_URL`, and any
-  production verification `SUPABASE_DB_URL` resolve to the same Supabase project.
+- Production database authority resolves to one exact Supabase project either
+  through explicit matching runtime configuration or VERIFIED
+  (`DERIVED_RUNTIME_AUTHORITY`).
+- Raw secret values are not required when runtime `DATABASE_URL`,
+  runtime `SUPABASE_URL`, and deployed `DATABASE_URL` / `SUPABASE_DB_URL`
+  digest equality already prove the target.
 - Production runtime cannot fall back to local database configuration.
 - The current `backend/supabase/baseline_v2_slots.lock.json` hosted profile is
   applied and verified against the intended production Supabase project.

@@ -101,6 +101,12 @@ Baseline V2 authority interpretation:
 - LiveKit remains paused/inert under
   `actual_truth/contracts/livekit_runtime_contract.md`.
 
+Accepted append-only continuation above the protected range:
+
+- Slot `0022_special_offer_sync_ready_media.sql`
+  - Scoped extension of canonical ready-format matrix and lifecycle transition
+    for `special_offer_composite_image` final JPG media.
+
 ## 3. Domain Classification
 
 Every relation is classified into exactly one baseline authority class:
@@ -423,9 +429,17 @@ Rules:
   `special_offer_composite_image`.
 - `app.media_assets` alone must never become special-offer composite-image
   placement truth.
-- Special-offer composite-image ready-transition expansion and `runtime_media`
-  projection expansion remain separate accepted baseline work. The accepted
-  substrate in this manifest records purpose and placement ownership only.
+- Special-offer composite-image runtime_media projection expansion remains
+  separate accepted baseline work.
+- Baseline slot `0022_special_offer_sync_ready_media.sql` extends canonical
+  ready-format eligibility by exactly one media class:
+  `media_type = image`, `purpose = special_offer_composite_image`, and
+  `playback_format = 'jpg'`.
+- The same slot aligns `app.canonical_worker_transition_media_asset(...)` so
+  only that media class may use `pending_upload -> ready`.
+- This is an intentional schema-level and lifecycle-level alignment for final
+  pre-composed special-offer JPG output. It does not broaden other media
+  purposes, media types, playback formats, or lifecycle paths.
 - Audio `ready` requires `playback_format = 'mp3'`.
 - Direct audio `ready` writes are forbidden.
 - Worker stale-lock release eligibility must match active worker fetch/lock

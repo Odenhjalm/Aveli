@@ -97,6 +97,11 @@ override baseline slots, the lockfile, or accepted contracts.
 Production deployment authority lives in
 `../actual_truth/contracts/production_deployment_contract.md`.
 
+For production target verification, use
+`backend/scripts/verify_production_target.py` with runtime-origin URL evidence
+and deployed secret digests. Raw secret values are not required when runtime
+connection identity and digest equality already prove the target.
+
 This README does not authorize production migration execution, production DB
 mutation, baseline slot edits, or lockfile edits. Production planning must
 follow the accepted production deployment contract, the Baseline V2 freeze

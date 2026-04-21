@@ -88,7 +88,7 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "f3cb6a3e0feee5d51c0900cbfa3509e9dd2932374aaececdccc4fee56a87b7c3",
+    "expected_schema_hash": "9ea538dddcf7f7033500407c90085e9773ef32879f8023126dc871e6d80a6ea5",
     "expected_counts": {
       "enums": 13,
       "tables": 33,
@@ -265,6 +265,12 @@
       "filename": "V2_0021_special_offer_substrate.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0021_special_offer_substrate.sql",
       "sha256": "69bb1c2d6622f70ba307ba2f2a5cbc2ed498b9139ad1509da8c164d9c25ae214"
+    },
+    {
+      "slot": 22,
+      "filename": "V2_0022_special_offer_sync_ready_media.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0022_special_offer_sync_ready_media.sql",
+      "sha256": "bd9c74f4f460a7859b625bba6f6ae9c51a974efd8e01140daf17889a63d218e2"
     }
   ]
 }
