@@ -310,8 +310,21 @@ async def test_studio_home_player_library_endpoint_runs_against_baseline_schema(
         assert payload["text_bundle"]["home.player_upload.title"]["authority_class"] == (
             "contract_text"
         )
+        assert payload["text_bundle"]["home.player_upload.auth_failed_error"]["value"] == (
+            "Du har inte behörighet att hantera uppladdningen i Home-spelaren."
+        )
     finally:
         await _cleanup_user(user_id)
+
+
+async def test_studio_home_player_library_requires_backend_owned_auth_copy(async_client):
+    response = await async_client.get("/studio/home-player/library")
+    assert response.status_code == 401, response.text
+    assert response.json() == {
+        "status": "error",
+        "error_code": "home_player_auth_failed",
+        "message": "Du har inte behörighet att hantera Home-spelaren.",
+    }
 
 
 async def test_home_audio_runtime_endpoint_shape_is_unaffected(
@@ -355,10 +368,13 @@ async def test_home_audio_runtime_endpoint_shape_is_unaffected(
         response = await async_client.get("/home/audio", headers=headers)
         assert response.status_code == 200, response.text
         payload = response.json()
-        assert set(payload) == {"items"}
+        assert set(payload) == {"items", "text_bundle"}
         assert "uploads" not in payload
         assert "course_links" not in payload
         assert "course_media" not in payload
+        assert payload["text_bundle"]["home.audio.section_title"]["value"] == (
+            "Ljud i Home-spelaren"
+        )
         item = payload["items"][0]
         assert item["media"] == {
             "media_id": media_asset_id,

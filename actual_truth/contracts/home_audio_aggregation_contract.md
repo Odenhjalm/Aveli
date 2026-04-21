@@ -60,6 +60,67 @@ This contract does not define general media doctrine, media representation doctr
 - Canonical access for course-linked home audio still derives only from the
   approved course/lesson access truth referenced by this contract.
 
+## 3B. STUDIO SOURCE MANAGEMENT SURFACE
+
+The canonical Studio Home Player management surface is exactly:
+
+- `GET /studio/home-player/library`
+- `POST /studio/home-player/uploads`
+- `PATCH /studio/home-player/uploads/{upload_id}`
+- `DELETE /studio/home-player/uploads/{upload_id}`
+- `POST /studio/home-player/course-links`
+- `PATCH /studio/home-player/course-links/{link_id}`
+- `DELETE /studio/home-player/course-links/{link_id}`
+
+No alternate Studio Home Player management route family is canonical.
+
+### direct_upload source-row create law
+
+`POST /studio/home-player/uploads` creates one direct-upload source row linking
+one teacher to one existing canonical `media_asset_id`.
+
+Create preconditions:
+
+- the referenced `media_asset_id` MUST exist
+- the referenced asset MUST have `purpose = home_player_audio`
+- the referenced asset MUST have `media_type = audio`
+- the caller MUST prove teacher ownership of that exact `media_asset_id`
+
+Ownership proof law:
+
+- purpose/type validation alone is insufficient
+- ownership MUST derive from canonical asset owner context for the referenced
+  `home_player_audio` asset
+- cross-user asset usage is forbidden
+- a teacher MUST NOT create a `home_player_uploads` row pointing at another
+  teacher's `media_asset_id`
+
+Mutation boundary:
+
+- create/update/delete on `/studio/home-player/uploads*` may mutate only
+  `app.home_player_uploads`
+- these routes must not rewrite media-asset ownership, create playback URLs, or
+  create learner runtime truth
+
+### course_link source-row law
+
+`POST /studio/home-player/course-links` creates or updates one course-link
+source row linking one teacher-owned `lesson_media` item into Home audio.
+
+Create/update/delete preconditions:
+
+- the referenced `lesson_media` row MUST exist
+- the linked media asset MUST be `media_type = audio`
+- the linked media asset MUST remain canonical lesson media
+- the caller MUST be the owner of the referenced course
+
+Mutation boundary:
+
+- `/studio/home-player/course-links*` may mutate only
+  `app.home_player_course_links`
+- these routes must not create media assets, rewrite lesson-media ownership, or
+  create learner runtime truth
+
 ## 4. ACCESS LAW
 
 - Inclusion does NOT grant access.
@@ -97,6 +158,24 @@ This contract does not define general media doctrine, media representation doctr
   course-linked home-audio inclusion.
 - Backend composition MAY read canonical source truth and projection/read
   inputs, but MUST NOT write source authority.
+
+## 6A. FRONTEND CONSUMPTION LAW
+
+The canonical learner-facing Home Player runtime surface is the mounted Home
+Player UI consuming:
+
+- `GET /home/audio`
+
+Rules:
+
+- the learner-facing Home Player surface MUST consume `/home/audio`
+- frontend MUST NOT replace the Home Player runtime with unrelated course,
+  landing, or showcase data
+- frontend MUST NOT omit the `/home/audio` consumer while the Home Player
+  feature is mounted
+- frontend MUST NOT bypass `/home/audio` by constructing playback state or
+  playback URLs from source tables, `media_asset_id`, or storage fields
+- frontend MUST render only backend-composed governed Home audio output
 
 ## 7. EXCLUDED SCOPE
 

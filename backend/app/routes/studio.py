@@ -508,6 +508,22 @@ async def _authorize_canonical_media_upload_asset(
     )
 
 
+async def _authorize_studio_home_player_upload_asset(
+    *,
+    media_asset_id: str,
+    current: TeacherEntryUser,
+) -> dict[str, Any]:
+    media_asset = await _authorize_canonical_media_upload_asset(
+        media_asset_id=media_asset_id,
+        current=current,
+    )
+    if str(media_asset.get("purpose") or "").strip().lower() != "home_player_audio":
+        raise HTTPException(status_code=422, detail="Invalid media purpose")
+    if str(media_asset.get("media_type") or "").strip().lower() != "audio":
+        raise HTTPException(status_code=422, detail="Invalid media type")
+    return media_asset
+
+
 _MAX_MEDIA_BYTES = settings.lesson_media_max_bytes
 _MAX_COURSE_COVER_BYTES = max(1, int(settings.media_upload_max_image_bytes))
 _UPLOAD_SESSION_EXPIRES_SECONDS = 2 * 60 * 60
@@ -1602,15 +1618,10 @@ async def studio_create_home_player_upload(
     normalized_title = (payload.title or "").strip()
     if not normalized_title:
         raise HTTPException(status_code=422, detail="title is required")
-    media_asset = await home_audio_sources_repo.get_home_audio_media_asset(
-        str(payload.media_asset_id)
+    await _authorize_studio_home_player_upload_asset(
+        media_asset_id=str(payload.media_asset_id),
+        current=current,
     )
-    if not media_asset:
-        raise HTTPException(status_code=404, detail="Media not found")
-    if str(media_asset.get("purpose") or "").strip().lower() != "home_player_audio":
-        raise HTTPException(status_code=422, detail="Invalid media purpose")
-    if str(media_asset.get("media_type") or "").strip().lower() != "audio":
-        raise HTTPException(status_code=422, detail="Invalid media type")
 
     created = await home_audio_sources_repo.create_home_player_upload(
         teacher_id=teacher_id,

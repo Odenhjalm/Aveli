@@ -95,6 +95,18 @@ and lesson unlock position.
 - `drip_interval_days`: canonical course-level drip interval when drip is
   enabled; `null` when drip is disabled.
 
+### Course Family Terms
+
+Canonical course-grouping terminology is locked:
+
+- `course family` means only `app.courses.course_group_id`.
+- `course position` means only `app.courses.group_position`.
+
+No alternate persisted field, derived field, response alias, write alias, or
+compatibility alias is canonical course-family or course-position authority.
+Human-facing labels may vary, but they remain non-authoritative and MUST map
+back to `course_group_id` and `group_position` without changing meaning.
+
 Accepted baseline ownership and monetization fields on `app.courses` are:
 
 - `teacher_id`
@@ -210,7 +222,7 @@ The authoritative course-domain relation graph is:
 
 ```text
 app.courses.course_group_id + app.courses.group_position
-  -> course progression set and course progression order
+  -> course family membership and deterministic family order
 
 app.courses.id
   -> app.lessons.course_id
@@ -318,23 +330,47 @@ Course covers are course structure assignment through `app.courses.cover_media_i
 Media ingest and media worker behavior MUST NOT assign, replace, or clear
 `app.courses.cover_media_id`.
 
-## 7. PROGRESSION MODEL (course + lesson ordering)
+## 7. PROGRESSION MODEL (course family + course order + lesson ordering)
 
-Course progression is defined only by:
+Course family and course order are defined only by:
 
 - `app.courses.course_group_id`
 - `app.courses.group_position`
 
-Valid `group_position` values are non-negative integers:
+No other persisted field, view field, write field, response field, or
+compatibility field may become canonical course-family or course-order
+authority.
 
-- `0` is a valid progression position
-- `1..n` are valid ordered progression positions
+A course family has no separate table, row, or identity owner outside
+`app.courses`.
+A course family exists if and only if one or more `app.courses` rows reference
+a given `course_group_id`.
+If no `app.courses` rows reference a `course_group_id`, that family has no
+canonical persisted existence.
 
-`group_position` alone MUST NOT decide whether a course is intro/free,
-purchasable, or enrollable. `app.courses.required_enrollment_source` is the
-course-access classification authority for protected course access.
+Course family invariants:
 
-Within a `course_group_id`, progression order is strictly defined by
+- every course MUST have exactly one non-null `course_group_id`
+- every course MUST have exactly one non-null `group_position`
+- `group_position` MUST be an integer `>= 0`
+- `(course_group_id, group_position)` MUST be unique
+- within one `course_group_id` containing `n` courses, valid positions are
+  exactly `0..(n-1)`
+- sparse family positions are forbidden
+- duplicate family positions are forbidden
+- negative family positions are forbidden
+
+Position `0` law:
+
+- position `0` is the reserved intro slot of a course family in structural
+  sequencing only
+- exactly one course may occupy position `0` in a family
+- position `0` means only "first course in the family sequence"
+- position `0` MUST NOT mean free access, paid access, public visibility,
+  enrollability, purchasability, `intro_enrollment`, `purchase`, sellability,
+  or bundle membership
+
+Within a `course_group_id`, family order is strictly defined by
 `group_position`.
 `course_group_id` MUST NOT be used for categories, tags, discovery filters, or
 arbitrary grouping.
@@ -342,6 +378,82 @@ arbitrary grouping.
 The legacy public/domain field name `step` MUST NOT be emitted or accepted as a
 course progression authority. It MUST NOT be used as the Baseline V2 course
 access classification authority.
+
+Canonical family transitions are:
+
+### CREATE COURSE
+
+- no implicit default course family exists
+- no implicit default course position exists
+- course creation MUST provide explicit `course_group_id` and explicit
+  `group_position`
+- creating a new family is valid only when the submitted `course_group_id` does
+  not yet exist and `group_position = 0`
+- creating into an existing family is valid only when the submitted
+  `group_position` is within `0..n`, where `n` is the current course count of
+  the target family before insert
+- creating into an existing family at position `p` MUST shift every existing
+  course in that family with `group_position >= p` up by `1`
+- the committed result of create MUST leave the target family contiguous as
+  `0..(n)` after the new course is inserted
+- the caller supplies authoring intent; backend validation and persistence are
+  the only authority allowed to commit resulting canonical family order
+
+### MOVE COURSE BETWEEN FAMILIES
+
+- a move between families MUST specify explicit target `course_group_id` and
+  explicit target `group_position`
+- moving a course to the same `course_group_id` is a reorder, not a
+  cross-family move
+- moving a course into a different existing family at position `p` MUST:
+  remove the course from its source family, collapse every source-family
+  position above the old position by `-1`, shift every target-family position
+  `>= p` by `+1`, and persist the moved course at `p`
+- moving a course into a different existing family is valid only when the
+  target `group_position` is within `0..n`, where `n` is the current course
+  count of the target family before insert
+- moving a course into a new family is valid only when the target
+  `course_group_id` is unused and the target `group_position = 0`
+- if the source family becomes empty after the move, the source family ceases
+  to exist canonically by absence of referencing `app.courses` rows
+- a cross-family move MUST commit atomically across both affected families and
+  MUST NOT persist duplicate or sparse positions as committed truth
+
+### REORDER WITHIN FAMILY
+
+- reorder within a family applies only when `course_group_id` is unchanged
+- reorder within a family is valid only when the target `group_position` is
+  within `0..(n-1)` for the current family size `n`
+- reordering from old position `a` to new position `b` within the same family
+  MUST leave the family contiguous as `0..(n-1)`
+- if `b > a`, courses with positions `(a+1)..b` MUST shift by `-1`
+- if `b < a`, courses with positions `b..(a-1)` MUST shift by `+1`
+- the moved course MUST persist at position `b`
+- reorder MUST commit atomically and MUST NOT persist an intermediate duplicate,
+  sparse, or ambiguous family order as committed truth
+
+### DELETE COURSE
+
+- deleting a course removes that `app.courses` row from canonical truth
+- after delete, every remaining course in the same family with position above
+  the deleted position MUST shift by `-1`
+- delete MUST NOT leave a position gap in the remaining family
+- deleting the final course in a family removes that family's canonical
+  existence by absence of referencing `app.courses` rows
+
+Cross-domain alignment rules:
+
+- `group_position` MUST NOT grant access
+- `group_position` MUST NOT define free vs paid
+- `group_position` MUST NOT define enrollable vs non-enrollable
+- `group_position` MUST NOT define purchasable vs non-purchasable
+- `group_position` MUST NOT override `required_enrollment_source`
+- `group_position` MUST NOT replace
+  `app.course_enrollments.current_unlock_position`
+- `course_group_id` and `group_position` MUST NOT define sellability, order
+  state, payment state, membership state, bundle composition, or bundle order
+- bundle composition and bundle order are not course-family authority and MUST
+  NOT be inferred from course-family order
 
 Lesson ordering is defined only by `app.lessons.position`.
 
@@ -522,6 +634,20 @@ The following patterns are forbidden:
 - using `title` as lesson runtime authority
 - using `is_intro` as lesson authority
 - using categories, tags, or arbitrary grouping as `course_group_id` meaning
+- creating or moving a course into a new family with `group_position <> 0`
+- creating, moving, reordering, or deleting a course in a way that leaves a
+  family sparse instead of contiguous
+- using a family position outside the valid contiguous range for that family
+- allowing multiple courses to occupy the same `group_position` within one
+  `course_group_id`
+- allowing `course_group_id` or `group_position` to be missing on a canonical
+  course row
+- introducing a second canonical family or course-order owner outside
+  `app.courses`
+- using `app.course_bundles`, `app.course_bundle_courses`, or
+  `app.bundle_order_courses` as course-family authority
+- using `group_position` as access, monetization, bundle, order, payment, or
+  membership authority
 - treating `course_discovery_surface` as enrollment-gated
 - treating `lesson_structure_surface` as `lesson_content_surface`
 - conflating `course_discovery_surface` or `lesson_structure_surface` with
@@ -647,6 +773,14 @@ Final assertion:
 The Aveli course domain is fully specified by this contract for course,
 lesson, content, media, progression, access, frontend media shape, runtime
 resolution, fail-closed behavior, and legacy migration boundaries.
+
+Course family authority is fully specified only by
+`app.courses.course_group_id`.
+Course position authority is fully specified only by
+`app.courses.group_position`.
+The invariants, transitions, and forbidden states for course families and
+course order are fully locked by this contract and MUST NOT be redefined
+elsewhere.
 
 This contract is deterministic, enforcement-ready, and suitable as a blocking
 authority for future audits and implementations.

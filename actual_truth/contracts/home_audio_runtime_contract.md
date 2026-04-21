@@ -60,3 +60,18 @@ observability/support only.
 - download URL fields MUST NOT be emitted as contract output
 - storage-derived playback fields MUST NOT be emitted as contract output
 - No additional playback resolver payload fields may be emitted
+
+## MOUNTED FRONTEND CONSUMER LAW
+
+The mounted learner-facing Home Player UI MUST consume `GET /home/audio` as its
+canonical runtime feed.
+
+Frontend consumer rules:
+
+- frontend MUST render the governed item shape from this contract
+- frontend MUST NOT leave `/home/audio` without a mounted learner-facing
+  consumer when the Home Player feature is present
+- frontend MUST NOT substitute another endpoint, local cache model, course
+  showcase payload, or direct lesson-media query for the Home Player runtime
+- frontend MUST NOT construct playback from `media_asset_id`, storage path,
+  source-object path, signed URL, or any other non-contract field

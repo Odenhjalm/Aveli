@@ -27,6 +27,8 @@ class _DialogStudioRepository extends StudioRepository {
   int uploadCreateCalls = 0;
   int refreshCalls = 0;
   int createFromStorageCalls = 0;
+  String? lastRequestedFilename;
+  String? lastRequestedMimeType;
 
   @override
   Future<Map<String, Object?>> requestHomePlayerUploadUrl({
@@ -35,6 +37,8 @@ class _DialogStudioRepository extends StudioRepository {
     required int sizeBytes,
   }) async {
     requestUploadUrlCalls += 1;
+    lastRequestedFilename = filename;
+    lastRequestedMimeType = mimeType;
     return <String, Object?>{
       'media_asset_id': 'media-1',
       'asset_state': 'pending_upload',
@@ -155,6 +159,7 @@ void main() {
       expect(studioRepo.refreshCalls, 0);
       expect(studioRepo.createFromStorageCalls, 0);
       expect(find.text('Laddar upp ljud'), findsNothing);
+      expect(studioRepo.lastRequestedMimeType, 'audio/mpeg');
 
       final uploadRequests = harness.adapter.requestsFor(
         '/api/media-assets/media-1/upload-bytes',
@@ -175,10 +180,265 @@ void main() {
       expect(statusRequests.single.method, 'GET');
     },
   );
+
+  testWidgets('upload dialog accepts M4A through canonical upload-url flow', (
+    tester,
+  ) async {
+    final studioRepo = _DialogStudioRepository();
+    final harness = await _PipelineHarness.create();
+    final pipelineRepo = MediaPipelineRepository(client: harness.client);
+    final file = WavUploadFile(
+      fs.XFile.fromData(
+        Uint8List.fromList(<int>[1, 2, 3, 4]),
+        name: 'demo.m4a',
+        mimeType: 'audio/mp4',
+      ),
+      'audio/mp4',
+      4,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          studioRepositoryProvider.overrideWithValue(studioRepo),
+          mediaPipelineRepositoryProvider.overrideWithValue(pipelineRepo),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                return FilledButton(
+                  onPressed: () {
+                    showDialog<bool>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => HomePlayerUploadDialog(
+                        file: file,
+                        title: 'Kvällsljud',
+                        contentType: 'audio/mp4',
+                        textBundle: _textBundle(),
+                      ),
+                    );
+                  },
+                  child: const Text('Öppna dialog'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Öppna dialog'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(studioRepo.requestUploadUrlCalls, 1);
+    expect(studioRepo.lastRequestedMimeType, 'audio/m4a');
+    expect(studioRepo.createFromStorageCalls, 0);
+  });
+
+  testWidgets('upload dialog stops polling after auth failure', (tester) async {
+    final studioRepo = _DialogStudioRepository();
+    final harness = await _PipelineHarness.create(
+      handler: (options) {
+        if (options.path == '/api/media-assets/media-1/upload-bytes' &&
+            options.method.toUpperCase() == 'PUT') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: const <String, Object?>{},
+          );
+        }
+        if (options.path == '/api/media-assets/media-1/upload-completion' &&
+            options.method.toUpperCase() == 'POST') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: <String, Object?>{
+              'media_asset_id': 'media-1',
+              'asset_state': 'uploaded',
+            },
+          );
+        }
+        if (options.path == '/api/media-assets/media-1/status' &&
+            options.method.toUpperCase() == 'GET') {
+          return _jsonResponse(
+            statusCode: 403,
+            body: <String, Object?>{'detail': 'forbidden'},
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      },
+    );
+    final pipelineRepo = MediaPipelineRepository(client: harness.client);
+    final file = WavUploadFile(
+      fs.XFile.fromData(
+        Uint8List.fromList(<int>[1, 2, 3, 4]),
+        name: 'demo.mp3',
+        mimeType: 'audio/mpeg',
+      ),
+      'audio/mpeg',
+      4,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          studioRepositoryProvider.overrideWithValue(studioRepo),
+          mediaPipelineRepositoryProvider.overrideWithValue(pipelineRepo),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                return FilledButton(
+                  onPressed: () {
+                    showDialog<bool>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => HomePlayerUploadDialog(
+                        file: file,
+                        title: 'Morgonljud',
+                        contentType: 'audio/mpeg',
+                        textBundle: _textBundle(),
+                      ),
+                    );
+                  },
+                  child: const Text('Öppna dialog'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Öppna dialog'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(
+      harness.adapter.requestsFor('/api/media-assets/media-1/status'),
+      hasLength(1),
+    );
+
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+
+    expect(
+      harness.adapter.requestsFor('/api/media-assets/media-1/status'),
+      hasLength(1),
+    );
+    expect(
+      find.text(_textBundle().requireValue('home.player_upload.retry_action')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'upload dialog stops periodic polling after transient refresh failure',
+    (tester) async {
+      final studioRepo = _DialogStudioRepository();
+      final harness = await _PipelineHarness.create(
+        handler: (options) {
+          if (options.path == '/api/media-assets/media-1/upload-bytes' &&
+              options.method.toUpperCase() == 'PUT') {
+            return _jsonResponse(
+              statusCode: 200,
+              body: const <String, Object?>{},
+            );
+          }
+          if (options.path == '/api/media-assets/media-1/upload-completion' &&
+              options.method.toUpperCase() == 'POST') {
+            return _jsonResponse(
+              statusCode: 200,
+              body: <String, Object?>{
+                'media_asset_id': 'media-1',
+                'asset_state': 'uploaded',
+              },
+            );
+          }
+          if (options.path == '/api/media-assets/media-1/status' &&
+              options.method.toUpperCase() == 'GET') {
+            return _jsonResponse(
+              statusCode: 500,
+              body: <String, Object?>{'detail': 'temporary'},
+            );
+          }
+          return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+        },
+      );
+      final pipelineRepo = MediaPipelineRepository(client: harness.client);
+      final file = WavUploadFile(
+        fs.XFile.fromData(
+          Uint8List.fromList(<int>[1, 2, 3, 4]),
+          name: 'demo.mp3',
+          mimeType: 'audio/mpeg',
+        ),
+        'audio/mpeg',
+        4,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            studioRepositoryProvider.overrideWithValue(studioRepo),
+            mediaPipelineRepositoryProvider.overrideWithValue(pipelineRepo),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) {
+                  return FilledButton(
+                    onPressed: () {
+                      showDialog<bool>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => HomePlayerUploadDialog(
+                          file: file,
+                          title: 'Morgonljud',
+                          contentType: 'audio/mpeg',
+                          textBundle: _textBundle(),
+                        ),
+                      );
+                    },
+                    child: const Text('Öppna dialog'),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Öppna dialog'));
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(
+        harness.adapter.requestsFor('/api/media-assets/media-1/status'),
+        hasLength(1),
+      );
+
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+
+      expect(
+        harness.adapter.requestsFor('/api/media-assets/media-1/status'),
+        hasLength(1),
+      );
+      expect(
+        find.text(
+          _textBundle().requireValue('home.player_upload.retry_action'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 }
 
 HomePlayerTextBundle _textBundle() {
-  const sourceContract = 'actual_truth/contracts/backend_text_catalog_contract.md';
+  const sourceContract =
+      'actual_truth/contracts/backend_text_catalog_contract.md';
   const apiSurface = '/studio/home-player/library';
   HomePlayerCatalogTextValue entry(
     String textId,
@@ -313,7 +573,9 @@ class _PipelineHarness {
   final ApiClient client;
   final _RecordingAdapter adapter;
 
-  static Future<_PipelineHarness> create() async {
+  static Future<_PipelineHarness> create({
+    ResponseBody Function(RequestOptions options)? handler,
+  }) async {
     final storage = _MemoryFlutterSecureStorage();
     final tokens = TokenStorage(storage: storage);
     await tokens.saveTokens(
@@ -325,35 +587,37 @@ class _PipelineHarness {
       baseUrl: 'http://127.0.0.1:1',
       tokenStorage: tokens,
     );
-    final adapter = _RecordingAdapter((options) {
-      if (options.path == '/api/media-assets/media-1/upload-bytes' &&
-          options.method.toUpperCase() == 'PUT') {
-        return _jsonResponse(statusCode: 200, body: const <String, Object?>{});
-      }
-      if (options.path == '/api/media-assets/media-1/upload-completion' &&
-          options.method.toUpperCase() == 'POST') {
-        return _jsonResponse(
-          statusCode: 200,
-          body: <String, Object?>{
-            'media_asset_id': 'media-1',
-            'asset_state': 'uploaded',
-          },
-        );
-      }
-      if (options.path == '/api/media-assets/media-1/status' &&
-          options.method.toUpperCase() == 'GET') {
-        return _jsonResponse(
-          statusCode: 200,
-          body: <String, Object?>{
-            'media_asset_id': 'media-1',
-            'asset_state': 'ready',
-          },
-        );
-      }
-      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
-    });
+    final adapter = _RecordingAdapter(handler ?? _defaultHandler);
     client.raw.httpClientAdapter = adapter;
     return _PipelineHarness(client: client, adapter: adapter);
+  }
+
+  static ResponseBody _defaultHandler(RequestOptions options) {
+    if (options.path == '/api/media-assets/media-1/upload-bytes' &&
+        options.method.toUpperCase() == 'PUT') {
+      return _jsonResponse(statusCode: 200, body: const <String, Object?>{});
+    }
+    if (options.path == '/api/media-assets/media-1/upload-completion' &&
+        options.method.toUpperCase() == 'POST') {
+      return _jsonResponse(
+        statusCode: 200,
+        body: <String, Object?>{
+          'media_asset_id': 'media-1',
+          'asset_state': 'uploaded',
+        },
+      );
+    }
+    if (options.path == '/api/media-assets/media-1/status' &&
+        options.method.toUpperCase() == 'GET') {
+      return _jsonResponse(
+        statusCode: 200,
+        body: <String, Object?>{
+          'media_asset_id': 'media-1',
+          'asset_state': 'ready',
+        },
+      );
+    }
+    return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
   }
 }
 

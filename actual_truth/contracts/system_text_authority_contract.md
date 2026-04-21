@@ -405,6 +405,39 @@ Home, course, lesson, Studio, and Editor:
 - Course titles, short descriptions, lesson titles, lesson markdown, home
   player titles, and bundle titles are `db_domain_content`.
 
+### Home Player Exact-Copy Failure Surfaces
+
+The following Home Player surfaces are explicit text-authority surfaces:
+
+- Studio Home Player library load failures
+- Studio Home Player upload start failures
+- Studio Home Player upload save/registration failures
+- Studio Home Player upload status-refresh failures
+- Studio Home Player upload auth failures
+- Studio Home Player processing-terminal failures
+- Studio Home Player course-link create/update/delete failures
+- learner `/home/audio` load and access failures
+
+Authority law for these surfaces:
+
+- user-facing failure copy MUST be `backend_error_text`
+- user-facing progress, waiting, and completion copy MUST be
+  `backend_status_text`
+- backend may expose stable English `snake_case` error codes only as
+  `non_user_facing_identifier`
+- backend must not use raw `detail`, raw framework exception text, storage
+  errors, provider errors, or transport-library strings as product copy
+- frontend must not render raw backend strings for these surfaces
+- if a canonical backend error envelope is absent, frontend must render
+  backend-owned catalog/status text rather than raw payload text
+
+Auth failure law for Home Player surfaces:
+
+- `401` and `403` on Home Player library, upload, upload-completion, status,
+  source-mutation, and learner-feed surfaces are auth failures
+- auth failures must resolve to Swedish backend-owned copy
+- frontend must not repair auth copy from raw payload text
+
 Media and Admin:
 
 - Product-visible media/admin UI chrome and status text are `contract_text`,

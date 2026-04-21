@@ -1,6 +1,7 @@
 enum HomePlayerUploadRoute {
   wavPipeline,
   directMp3,
+  directM4a,
   unsupportedAudio,
   unsupportedVideo,
   unsupportedOther,
@@ -14,6 +15,7 @@ const _wavMimeTypes = <String>{
 };
 
 const _mp3MimeTypes = <String>{'audio/mpeg', 'audio/mp3'};
+const _m4aMimeTypes = <String>{'audio/m4a', 'audio/mp4'};
 
 HomePlayerUploadRoute detectHomePlayerUploadRoute({
   required String mimeType,
@@ -29,6 +31,10 @@ HomePlayerUploadRoute detectHomePlayerUploadRoute({
   final isMp3 =
       _mp3MimeTypes.contains(lowerMime) || filenameLower.endsWith('.mp3');
   if (isMp3) return HomePlayerUploadRoute.directMp3;
+
+  final isM4a =
+      _m4aMimeTypes.contains(lowerMime) || filenameLower.endsWith('.m4a');
+  if (isM4a) return HomePlayerUploadRoute.directM4a;
 
   if (lowerMime.startsWith('audio/')) {
     return HomePlayerUploadRoute.unsupportedAudio;
@@ -52,6 +58,8 @@ String homePlayerUploadNormalizedMimeType(HomePlayerUploadRoute route) {
       return 'audio/wav';
     case HomePlayerUploadRoute.directMp3:
       return 'audio/mpeg';
+    case HomePlayerUploadRoute.directM4a:
+      return 'audio/m4a';
     case HomePlayerUploadRoute.unsupportedAudio:
     case HomePlayerUploadRoute.unsupportedVideo:
     case HomePlayerUploadRoute.unsupportedOther:
@@ -69,6 +77,7 @@ String? homePlayerUploadUnsupportedTextId(HomePlayerUploadRoute route) {
       return 'home.player_upload.unsupported_other_error';
     case HomePlayerUploadRoute.wavPipeline:
     case HomePlayerUploadRoute.directMp3:
+    case HomePlayerUploadRoute.directM4a:
       return null;
   }
 }

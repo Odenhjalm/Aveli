@@ -49,6 +49,7 @@ class _HomePlayerUploadDialogState
 
   Timer? _pollTimer;
   WavUploadCancelToken? _cancelToken;
+  String? _pollMediaId;
 
   @override
   void initState() {
@@ -63,19 +64,28 @@ class _HomePlayerUploadDialogState
     super.dispose();
   }
 
+  void _stopPolling({bool clearMediaId = false}) {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    if (clearMediaId) {
+      _pollMediaId = null;
+    }
+  }
+
   void _cancelUpload() {
     _cancelToken?.cancel();
   }
 
   Future<void> _start() async {
     if (_uploading || _processing) return;
-    _pollTimer?.cancel();
-    _pollTimer = null;
+    _stopPolling(clearMediaId: true);
 
     setState(() {
       _progress = 0.0;
       _error = null;
-      _status = widget.textBundle.requireValue('home.player_upload.prepare_status');
+      _status = widget.textBundle.requireValue(
+        'home.player_upload.prepare_status',
+      );
       _uploading = true;
       _processing = false;
     });
@@ -212,9 +222,12 @@ class _HomePlayerUploadDialogState
       );
       _startPolling(mediaId);
     } catch (error, stackTrace) {
-      final message =
-          _canonicalBackendMessage(error, stackTrace) ??
-          widget.textBundle.requireValue('home.player_upload.save_failed_error');
+      final message = _backendOwnedMessage(
+        error,
+        stackTrace,
+        fallbackTextId: 'home.player_upload.save_failed_error',
+        unauthorizedTextId: 'home.player_upload.auth_failed_error',
+      );
       if (!mounted) return;
       setState(() {
         _processing = false;
@@ -225,8 +238,12 @@ class _HomePlayerUploadDialogState
   }
 
   String _messageForUploadStartFailure(Object error, StackTrace stackTrace) {
-    return _canonicalBackendMessage(error, stackTrace) ??
-        widget.textBundle.requireValue('home.player_upload.start_failed_error');
+    return _backendOwnedMessage(
+      error,
+      stackTrace,
+      fallbackTextId: 'home.player_upload.start_failed_error',
+      unauthorizedTextId: 'home.player_upload.auth_failed_error',
+    );
   }
 
   String? _canonicalBackendMessage(Object error, StackTrace stackTrace) {
@@ -238,10 +255,31 @@ class _HomePlayerUploadDialogState
     return null;
   }
 
+  String _backendOwnedMessage(
+    Object error,
+    StackTrace stackTrace, {
+    required String fallbackTextId,
+    String? unauthorizedTextId,
+  }) {
+    final canonical = _canonicalBackendMessage(error, stackTrace);
+    if (canonical != null) {
+      return canonical;
+    }
+    final failure = AppFailure.from(error, stackTrace);
+    if (unauthorizedTextId != null &&
+        failure.kind == AppFailureKind.unauthorized &&
+        widget.textBundle.entries.containsKey(unauthorizedTextId)) {
+      return widget.textBundle.requireValue(unauthorizedTextId);
+    }
+    return widget.textBundle.requireValue(fallbackTextId);
+  }
+
   void _showUploadFailure(String message) {
     if (!mounted) return;
+    _stopPolling(clearMediaId: true);
     setState(() {
       _uploading = false;
+      _processing = false;
       _error = message;
       _status = message;
       _cancelToken = null;
@@ -249,12 +287,30 @@ class _HomePlayerUploadDialogState
   }
 
   void _startPolling(String mediaId) {
-    _pollTimer?.cancel();
+    _pollMediaId = mediaId;
+    _stopPolling();
     _pollTimer = Timer.periodic(_pollInterval, (_) => _pollStatus(mediaId));
     _pollStatus(mediaId);
   }
 
-  Future<void> _pollStatus(String mediaId) async {
+  Future<void> _refreshProcessingStatus() async {
+    final mediaId = _pollMediaId;
+    if (mediaId == null) return;
+    if (!mounted) return;
+    setState(() {
+      _error = null;
+      _status = widget.textBundle.requireValue(
+        'home.player_upload.processing_status',
+      );
+      _processing = true;
+    });
+    await _pollStatus(mediaId, keepPollingOnPending: false);
+  }
+
+  Future<void> _pollStatus(
+    String mediaId, {
+    bool keepPollingOnPending = true,
+  }) async {
     try {
       final repo = ref.read(mediaPipelineRepositoryProvider);
       final status = await repo.fetchStatus(mediaId);
@@ -265,17 +321,17 @@ class _HomePlayerUploadDialogState
         ref.invalidate(homePlayerLibraryProvider);
         setState(() {
           _processing = false;
-          _status = widget.textBundle.requireValue('home.player_upload.ready_status');
+          _status = widget.textBundle.requireValue(
+            'home.player_upload.ready_status',
+          );
         });
-        _pollTimer?.cancel();
-        _pollTimer = null;
+        _stopPolling(clearMediaId: true);
         Navigator.of(context).pop(true);
         return;
       }
 
       if (state == 'failed') {
-        _pollTimer?.cancel();
-        _pollTimer = null;
+        _stopPolling(clearMediaId: true);
         ref.invalidate(homePlayerLibraryProvider);
         setState(() {
           _processing = false;
@@ -290,16 +346,45 @@ class _HomePlayerUploadDialogState
       }
 
       setState(() {
+        _error = null;
+        _processing = keepPollingOnPending;
         _status = widget.textBundle.requireValue(
           'home.player_upload.processing_status',
         );
       });
-    } catch (_) {
+      if (!keepPollingOnPending) {
+        _stopPolling();
+      }
+    } on DioException catch (error, stackTrace) {
+      final statusCode = error.response?.statusCode;
+      final message = _backendOwnedMessage(
+        error,
+        stackTrace,
+        fallbackTextId: 'home.player_upload.refresh_failed_error',
+        unauthorizedTextId: 'home.player_upload.auth_failed_error',
+      );
+      _stopPolling();
       if (!mounted) return;
       setState(() {
-        _error = widget.textBundle.requireValue(
-          'home.player_upload.refresh_failed_error',
-        );
+        _processing = false;
+        _error = message;
+        _status = message;
+      });
+      if (statusCode == 401 || statusCode == 403) {
+        return;
+      }
+    } catch (error, stackTrace) {
+      final message = _backendOwnedMessage(
+        error,
+        stackTrace,
+        fallbackTextId: 'home.player_upload.refresh_failed_error',
+      );
+      _stopPolling();
+      if (!mounted) return;
+      setState(() {
+        _processing = false;
+        _error = message;
+        _status = message;
       });
     }
   }
@@ -323,6 +408,7 @@ class _HomePlayerUploadDialogState
     final canDismiss = !_uploading;
     final theme = Theme.of(context);
     final percent = (_progress * 100).clamp(0, 100).toStringAsFixed(0);
+    final progressValue = _uploading ? _progress : (_processing ? null : 0.0);
 
     return PopScope(
       canPop: canDismiss,
@@ -355,7 +441,7 @@ class _HomePlayerUploadDialogState
                 ),
               ),
               const SizedBox(height: 10),
-              LinearProgressIndicator(value: _uploading ? _progress : null),
+              LinearProgressIndicator(value: progressValue),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -402,7 +488,19 @@ class _HomePlayerUploadDialogState
               onPressed: _cancelUpload,
               icon: const Icon(Icons.stop_circle_outlined),
               label: Text(
-                widget.textBundle.requireValue('home.player_upload.cancel_action'),
+                widget.textBundle.requireValue(
+                  'home.player_upload.cancel_action',
+                ),
+              ),
+            )
+          else if (_pollMediaId != null && _pollTimer == null)
+            FilledButton.icon(
+              onPressed: _refreshProcessingStatus,
+              icon: const Icon(Icons.refresh),
+              label: Text(
+                widget.textBundle.requireValue(
+                  'home.player_upload.retry_action',
+                ),
               ),
             )
           else if (_error != null && !_processing)
@@ -410,7 +508,9 @@ class _HomePlayerUploadDialogState
               onPressed: _start,
               icon: const Icon(Icons.refresh),
               label: Text(
-                widget.textBundle.requireValue('home.player_upload.retry_action'),
+                widget.textBundle.requireValue(
+                  'home.player_upload.retry_action',
+                ),
               ),
             ),
         ],

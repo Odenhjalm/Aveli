@@ -1,0 +1,587 @@
+{
+  "tree_id": "home_player_system_remediation_tree",
+  "status": "READY",
+  "mode": "generate",
+  "mutation_scope": "task_definition_files_only",
+  "source_of_truth": "accepted_home_player_contract_stack + live_repository_truth + supabase_connector_substrate_evidence",
+  "source_contracts": [
+    "actual_truth/contracts/SYSTEM_LAWS.md",
+    "actual_truth/contracts/home_audio_aggregation_contract.md",
+    "actual_truth/contracts/home_audio_runtime_contract.md",
+    "actual_truth/contracts/media_unified_authority_contract.md",
+    "actual_truth/contracts/media_pipeline_contract.md",
+    "actual_truth/contracts/system_text_authority_contract.md"
+  ],
+  "canonical_contract_assertions": [
+    "Direct uploads may mutate only app.home_player_uploads and must prove teacher ownership of the exact media_asset_id before create.",
+    "Course-linked Home Player items are sourced from app.home_player_course_links and must remain governed lesson-media references.",
+    "GET /home/audio is the mounted learner-facing runtime surface and emits only the canonical media object { media_id, state, resolved_url } or null.",
+    "Runtime media is a read-only projection. It is never the source of inclusion truth and must not be written directly by Home Player flows.",
+    "Home Player playback is derived-audio only. Ready playback must resolve from a worker-produced MP3 derivative, never the source object.",
+    "Frontend is render-only for Home Player text. Exact copy for load, auth, processing, and failure surfaces is backend-owned."
+  ],
+  "retrieval_and_substrate_evidence": {
+    "local_authority_files": [
+      "codex/AVELI_OPERATING_SYSTEM.md",
+      "codex/AVELI_EXECUTION_WORKFLOW.md",
+      "actual_truth/aveli_system_manifest.json",
+      "actual_truth/rule_layers/DECISIONS.md",
+      "archive/homeplayer_audit_for_media_control_plane.md",
+      "archive/actual_truth_2026-04-24/home_player/tasks/tasks.md",
+      "archive/actual_truth_2026-04-24/home_player/comparison/plan_vs_impl.md"
+    ],
+    "mcp_stack": {
+      "bootstrap_gate": {
+        "status": "BLOCKED",
+        "command": "ops/mcp_bootstrap_gate.ps1",
+        "evidence": "PowerShell bootstrap failed at ops/mcp_bootstrap_gate.ps1:113 because the returned object did not expose a headers property.",
+        "impact": "Bootstrap evidence is incomplete, but direct MCP connector retrieval remained available and was used for canonical table and storage verification."
+      },
+      "connector_retrieval": {
+        "status": "VERIFIED",
+        "toolchain": [
+          "tool_search",
+          "mcp__supabase__.list_tables",
+          "mcp__supabase__.execute_sql"
+        ],
+        "table_existence": [
+          {
+            "name": "app.home_player_uploads",
+            "exists": true
+          },
+          {
+            "name": "app.home_player_course_links",
+            "exists": true
+          },
+          {
+            "name": "app.media_assets",
+            "exists": true
+          },
+          {
+            "name": "app.runtime_media",
+            "exists": true
+          },
+          {
+            "name": "storage.objects",
+            "exists": true
+          },
+          {
+            "name": "storage.buckets",
+            "exists": true
+          }
+        ],
+        "storage_buckets": [
+          {
+            "name": "course-media",
+            "public": false
+          },
+          {
+            "name": "public-media",
+            "public": true
+          }
+        ],
+        "runtime_projection_probe": {
+          "query_shape": "select ... from app.runtime_media where purpose = 'home_player_audio'",
+          "result": "ERROR: column purpose does not exist",
+          "meaning": "Home Player purpose scoping cannot come from app.runtime_media. Source truth remains in app.home_player_uploads, app.home_player_course_links, and app.media_assets."
+        }
+      }
+    },
+    "repo_truth_observations": [
+      "backend/app/routes/studio.py currently validates purpose and media_type for direct uploads but does not prove current-teacher ownership of the asset before inserting app.home_player_uploads.",
+      "backend/app/services/home_audio_service.py already composes /home/audio through canonical source rows and a resolved media object, which narrows backend work to hardening authority and media lifecycle compliance rather than redesigning the route.",
+      "frontend/lib/features/studio/widgets/home_player_upload_routing.dart currently accepts WAV and MP3 but rejects M4A even though the canonical ingest contract allows it.",
+      "frontend/lib/features/studio/widgets/home_player_upload_dialog.dart currently keeps polling after generic status-refresh failures and does not stop immediately on 401 or 403 auth failures.",
+      "backend/app/services/studio_home_player_text_catalog.py contains encoding-corrupted Swedish strings, and the mounted learner home page does not yet consume /home/audio."
+    ]
+  },
+  "deterministic_topological_order": [
+    "HP-SEC-001",
+    "HP-CONTRACT-002",
+    "HP-BE-003",
+    "HP-FE-004",
+    "HP-TEXT-005",
+    "HP-UI-006",
+    "HP-VERIFY-007"
+  ],
+  "dependency_spine": [
+    "HP-SEC-001 and HP-CONTRACT-002 are the independent blockers.",
+    "HP-SEC-001 + HP-CONTRACT-002 -> HP-BE-003",
+    "HP-CONTRACT-002 + HP-BE-003 -> HP-FE-004",
+    "HP-CONTRACT-002 + HP-BE-003 -> HP-TEXT-005",
+    "HP-BE-003 + HP-FE-004 + HP-TEXT-005 -> HP-UI-006",
+    "HP-SEC-001 + HP-CONTRACT-002 + HP-BE-003 + HP-FE-004 + HP-TEXT-005 + HP-UI-006 -> HP-VERIFY-007"
+  ],
+  "tasks": [
+    {
+      "node_id": "HP-SEC-001",
+      "title": "Security and ownership guard",
+      "phase": "PHASE 1 - SECURITY FOUNDATION",
+      "type": "OWNER",
+      "launch_classification": "BLOCKER",
+      "depends_on": [],
+      "scope": [
+        "Fail closed on direct-upload create so POST /studio/home-player/uploads can write app.home_player_uploads only after the caller proves ownership of the exact media_asset_id.",
+        "Keep ownership authority in canonical backend substrates and route guards rather than frontend payloads, storage paths, or mirrored teacher_id fields.",
+        "Preserve course-link ownership boundaries as separate doctrine so this task hardens direct uploads without reopening lesson-media or course-link authority."
+      ],
+      "target_files": [
+        "backend/app/routes/studio.py",
+        "backend/app/repositories/home_audio_sources.py",
+        "backend/app/repositories/media_assets.py",
+        "backend/tests/test_studio_home_player_uploads.py",
+        "backend/tests/test_home_audio_source_ownership_queries.py"
+      ],
+      "target_contracts": [
+        "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "actual_truth/contracts/media_unified_authority_contract.md",
+        "actual_truth/contracts/media_pipeline_contract.md"
+      ],
+      "target_tables_and_storage": [
+        "app.home_player_uploads",
+        "app.media_assets",
+        "storage.objects",
+        "storage.buckets"
+      ],
+      "evidence": {
+        "contract_cross_checks": [
+          "home_audio_aggregation_contract.md requires direct-upload create to prove teacher ownership of the exact media_asset_id and allows mutation only in app.home_player_uploads.",
+          "media_unified_authority_contract.md forbids frontend or projection layers from becoming ownership authority.",
+          "media_pipeline_contract.md keeps media_asset_id and asset lifecycle as the canonical ingestion boundary."
+        ],
+        "substrate_checks": [
+          "Supabase connector verified app.home_player_uploads and app.media_assets exist.",
+          "Supabase connector verified storage.objects and storage.buckets exist, with course-media private and public-media public; ownership must therefore be enforced before any storage-derived access path is considered authoritative."
+        ],
+        "repo_findings": [
+          "backend/app/routes/studio.py currently checks only purpose == home_player_audio and media_type == audio before inserting the upload row.",
+          "No current direct-upload create check proves the asset belongs to the current teacher."
+        ]
+      },
+      "expected_outcome": [
+        "Direct-upload creation rejects foreign media_asset_id values even when the asset has the correct purpose and media_type.",
+        "Authorized teachers can still attach their own canonical home_player_audio assets without changing course-link doctrine.",
+        "Ownership truth for direct uploads is explicit, backend-owned, and test-covered."
+      ],
+      "verification_requirements": [
+        "Add a backend regression that attempts to create a Home Player upload with a foreign media_asset_id and proves the write is rejected and app.home_player_uploads remains unchanged.",
+        "Add a positive-path backend regression that proves the owning teacher can create the row and that the stored media_asset_id matches the canonical asset.",
+        "Verify by search and test review that no alternate Home Player direct-upload create path bypasses the ownership guard."
+      ],
+      "go_condition": "GO when every mounted Home Player direct-upload create path fails closed on non-owned assets and the only successful write path creates app.home_player_uploads rows for teacher-owned home_player_audio assets.",
+      "blocked_condition": "BLOCKED if any direct-upload path still accepts purpose/media_type checks without ownership proof, or if ownership depends on storage path heuristics, mirrored teacher_id fields, or frontend claims."
+    },
+    {
+      "node_id": "HP-CONTRACT-002",
+      "title": "Contract authority lock",
+      "phase": "PHASE 2 - AUTHORITY LOCK",
+      "type": "GATE",
+      "launch_classification": "BLOCKER",
+      "depends_on": [],
+      "scope": [
+        "Lock the Home Player authority stack so all downstream work shares one accepted doctrine for direct uploads, course links, runtime projection, media lifecycle, text authority, and learner UI mounting.",
+        "Freeze canonical read and write surfaces: POST /api/home-player/media-assets/upload-url for ingest, GET /api/media-assets/{media_asset_id}/status for lifecycle polling, and GET /home/audio for learner runtime reads.",
+        "Freeze canonical response shape and forbidden payloads so no downstream task emits media_asset_id, signed URL, download URL, playback_object_path, or playback_format through the learner runtime contract."
+      ],
+      "target_files": [
+        "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "actual_truth/contracts/home_audio_runtime_contract.md",
+        "actual_truth/contracts/media_unified_authority_contract.md",
+        "actual_truth/contracts/media_pipeline_contract.md",
+        "actual_truth/contracts/system_text_authority_contract.md",
+        "backend/app/routes/home.py",
+        "backend/app/routes/studio.py",
+        "backend/app/routes/api_media.py",
+        "backend/app/schemas/__init__.py",
+        "frontend/lib/data/models/home_player_library.dart",
+        "frontend/test/widgets/home_dashboard_runtime_contract_test.dart"
+      ],
+      "target_contracts": [
+        "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "actual_truth/contracts/home_audio_runtime_contract.md",
+        "actual_truth/contracts/media_unified_authority_contract.md",
+        "actual_truth/contracts/media_pipeline_contract.md",
+        "actual_truth/contracts/system_text_authority_contract.md"
+      ],
+      "target_tables_and_storage": [
+        "app.home_player_uploads",
+        "app.home_player_course_links",
+        "app.media_assets",
+        "app.runtime_media",
+        "storage.objects",
+        "storage.buckets"
+      ],
+      "evidence": {
+        "contract_cross_checks": [
+          "home_audio_aggregation_contract.md declares app.home_player_uploads and app.home_player_course_links as inclusion truth and requires mounted learner UI to consume GET /home/audio.",
+          "home_audio_runtime_contract.md limits learner payloads to media { media_id, state, resolved_url } or null and explicitly forbids media_asset_id and storage fields in the response.",
+          "media_unified_authority_contract.md defines app.runtime_media as read-only projection and bars direct writes.",
+          "media_pipeline_contract.md declares the canonical upload-url and status endpoints and requires worker-derived MP3 playback only.",
+          "system_text_authority_contract.md makes backend text authoritative for studio Home Player failures and learner /home/audio load or access failures."
+        ],
+        "substrate_checks": [
+          "Supabase connector verified app.home_player_uploads, app.home_player_course_links, app.media_assets, and app.runtime_media all exist.",
+          "The failed purpose probe against app.runtime_media proves runtime_media cannot be treated as source truth for Home Player scope because it does not own a purpose discriminator."
+        ],
+        "repo_findings": [
+          "backend/app/services/home_audio_service.py already emits the canonical media object shape for /home/audio.",
+          "frontend/lib/features/home/presentation/home_dashboard_page.dart is mounted but does not yet consume GET /home/audio, so the learner-facing contract remains unfulfilled."
+        ]
+      },
+      "expected_outcome": [
+        "All downstream remediation tasks can rely on one non-competing doctrine for source truth, runtime projection, text authority, and learner mounting.",
+        "No task in this DAG is allowed to reopen write-surface, response-shape, or ownership decisions already ratified by the active contracts.",
+        "The Home Player remediation sequence becomes deterministic because target endpoints, fields, and non-authoritative layers are frozen before implementation work starts."
+      ],
+      "verification_requirements": [
+        "Cross-check the five Home Player contracts against mounted backend and frontend surfaces and record any competing doctrine before work begins.",
+        "Search the repo for forbidden learner runtime fields such as media_asset_id, signed_url, download_url, playback_object_path, and playback_format within Home Player runtime consumers and producers.",
+        "Confirm that no task below this node assumes app.runtime_media is a writable source table or that learner UI may read any surface other than GET /home/audio."
+      ],
+      "go_condition": "GO when the canonical Home Player write, status, runtime-read, media-shape, and text-authority boundaries are frozen and no competing active authority survives in contracts or mounted code.",
+      "blocked_condition": "BLOCKED if any downstream plan still treats runtime_media as source truth, allows alternate learner runtime endpoints, or preserves forbidden runtime payload fields."
+    },
+    {
+      "node_id": "HP-BE-003",
+      "title": "Backend compliance alignment",
+      "phase": "PHASE 3 - BACKEND RUNTIME AND PIPELINE ALIGNMENT",
+      "type": "OWNER",
+      "launch_classification": "BLOCKER",
+      "depends_on": [
+        "HP-SEC-001",
+        "HP-CONTRACT-002"
+      ],
+      "scope": [
+        "Align GET /home/audio, studio library reads, and Home Player media status handling to the accepted contracts without inventing new authority surfaces.",
+        "Enforce canonical media lifecycle rules: non-ready items may surface with media.resolved_url = null, terminal failed items remain failed, and ready items must resolve only through worker-derived MP3 playback.",
+        "Preserve runtime-media read-only projection compliance so backend composition consumes source truth plus canonical playback resolution rather than writing app.runtime_media or exposing raw storage fields."
+      ],
+      "target_files": [
+        "backend/app/services/home_audio_service.py",
+        "backend/app/repositories/home_audio_runtime.py",
+        "backend/app/repositories/home_audio_sources.py",
+        "backend/app/routes/home.py",
+        "backend/app/routes/studio.py",
+        "backend/app/routes/api_media.py",
+        "backend/app/schemas/__init__.py",
+        "backend/tests/test_home_audio_feed.py",
+        "backend/tests/test_home_audio_runtime_db_integration.py",
+        "backend/tests/test_home_audio_opt_in_gate.py",
+        "backend/tests/test_studio_home_player_library.py"
+      ],
+      "target_contracts": [
+        "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "actual_truth/contracts/home_audio_runtime_contract.md",
+        "actual_truth/contracts/media_unified_authority_contract.md",
+        "actual_truth/contracts/media_pipeline_contract.md"
+      ],
+      "target_tables_and_storage": [
+        "app.home_player_uploads",
+        "app.home_player_course_links",
+        "app.media_assets",
+        "app.runtime_media",
+        "storage.objects",
+        "storage.buckets"
+      ],
+      "evidence": {
+        "contract_cross_checks": [
+          "home_audio_aggregation_contract.md allows non-ready runtime items only when resolved_url is null and requires ready but unresolvable items to be excluded.",
+          "home_audio_runtime_contract.md defines the exact learner runtime media object and forbids storage-facing leakage.",
+          "media_pipeline_contract.md requires worker-derived MP3 playback and defines terminal failure and polling-stop semantics that backend status surfaces must preserve.",
+          "media_unified_authority_contract.md limits runtime_media to read projection duty."
+        ],
+        "substrate_checks": [
+          "Supabase connector verified app.media_assets exposes media_type, purpose, ingest_format, playback_object_path, playback_format, state, and error_message.",
+          "Supabase connector verified app.runtime_media exposes only projection columns such as lesson_media_id, lesson_id, course_id, media_asset_id, media_type, playback_object_path, playback_format, and state.",
+          "The absence of a purpose column on app.runtime_media reinforces that purpose and inclusion truth must be derived from source tables plus app.media_assets."
+        ],
+        "repo_findings": [
+          "backend/app/services/home_audio_service.py already resolves media through lesson_playback_service.resolve_media_asset_playback and omits invalid ready items.",
+          "Remaining backend work is to close ownership, lifecycle, and contract-consistency gaps rather than replace the entire /home/audio route."
+        ]
+      },
+      "expected_outcome": [
+        "Every Home Player backend surface composes from canonical source rows, canonical media asset state, and canonical playback resolution only.",
+        "Ready Home Player audio resolves exclusively to a worker-derived MP3 object, while non-ready and failed states preserve the accepted visibility rules.",
+        "No learner or studio Home Player payload leaks raw asset/storage authority fields or writes runtime projection tables directly."
+      ],
+      "verification_requirements": [
+        "Add or update backend tests proving that ready but unresolvable items are excluded, non-ready items return media.resolved_url = null, and failed items preserve terminal failure semantics.",
+        "Verify that GET /home/audio and studio Home Player library payloads emit only the canonical media object and do not emit media_asset_id, signed URLs, download URLs, playback_object_path, or playback_format.",
+        "Search backend/app for insert or update behavior against app.runtime_media in Home Player code paths and fail the node if any mounted write path remains."
+      ],
+      "go_condition": "GO when mounted backend Home Player reads and status surfaces match the accepted runtime and media-pipeline contracts and no Home Player code writes runtime_media or exposes non-MP3 playback.",
+      "blocked_condition": "BLOCKED if any Home Player backend surface still serves source audio, leaks forbidden runtime fields, writes app.runtime_media, or misclassifies failed or auth states."
+    },
+    {
+      "node_id": "HP-FE-004",
+      "title": "Frontend parsing and polling fix",
+      "phase": "PHASE 4 - STUDIO FRONTEND ALIGNMENT",
+      "type": "OWNER",
+      "launch_classification": "BLOCKER",
+      "depends_on": [
+        "HP-CONTRACT-002",
+        "HP-BE-003"
+      ],
+      "scope": [
+        "Align studio Home Player upload routing to canonical audio ingest acceptance, including M4A support in addition to WAV and MP3.",
+        "Align status polling to canonical media lifecycle rules so polling begins only after upload completion succeeds and stops immediately on ready, failed, 401, or 403.",
+        "Keep the frontend parser render-only by consuming the canonical Home Player media object and refusing any dependency on raw asset or storage fields."
+      ],
+      "target_files": [
+        "frontend/lib/features/studio/widgets/home_player_upload_routing.dart",
+        "frontend/lib/features/studio/widgets/home_player_upload_dialog.dart",
+        "frontend/lib/features/studio/data/studio_repository.dart",
+        "frontend/lib/data/models/home_player_library.dart",
+        "frontend/lib/features/media/data/media_pipeline_repository.dart",
+        "frontend/test/unit/home_player_upload_routing_test.dart",
+        "frontend/test/widgets/home_player_upload_dialog_test.dart",
+        "frontend/test/unit/studio_repository_home_player_test.dart"
+      ],
+      "target_contracts": [
+        "actual_truth/contracts/home_audio_runtime_contract.md",
+        "actual_truth/contracts/media_pipeline_contract.md",
+        "actual_truth/contracts/system_text_authority_contract.md"
+      ],
+      "target_tables_and_storage": [
+        "app.media_assets",
+        "app.home_player_uploads",
+        "storage.objects",
+        "storage.buckets"
+      ],
+      "evidence": {
+        "contract_cross_checks": [
+          "media_pipeline_contract.md allows source ingest formats wav, mp3, and m4a and requires polling to stop on ready, failed, 401, and 403 while treating transient failures as non-state transitions.",
+          "home_audio_runtime_contract.md forbids frontend reliance on media_asset_id and storage-facing learner runtime fields.",
+          "system_text_authority_contract.md reserves exact failure and status text to the backend."
+        ],
+        "substrate_checks": [
+          "Supabase connector verified app.media_assets is the canonical source of state and error_message for Home Player polling surfaces.",
+          "Storage buckets exist but remain non-authoritative to the frontend; the frontend must therefore consume backend status and runtime payloads rather than infer readiness from storage."
+        ],
+        "repo_findings": [
+          "frontend/lib/features/studio/widgets/home_player_upload_routing.dart currently rejects M4A.",
+          "frontend/lib/features/studio/widgets/home_player_upload_dialog.dart currently leaves the polling timer alive after generic refresh failures and does not explicitly stop on 401 or 403."
+        ]
+      },
+      "expected_outcome": [
+        "Studio upload UI accepts the full canonical audio ingest set and rejects non-audio input without inventing unsupported media types.",
+        "Studio polling behavior is deterministic and contract-compliant: stop on ready, failed, or auth failure; keep transient failures as non-terminal and optionally manual-refresh only.",
+        "Frontend Home Player parsing stays render-only and contract-safe."
+      ],
+      "verification_requirements": [
+        "Add or update unit tests proving that M4A files are accepted by Home Player upload routing while unsupported non-audio files remain rejected.",
+        "Add or update widget tests proving that polling stops on ready, failed, 401, and 403 and that transient refresh failures do not keep mutating state indefinitely.",
+        "Search frontend Home Player studio code for forbidden dependencies on playback_object_path, playback_format, media_asset_id, signed_url, or download_url."
+      ],
+      "go_condition": "GO when the mounted studio Home Player upload flow accepts the canonical ingest formats, obeys status polling stop rules, and consumes only backend-owned Home Player payloads.",
+      "blocked_condition": "BLOCKED if M4A remains rejected, polling continues after auth or terminal failure, or frontend parsing depends on non-canonical media fields."
+    },
+    {
+      "node_id": "HP-TEXT-005",
+      "title": "Text authority remediation",
+      "phase": "PHASE 5 - TEXT AUTHORITY ALIGNMENT",
+      "type": "OWNER",
+      "launch_classification": "BLOCKER",
+      "depends_on": [
+        "HP-CONTRACT-002",
+        "HP-BE-003"
+      ],
+      "scope": [
+        "Restore backend-owned exact copy for all Home Player studio and learner failure or status surfaces, including library load, upload start, upload save, upload refresh, auth, processing-terminal failure, course-link failure, and learner /home/audio load or access failure.",
+        "Repair encoding corruption in the Home Player backend text catalog so mounted Swedish copy is clean and deterministic.",
+        "Preserve DB-owned content boundaries so app.home_player_uploads.title and app.home_player_course_links.title remain domain content rather than text-catalog substitutions."
+      ],
+      "target_files": [
+        "backend/app/services/studio_home_player_text_catalog.py",
+        "backend/app/routes/studio.py",
+        "backend/app/routes/home.py",
+        "backend/app/repositories/studio_home_player_library.py",
+        "frontend/lib/features/studio/application/home_player_library_controller.dart",
+        "frontend/lib/features/studio/widgets/home_player_upload_dialog.dart",
+        "frontend/lib/data/models/home_player_library.dart",
+        "frontend/lib/features/home/data/home_audio_repository.dart (new if absent)",
+        "frontend/test/unit/home_player_text_authority_test.dart",
+        "backend/tests/test_studio_home_player_library.py"
+      ],
+      "target_contracts": [
+        "actual_truth/contracts/system_text_authority_contract.md",
+        "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "actual_truth/contracts/home_audio_runtime_contract.md"
+      ],
+      "target_tables_and_storage": [
+        "app.home_player_uploads",
+        "app.home_player_course_links",
+        "app.media_assets"
+      ],
+      "evidence": {
+        "contract_cross_checks": [
+          "system_text_authority_contract.md names Home Player studio failures and learner /home/audio failures as backend-owned exact-copy surfaces.",
+          "home_audio_aggregation_contract.md and home_audio_runtime_contract.md require mounted learner UI to consume backend-authored /home/audio output rather than frontend-authored fallback doctrine."
+        ],
+        "substrate_checks": [
+          "app.home_player_uploads.title and app.home_player_course_links.title are DB-owned domain content and should not be replaced by text-catalog constants.",
+          "app.media_assets.error_message remains substrate-level evidence for terminal processing failure and must feed backend-owned text surfaces rather than frontend-authored copy."
+        ],
+        "repo_findings": [
+          "backend/app/services/studio_home_player_text_catalog.py currently contains encoding-corrupted Home Player strings.",
+          "Existing frontend text-authority coverage is studio-focused and does not yet cover mounted learner /home/audio failure surfaces."
+        ]
+      },
+      "expected_outcome": [
+        "Home Player exact copy is backend-owned across both studio and learner surfaces, with clean Swedish text and no frontend hardcoded fallback doctrine.",
+        "DB domain titles remain DB-owned content while backend-owned status and error text fields remain the only exact-copy authority for Home Player failures and processing state.",
+        "Text-authority coverage becomes complete enough for learner /home/audio UI integration to consume without inventing local copy."
+      ],
+      "verification_requirements": [
+        "Add or extend tests proving that Home Player frontend files do not hardcode exact-copy error or status strings for covered studio and learner surfaces.",
+        "Verify that backend Home Player payloads expose backend_status_text or backend_error_text for all contract-required failure states.",
+        "Review the repaired backend text catalog to confirm encoding is clean and that DB-owned title fields were not folded into the text catalog."
+      ],
+      "go_condition": "GO when all Home Player exact-copy status and failure surfaces are backend-owned, cleanly encoded, and consumed render-only by mounted frontend code.",
+      "blocked_condition": "BLOCKED if mojibake survives, learner /home/audio failure copy is missing, or frontend code still authors exact failure/status text locally."
+    },
+    {
+      "node_id": "HP-UI-006",
+      "title": "Learner /home/audio integration",
+      "phase": "PHASE 6 - LEARNER UI MOUNT",
+      "type": "OWNER",
+      "launch_classification": "BLOCKER",
+      "depends_on": [
+        "HP-BE-003",
+        "HP-FE-004",
+        "HP-TEXT-005"
+      ],
+      "scope": [
+        "Mount a learner-facing Home Player section on the Home dashboard that consumes GET /home/audio and no alternate Home Player runtime source.",
+        "Consume the canonical runtime media object only, rendering audio-only playback from resolved_url when ready and preserving null media handling for non-ready states.",
+        "Integrate backend-owned text for load and access failure states and keep the learner UI render-only with respect to runtime authority."
+      ],
+      "target_files": [
+        "frontend/lib/features/home/presentation/home_dashboard_page.dart",
+        "frontend/lib/features/home/data/home_audio_repository.dart (new if absent)",
+        "frontend/lib/features/home/application/home_audio_controller.dart (new if absent)",
+        "frontend/lib/features/home/presentation/widgets/home_audio_section.dart (new if absent)",
+        "frontend/lib/features/media/application/media_playback_controller.dart",
+        "frontend/test/widgets/home_dashboard_runtime_contract_test.dart",
+        "frontend/test/unit/home_audio_repository_test.dart (new if absent)"
+      ],
+      "target_contracts": [
+        "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "actual_truth/contracts/home_audio_runtime_contract.md",
+        "actual_truth/contracts/system_text_authority_contract.md"
+      ],
+      "target_tables_and_storage": [
+        "app.home_player_uploads",
+        "app.home_player_course_links",
+        "app.runtime_media",
+        "app.media_assets"
+      ],
+      "evidence": {
+        "contract_cross_checks": [
+          "home_audio_aggregation_contract.md and home_audio_runtime_contract.md both require the mounted learner-facing Home Player UI to consume GET /home/audio.",
+          "home_audio_runtime_contract.md requires runtime playback to arrive only through the media object and forbids exposing asset or storage authority fields to the learner UI.",
+          "system_text_authority_contract.md requires backend-owned learner /home/audio load and access failure copy."
+        ],
+        "substrate_checks": [
+          "Supabase connector verified the source substrates app.home_player_uploads and app.home_player_course_links exist, which confirms the learner UI must compose through backend runtime aggregation rather than direct table access.",
+          "Supabase connector verified app.runtime_media exists only as read projection support, reinforcing that learner UI must not bypass GET /home/audio."
+        ],
+        "repo_findings": [
+          "frontend/lib/features/home/presentation/home_dashboard_page.dart currently renders only CoursesShowcaseSection and does not consume /home/audio.",
+          "frontend/test/widgets/home_dashboard_runtime_contract_test.dart currently encodes the old MVP-only home dashboard assumption."
+        ]
+      },
+      "expected_outcome": [
+        "The mounted learner Home dashboard includes a Home Player section backed only by GET /home/audio.",
+        "Learner playback remains audio-only, contract-safe, and render-only, with ready and non-ready states rendered according to the canonical media object.",
+        "Learner failure and access messaging comes from backend-owned text fields rather than local fallback copy."
+      ],
+      "verification_requirements": [
+        "Add or update widget tests proving that the mounted home dashboard requests GET /home/audio and renders canonical Home Player items from the returned media object.",
+        "Add repository or controller tests proving that non-ready items preserve null media handling and ready items use resolved_url without expecting forbidden fields.",
+        "Search mounted learner Home Player UI code to confirm there is no alternate endpoint, direct storage access, or direct runtime_media access."
+      ],
+      "go_condition": "GO when the mounted learner Home dashboard consumes GET /home/audio, renders only canonical audio runtime state, and uses backend-owned text for Home Player failures.",
+      "blocked_condition": "BLOCKED if the learner home page still omits Home Player, consumes any alternate source, or relies on raw asset/storage/runtime projection fields."
+    },
+    {
+      "node_id": "HP-VERIFY-007",
+      "title": "Final contract verification",
+      "phase": "PHASE 7 - AGGREGATE STOP-GO VERIFICATION",
+      "type": "AGGREGATE",
+      "launch_classification": "BLOCKER",
+      "depends_on": [
+        "HP-SEC-001",
+        "HP-CONTRACT-002",
+        "HP-BE-003",
+        "HP-FE-004",
+        "HP-TEXT-005",
+        "HP-UI-006"
+      ],
+      "scope": [
+        "Run the aggregate stop-go verification for Home Player across ownership authority, contract compliance, backend runtime behavior, studio polling, text authority, learner mounting, and substrate truth.",
+        "Re-run MCP connector checks for canonical table existence, storage bucket visibility, and runtime-media projection shape after the remediation closes.",
+        "Fail the DAG if any prior node leaves an unresolved competing authority, forbidden runtime field, non-MP3 playback leak, or unmounted learner /home/audio surface."
+      ],
+      "target_files": [
+        "actual_truth/DETERMINED_TASKS/home_player_system_remediation_tree/task_manifest.json",
+        "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "actual_truth/contracts/home_audio_runtime_contract.md",
+        "actual_truth/contracts/media_unified_authority_contract.md",
+        "actual_truth/contracts/media_pipeline_contract.md",
+        "actual_truth/contracts/system_text_authority_contract.md",
+        "backend/tests/test_home_audio_feed.py",
+        "backend/tests/test_home_audio_runtime_db_integration.py",
+        "backend/tests/test_studio_home_player_uploads.py",
+        "backend/tests/test_studio_home_player_library.py",
+        "frontend/test/unit/home_player_upload_routing_test.dart",
+        "frontend/test/widgets/home_player_upload_dialog_test.dart",
+        "frontend/test/unit/home_player_text_authority_test.dart",
+        "frontend/test/widgets/home_dashboard_runtime_contract_test.dart"
+      ],
+      "target_contracts": [
+        "actual_truth/contracts/home_audio_aggregation_contract.md",
+        "actual_truth/contracts/home_audio_runtime_contract.md",
+        "actual_truth/contracts/media_unified_authority_contract.md",
+        "actual_truth/contracts/media_pipeline_contract.md",
+        "actual_truth/contracts/system_text_authority_contract.md"
+      ],
+      "target_tables_and_storage": [
+        "app.home_player_uploads",
+        "app.home_player_course_links",
+        "app.media_assets",
+        "app.runtime_media",
+        "storage.objects",
+        "storage.buckets"
+      ],
+      "evidence": {
+        "contract_cross_checks": [
+          "All five Home Player contracts must agree with the mounted repo state and with the verification outputs gathered under this node.",
+          "Any surviving contradiction between ownership, runtime payload shape, media lifecycle, frontend text authority, or learner mounting is a hard failure."
+        ],
+        "substrate_checks": [
+          "Re-run MCP connector verification for app.home_player_uploads, app.home_player_course_links, app.media_assets, app.runtime_media, storage.objects, and storage.buckets.",
+          "Re-run the runtime projection probe that previously failed on purpose to confirm no implementation silently moved Home Player scope ownership into app.runtime_media.",
+          "Reconfirm storage bucket visibility assumptions so no remediation task accidentally made source or playback storage public beyond contract."
+        ],
+        "repo_findings": [
+          "This node depends on all prior nodes because the Home Player contracts span backend, frontend, storage, and text authority simultaneously.",
+          "The latest no-code audit DAG requires a single final stop-go pass rather than independent green claims from each remediation slice."
+        ]
+      },
+      "expected_outcome": [
+        "A final deterministic verification record proves Home Player is contract-compliant across ownership, media ingestion and playback, runtime projection, frontend polling, backend text authority, and learner mounting.",
+        "The Home Player remediation DAG can be closed without unresolved contradictions or missing substrate evidence.",
+        "Any remaining mismatch is surfaced as a hard blocker with the exact node that failed."
+      ],
+      "verification_requirements": [
+        "Run the targeted backend and frontend Home Player test suites required by prior nodes and record pass or fail against this manifest.",
+        "Search the mounted repo for forbidden Home Player learner runtime fields and for any direct write to app.runtime_media.",
+        "Re-run MCP connector substrate checks and fail verification if canonical tables, buckets, or read-only projection assumptions drift from the accepted contracts."
+      ],
+      "go_condition": "GO when every prior Home Player remediation node is closed, all required tests and substrate checks pass, and no conflicting authority survives in code, contracts, or storage posture.",
+      "blocked_condition": "BLOCKED if any prior node remains open, any substrate check drifts, learner mounting is incomplete, or forbidden Home Player authority or payload patterns remain."
+    }
+  ]
+}

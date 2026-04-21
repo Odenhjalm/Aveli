@@ -90,9 +90,11 @@ async def test_home_player_upload_create_uses_media_asset_identity_only(
     headers, user_id = await register_teacher(async_client)
     try:
         media_asset_id = str(uuid.uuid4())
+        expected_media_asset_id = media_asset_id
 
-        async def fake_get_media_asset(candidate_media_asset_id: str):
-            assert candidate_media_asset_id == media_asset_id
+        async def fake_authorize_media_asset(*, media_asset_id: str, current):
+            assert media_asset_id == expected_media_asset_id
+            assert str(current["id"]) == user_id
             return _canonical_asset(media_asset_id=media_asset_id)
 
         async def fake_create_upload(*, teacher_id: str, media_asset_id: str, title: str, active: bool):
@@ -109,9 +111,9 @@ async def test_home_player_upload_create_uses_media_asset_identity_only(
             }
 
         monkeypatch.setattr(
-            studio_routes.home_audio_sources_repo,
-            "get_home_audio_media_asset",
-            fake_get_media_asset,
+            studio_routes,
+            "_authorize_canonical_media_upload_asset",
+            fake_authorize_media_asset,
             raising=True,
         )
         monkeypatch.setattr(
@@ -165,6 +167,7 @@ async def test_home_player_upload_update_and_delete_use_canonical_source_rows(
     headers, user_id = await register_teacher(async_client)
     try:
         media_asset_id = str(uuid.uuid4())
+        expected_media_asset_id = media_asset_id
         upload_id = str(uuid.uuid4())
         stored = {
             "id": upload_id,
@@ -179,8 +182,9 @@ async def test_home_player_upload_update_and_delete_use_canonical_source_rows(
         }
         lifecycle_requests: list[dict[str, object]] = []
 
-        async def fake_get_media_asset(candidate_media_asset_id: str):
-            assert candidate_media_asset_id == media_asset_id
+        async def fake_authorize_media_asset(*, media_asset_id: str, current):
+            assert media_asset_id == expected_media_asset_id
+            assert str(current["id"]) == user_id
             return _canonical_asset(media_asset_id=media_asset_id)
 
         async def fake_create_upload(*, teacher_id: str, media_asset_id: str, title: str, active: bool):
@@ -214,9 +218,9 @@ async def test_home_player_upload_update_and_delete_use_canonical_source_rows(
             raise AssertionError("request path must not delete media_assets")
 
         monkeypatch.setattr(
-            studio_routes.home_audio_sources_repo,
-            "get_home_audio_media_asset",
-            fake_get_media_asset,
+            studio_routes,
+            "_authorize_canonical_media_upload_asset",
+            fake_authorize_media_asset,
             raising=True,
         )
         monkeypatch.setattr(
@@ -316,23 +320,23 @@ async def test_home_player_upload_rejects_non_home_audio_assets(
         wrong_purpose_asset_id = str(uuid.uuid4())
         wrong_type_asset_id = str(uuid.uuid4())
 
-        async def fake_get_media_asset(candidate_media_asset_id: str):
-            if candidate_media_asset_id == wrong_purpose_asset_id:
+        async def fake_authorize_media_asset(*, media_asset_id: str, current):
+            if media_asset_id == wrong_purpose_asset_id:
                 return _canonical_asset(
                     media_asset_id=wrong_purpose_asset_id,
                     purpose="lesson_audio",
                 )
-            if candidate_media_asset_id == wrong_type_asset_id:
+            if media_asset_id == wrong_type_asset_id:
                 return _canonical_asset(
                     media_asset_id=wrong_type_asset_id,
                     media_type="video",
                 )
-            raise AssertionError(candidate_media_asset_id)
+            raise AssertionError(media_asset_id)
 
         monkeypatch.setattr(
-            studio_routes.home_audio_sources_repo,
-            "get_home_audio_media_asset",
-            fake_get_media_asset,
+            studio_routes,
+            "_authorize_canonical_media_upload_asset",
+            fake_authorize_media_asset,
             raising=True,
         )
 
@@ -346,7 +350,11 @@ async def test_home_player_upload_rejects_non_home_audio_assets(
             },
         )
         assert purpose_resp.status_code == 422, purpose_resp.text
-        assert purpose_resp.json()["detail"] == "Invalid media purpose"
+        assert purpose_resp.json() == {
+            "status": "error",
+            "error_code": "home_player_upload_save_failed",
+            "message": "Kunde inte spara uppladdningen. Försök igen.",
+        }
 
         type_resp = await async_client.post(
             "/studio/home-player/uploads",
@@ -358,7 +366,11 @@ async def test_home_player_upload_rejects_non_home_audio_assets(
             },
         )
         assert type_resp.status_code == 422, type_resp.text
-        assert type_resp.json()["detail"] == "Invalid media type"
+        assert type_resp.json() == {
+            "status": "error",
+            "error_code": "home_player_upload_save_failed",
+            "message": "Kunde inte spara uppladdningen. Försök igen.",
+        }
     finally:
         await cleanup_user(user_id)
 
@@ -371,13 +383,13 @@ async def test_home_player_upload_create_rejects_non_baseline_request_fields(
     try:
         media_asset_id = str(uuid.uuid4())
 
-        async def fail_get_media_asset(candidate_media_asset_id: str):
-            raise AssertionError(candidate_media_asset_id)
+        async def fail_authorize_media_asset(*, media_asset_id: str, current):
+            raise AssertionError(media_asset_id)
 
         monkeypatch.setattr(
-            studio_routes.home_audio_sources_repo,
-            "get_home_audio_media_asset",
-            fail_get_media_asset,
+            studio_routes,
+            "_authorize_canonical_media_upload_asset",
+            fail_authorize_media_asset,
             raising=True,
         )
 
@@ -395,5 +407,55 @@ async def test_home_player_upload_create_rejects_non_baseline_request_fields(
         )
 
         assert response.status_code == 422, response.text
+    finally:
+        await cleanup_user(user_id)
+
+
+async def test_home_player_upload_create_rejects_foreign_media_assets(
+    async_client,
+    monkeypatch,
+):
+    headers, user_id = await register_teacher(async_client)
+    try:
+        media_asset_id = str(uuid.uuid4())
+        expected_media_asset_id = media_asset_id
+
+        async def deny_foreign_media_asset(*, media_asset_id: str, current):
+            assert media_asset_id == expected_media_asset_id
+            assert str(current["id"]) == user_id
+            raise studio_routes.HTTPException(status_code=403, detail="Not media owner")
+
+        async def fail_create_upload(**kwargs):
+            raise AssertionError(kwargs)
+
+        monkeypatch.setattr(
+            studio_routes,
+            "_authorize_canonical_media_upload_asset",
+            deny_foreign_media_asset,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            studio_routes.home_audio_sources_repo,
+            "create_home_player_upload",
+            fail_create_upload,
+            raising=True,
+        )
+
+        response = await async_client.post(
+            "/studio/home-player/uploads",
+            headers=headers,
+            json={
+                "title": "Foreign asset",
+                "active": True,
+                "media_asset_id": media_asset_id,
+            },
+        )
+
+        assert response.status_code == 403, response.text
+        assert response.json() == {
+            "status": "error",
+            "error_code": "home_player_upload_auth_failed",
+            "message": "Du har inte behörighet att hantera uppladdningen i Home-spelaren.",
+        }
     finally:
         await cleanup_user(user_id)

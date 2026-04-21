@@ -431,7 +431,122 @@ Known drift includes:
 These are implementation drift only.
 They are not contract truth.
 
-## 10. FINAL ASSERTION
+## 10. HOME PLAYER AUDIO INGEST EXTENSION
+
+This section extends the canonical media-asset ingest and lifecycle law to
+direct Home Player audio ingest. It does not redefine Home Player source-row
+ownership, inclusion, access, or learner runtime response shape. Those remain
+owned by `home_audio_aggregation_contract.md` and
+`home_audio_runtime_contract.md`.
+
+### 10.1 Canonical Home Player Upload-URL Endpoint
+
+`POST /api/home-player/media-assets/upload-url`
+
+Single responsibility:
+
+- create one `media_assets` row for direct Home Player audio ingest
+- issue one backend upload target for that asset
+
+This endpoint must:
+
+- create exactly one `media_assets` row
+- create zero `home_player_uploads` rows
+- scope the created asset to canonical `home_player_audio` ownership context
+
+This endpoint must not:
+
+- create or update `home_player_uploads`
+- create or update `home_player_course_links`
+- imply learner visibility
+- imply runtime readiness
+- imply playback availability
+
+### 10.2 Allowed Home Player Source Ingest Formats
+
+Allowed source ingest formats for `purpose = home_player_audio` are exactly:
+
+- `wav`
+- `mp3`
+- `m4a`
+
+Allowed source MIME types for those formats are exactly:
+
+- `audio/wav`
+- `audio/x-wav`
+- `audio/mpeg`
+- `audio/mp3`
+- `audio/m4a`
+- `audio/mp4`
+
+These are source-upload formats only. They are not playback formats.
+
+### 10.3 Home Player Playback Derivation Law
+
+For every `home_player_audio` asset:
+
+- all audio MUST pass through the canonical worker pipeline before playback
+- source audio MUST NEVER be used as playback
+- playback MUST ALWAYS use a worker-created derived playback object
+- `ready` is forbidden unless:
+  - the worker created and verified the playback object
+  - `playback_object_path` identifies that canonical derived object
+  - `playback_format = mp3`
+- frontend MUST NOT:
+  - play source audio
+  - infer playback format
+  - construct playback URLs
+- backend MUST NOT expose non-MP3 playback through runtime media or Home Player
+  runtime output
+
+`wav`, `m4a`, `mp3`, or any other accepted source upload may exist as ingest
+input only. If the asset becomes `ready`, the only allowed playback format is
+derived `mp3`.
+
+## 11. STATUS SURFACE AND TERMINAL FAILURE RULES
+
+The canonical asset-status surface for Home Player upload polling is:
+
+`GET /api/media-assets/{media_asset_id}/status`
+
+This read surface must:
+
+- return only canonical asset lifecycle truth
+- use the same allowed `asset_state` set as this contract
+- remain read-only
+
+Frontend polling law for Home Player upload flow:
+
+- polling may begin only after canonical upload completion succeeds
+- polling must stop immediately on `asset_state = ready`
+- polling must stop immediately on `asset_state = failed`
+
+Terminal failure law:
+
+- `asset_state = failed` is non-retryable for that asset
+- retrying after `failed` requires a new canonical upload session and a new
+  source asset lifecycle
+- frontend must not silently retry worker processing for the same failed asset
+
+Auth failure law:
+
+- `401` or `403` from Home Player upload-completion or status polling is an
+  auth failure, not a processing-state transition
+- frontend must stop polling on auth failure
+- frontend must not blind-retry auth failures
+- user-facing auth failure copy must follow
+  `system_text_authority_contract.md`
+
+Transient failure law:
+
+- transport or service failure during status polling must not be interpreted as
+  `ready`, `failed`, or any other inferred asset state
+- frontend may offer a bounded manual refresh or bounded retry of the status
+  request only
+- user-facing transient failure copy must follow
+  `system_text_authority_contract.md`
+
+## 12. FINAL ASSERTION
 
 This contract is deterministic, single-meaning, and enforceable.
 
@@ -442,3 +557,7 @@ It is valid only if all future implementation work preserves these laws:
 - lesson-media pipeline endpoints do not create runtime truth directly
 - no polymorphic lesson-media endpoint survives
 - no public request field changes endpoint meaning
+- Home Player source ingest creates assets only, not source rows
+- Home Player playback uses worker-created derived MP3 objects only
+- status polling stops on terminal state and fails closed on auth or transient
+  errors

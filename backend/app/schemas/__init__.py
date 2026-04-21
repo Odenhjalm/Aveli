@@ -661,6 +661,7 @@ class HomeAudioFeedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: List[HomeAudioItem]
+    text_bundle: Dict[str, HomePlayerCatalogTextValue]
 
 
 class MessageRecord(BaseModel):

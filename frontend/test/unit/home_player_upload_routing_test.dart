@@ -50,6 +50,31 @@ void main() {
       );
     });
 
+    test('routes M4A to canonical audio uploads', () {
+      expect(
+        detectHomePlayerUploadRoute(
+          mimeType: 'audio/m4a',
+          filename: 'demo.m4a',
+        ),
+        HomePlayerUploadRoute.directM4a,
+      );
+      expect(
+        detectHomePlayerUploadRoute(
+          mimeType: 'audio/mp4',
+          filename: 'demo.m4a',
+        ),
+        HomePlayerUploadRoute.directM4a,
+      );
+      expect(
+        detectHomePlayerUploadRoute(mimeType: '', filename: 'demo.m4a'),
+        HomePlayerUploadRoute.directM4a,
+      );
+      expect(
+        homePlayerUploadNormalizedMimeType(HomePlayerUploadRoute.directM4a),
+        'audio/m4a',
+      );
+    });
+
     test('rejects video because home player is audio-only', () {
       final videoRoute = detectHomePlayerUploadRoute(
         mimeType: 'video/mp4',

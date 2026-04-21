@@ -400,6 +400,11 @@ def _source_timestamp(*, minutes_ago: int = 0) -> datetime:
 async def test_home_audio_requires_auth(async_client):
     resp = await async_client.get("/home/audio")
     assert resp.status_code == 401
+    assert resp.json() == {
+        "status": "error",
+        "error_code": "home_audio_access_failed",
+        "message": "Du har inte behörighet att öppna Home-spelarens ljud.",
+    }
 
 
 @pytest.mark.anyio("asyncio")
@@ -488,6 +493,13 @@ async def test_home_audio_returns_items_with_canonical_nested_media(async_client
     )
     assert teacher_resp.status_code == 200, teacher_resp.text
     payload = teacher_resp.json()
+    assert set(payload) == {"items", "text_bundle"}
+    assert payload["text_bundle"]["home.audio.section_title"]["value"] == (
+        "Ljud i Home-spelaren"
+    )
+    assert payload["text_bundle"]["home.audio.load_failed_error"]["authority_class"] == (
+        "backend_error_text"
+    )
     item = _find_item_by_media_id(payload.get("items") or [], media_asset_id)
     assert item, payload
     assert item["source_type"] == "course_link"

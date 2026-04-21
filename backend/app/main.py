@@ -72,6 +72,7 @@ from .db import get_conn
 from .services import (
     media_transcode_worker,
     membership_expiry_warnings,
+    studio_home_player_text_catalog,
 )
 
 ASSETS_ROOT = Path(__file__).resolve().parents[1] / "assets"
@@ -267,6 +268,15 @@ async def cors_http_exception_handler(request: Request, exc: StarletteHTTPExcept
         for key, value in _cors_error_headers(request).items():
             response.headers.setdefault(key, value)
         return response
+    if studio_home_player_text_catalog.is_home_player_request(request):
+        response = studio_home_player_text_catalog.canonical_home_player_error_response(
+            request=request,
+            status_code=exc.status_code,
+            headers=exc.headers,
+        )
+        for key, value in _cors_error_headers(request).items():
+            response.headers.setdefault(key, value)
+        return response
     response = await http_exception_handler(request, exc)
     for key, value in _cors_error_headers(request).items():
         response.headers.setdefault(key, value)
@@ -283,6 +293,14 @@ async def auth_onboarding_validation_exception_handler(
         for key, value in _cors_error_headers(request).items():
             response.headers.setdefault(key, value)
         return response
+    if studio_home_player_text_catalog.is_home_player_request(request):
+        response = studio_home_player_text_catalog.home_player_validation_error_response(
+            request=request,
+            headers=_cors_error_headers(request),
+        )
+        for key, value in _cors_error_headers(request).items():
+            response.headers.setdefault(key, value)
+        return response
     response = await request_validation_exception_handler(request, exc)
     for key, value in _cors_error_headers(request).items():
         response.headers.setdefault(key, value)
@@ -295,6 +313,12 @@ async def global_exception_handler(request: Request, exc: Exception):
         return canonical_error_response(
             status_code=500,
             error_code="internal_error",
+            headers=_cors_error_headers(request),
+        )
+    if studio_home_player_text_catalog.is_home_player_request(request):
+        return studio_home_player_text_catalog.canonical_home_player_error_response(
+            request=request,
+            status_code=500,
             headers=_cors_error_headers(request),
         )
     return JSONResponse(

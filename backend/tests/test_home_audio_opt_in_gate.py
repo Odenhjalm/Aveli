@@ -334,7 +334,11 @@ async def test_home_audio_course_links_reject_non_audio_lesson_media(
         },
     )
     assert create_link.status_code == 422, create_link.text
-    assert create_link.json()["detail"] == "Only audio can be linked"
+    assert create_link.json() == {
+        "status": "error",
+        "error_code": "home_player_action_failed",
+        "message": "Åtgärden kunde inte genomföras. Försök igen.",
+    }
 
 
 async def test_home_audio_course_links_reject_non_owned_and_wrong_purpose_media(
@@ -390,7 +394,11 @@ async def test_home_audio_course_links_reject_non_owned_and_wrong_purpose_media(
         },
     )
     assert non_owned.status_code == 403, non_owned.text
-    assert non_owned.json()["detail"] == "Not course owner"
+    assert non_owned.json() == {
+        "status": "error",
+        "error_code": "home_player_auth_failed",
+        "message": "Du har inte behörighet att hantera Home-spelaren.",
+    }
 
     wrong_purpose = await async_client.post(
         "/studio/home-player/course-links",
@@ -402,4 +410,8 @@ async def test_home_audio_course_links_reject_non_owned_and_wrong_purpose_media(
         },
     )
     assert wrong_purpose.status_code == 422, wrong_purpose.text
-    assert wrong_purpose.json()["detail"] == "Invalid media purpose"
+    assert wrong_purpose.json() == {
+        "status": "error",
+        "error_code": "home_player_action_failed",
+        "message": "Åtgärden kunde inte genomföras. Försök igen.",
+    }
