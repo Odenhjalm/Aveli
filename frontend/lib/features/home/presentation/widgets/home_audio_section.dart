@@ -7,7 +7,7 @@ import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
-const double _homeAudioLogoColumnWidth = 86;
+const double _homeAudioLogoColumnWidth = 92;
 const double _homeAudioLogoColumnGap = 10;
 const double _homeAudioTrackListInset =
     _homeAudioLogoColumnWidth + _homeAudioLogoColumnGap;
@@ -69,15 +69,19 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
               SizedBox(
                 width: _homeAudioLogoColumnWidth,
                 child: Transform.translate(
-                  offset: const Offset(0, -4),
-                  child: SizedBox(
-                    key: const ValueKey('home-audio-logo'),
-                    height: 30,
-                    child: Image(
-                      image: logoProvider,
-                      fit: BoxFit.contain,
-                      alignment: Alignment.topLeft,
-                      filterQuality: FilterQuality.high,
+                  offset: const Offset(0, -10),
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      key: const ValueKey('home-audio-logo'),
+                      width: _homeAudioLogoColumnWidth,
+                      height: 72,
+                      child: Image(
+                        image: logoProvider,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.topLeft,
+                        filterQuality: FilterQuality.high,
+                      ),
                     ),
                   ),
                 ),
