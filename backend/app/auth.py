@@ -134,14 +134,17 @@ def _validated_onboarding_state(value: object) -> str | None:
 
 async def _build_current_user(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     from .repositories.auth import get_user_by_id
-    from .repositories.auth_subjects import get_auth_subject
+    from .repositories.auth_subjects import ensure_authenticated_auth_subject
     from .repositories.profiles import get_profile
 
     user = await get_user_by_id(user_id)
     if user is None:
         raise ValueError("Canonical auth user missing")
 
-    auth_subject = await get_auth_subject(user_id)
+    auth_subject = await ensure_authenticated_auth_subject(
+        user_id,
+        email=user.get("email") or payload.get("email"),
+    )
     if auth_subject is None:
         raise ValueError("Canonical auth subject missing")
 

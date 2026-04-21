@@ -21,6 +21,10 @@ def _load_lock() -> dict:
     return json.loads(LOCK_PATH.read_text(encoding="utf-8"))
 
 
+def _load_manifest() -> dict:
+    return json.loads((ROOT / "actual_truth" / "aveli_system_manifest.json").read_text(encoding="utf-8"))
+
+
 def test_baseline_v2_lock_is_complete_ordered_and_lf_hashed() -> None:
     lock = _load_lock()
 
@@ -64,6 +68,24 @@ def test_baseline_v2_lock_is_complete_ordered_and_lf_hashed() -> None:
     ]
     for entry in local_substrate_files:
         assert _sha256_lf(ROOT / entry["path"]) == entry["sha256"]
+
+
+def test_manifest_declares_destructive_reset_guard_policy() -> None:
+    manifest = _load_manifest()
+    guard = manifest["baseline_v2_authority_freeze"]["reset_guard"]
+
+    assert guard["environment_classification_authority"] == "BASELINE_RESET_CLASS"
+    assert guard["allowed_classes"] == ["stateless_verification", "stateful_business"]
+    assert guard["local_dev_default_class"] == "stateless_verification"
+    assert guard["hosted_supabase_default"] == "fail_closed_until_explicit_classification"
+    assert guard["destructive_app_schema_replay_allowed_only_for"] == "stateless_verification"
+    assert guard["protected_business_state"] == [
+        "app.memberships",
+        "app.orders",
+        "app.payments",
+        "app.referral_codes",
+        "app.course_enrollments",
+    ]
 
 
 def test_canonical_v2_slots_do_not_recreate_provider_owned_substrate() -> None:

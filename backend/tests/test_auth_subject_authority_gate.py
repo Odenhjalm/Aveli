@@ -22,7 +22,8 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
 
     _patch_canonical_auth_user(monkeypatch)
 
-    async def _fake_get_auth_subject(_: str):
+    async def _fake_get_auth_subject(_: str, *, email: str | None = None):
+        assert email == "user@example.com"
         return {
             "user_id": USER_ID,
             "onboarding_state": "completed",
@@ -42,7 +43,7 @@ async def test_build_current_user_prefers_auth_subject_over_payload_claims(
         }
 
     monkeypatch.setattr(
-        "app.repositories.auth_subjects.get_auth_subject",
+        "app.repositories.auth_subjects.ensure_authenticated_auth_subject",
         _fake_get_auth_subject,
     )
     monkeypatch.setattr(
@@ -84,7 +85,8 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
 
     _patch_canonical_auth_user(monkeypatch)
 
-    async def _fake_get_auth_subject(_: str):
+    async def _fake_get_auth_subject(_: str, *, email: str | None = None):
+        assert email == "user@example.com"
         return {
             "user_id": USER_ID,
             "onboarding_state": "completed",
@@ -95,7 +97,7 @@ async def test_build_current_user_does_not_fallback_to_supabase_metadata(
         return None
 
     monkeypatch.setattr(
-        "app.repositories.auth_subjects.get_auth_subject",
+        "app.repositories.auth_subjects.ensure_authenticated_auth_subject",
         _fake_get_auth_subject,
     )
     monkeypatch.setattr("app.repositories.profiles.get_profile", _fake_get_profile)
@@ -131,7 +133,8 @@ async def test_build_current_user_rejects_invalid_canonical_subject(monkeypatch)
 
     _patch_canonical_auth_user(monkeypatch)
 
-    async def _fake_get_auth_subject(_: str):
+    async def _fake_get_auth_subject(_: str, *, email: str | None = None):
+        assert email == "user@example.com"
         return {
             "user_id": USER_ID,
             "onboarding_state": "broken_state",
@@ -139,7 +142,7 @@ async def test_build_current_user_rejects_invalid_canonical_subject(monkeypatch)
         }
 
     monkeypatch.setattr(
-        "app.repositories.auth_subjects.get_auth_subject",
+        "app.repositories.auth_subjects.ensure_authenticated_auth_subject",
         _fake_get_auth_subject,
     )
 

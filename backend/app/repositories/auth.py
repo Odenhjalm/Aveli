@@ -9,7 +9,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from ..db import get_conn, pool
-from .auth_subjects import ensure_auth_subject
+from .auth_subjects import ensure_authenticated_auth_subject
 from .profiles import get_profile as get_profile_for_user
 _CANONICAL_AUTH_EVENT_TYPES = frozenset(
     {
@@ -63,17 +63,16 @@ async def create_user(
 ) -> dict[str, Any]:
     """Create Aveli app projections for a Supabase Auth user."""
     normalized_email = email.strip().lower()
-    canonical_onboarding_state = "incomplete"
-    canonical_role = "learner"
     try:
-        auth_subject = await ensure_auth_subject(
+        auth_subject = await ensure_authenticated_auth_subject(
             user_id,
             email=normalized_email,
-            onboarding_state=canonical_onboarding_state,
-            role=canonical_role,
         )
     except errors.UniqueViolation as exc:
         raise UniqueViolationError from exc
+
+    if auth_subject is None:
+        raise RuntimeError("Canonical auth subject ensure failed")
 
     await _upsert_profile_row(
         user_id=user_id,
@@ -84,10 +83,8 @@ async def create_user(
         "user": {
             "id": str(user_id),
             "email": normalized_email,
-            "onboarding_state": (
-                auth_subject or {}
-            ).get("onboarding_state", canonical_onboarding_state),
-            "role": (auth_subject or {}).get("role", canonical_role),
+            "onboarding_state": auth_subject.get("onboarding_state", "incomplete"),
+            "role": auth_subject.get("role", "learner"),
         },
         "profile": profile_row,
     }
@@ -120,14 +117,14 @@ async def get_user_by_id(user_id: str | UUID) -> dict[str, Any] | None:
     async with get_conn() as cur:
         await cur.execute(
             """
-            SELECT user_id AS id,
+            SELECT id,
                    email,
                    created_at,
                    updated_at,
-                   onboarding_state,
-                   role::text AS role
-            FROM app.auth_subjects
-            WHERE user_id = %s
+                   email_confirmed_at,
+                   confirmed_at
+            FROM auth.users
+            WHERE id = %s
             LIMIT 1
             """,
             (user_id,),

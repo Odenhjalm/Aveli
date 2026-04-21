@@ -389,6 +389,12 @@ async def create_user(
 
 async def authenticate_user(email: str, password: str) -> str:
     session = await supabase_auth.login_password(email, password)
+    auth_subject = await auth_subjects_repo.ensure_authenticated_auth_subject(
+        session.user_id,
+        email=session.email,
+    )
+    if auth_subject is None:
+        raise RuntimeError("Canonical auth subject ensure failed")
     return session.user_id
 
 

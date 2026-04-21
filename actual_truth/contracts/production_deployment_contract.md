@@ -143,6 +143,12 @@ Backend runtime database authority:
 - Public launch requires the canonical Baseline V2 hosted profile to apply the
   app-owned slot chain and verify the hosted Supabase substrate interface
   against the intended production Supabase database target.
+- Full destructive `app`-schema reset is forbidden for production and any
+  stateful business environment that must preserve canonical membership,
+  purchase, payment, referral, or protected course-access state.
+- Hosted Baseline V2 replay may perform destructive app-schema rebuild only for
+  an explicitly classified stateless verification target; protected or
+  unclassified hosted targets must fail closed.
 - Hosted production replay must not create or normalize provider-owned `auth`
   or `storage` schema.
 - Public launch requires verification that the production schema matches the

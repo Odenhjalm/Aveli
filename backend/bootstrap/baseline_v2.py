@@ -23,6 +23,13 @@ LOCAL_DEV_PROFILE = "local_dev"
 HOSTED_SUPABASE_PROFILE = "hosted_supabase"
 SUPPORTED_BASELINE_PROFILES = (LOCAL_DEV_PROFILE, HOSTED_SUPABASE_PROFILE)
 ALLOW_HOSTED_BASELINE_REPLAY_ENV = "ALLOW_HOSTED_BASELINE_REPLAY"
+BASELINE_RESET_CLASS_ENV = "BASELINE_RESET_CLASS"
+STATELESS_VERIFICATION_RESET_CLASS = "stateless_verification"
+STATEFUL_BUSINESS_RESET_CLASS = "stateful_business"
+SUPPORTED_BASELINE_RESET_CLASSES = (
+    STATELESS_VERIFICATION_RESET_CLASS,
+    STATEFUL_BUSINESS_RESET_CLASS,
+)
 CLOUD_RUNTIME_ENV_KEYS = ("FLY_APP_NAME", "K_SERVICE", "AWS_EXECUTION_ENV", "DYNO")
 PRODUCTION_ENV_VALUES = {"prod", "production", "live"}
 LOCAL_DATABASE_HOSTS = {"127.0.0.1", "localhost", "::1", "db", "host.docker.internal"}
@@ -248,6 +255,23 @@ def baseline_profile() -> str:
     return profile
 
 
+def baseline_reset_class(profile: str) -> str | None:
+    raw_reset_class = os.environ.get(BASELINE_RESET_CLASS_ENV)
+    if raw_reset_class:
+        reset_class = raw_reset_class.strip().lower()
+        if reset_class not in SUPPORTED_BASELINE_RESET_CLASSES:
+            raise BaselineV2Error(
+                f"unsupported {BASELINE_RESET_CLASS_ENV}={reset_class!r}; "
+                f"allowed classes are {', '.join(SUPPORTED_BASELINE_RESET_CLASSES)}"
+            )
+        return reset_class
+
+    if profile == LOCAL_DEV_PROFILE:
+        return STATELESS_VERIFICATION_RESET_CLASS
+
+    return None
+
+
 def _database_url(database_url: str | None = None) -> str:
     if database_url:
         return database_url
@@ -367,6 +391,39 @@ def _assert_replay_profile_allowed(profile: str) -> None:
     )
 
 
+def _assert_destructive_replay_allowed(profile: str, *, app_schema_empty: bool) -> None:
+    if not app_schema_empty:
+        return
+
+    if profile == LOCAL_DEV_PROFILE:
+        return
+
+    if profile != HOSTED_SUPABASE_PROFILE:
+        raise BaselineV2Error(f"unsupported replay profile {profile!r}")
+
+    reset_class = baseline_reset_class(profile)
+    if reset_class == STATELESS_VERIFICATION_RESET_CLASS:
+        return
+
+    if reset_class == STATEFUL_BUSINESS_RESET_CLASS:
+        classification_reason = (
+            f"{BASELINE_RESET_CLASS_ENV}={STATEFUL_BUSINESS_RESET_CLASS}"
+        )
+    else:
+        classification_reason = (
+            f"{BASELINE_RESET_CLASS_ENV} is missing for hosted destructive replay"
+        )
+
+    raise BaselineV2Error(
+        "destructive app-schema replay is forbidden for protected hosted environments; "
+        f"set {BASELINE_RESET_CLASS_ENV}={STATELESS_VERIFICATION_RESET_CLASS} only for "
+        "an explicit stateless verification target. "
+        f"Current classification: {classification_reason}. "
+        "Protected business state includes app.memberships, app.orders, "
+        "app.payments, app.referral_codes, and app.course_enrollments."
+    )
+
+
 def _replay_v2(conn: psycopg.Connection, *, profile: str) -> None:
     _assert_replay_profile_allowed(profile)
 
@@ -374,6 +431,7 @@ def _replay_v2(conn: psycopg.Connection, *, profile: str) -> None:
         raise BaselineV2Error(
             "refusing to replay V2 into a non-empty app-owned schema state"
         )
+    _assert_destructive_replay_allowed(profile, app_schema_empty=True)
 
     try:
         with conn.transaction():
@@ -790,7 +848,6 @@ def ensure_v2_baseline(database_url: str | None = None) -> dict[str, object]:
         _require_local_database(url)
     else:
         validate_runtime_database_url(url)
-        _assert_replay_profile_allowed(profile)
 
     with psycopg.connect(url, connect_timeout=5) as conn:
         if _db_is_empty(conn):

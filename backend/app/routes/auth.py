@@ -261,16 +261,6 @@ async def login(payload: schemas.AuthLoginRequest, request: Request):
             detail="auth_provider_unavailable",
         ) from exc
 
-    auth_subject = await auth_subjects_repo.get_auth_subject(user_id)
-    if not auth_subject:
-        await _record_auth_event(
-            user_id=str(user_id),
-            email=payload.email,
-            event="login_missing_auth_subject",
-            request=request,
-        )
-        raise HTTPException(status_code=401, detail="invalid_credentials")
-
     user_id = str(user_id)
     claims = await _token_claims(user_id)
     access_token = create_access_token(user_id, claims=claims)

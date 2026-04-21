@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from jose import JWTError, jwt
 
 from app import auth
+from app import db as app_db
 from app.utils import supabase_jwt
 
 
@@ -77,6 +78,64 @@ def _configure_supabase_jwks(monkeypatch, *, kid: str = "test-kid"):
         raising=False,
     )
     return private_pem, issuer, kid
+
+
+async def _insert_auth_user(user_id: str, email: str) -> None:
+    async with app_db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                INSERT INTO auth.users (
+                    id,
+                    email,
+                    encrypted_password,
+                    created_at,
+                    updated_at
+                )
+                VALUES (%s::uuid, %s, %s, now(), now())
+                ON CONFLICT (id) DO UPDATE
+                  SET email = excluded.email,
+                      updated_at = now()
+                """,
+                (user_id, email, "supabase-auth-managed-test-placeholder"),
+            )
+            await conn.commit()
+
+
+async def _delete_auth_subject(user_id: str) -> None:
+    async with app_db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "DELETE FROM app.auth_subjects WHERE user_id = %s::uuid",
+                (user_id,),
+            )
+            await conn.commit()
+
+
+async def _fetch_auth_subject(user_id: str) -> dict[str, str] | None:
+    async with app_db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT user_id::text,
+                       email,
+                       onboarding_state,
+                       role::text
+                FROM app.auth_subjects
+                WHERE user_id = %s::uuid
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = await cur.fetchone()
+    if row is None:
+        return None
+    return {
+        "user_id": row[0],
+        "email": row[1],
+        "onboarding_state": row[2],
+        "role": row[3],
+    }
 
 
 def test_decode_access_token_accepts_supabase_es256_jwks_token(monkeypatch):
@@ -177,3 +236,42 @@ def test_decode_access_token_prefers_local_jwt_secret_for_local_tokens(monkeypat
 
     assert source == "local"
     assert payload["sub"] == "33333333-3333-4333-8333-333333333333"
+
+
+async def test_entry_state_with_supabase_jwt_ensures_missing_auth_subject(
+    async_client,
+    monkeypatch,
+):
+    private_pem, issuer, kid = _configure_supabase_jwks(monkeypatch)
+    user_id = "44444444-4444-4444-8444-444444444444"
+    email = "jwt-projection@example.com"
+    await _insert_auth_user(user_id, email)
+    await _delete_auth_subject(user_id)
+
+    token = _es256_token(
+        private_pem=private_pem,
+        kid=kid,
+        issuer=issuer,
+        sub=user_id,
+    )
+    response = await async_client.get(
+        "/entry-state",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "can_enter_app": False,
+        "onboarding_state": "incomplete",
+        "onboarding_completed": False,
+        "membership_active": False,
+        "needs_onboarding": True,
+        "needs_payment": True,
+        "role": "learner",
+    }
+    assert await _fetch_auth_subject(user_id) == {
+        "user_id": user_id,
+        "email": email,
+        "onboarding_state": "incomplete",
+        "role": "learner",
+    }

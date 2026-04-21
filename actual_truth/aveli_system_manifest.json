@@ -41,6 +41,23 @@
             "hosted_supabase": "verify_provider_owned_substrate_interface_only_then_replay_app_schema",
             "local_dev": "replay_locked_minimal_substrate_then_replay_app_schema"
         },
+        "reset_guard": {
+            "environment_classification_authority": "BASELINE_RESET_CLASS",
+            "allowed_classes": [
+                "stateless_verification",
+                "stateful_business"
+            ],
+            "local_dev_default_class": "stateless_verification",
+            "hosted_supabase_default": "fail_closed_until_explicit_classification",
+            "destructive_app_schema_replay_allowed_only_for": "stateless_verification",
+            "protected_business_state": [
+                "app.memberships",
+                "app.orders",
+                "app.payments",
+                "app.referral_codes",
+                "app.course_enrollments"
+            ]
+        },
         "superseded_legacy_baseline": "backend/supabase/baseline_slots is archived legacy and non-authoritative",
         "onboarding_state": {
             "canonical_intermediate_state": "welcome_pending"

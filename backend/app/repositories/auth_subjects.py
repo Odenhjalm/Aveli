@@ -9,6 +9,8 @@ from ..db import get_conn, pool
 
 _VALID_ONBOARDING_STATES = frozenset({"incomplete", "welcome_pending", "completed"})
 _VALID_ROLES = frozenset({"learner", "teacher", "admin"})
+_CANONICAL_INITIAL_ONBOARDING_STATE = "incomplete"
+_CANONICAL_INITIAL_ROLE = "learner"
 
 
 def _normalize_text(value: object) -> str:
@@ -101,6 +103,23 @@ async def ensure_auth_subject(
                 row = await cur.fetchone()
             await conn.commit()
             return dict(row) if row else None
+
+
+async def ensure_authenticated_auth_subject(
+    user_id: str | UUID,
+    *,
+    email: str | None = None,
+) -> dict[str, Any] | None:
+    normalized_email = (
+        str(email).strip().lower() or None if email is not None else None
+    )
+    return await ensure_auth_subject(
+        user_id,
+        email=normalized_email,
+        onboarding_state=_CANONICAL_INITIAL_ONBOARDING_STATE,
+        role=_CANONICAL_INITIAL_ROLE,
+    )
+
 
 async def set_role_authority(
     user_id: str | UUID,
