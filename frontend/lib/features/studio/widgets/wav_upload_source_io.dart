@@ -40,20 +40,9 @@ Future<WavUploadFile?> pickWavFile() async {
 }
 
 Future<WavUploadFile?> pickMediaFile() async {
-  const extensions = <String>[
-    'mp3',
-    'm4a',
-    'aac',
-    'ogg',
-    'wav',
-    'mp4',
-    'mov',
-    'm4v',
-    'webm',
-    'mkv',
-  ];
+  const extensions = <String>['mp3', 'm4a', 'aac', 'ogg', 'wav'];
 
-  final typeGroup = fs.XTypeGroup(label: 'media', extensions: extensions);
+  final typeGroup = fs.XTypeGroup(label: 'audio', extensions: extensions);
   final file = await fs.openFile(acceptedTypeGroups: [typeGroup]);
   if (file == null) return null;
   final size = await file.length();
@@ -68,8 +57,7 @@ Future<WavResumableSession?> findResumableSession({
   return null;
 }
 
-void clearResumableSession(WavResumableSession session) {
-}
+void clearResumableSession(WavResumableSession session) {}
 
 Future<void> uploadWavFile({
   required Uri uploadEndpoint,

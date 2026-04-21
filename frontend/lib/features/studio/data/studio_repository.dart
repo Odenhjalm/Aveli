@@ -50,6 +50,18 @@ class StudioRepository {
     throw StateError('$label field "$field" must be a list');
   }
 
+  static Map<String, Object?> _requiredResponseMap(
+    Object? payload,
+    String label,
+  ) {
+    switch (payload) {
+      case final Map data:
+        return Map<String, Object?>.from(data);
+      default:
+        throw StateError('$label returned a non-object payload');
+    }
+  }
+
   static String _requiredEtagHeader(Response<Object?> response, String label) {
     final etag = response.headers.value('etag')?.trim();
     if (etag == null || etag.isEmpty) {
@@ -311,7 +323,14 @@ class StudioRepository {
   }
 
   Future<HomePlayerLibraryPayload> fetchHomePlayerLibrary() async {
-    return _unsupportedRuntime('Home player library');
+    final response = await _client.raw.get<Object?>(
+      '/studio/home-player/library',
+    );
+    return HomePlayerLibraryPayload.fromJson(
+      Map<String, dynamic>.from(
+        _requiredResponseMap(response.data, 'Home player library'),
+      ),
+    );
   }
 
   Future<HomePlayerUploadItem> uploadHomePlayerUpload({
@@ -319,7 +338,19 @@ class StudioRepository {
     required String mediaAssetId,
     bool active = true,
   }) async {
-    return _unsupportedRuntime('Home player uploads');
+    final response = await _client.raw.post<Object?>(
+      '/studio/home-player/uploads',
+      data: <String, Object?>{
+        'title': title,
+        'media_asset_id': mediaAssetId,
+        'active': active,
+      },
+    );
+    return HomePlayerUploadItem.fromJson(
+      Map<String, dynamic>.from(
+        _requiredResponseMap(response.data, 'Created home player upload'),
+      ),
+    );
   }
 
   Future<Map<String, Object?>> requestHomePlayerUploadUrl({
@@ -327,13 +358,22 @@ class StudioRepository {
     required String mimeType,
     required int sizeBytes,
   }) async {
-    return _unsupportedRuntime('Home player upload URLs');
+    final response = await _client.raw.post<Object?>(
+      '/api/home-player/media-assets/upload-url',
+      data: <String, Object?>{
+        'filename': filename,
+        'mime_type': mimeType,
+        'size_bytes': sizeBytes,
+      },
+    );
+    return _requiredResponseMap(response.data, 'Home player upload URL');
   }
 
   Future<Map<String, Object?>> refreshHomePlayerUploadUrl({
     required String objectPath,
     required String mimeType,
   }) async {
+    // Canonical backend refresh endpoint is not available for this surface yet.
     return _unsupportedRuntime('Home player upload URL refresh');
   }
 
@@ -346,6 +386,7 @@ class StudioRepository {
     bool active = true,
     String storageBucket = 'course-media',
   }) async {
+    // Canonical backend does not expose storage-backed home player creation here.
     return _unsupportedRuntime('Home player storage uploads');
   }
 
@@ -354,11 +395,26 @@ class StudioRepository {
     String? title,
     bool? active,
   }) async {
-    return _unsupportedRuntime('Home player uploads');
+    final patch = <String, Object?>{};
+    if (title != null) {
+      patch['title'] = title;
+    }
+    if (active != null) {
+      patch['active'] = active;
+    }
+    final response = await _client.raw.patch<Object?>(
+      '/studio/home-player/uploads/$uploadId',
+      data: patch,
+    );
+    return HomePlayerUploadItem.fromJson(
+      Map<String, dynamic>.from(
+        _requiredResponseMap(response.data, 'Updated home player upload'),
+      ),
+    );
   }
 
   Future<void> deleteHomePlayerUpload(String uploadId) async {
-    return _unsupportedRuntime('Home player uploads');
+    await _client.delete('/studio/home-player/uploads/$uploadId');
   }
 
   Future<HomePlayerCourseLinkItem> createHomePlayerCourseLink({
@@ -366,7 +422,19 @@ class StudioRepository {
     required String title,
     bool enabled = true,
   }) async {
-    return _unsupportedRuntime('Home player course links');
+    final response = await _client.raw.post<Object?>(
+      '/studio/home-player/course-links',
+      data: <String, Object?>{
+        'lesson_media_id': lessonMediaId,
+        'title': title,
+        'enabled': enabled,
+      },
+    );
+    return HomePlayerCourseLinkItem.fromJson(
+      Map<String, dynamic>.from(
+        _requiredResponseMap(response.data, 'Created home player course link'),
+      ),
+    );
   }
 
   Future<HomePlayerCourseLinkItem> updateHomePlayerCourseLink(
@@ -374,11 +442,26 @@ class StudioRepository {
     bool? enabled,
     String? title,
   }) async {
-    return _unsupportedRuntime('Home player course links');
+    final patch = <String, Object?>{};
+    if (enabled != null) {
+      patch['enabled'] = enabled;
+    }
+    if (title != null) {
+      patch['title'] = title;
+    }
+    final response = await _client.raw.patch<Object?>(
+      '/studio/home-player/course-links/$linkId',
+      data: patch,
+    );
+    return HomePlayerCourseLinkItem.fromJson(
+      Map<String, dynamic>.from(
+        _requiredResponseMap(response.data, 'Updated home player course link'),
+      ),
+    );
   }
 
   Future<void> deleteHomePlayerCourseLink(String linkId) async {
-    return _unsupportedRuntime('Home player course links');
+    await _client.delete('/studio/home-player/course-links/$linkId');
   }
 
   Future<void> reorderLessonMedia(

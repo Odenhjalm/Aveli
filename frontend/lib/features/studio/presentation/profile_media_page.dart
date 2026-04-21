@@ -112,9 +112,9 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _SectionCard(
-            title: 'Media för Home-spelaren',
+            title: 'Ljud för Home-spelaren',
             subtitle:
-                'Ladda upp ljud/video direkt för Home. Dessa filer är fristående från kurser. Tar du bort en fil här raderas den helt.',
+                'Ladda upp ljud direkt för Home-spelaren. Dessa filer är fristående från kurser. Tar du bort en fil här raderas den helt.',
             primary: true,
             isBusy: isBusy,
             onRefresh: () async => ref.invalidate(homePlayerLibraryProvider),
@@ -124,7 +124,7 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
                     ? null
                     : () async => await _uploadHomeMedia(context, ref),
                 icon: const Icon(Icons.upload_file_outlined),
-                label: const Text('Ladda upp'),
+                label: const Text('Ladda upp ljud'),
               ),
             ],
             child: uploads.isEmpty
@@ -168,9 +168,9 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
           ),
           const SizedBox(height: 18),
           _SectionCard(
-            title: 'Länkat från kurser',
+            title: 'Länkat ljud från kurser',
             subtitle:
-                'Här ser du media som är länkat från kursmaterial. Du kan slå på/av länken eller ta bort länken utan att påverka originalfilen.\nInga uppladdningar görs här.',
+                'Här ser du ljud som är länkat från kursmaterial. Du kan slå på eller av länken, eller ta bort den utan att påverka originalfilen.\nInga uppladdningar görs här.',
             primary: false,
             isBusy: isBusy,
             onRefresh: () async => ref.invalidate(homePlayerLibraryProvider),
@@ -180,7 +180,7 @@ class _HomePlayerLibraryBody extends ConsumerWidget {
                     ? null
                     : () async => await _linkFromCourses(context, ref),
                 icon: const Icon(Icons.link_outlined),
-                label: const Text('Länka media'),
+                label: const Text('Länka ljud'),
               ),
             ],
             child: links.isEmpty
@@ -351,7 +351,7 @@ class _HomeUploadsEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Ladda upp ljud eller video som bara ska användas i Home-spelaren.',
+            'Ladda upp ljud som bara ska användas i Home-spelaren.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -508,10 +508,8 @@ class _HomeUploadTileState extends State<_HomeUploadTile> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final kind = widget.upload.kind.toLowerCase();
-    final isVideo = kind.contains('video');
-    final icon = isVideo ? Icons.videocam_outlined : Icons.headphones;
-    final typeLabel = isVideo ? 'Video' : 'Ljud';
+    const icon = Icons.headphones;
+    const typeLabel = 'Ljud';
     final isDisabled = widget.disabled || _saving;
     final mediaAssetId = (widget.upload.mediaAssetId ?? '').trim();
     final mediaState = (widget.upload.mediaState ?? 'uploaded')
@@ -676,7 +674,7 @@ class _CourseLinksEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Länka in ljud/video från dina kurser. Tar du bort originalfilen blir länken ogiltig och kan inte spelas.',
+            'Länka in ljud från dina kurser. Tar du bort originalfilen blir länken ogiltig och kan inte spelas.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -738,9 +736,7 @@ class _CourseLinkTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final kind = (link.kind ?? '').toLowerCase();
-    final isVideo = kind.contains('video');
-    final icon = isVideo ? Icons.videocam_outlined : Icons.headphones;
+    const icon = Icons.headphones;
     final statusLabel = _statusLabel(link.status);
     final statusTone = _statusTone(link.status);
     final canToggle = link.status == HomePlayerCourseLinkStatus.active;
@@ -919,8 +915,8 @@ Future<void> _uploadHomeMedia(BuildContext context, WidgetRef ref) async {
   final suggested = _suggestTitleFromFilename(picked.name);
   final title = await _promptRequiredTitle(
     context,
-    title: 'Namn på media',
-    hint: 'T.ex. “Andningsövning”',
+    title: 'Namn på ljudfil',
+    hint: 'T.ex. "Andningsövning"',
     initialValue: suggested,
     confirmLabel: 'Ladda upp',
   );
@@ -948,25 +944,28 @@ Future<void> _uploadHomeMedia(BuildContext context, WidgetRef ref) async {
 Future<void> _linkFromCourses(BuildContext context, WidgetRef ref) async {
   final state = ref.read(homePlayerLibraryProvider).valueOrNull;
   final sources = state?.courseMedia ?? const <TeacherProfileLessonSource>[];
-  if (sources.isEmpty) {
+  final audioSources = sources
+      .where(_isHomeAudioCourseSource)
+      .toList(growable: false);
+  if (audioSources.isEmpty) {
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Inga kursfiler hittades.')));
+    ).showSnackBar(const SnackBar(content: Text('Inga kursljud hittades.')));
     return;
   }
   if (!context.mounted) return;
 
-  final picked = await _pickCourseMedia(context, sources);
+  final picked = await _pickCourseMedia(context, audioSources);
   if (picked == null) return;
   if (!context.mounted) return;
 
   final suggested = (picked.lessonTitle ?? '').trim();
   final title = await _promptRequiredTitle(
     context,
-    title: 'Namn på länkad media',
-    hint: 'T.ex. “Meditation – kväll”',
-    initialValue: suggested.isNotEmpty ? suggested : 'Länkad media',
-    confirmLabel: 'Skapa länk',
+    title: 'Namn på länkat ljud',
+    hint: 'T.ex. "Meditation kväll"',
+    initialValue: suggested.isNotEmpty ? suggested : 'Länkat ljud',
+    confirmLabel: 'Länka ljud',
   );
   if (title == null) return;
   if (!context.mounted) return;
@@ -977,7 +976,7 @@ Future<void> _linkFromCourses(BuildContext context, WidgetRef ref) async {
     if (!context.mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Länk skapad.')));
+    ).showSnackBar(const SnackBar(content: Text('Ljudet har länkats.')));
   } catch (error) {
     if (!context.mounted) return;
     _showErrorSnackBar(context, error);
@@ -1024,15 +1023,8 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
   BuildContext context,
   List<TeacherProfileLessonSource> sources,
 ) async {
-  final audioVideo = sources
-      .where((source) {
-        final kind = source.kind.toLowerCase();
-        final contentType = (source.contentType ?? '').toLowerCase();
-        return kind.contains('audio') ||
-            kind.contains('video') ||
-            contentType.startsWith('audio/') ||
-            contentType.startsWith('video/');
-      })
+  final audioSources = sources
+      .where(_isHomeAudioCourseSource)
       .toList(growable: false);
 
   return showModalBottomSheet<TeacherProfileLessonSource>(
@@ -1048,8 +1040,8 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
           builder: (context, setState) {
             final query = searchController.text.trim().toLowerCase();
             final filtered = query.isEmpty
-                ? audioVideo
-                : audioVideo
+                ? audioSources
+                : audioSources
                       .where((source) {
                         final course = (source.courseTitle ?? '').toLowerCase();
                         final lesson = (source.lessonTitle ?? '').toLowerCase();
@@ -1062,7 +1054,7 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Välj kursmedia att länka',
+                    'Välj kursljud att länka',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -1072,44 +1064,50 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
                     controller: searchController,
                     decoration: const InputDecoration(
                       prefixIcon: Icon(Icons.search),
-                      hintText: 'Sök på kurs eller lektion…',
+                      hintText: 'Sök på kurs eller lektion...',
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 12),
                   Expanded(
-                    child: ListView.separated(
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, index) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final source = filtered[index];
-                        final courseTitle = (source.courseTitle ?? '').trim();
-                        final lessonTitle = (source.lessonTitle ?? '').trim();
-                        final kind = source.kind.toLowerCase();
-                        final isVideo = kind.contains('video');
-                        final icon = isVideo
-                            ? Icons.videocam_outlined
-                            : Icons.headphones;
-                        final subtitleParts = <String>[
-                          if (courseTitle.isNotEmpty) courseTitle,
-                          if (lessonTitle.isNotEmpty) 'Lektion: $lessonTitle',
-                        ];
-                        return ListTile(
-                          leading: Icon(icon),
-                          title: Text(
-                            lessonTitle.isNotEmpty ? lessonTitle : 'Media',
-                          ),
-                          subtitle: subtitleParts.isEmpty
-                              ? null
-                              : Text(
-                                  subtitleParts.join(' • '),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
+                    child: filtered.isEmpty
+                        ? const Center(
+                            child: Text('Inga ljudfiler matchar sökningen.'),
+                          )
+                        : ListView.separated(
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, index) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final source = filtered[index];
+                              final courseTitle = (source.courseTitle ?? '')
+                                  .trim();
+                              final lessonTitle = (source.lessonTitle ?? '')
+                                  .trim();
+                              final subtitleParts = <String>[
+                                if (courseTitle.isNotEmpty) courseTitle,
+                                if (lessonTitle.isNotEmpty)
+                                  'Lektion: $lessonTitle',
+                              ];
+                              return ListTile(
+                                leading: const Icon(Icons.headphones),
+                                title: Text(
+                                  lessonTitle.isNotEmpty
+                                      ? lessonTitle
+                                      : 'Ljudfil',
                                 ),
-                          onTap: () => Navigator.of(sheetContext).pop(source),
-                        );
-                      },
-                    ),
+                                subtitle: subtitleParts.isEmpty
+                                    ? null
+                                    : Text(
+                                        subtitleParts.join(' • '),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                onTap: () =>
+                                    Navigator.of(sheetContext).pop(source),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
@@ -1123,10 +1121,16 @@ Future<TeacherProfileLessonSource?> _pickCourseMedia(
 
 String _suggestTitleFromFilename(String filename) {
   final name = filename.trim();
-  if (name.isEmpty) return 'Media';
+  if (name.isEmpty) return 'Ljudfil';
   final dot = name.lastIndexOf('.');
   if (dot <= 0) return name;
   return name.substring(0, dot);
+}
+
+bool _isHomeAudioCourseSource(TeacherProfileLessonSource source) {
+  final kind = source.kind.trim().toLowerCase();
+  final contentType = (source.contentType ?? '').trim().toLowerCase();
+  return kind.contains('audio') || contentType.startsWith('audio/');
 }
 
 String _guessContentType(String filename) {

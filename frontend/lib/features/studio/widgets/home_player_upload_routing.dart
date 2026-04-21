@@ -1,7 +1,6 @@
 enum HomePlayerUploadRoute {
   wavPipeline,
   directMp3,
-  directMp4,
   unsupportedAudio,
   unsupportedVideo,
   unsupportedOther,
@@ -14,10 +13,7 @@ const _wavMimeTypes = <String>{
   'audio/vnd.wave',
 };
 
-const _mp3MimeTypes = <String>{
-  'audio/mpeg',
-  'audio/mp3',
-};
+const _mp3MimeTypes = <String>{'audio/mpeg', 'audio/mp3'};
 
 HomePlayerUploadRoute detectHomePlayerUploadRoute({
   required String mimeType,
@@ -26,17 +22,27 @@ HomePlayerUploadRoute detectHomePlayerUploadRoute({
   final lowerMime = mimeType.trim().toLowerCase();
   final filenameLower = filename.trim().toLowerCase();
 
-  final isWav = _wavMimeTypes.contains(lowerMime) || filenameLower.endsWith('.wav');
+  final isWav =
+      _wavMimeTypes.contains(lowerMime) || filenameLower.endsWith('.wav');
   if (isWav) return HomePlayerUploadRoute.wavPipeline;
 
-  final isMp3 = _mp3MimeTypes.contains(lowerMime) || filenameLower.endsWith('.mp3');
+  final isMp3 =
+      _mp3MimeTypes.contains(lowerMime) || filenameLower.endsWith('.mp3');
   if (isMp3) return HomePlayerUploadRoute.directMp3;
 
-  final isMp4 = lowerMime == 'video/mp4' || filenameLower.endsWith('.mp4');
-  if (isMp4) return HomePlayerUploadRoute.directMp4;
-
-  if (lowerMime.startsWith('audio/')) return HomePlayerUploadRoute.unsupportedAudio;
-  if (lowerMime.startsWith('video/')) return HomePlayerUploadRoute.unsupportedVideo;
+  if (lowerMime.startsWith('audio/')) {
+    return HomePlayerUploadRoute.unsupportedAudio;
+  }
+  if (lowerMime.startsWith('video/')) {
+    return HomePlayerUploadRoute.unsupportedVideo;
+  }
+  if (filenameLower.endsWith('.mp4') ||
+      filenameLower.endsWith('.mov') ||
+      filenameLower.endsWith('.m4v') ||
+      filenameLower.endsWith('.webm') ||
+      filenameLower.endsWith('.mkv')) {
+    return HomePlayerUploadRoute.unsupportedVideo;
+  }
   return HomePlayerUploadRoute.unsupportedOther;
 }
 
@@ -46,8 +52,6 @@ String homePlayerUploadNormalizedMimeType(HomePlayerUploadRoute route) {
       return 'audio/wav';
     case HomePlayerUploadRoute.directMp3:
       return 'audio/mpeg';
-    case HomePlayerUploadRoute.directMp4:
-      return 'video/mp4';
     case HomePlayerUploadRoute.unsupportedAudio:
     case HomePlayerUploadRoute.unsupportedVideo:
     case HomePlayerUploadRoute.unsupportedOther:
@@ -58,15 +62,13 @@ String homePlayerUploadNormalizedMimeType(HomePlayerUploadRoute route) {
 String homePlayerUploadUnsupportedMessage(HomePlayerUploadRoute route) {
   switch (route) {
     case HomePlayerUploadRoute.unsupportedAudio:
-      return 'Endast WAV eller MP3 stöds för ljud i Home Player.';
+      return 'Endast WAV eller MP3 stöds för ljud i Home-spelaren.';
     case HomePlayerUploadRoute.unsupportedVideo:
-      return 'Endast MP4 stöds för video i Home Player.';
+      return 'Home-spelaren stöder bara ljud. Välj en WAV- eller MP3-fil.';
     case HomePlayerUploadRoute.unsupportedOther:
-      return 'Välj en WAV-, MP3- eller MP4-fil.';
+      return 'Välj en WAV- eller MP3-fil.';
     case HomePlayerUploadRoute.wavPipeline:
     case HomePlayerUploadRoute.directMp3:
-    case HomePlayerUploadRoute.directMp4:
       return '';
   }
 }
-

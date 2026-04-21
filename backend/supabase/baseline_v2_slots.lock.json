@@ -88,15 +88,15 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "cc8226bf8c1a078de761fb85682dcc6cef34ed40c1bbc93be15353852c7b031b",
+    "expected_schema_hash": "f3cb6a3e0feee5d51c0900cbfa3509e9dd2932374aaececdccc4fee56a87b7c3",
     "expected_counts": {
       "enums": 13,
-      "tables": 28,
+      "tables": 33,
       "views": 5,
-      "fks": 39,
-      "constraints": 146,
-      "triggers": 13,
-      "functions": 23
+      "fks": 48,
+      "constraints": 176,
+      "triggers": 21,
+      "functions": 33
     },
     "forbidden_legacy_columns": [
       "role_v2",
@@ -259,6 +259,12 @@
       "filename": "V2_0020_media_ready_format_matrix.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0020_media_ready_format_matrix.sql",
       "sha256": "17edc4ed1a715b8f749e354be5fa8a3e9db529f28094208c58aa299597eede94"
+    },
+    {
+      "slot": 21,
+      "filename": "V2_0021_special_offer_substrate.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0021_special_offer_substrate.sql",
+      "sha256": "69bb1c2d6622f70ba307ba2f2a5cbc2ed498b9139ad1509da8c164d9c25ae214"
     }
   ]
 }

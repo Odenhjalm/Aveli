@@ -93,7 +93,7 @@ class _HomePlayerUploadDialogState
     }
 
     if (route == HomePlayerUploadRoute.wavPipeline) {
-      await _uploadViaMediaPipeline();
+      await _uploadViaCanonicalHomePlayerRoute();
       return;
     }
 
@@ -102,14 +102,15 @@ class _HomePlayerUploadDialogState
     );
   }
 
-  Future<void> _uploadViaMediaPipeline({String? normalizedMimeOverride}) async {
-    final normalizedMime = (normalizedMimeOverride?.trim().isNotEmpty ?? false)
-        ? normalizedMimeOverride!.trim().toLowerCase()
+  Future<void> _uploadViaCanonicalHomePlayerRoute({
+    String? normalizedMimeType,
+  }) async {
+    final normalizedMime = (normalizedMimeType?.trim().isNotEmpty ?? false)
+        ? normalizedMimeType!.trim().toLowerCase()
         : _normalizeWavMimeType(widget.contentType, widget.file.name);
 
     if (!normalizedMime.startsWith('audio/')) {
-      const message =
-          'MP4-uppladdning kräver backendstöd innan den kan publiceras.';
+      const message = 'Home-spelaren stöder bara ljudfiler.';
       if (!mounted) return;
       setState(() {
         _uploading = false;
@@ -119,6 +120,7 @@ class _HomePlayerUploadDialogState
       return;
     }
 
+    final studioRepo = ref.read(studioRepositoryProvider);
     final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
     final uploadCancel = WavUploadCancelToken();
     final dioCancel = CancelToken();
@@ -128,12 +130,13 @@ class _HomePlayerUploadDialogState
     late final String mediaId;
 
     try {
-      final upload = await pipelineRepo.requestUploadUrl(
+      final uploadPayload = await studioRepo.requestHomePlayerUploadUrl(
         filename: widget.file.name,
         mimeType: normalizedMime,
         sizeBytes: widget.file.size,
-        mediaType: 'audio',
-        purpose: 'home_player_audio',
+      );
+      final upload = MediaUploadTarget.fromCanonicalMediaAssetResponse(
+        uploadPayload,
       );
       if (upload.uploadEndpoint.isEmpty || upload.uploadSessionId.isEmpty) {
         throw StateError('Uppladdningssession saknas.');
@@ -175,14 +178,13 @@ class _HomePlayerUploadDialogState
     setState(() {
       _uploading = false;
       _processing = true;
-      _status = 'Registrerar media...';
+      _status = 'Registrerar ljudfil...';
       _cancelToken = null;
     });
 
     try {
       await pipelineRepo.completeUpload(mediaId: mediaId);
-      final repo = ref.read(studioRepositoryProvider);
-      await repo.uploadHomePlayerUpload(
+      await studioRepo.uploadHomePlayerUpload(
         title: widget.title,
         mediaAssetId: mediaId,
         active: widget.active,
@@ -201,24 +203,6 @@ class _HomePlayerUploadDialogState
         _status = message;
       });
     }
-  }
-
-  Future<void> _uploadViaCanonicalHomePlayerRoute({
-    required String normalizedMimeType,
-  }) async {
-    final mimeType = normalizedMimeType.trim().toLowerCase();
-    if (mimeType.startsWith('audio/')) {
-      await _uploadViaMediaPipeline(normalizedMimeOverride: mimeType);
-      return;
-    }
-    const message =
-        'MP4-uppladdning kräver backendstöd innan den kan publiceras.';
-    if (!mounted) return;
-    setState(() {
-      _uploading = false;
-      _error = message;
-      _status = message;
-    });
   }
 
   String _messageForUploadStartFailure(Object error, StackTrace stackTrace) {
@@ -274,7 +258,7 @@ class _HomePlayerUploadDialogState
         ref.invalidate(homePlayerLibraryProvider);
         setState(() {
           _processing = false;
-          _status = 'MP3 klar - ljudet kan spelas upp';
+          _status = 'Ljudfilen är klar för uppspelning.';
         });
         _pollTimer?.cancel();
         _pollTimer = null;
@@ -336,7 +320,7 @@ class _HomePlayerUploadDialogState
         );
       },
       child: AlertDialog(
-        title: const Text('Laddar upp media'),
+        title: const Text('Laddar upp ljud'),
         content: SizedBox(
           width: 420,
           child: Column(
@@ -358,7 +342,8 @@ class _HomePlayerUploadDialogState
                 children: [
                   Expanded(
                     child: Text(
-                      _status ?? (_uploading ? 'Laddar upp...' : 'Förbereder...'),
+                      _status ??
+                          (_uploading ? 'Laddar upp...' : 'Förbereder...'),
                       style: theme.textTheme.bodySmall,
                     ),
                   ),

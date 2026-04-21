@@ -74,7 +74,8 @@ Future<WavUploadFile?> pickWavFile() async {
 
 Future<WavUploadFile?> pickMediaFile() async {
   final input = FileUploadInputElement()
-    ..accept = 'audio/*,video/*'
+    ..accept =
+        '.mp3,.wav,.m4a,.aac,.ogg,audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg'
     ..multiple = false;
 
   final completer = Completer<WavUploadFile?>();

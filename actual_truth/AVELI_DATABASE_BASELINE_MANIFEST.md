@@ -136,6 +136,10 @@ owning backend/operator authority:
 | `app.payments`                 | payment-provider settlement tied to orders                                               | Stripe webhook/backend settlement authority                                          |
 | `app.course_bundles`           | canonical bundle identity, ownership, composition pricing surface                        | teacher bundle backend authority                                                     |
 | `app.course_bundle_courses`    | canonical bundle composition                                                             | teacher bundle backend authority                                                     |
+| `app.special_offers`           | canonical special-offer identity, teacher ownership, price truth, and state hash         | teacher special-offer backend authority                                              |
+| `app.special_offer_courses`    | canonical special-offer selected-course set and deterministic ordering                   | teacher special-offer backend authority                                              |
+| `app.special_offer_composite_image_outputs` | canonical active special-offer composite-image placement truth              | teacher special-offer image backend authority                                        |
+| `app.special_offer_composite_image_sources` | canonical persisted source-input set for active special-offer image         | teacher special-offer image backend authority                                        |
 | `app.home_player_uploads`      | direct home-player upload inclusion source                                               | home-audio/media backend authority                                                   |
 | `app.home_player_course_links` | course-linked home-audio inclusion source                                                | home-audio/backend authority                                                         |
 | `app.profile_media_placements` | profile/community media authored-placement source                                        | profile/community media backend authority                                            |
@@ -156,6 +160,7 @@ become business authority.
 | `app.payment_events`       | Stripe webhook idempotency and webhook observability support | ACTIVE SUPPORT | append-only; not purchase, payment, membership, pricing, or access authority                     |
 | `app.billing_logs`         | billing observability/logging support                        | ACTIVE SUPPORT | backend-only writes; no business authority                                                       |
 | `app.stripe_customers`     | retained Stripe customer support substrate                   | ACTIVE SUPPORT | not purchase, pricing, ownership, sellability, membership, or access authority                   |
+| `app.special_offer_composite_image_attempts` | special-offer image generation/regeneration attempt tracking | ACTIVE SUPPORT | support only; not active output, price, selected-course, or placement authority                  |
 | `app.livekit_webhook_jobs` | inert LiveKit webhook queue structure                        | PAUSED         | no worker execution allowed; no canonical mutation allowed; queue exists only as inert structure |
 
 `app.livekit_webhook_jobs` is intentionally retained as runtime structure but
@@ -287,6 +292,7 @@ Allowed values:
 - `lesson_media`
 - `home_player_audio`
 - `profile_media`
+- `special_offer_composite_image`
 
 ### 4.6 Physical Enum: `app.media_state`
 
@@ -402,6 +408,10 @@ Rules:
 - `app.lesson_media` is authored lesson-media placement authority.
 - `app.profile_media_placements` is profile/community media authored-placement
   authority.
+- `app.special_offer_composite_image_outputs` is special-offer composite-image
+  authored placement authority.
+- `app.special_offer_composite_image_sources` is exact persisted generated
+  source-input truth for the active special-offer composite image.
 - `app.home_player_uploads` and `app.home_player_course_links` are home-audio
   inclusion source tables.
 - `app.runtime_media` is read-only runtime projection.
@@ -409,6 +419,13 @@ Rules:
 - Storage paths, object names, signed URLs, object URLs, preview URLs, and
   download URLs are not canonical media truth.
 - `ready` media requires canonical worker-owned readiness.
+- Special-offer composite image media uses purpose
+  `special_offer_composite_image`.
+- `app.media_assets` alone must never become special-offer composite-image
+  placement truth.
+- Special-offer composite-image ready-transition expansion and `runtime_media`
+  projection expansion remain separate accepted baseline work. The accepted
+  substrate in this manifest records purpose and placement ownership only.
 - Audio `ready` requires `playback_format = 'mp3'`.
 - Direct audio `ready` writes are forbidden.
 - Worker stale-lock release eligibility must match active worker fetch/lock
@@ -466,6 +483,31 @@ Rules:
 - Stripe is payment infrastructure only.
 - Stripe runtime state, checkout success, session state, subscription state, and
   customer portal state are not authority by themselves.
+
+### 5.6A Special Offers
+
+Rules:
+
+- `app.special_offers` owns special-offer identity, teacher ownership, offer
+  price truth, and the deterministic `state_hash`.
+- `app.special_offer_courses` owns the selected-course set for a special offer.
+- Special-offer selected-course ordering is explicit and deterministic through
+  `position`.
+- Special-offer selected-course count is canonically `1..5`.
+- Special-offer selected courses must belong to the same teacher as the offer.
+- `state_hash` is the only canonical current/stale comparison surface for
+  special-offer image freshness. Boolean current flags are forbidden.
+- `app.special_offer_composite_image_outputs` owns the active composite-image
+  binding. `app.media_assets` alone must not own that binding.
+- `app.special_offer_composite_image_sources` owns the exact persisted source
+  inputs used for the active composite image.
+- `app.special_offer_composite_image_attempts` is runtime/support only and must
+  not become active output truth.
+- Special-offer substrate must not reuse `app.courses.cover_media_id` as an
+  output pointer, must not reuse `app.course_bundles` or
+  `app.course_bundle_courses` as offer-state truth, and must not add checkout,
+  order, payment, Stripe, sellability, or entitlement authority to the
+  special-offer tables.
 
 ### 5.7 Referral
 
