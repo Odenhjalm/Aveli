@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import unicodedata
@@ -14,7 +15,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent
 SOURCE_ROOT = REPO_ROOT / "courses"
-TARGET_ROOT = REPO_ROOT / "final_courses"
+TARGET_ROOT = REPO_ROOT / os.environ.get("FINAL_COURSES_TARGET", "final_courses")
 REPORT_JSON = TARGET_ROOT / "mapping_report.json"
 REPORT_MD = TARGET_ROOT / "summary_report.md"
 
@@ -57,6 +58,7 @@ TITLE_REPLACEMENTS = {
     "  ": " ",
     "1av 3": "1 av 3",
     "Änglarnas besök?": "Änglarnas besök",
+    "födslofärg": "födelsefärg",
     "Utbildning - ": "",
 }
 
@@ -84,12 +86,15 @@ SECTION_TITLES = {
 FORBIDDEN_FOLDER_CHARS = '<>:"/\\|?*'
 MARKDOWN_TOKEN_RE = re.compile(r"\[(MEDIA|MISSING MEDIA):\s*([^\]]+)\]")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
-MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s*(.+?)\s*$")
-LIST_MARKER_RE = re.compile(r"^\s*(?:[-+*•]|\d+[.)])\s+")
+MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
+LIST_MARKER_RE = re.compile(r"^\s*(?:[-+*•])\s+")
+ORDERED_MARKER_RE = re.compile(r"^\s*(\d+)[.)]\s+(.+)$")
 MULTISPACE_RE = re.compile(r"[ \t]{2,}")
 WHITESPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:!?])")
 SPACE_AFTER_COLON_RE = re.compile(r":(?=\S)")
 TRAILING_PUNCT_SPACING_RE = re.compile(r"([,.;:!?])([^\s”\"')\]])")
+TIME_SPACING_RE = re.compile(r"\b(\d{1,2})\.\s+(\d{2})\b")
+LETTER_DASH_RE = re.compile(r"([A-Za-zÅÄÖåäö])[–—]([A-Za-zÅÄÖåäö])")
 LABEL_FIXES = (
     ("Frekvens:", "Frekvens"),
     ("Tillstånd:", "Tillstånd"),
@@ -136,6 +141,8 @@ def normalize_space(text: str) -> str:
     text = WHITESPACE_BEFORE_PUNCT_RE.sub(r"\1", text)
     text = SPACE_AFTER_COLON_RE.sub(": ", text)
     text = TRAILING_PUNCT_SPACING_RE.sub(r"\1 \2", text)
+    text = TIME_SPACING_RE.sub(r"\1.\2", text)
+    text = LETTER_DASH_RE.sub(r"\1 – \2", text)
     text = MULTISPACE_RE.sub(" ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -156,6 +163,10 @@ def normalize_title(text: str) -> str:
     if value.endswith("?"):
         value = value[:-1]
     return sentence_case(value)
+
+
+def strip_numeric_prefix(text: str) -> str:
+    return re.sub(r"^\d+[.)]?\s*", "", text).strip()
 
 
 def slug_like_to_title(source: str) -> str:
@@ -216,25 +227,59 @@ def ensure_unique_name(base_name: str, used_names: set[str], max_length: int) ->
 
 def strip_inline_markdown(text: str) -> str:
     text = text.replace("\\*", "*").replace("\\_", "_").replace("\\(", "(").replace("\\)", ")")
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
+    text = re.sub(r"\[[^\]]*\]\(<[^>]+>\)", "", text)
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", text)
     text = re.sub(r"\*\*\*(.+?)\*\*\*", r"\1", text)
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
     text = re.sub(r"__(.+?)__", r"\1", text)
     text = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"\1", text)
     text = re.sub(r"(?<!_)_(?!\s)(.+?)(?<!\s)_(?!_)", r"\1", text)
-    return text.replace("**", "").replace("__", "")
+    return text.replace("**", "").replace("__", "").replace("_", "").replace("*", "")
 
 
 def is_probable_heading(line: str) -> bool:
     lowered = line.lower().strip(" :")
     if lowered in SECTION_TITLES:
         return True
-    if any(line.startswith(prefix) for prefix in ("Beta", "Alfa", "Theta", "Delta", "Gamma")):
+    if re.match(r"^(beta|alfa|theta|delta|gamma)\b\s*[–\-(]", lowered):
         return True
+    letters = [char for char in line if char.isalpha()]
+    if letters:
+        uppercase_ratio = sum(1 for char in letters if char.isupper()) / len(letters)
+        if uppercase_ratio > 0.7 and len(line) <= 80:
+            return True
     if len(line) <= 70 and line.endswith(":"):
         return True
     if len(line) <= 80 and line == line.title() and line.count(" ") <= 8:
         return True
     return False
+
+
+def polish_heading(line: str) -> str:
+    value = normalize_space(strip_numeric_prefix(line))
+    letters = [char for char in value if char.isalpha()]
+    if letters:
+        uppercase_ratio = sum(1 for char in letters if char.isupper()) / len(letters)
+        if uppercase_ratio > 0.7:
+            value = value.lower()
+    value = normalize_title(value)
+    value = re.sub(
+        r"^(BETA|ALFA|THETA|DELTA|GAMMA)\s*[–-]?\s*",
+        lambda match: match.group(1).title() + " – ",
+        value,
+        flags=re.I,
+    )
+    if any(value.startswith(prefix) for prefix in ("Beta –", "Alfa –", "Theta –", "Delta –", "Gamma –")):
+        value = re.sub(r" –([A-Za-zÅÄÖåäö])", r" – \1", value)
+        value = re.sub(
+            r"^(Beta|Alfa|Theta|Delta|Gamma) – ([A-ZÅÄÖ])",
+            lambda match: f"{match.group(1)} – {match.group(2).lower()}",
+            value,
+        )
+        if "(" in value and ")" not in value:
+            value += ")"
+    return normalize_space(value)
 
 
 def split_compound_label_line(line: str) -> list[str]:
@@ -264,7 +309,7 @@ def clean_body_text(text: str) -> str:
     text = HTML_COMMENT_RE.sub("", text)
 
     def replace_token(match: re.Match[str]) -> str:
-        return f"__MEDIA_REF__:{match.group(2).strip()}"
+        return f"\n@@MEDIAREF|{match.group(2).strip()}@@\n"
 
     text = MARKDOWN_TOKEN_RE.sub(replace_token, text)
     output_lines: list[str] = []
@@ -280,10 +325,22 @@ def clean_body_text(text: str) -> str:
 
         heading_match = MARKDOWN_HEADING_RE.match(line)
         if heading_match:
-            heading = normalize_title(strip_inline_markdown(heading_match.group(1)).rstrip(":"))
+            heading = polish_heading(strip_inline_markdown(heading_match.group(1)).rstrip(":"))
             if output_lines and output_lines[-1] != "":
                 output_lines.append("")
             output_lines.extend([heading, ""])
+            previous_blank = False
+            continue
+        if re.match(r"^\s*#{1,6}\s*$", line):
+            continue
+
+        ordered_match = ORDERED_MARKER_RE.match(line)
+        if ordered_match:
+            number = ordered_match.group(1)
+            remainder = normalize_space(strip_inline_markdown(ordered_match.group(2)))
+            if output_lines and output_lines[-1] != "":
+                output_lines.append("")
+            output_lines.extend([f"Steg {number}", "", remainder, ""])
             previous_blank = False
             continue
 
@@ -292,7 +349,7 @@ def clean_body_text(text: str) -> str:
         if not line:
             continue
 
-        if line.startswith("__MEDIA_REF__:"):
+        if line.startswith("@@MEDIAREF|") and line.endswith("@@"):
             if output_lines and output_lines[-1] != "":
                 output_lines.append("")
             output_lines.extend([line, ""])
@@ -303,15 +360,10 @@ def clean_body_text(text: str) -> str:
             normalized = normalize_space(chunk)
             if not normalized:
                 continue
-            if re.match(r"^\d+\s", normalized):
-                number, remainder = normalized.split(" ", 1)
-                if output_lines and output_lines[-1] != "":
-                    output_lines.append("")
-                output_lines.extend([f"Steg {number}", "", normalize_space(remainder), ""])
-                previous_blank = False
+            if normalized in {"_", "*"}:
                 continue
             if is_probable_heading(normalized) and previous_blank:
-                output_lines.extend([normalize_title(normalized.rstrip(":")), ""])
+                output_lines.extend([polish_heading(normalized.rstrip(":")), ""])
             else:
                 output_lines.append(normalized)
             previous_blank = False
@@ -416,20 +468,24 @@ def copy_media_files(
     return media_inventory, copied_results, duplicate_groups
 
 
-def replace_media_placeholders(content: str, copied_media: dict[str, list[MediaCopyResult]]) -> str:
+def replace_media_placeholders(
+    content: str,
+    copied_media: dict[str, list[MediaCopyResult]],
+    missing_media: list[dict[str, Any]],
+) -> str:
     lines: list[str] = []
     for raw_line in content.splitlines():
-        if raw_line.startswith("__MEDIA_REF__:"):
-            token_id = raw_line.split(":", 1)[1]
-            items = copied_media.get(token_id) or []
-            if items:
-                for item in items:
-                    lines.append(f"{media_type_label(item.media_type)}: {item.copied_name}")
-            else:
-                lines.append(f"Saknad media: okänd referens ({token_id})")
-            lines.append("")
+        if "@@MEDIAREF|" in raw_line:
+            raw_line = re.sub(r"@@MEDIAREF\|[^@]+@@", "", raw_line)
+        if raw_line.startswith("@@MEDIAREF|") and raw_line.endswith("@@"):
             continue
-        lines.append(raw_line)
+        lines.append(raw_line.rstrip())
+    collapsed: list[str] = []
+    for line in lines:
+        if line == "" and collapsed and collapsed[-1] == "":
+            continue
+        collapsed.append(line)
+    lines = collapsed
     while lines and lines[-1] == "":
         lines.pop()
     return "\n".join(lines).strip() + "\n"
@@ -552,8 +608,19 @@ def main() -> None:
         "orphans": None,
     }
 
+    course_limit_env = os.environ.get("FINAL_COURSES_LIMIT")
+    course_limit = int(course_limit_env) if course_limit_env else None
+    course_filter = os.environ.get("FINAL_COURSES_FILTER")
+    source_courses = sorted(
+        path
+        for path in SOURCE_ROOT.iterdir()
+        if path.is_dir() and path.name != "_orphans" and (not course_filter or course_filter in path.name)
+    )
+    if course_limit is not None:
+        source_courses = source_courses[:course_limit]
+
     used_course_names: set[str] = set()
-    for course_dir in sorted(path for path in SOURCE_ROOT.iterdir() if path.is_dir() and path.name != "_orphans"):
+    for course_dir in source_courses:
         course_payload = read_json(course_dir / "course.json")
         new_course_name = ensure_unique_name(build_course_name(course_dir.name, course_payload), used_course_names, max_length=90)
         target_course_dir = TARGET_ROOT / new_course_name
@@ -574,7 +641,7 @@ def main() -> None:
             source_lesson_path = REPO_ROOT / str(lesson_payload["path"])
             cleaned = clean_body_text(source_lesson_path.read_text(encoding="utf-8"))
             media_inventory, copied_media, duplicate_media_groups = copy_media_files(target_lesson_dir, lesson_payload, new_course_name)
-            cleaned = replace_media_placeholders(cleaned, copied_media)
+            cleaned = replace_media_placeholders(cleaned, copied_media, lesson_payload.get("missing_media") or [])
             cleaned = append_media_section(cleaned, copied_media, lesson_payload.get("missing_media") or [])
             if any(token in cleaned for token in ("**", "__", "<!--", "[MEDIA:", "[MISSING MEDIA:", "!audio(", "!image(", "!video(")):
                 raise RuntimeError(f"Markdown token remained in {source_lesson_path}")

@@ -7,6 +7,11 @@ import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
+const double _homeAudioLogoColumnWidth = 86;
+const double _homeAudioLogoColumnGap = 10;
+const double _homeAudioTrackListInset =
+    _homeAudioLogoColumnWidth + _homeAudioLogoColumnGap;
+
 class HomeAudioSection extends ConsumerStatefulWidget {
   const HomeAudioSection({super.key});
 
@@ -48,7 +53,7 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
     final theme = Theme.of(context);
 
     return GlassCard(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       opacity: 0.14,
       sigmaX: 5,
       sigmaY: 5,
@@ -62,17 +67,22 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               SizedBox(
-                key: const ValueKey('home-audio-logo'),
-                width: 86,
-                height: 32,
-                child: Image(
-                  image: logoProvider,
-                  fit: BoxFit.contain,
-                  alignment: Alignment.centerLeft,
-                  filterQuality: FilterQuality.high,
+                width: _homeAudioLogoColumnWidth,
+                child: Transform.translate(
+                  offset: const Offset(0, -4),
+                  child: SizedBox(
+                    key: const ValueKey('home-audio-logo'),
+                    height: 30,
+                    child: Image(
+                      image: logoProvider,
+                      fit: BoxFit.contain,
+                      alignment: Alignment.topLeft,
+                      filterQuality: FilterQuality.high,
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: _homeAudioLogoColumnGap),
               Expanded(
                 child: selectedItem == null
                     ? const SizedBox(height: 34)
@@ -119,45 +129,51 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
             switchInCurve: Curves.easeOut,
             switchOutCurve: Curves.easeIn,
             child: _trackListExpanded && readyItems.isNotEmpty
-                ? Container(
-                    key: const ValueKey('home-audio-track-list'),
-                    margin: const EdgeInsets.only(top: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.06,
+                ? Padding(
+                    padding: const EdgeInsets.only(
+                      top: 6,
+                      left: _homeAudioTrackListInset,
+                    ),
+                    child: Container(
+                      key: const ValueKey('home-audio-track-list'),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.06,
+                          ),
                         ),
                       ),
-                    ),
-                    child: Column(
-                      children: [
-                        for (final item in readyItems) ...[
-                          _HomeAudioTrackRow(
-                            item: item,
-                            selected:
-                                (selectedItem?.media.mediaId ?? '') ==
-                                (item.media.mediaId ?? ''),
-                            onTap: () {
-                              final mediaId = item.media.mediaId;
-                              if (mediaId == null || mediaId.isEmpty) {
-                                return;
-                              }
-                              setState(() {
-                                _selectedMediaId = mediaId;
-                              });
-                            },
-                          ),
-                          if (item != readyItems.last)
-                            Divider(
-                              height: 1,
-                              color: theme.colorScheme.onSurface.withValues(
-                                alpha: 0.05,
-                              ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final item in readyItems) ...[
+                            _HomeAudioTrackRow(
+                              item: item,
+                              selected:
+                                  (selectedItem?.media.mediaId ?? '') ==
+                                  (item.media.mediaId ?? ''),
+                              onTap: () {
+                                final mediaId = item.media.mediaId;
+                                if (mediaId == null || mediaId.isEmpty) {
+                                  return;
+                                }
+                                setState(() {
+                                  _selectedMediaId = mediaId;
+                                });
+                              },
                             ),
+                            if (item != readyItems.last)
+                              Divider(
+                                height: 1,
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.05,
+                                ),
+                              ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   )
                 : const SizedBox.shrink(
@@ -261,30 +277,29 @@ class _HomeAudioTrackRow extends StatelessWidget {
           key: ValueKey('home-audio-track-$mediaId'),
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-            child: Row(
-              children: [
-                Icon(
-                  selected
-                      ? Icons.play_circle_fill_rounded
-                      : Icons.play_circle_outline_rounded,
-                  size: 18,
-                  color: theme.colorScheme.onSurface.withValues(
-                    alpha: selected ? 0.82 : 0.44,
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              color: selected
+                  ? theme.colorScheme.onSurface.withValues(alpha: 0.06)
+                  : Colors.transparent,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: theme.colorScheme.onSurface.withValues(
+                      alpha: selected ? 0.90 : 0.72,
+                    ),
                   ),
                 ),
-                const Spacer(),
-                Icon(
-                  selected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  size: 16,
-                  color: theme.colorScheme.onSurface.withValues(
-                    alpha: selected ? 0.68 : 0.26,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

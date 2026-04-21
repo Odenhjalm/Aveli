@@ -193,6 +193,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.byKey(const ValueKey('home-audio-track-list')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-audio-logo')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('home-audio-track-media-1')),
       findsOneWidget,
@@ -201,9 +202,16 @@ void main() {
       find.byKey(const ValueKey('home-audio-track-media-3')),
       findsOneWidget,
     );
-    expect(find.text('Kvällsmeditation'), findsNothing);
-    expect(find.text('Morgonandning'), findsNothing);
+    expect(find.text('Kvällsmeditation'), findsOneWidget);
+    expect(find.text('Morgonandning'), findsOneWidget);
     expect(find.text('Andning del 1'), findsNothing);
+    final logoRect = tester.getRect(
+      find.byKey(const ValueKey('home-audio-logo')),
+    );
+    final listRect = tester.getRect(
+      find.byKey(const ValueKey('home-audio-track-list')),
+    );
+    expect(listRect.left, greaterThan(logoRect.right));
 
     await tester.tap(find.byKey(const ValueKey('home-audio-track-media-3')));
     await tester.pump();
