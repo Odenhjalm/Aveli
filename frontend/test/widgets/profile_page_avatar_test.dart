@@ -79,11 +79,18 @@ class _FakeAuthController extends AuthController {
 
   final _FakeProfileRepository profileRepository;
   int loadSessionCalls = 0;
+  int refreshProfileProjectionCalls = 0;
 
   @override
   Future<void> loadSession({bool hydrateProfile = true}) async {
     loadSessionCalls += 1;
     state = state.copyWith(profile: profileRepository.profile);
+  }
+
+  @override
+  void refreshProfileProjection(Profile profile) {
+    refreshProfileProjectionCalls += 1;
+    state = state.copyWith(profile: profile);
   }
 }
 
@@ -252,6 +259,39 @@ void _invokeAvatarPicker(WidgetTester tester) {
 }
 
 void main() {
+  testWidgets('profile save refreshes projection without session bootstrap', (
+    tester,
+  ) async {
+    final profileRepository = _FakeProfileRepository(_profile());
+    final authController = _FakeAuthController(profileRepository);
+    final avatarRepository = _FakeProfileAvatarRepository(profileRepository);
+
+    await _pumpProfilePage(
+      tester,
+      profileRepository: profileRepository,
+      authController: authController,
+      avatarRepository: avatarRepository,
+    );
+
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField).first, 'Updated User');
+    await tester.enterText(find.byType(TextField).at(1), 'Updated bio');
+    final saveButton = find.widgetWithText(FilledButton, 'Spara');
+    await tester.ensureVisible(saveButton);
+    tester.widget<FilledButton>(saveButton).onPressed?.call();
+    await tester.pumpAndSettle();
+
+    expect(profileRepository.updateCalls, 1);
+    expect(authController.refreshProfileProjectionCalls, 1);
+    expect(authController.loadSessionCalls, 0);
+    expect(authController.state.entryState, _entryState);
+    expect(authController.state.profile?.displayName, 'Updated User');
+    expect(authController.state.profile?.bio, 'Updated bio');
+    expect(find.text('Updated User'), findsOneWidget);
+    expect(find.text('Profilen uppdaterad.'), findsOneWidget);
+  });
+
   testWidgets('profile avatar tap uses shared canonical upload chain', (
     tester,
   ) async {
@@ -276,7 +316,8 @@ void main() {
       'status:media-1',
       'attach:media-1',
     ]);
-    expect(authController.loadSessionCalls, 1);
+    expect(authController.refreshProfileProjectionCalls, 1);
+    expect(authController.loadSessionCalls, 0);
     expect(profileRepository.updateCalls, 0);
     expect(find.text('Profilbilden är sparad.'), findsWidgets);
     expect(find.byTooltip('Byt profilbild'), findsOneWidget);
@@ -321,7 +362,8 @@ void main() {
     avatarRepository.uploadGate!.complete();
     await tester.pumpAndSettle();
 
-    expect(authController.loadSessionCalls, 1);
+    expect(authController.refreshProfileProjectionCalls, 1);
+    expect(authController.loadSessionCalls, 0);
   });
 
   testWidgets('profile avatar failure shows Swedish retry copy', (
@@ -348,6 +390,7 @@ void main() {
       find.text('Kunde inte spara profilbilden. Försök igen.'),
       findsOneWidget,
     );
+    expect(authController.refreshProfileProjectionCalls, 0);
     expect(authController.loadSessionCalls, 0);
     expect(profileRepository.updateCalls, 0);
   });

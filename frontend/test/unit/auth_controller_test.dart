@@ -45,10 +45,17 @@ void main() {
     });
 
     test('loadSession hydrates profile when a token exists', () async {
+      controller.dispose();
+      controller = AuthController(
+        repo,
+        observer,
+        loadEntryState: () async => entryState,
+      );
       when(() => repo.currentToken()).thenAnswer((_) async => 'token');
       when(() => repo.getCurrentProfile()).thenAnswer((_) async => profile);
 
       await controller.loadSession();
+      await Future<void>.delayed(Duration.zero);
 
       expect(controller.state.profile, equals(profile));
       expect(controller.state.hasStoredToken, isTrue);
@@ -73,6 +80,7 @@ void main() {
       when(() => repo.getCurrentProfile()).thenAnswer((_) async => profile);
 
       await controller.loadSession();
+      await Future<void>.delayed(Duration.zero);
 
       expect(controller.state.profile, equals(profile));
       expect(controller.state.entryState, equals(entryState));
@@ -85,6 +93,32 @@ void main() {
 
       expect(state.isAuthenticated, isFalse);
     });
+
+    test(
+      'refreshProfileProjection updates profile only and preserves entry state',
+      () {
+        final updatedProfile = profile.copyWith(
+          displayName: 'Updated User',
+          photoUrl: '/api/runtime-media/avatar/media-1',
+          avatarMediaId: 'media-1',
+        );
+        controller.state = AuthState(
+          profile: profile,
+          entryState: entryState,
+          hasStoredToken: true,
+          isLoading: true,
+          error: 'old error',
+        );
+
+        controller.refreshProfileProjection(updatedProfile);
+
+        expect(controller.state.profile, equals(updatedProfile));
+        expect(controller.state.entryState, equals(entryState));
+        expect(controller.state.isLoading, isTrue);
+        expect(controller.state.hasStoredToken, isTrue);
+        expect(controller.state.error, isNull);
+      },
+    );
 
     test('loadSession clears auth state when no token exists', () async {
       when(() => repo.currentToken()).thenAnswer((_) async => null);
@@ -121,9 +155,11 @@ void main() {
         observer,
         loadEntryState: () async => entryState,
       );
-      when(() => repo.completeWelcome()).thenAnswer((_) async => profile);
+      when(() => repo.completeWelcome()).thenAnswer((_) async {});
+      when(() => repo.getCurrentProfile()).thenAnswer((_) async => profile);
 
       await controller.completeWelcome();
+      await Future<void>.delayed(Duration.zero);
 
       expect(controller.state.profile, equals(profile));
       expect(controller.state.entryState, equals(entryState));
@@ -131,6 +167,7 @@ void main() {
       expect(controller.state.isLoading, isFalse);
       expect(gate.allowed, isFalse);
       verify(() => repo.completeWelcome()).called(1);
+      verify(() => repo.getCurrentProfile()).called(1);
     });
 
     test(
@@ -221,9 +258,11 @@ void main() {
           observer,
           loadEntryState: () async => paymentNeededEntryState,
         );
-        when(() => repo.completeWelcome()).thenAnswer((_) async => profile);
+        when(() => repo.completeWelcome()).thenAnswer((_) async {});
+        when(() => repo.getCurrentProfile()).thenAnswer((_) async => profile);
 
         await controller.completeWelcome();
+        await Future<void>.delayed(Duration.zero);
 
         expect(controller.state.profile, equals(profile));
         expect(controller.state.entryState, equals(paymentNeededEntryState));
@@ -231,6 +270,7 @@ void main() {
         expect(controller.state.isAuthenticated, isFalse);
         expect(gate.allowed, isFalse);
         verify(() => repo.completeWelcome()).called(1);
+        verify(() => repo.getCurrentProfile()).called(1);
       },
     );
   });

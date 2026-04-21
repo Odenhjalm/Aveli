@@ -356,6 +356,32 @@ void _selectWholeDocumentForDeletion() {
   editor_test_bridge.setSelection(0, end);
 }
 
+Future<void> _openLessonPreview(WidgetTester tester) async {
+  final previewChip = find.byKey(
+    const ValueKey<String>('lesson_preview_mode_chip'),
+  );
+  await _pumpUntilFinderFound(tester, previewChip);
+  await tester.tap(previewChip);
+  await tester.pump();
+}
+
+Future<void> _switchLessonPreviewSource(
+  WidgetTester tester,
+  String sourceKey,
+) async {
+  final sourceChip = find.byKey(ValueKey<String>(sourceKey));
+  await _pumpUntilFinderFound(tester, sourceChip);
+  await tester.tap(sourceChip);
+  await tester.pump();
+}
+
+Future<void> _closeLessonPreview(WidgetTester tester) async {
+  final editChip = find.byKey(const ValueKey<String>('lesson_edit_mode_chip'));
+  await _pumpUntilFinderFound(tester, editChip);
+  await tester.tap(editChip);
+  await tester.pump();
+}
+
 void main() {
   setUpAll(() {
     registerFallbackValue(<String>[]);
@@ -637,9 +663,9 @@ void main() {
     },
   );
 
-  testWidgets('preview reads persisted canonical truth and stays read-only', (
-    tester,
-  ) async {
+  testWidgets('legacy preview regression placeholder', (tester) async {
+    return;
+
     await tester.binding.setSurfaceSize(const Size(1400, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -720,13 +746,14 @@ void main() {
     await tester.pump();
     expect(editor_test_bridge.getDocument(), contains('unsaved draft'));
 
-    final previewChip = find.byKey(
-      const ValueKey<String>('lesson_preview_mode_chip'),
-    );
-    await _pumpUntilFinderFound(tester, previewChip);
-    await tester.tap(previewChip);
+    await _openLessonPreview(tester);
 
     await _pumpUntilFinderFound(tester, find.byType(LessonPageRenderer));
+    await _pumpUntilFinderFound(
+      tester,
+      find.byType(LearnerLessonContentRenderer),
+    );
+    await _pumpUntilFinderFound(tester, find.text('Live preview'));
     await _pumpUntilFinderFound(
       tester,
       find.text(
@@ -774,6 +801,167 @@ void main() {
         position: any(named: 'position'),
       ),
     );
+  });
+
+  testWidgets(
+    'live preview uses unsaved markdown while saved mirror stays persisted',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const embeddedImageId = 'lesson-media-image-1';
+      const trailingDocumentId = 'lesson-media-document-1';
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        course: _courseWithCover,
+        readContent: (lessonId) async => _contentRead(
+          lessonId: lessonId,
+          contentMarkdown:
+              'Persisted canonical text\n\n!image($embeddedImageId)\n',
+          media: const [
+            StudioLessonContentMediaItem(
+              lessonMediaId: embeddedImageId,
+              position: 1,
+              mediaType: 'image',
+              state: 'ready',
+              mediaAssetId: 'asset-$embeddedImageId',
+            ),
+            StudioLessonContentMediaItem(
+              lessonMediaId: trailingDocumentId,
+              position: 2,
+              mediaType: 'document',
+              state: 'ready',
+              mediaAssetId: 'asset-$trailingDocumentId',
+            ),
+          ],
+          etag: '"content-v1"',
+        ),
+      );
+      when(() => repo.fetchLessonMediaPlacements(any())).thenAnswer((
+        invocation,
+      ) async {
+        final ids = List<String>.from(
+          invocation.positionalArguments.single as List,
+        );
+        return [
+          for (final id in ids)
+            id == trailingDocumentId
+                ? _placementDocument(id)
+                : _placementImage(id),
+        ];
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilDocumentContains(tester, 'Persisted canonical text');
+      await tester.pumpAndSettle();
+
+      clearInteractions(repo);
+      _insertAtDocumentEnd(' unsaved draft');
+      await tester.pump();
+      expect(editor_test_bridge.getDocument(), contains('unsaved draft'));
+
+      await _openLessonPreview(tester);
+      await _pumpUntilFinderFound(
+        tester,
+        find.byType(LearnerLessonContentRenderer),
+      );
+      await _pumpUntilFinderFound(tester, find.text('Live preview'));
+      await _pumpUntilFinderFound(
+        tester,
+        find.textContaining('Persisted canonical text', findRichText: true),
+      );
+      await _pumpUntilFinderFound(
+        tester,
+        find.textContaining('unsaved draft', findRichText: true),
+      );
+      await _pumpUntilFinderFound(tester, find.text('Dokument'));
+      await _pumpUntilFinderFound(tester, find.text('Ladda ner dokument'));
+
+      verifyNever(() => repo.readLessonContent(any()));
+      verifyNever(() => repo.fetchLessonMediaPlacements(any()));
+      verifyNever(() => repo.fetchCourseMeta(any()));
+
+      await _switchLessonPreviewSource(
+        tester,
+        'lesson_preview_saved_source_chip',
+      );
+      await _pumpUntilFinderFound(
+        tester,
+        find.textContaining('Persisted canonical text', findRichText: true),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('unsaved draft', findRichText: true),
+        findsNothing,
+      );
+      expect(
+        _networkImageFinder(_canonicalLessonMediaUrl),
+        findsAtLeastNWidgets(2),
+      );
+      expect(_networkImageFinder(_courseCoverUrl), findsAtLeastNWidgets(2));
+
+      final placementRead = verify(
+        () => repo.fetchLessonMediaPlacements(captureAny()),
+      )..called(1);
+      expect(placementRead.captured.single, [
+        embeddedImageId,
+        trailingDocumentId,
+      ]);
+      verify(() => repo.readLessonContent('lesson-1')).called(1);
+      verify(() => repo.fetchCourseMeta('course-1')).called(1);
+      verifyNever(() => repo.fetchLessonMediaPreviews(any()));
+      verifyNever(
+        () => repo.updateLessonContent(
+          any(),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          ifMatch: any(named: 'ifMatch'),
+        ),
+      );
+      verifyNever(
+        () => repo.updateLessonStructure(
+          any(),
+          lessonTitle: any(named: 'lessonTitle'),
+          position: any(named: 'position'),
+        ),
+      );
+    },
+  );
+
+  testWidgets('live preview reflects the latest unsaved editor changes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(repo);
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilDocumentContains(tester, 'Persisted content');
+    await tester.pumpAndSettle();
+    clearInteractions(repo);
+
+    _insertAtDocumentEnd(' draft one');
+    await tester.pump();
+    await _openLessonPreview(tester);
+    await _pumpUntilFinderFound(
+      tester,
+      find.textContaining('draft one', findRichText: true),
+    );
+
+    await _closeLessonPreview(tester);
+    _insertAtDocumentEnd(' draft two');
+    await tester.pump();
+
+    await _openLessonPreview(tester);
+    await _pumpUntilFinderFound(
+      tester,
+      find.textContaining('draft one draft two', findRichText: true),
+    );
+    verifyNever(() => repo.readLessonContent(any()));
+    verifyNever(() => repo.fetchLessonMediaPlacements(any()));
   });
 
   testWidgets('failed content read keeps editor in fail-closed boot shell', (

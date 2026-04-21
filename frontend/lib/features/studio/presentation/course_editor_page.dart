@@ -129,6 +129,8 @@ enum _LessonEditorBootPhase {
   fullyStable,
 }
 
+enum _LessonPreviewSource { live, saved }
+
 class _EditorSessionToken {
   const _EditorSessionToken({
     required this.sessionId,
@@ -489,6 +491,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _documentReadyLessonId;
   int? _documentReadyRequestId;
   bool _lessonPreviewMode = false;
+  _LessonPreviewSource _lessonPreviewSource = _LessonPreviewSource.live;
 
   int _persistedLessonPreviewRequestId = 0;
   bool _persistedLessonPreviewLoading = false;
@@ -719,6 +722,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonContentLoadError = errorMessage;
     _resetLessonPreviewHydrationValues(bumpRevision: bumpHydrationRevision);
     _lessonPreviewMode = false;
+    _lessonPreviewSource = _LessonPreviewSource.live;
     _resetPersistedLessonPreview();
     _lessonEditorBootPhase = phase;
   }
@@ -771,8 +775,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (normalizedSelection.start >= 0 && normalizedSelection.end >= 0) {
       _lastLessonSelection = normalizedSelection;
     }
+    final shouldRefreshLivePreview =
+        _lessonPreviewMode && _lessonPreviewSource == _LessonPreviewSource.live;
     if (!_lessonContentDirty) {
-      _markLessonContentDirty();
+      _markLessonContentDirty(refreshPreview: shouldRefreshLivePreview);
+    } else if (shouldRefreshLivePreview && mounted) {
+      setState(() {});
     }
 
     if (kEditorDebug) {
@@ -863,10 +871,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     });
   }
 
-  void _markLessonContentDirty() {
-    if (_lessonPreviewMode) {
-      return;
-    }
+  void _markLessonContentDirty({bool refreshPreview = false}) {
     if (!_isSelectedLessonDocumentReady()) {
       return;
     }
@@ -874,9 +879,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _lessonContentDirty = true;
       return;
     }
-    setState(() {
-      _lessonContentDirty = true;
-    });
+    if (!_lessonContentDirty || refreshPreview) {
+      setState(() {
+        _lessonContentDirty = true;
+      });
+    }
   }
 
   bool _requireEditModeForMutation() {
@@ -1100,11 +1107,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (!enabled) {
       if (!mounted) {
         _lessonPreviewMode = false;
+        _lessonPreviewSource = _LessonPreviewSource.live;
         _resetPersistedLessonPreview();
         return;
       }
       setState(() {
         _lessonPreviewMode = false;
+        _lessonPreviewSource = _LessonPreviewSource.live;
         _resetPersistedLessonPreview();
       });
       _ensureLessonEditorFocus(reason: 'preview_mode_disabled');
@@ -1155,26 +1164,67 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return;
     }
-    final currentSnapshot = _currentPersistedLessonPreviewSnapshot();
     if (_lessonPreviewMode &&
-        !_persistedLessonPreviewLoading &&
-        currentSnapshot != null) {
+        _lessonPreviewSource == _LessonPreviewSource.live) {
       return;
     }
 
     if (_lessonContentFocusNode.hasFocus) {
       _lessonContentFocusNode.unfocus();
     }
-    final requestId = ++_persistedLessonPreviewRequestId;
     if (!mounted) {
       _lessonPreviewMode = true;
+      _lessonPreviewSource = _LessonPreviewSource.live;
+      _resetPersistedLessonPreview();
+      return;
+    }
+    setState(() {
+      _lessonPreviewMode = true;
+      _lessonPreviewSource = _LessonPreviewSource.live;
+      _resetPersistedLessonPreview();
+    });
+  }
+
+  Future<void> _setLessonPreviewSource(_LessonPreviewSource source) async {
+    if (!_lessonPreviewMode) return;
+    final lessonId = _selectedLessonId;
+    final courseId = _selectedCourseId;
+    if (lessonId == null || courseId == null) {
+      return;
+    }
+
+    if (!mounted) {
+      _lessonPreviewSource = source;
+    } else if (_lessonPreviewSource != source) {
+      setState(() {
+        _lessonPreviewSource = source;
+      });
+    }
+
+    if (source != _LessonPreviewSource.saved) {
+      return;
+    }
+
+    if (_persistedLessonPreviewLoading ||
+        _currentPersistedLessonPreviewSnapshot() != null) {
+      return;
+    }
+
+    await _loadPersistedLessonPreview(courseId: courseId, lessonId: lessonId);
+  }
+
+  Future<void> _loadPersistedLessonPreview({
+    required String courseId,
+    required String lessonId,
+  }) async {
+    final requestId = ++_persistedLessonPreviewRequestId;
+    if (!mounted) {
       _persistedLessonPreviewLoading = true;
       _persistedLessonPreviewError = null;
       _persistedLessonPreviewSnapshot = null;
       return;
     }
     setState(() {
-      _lessonPreviewMode = true;
       _persistedLessonPreviewLoading = true;
       _persistedLessonPreviewError = null;
       _persistedLessonPreviewSnapshot = null;
@@ -3598,6 +3648,147 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  Widget _buildActiveLessonPreviewMode(BuildContext context) {
+    final theme = Theme.of(context);
+    final isLivePreview = _lessonPreviewSource == _LessonPreviewSource.live;
+    final snapshot = _currentPersistedLessonPreviewSnapshot();
+    final liveLessonTitle = _lessonTitleCtrl.text.trim();
+    final savedLessonTitle = snapshot?.title.trim() ?? '';
+    final fallbackLessonTitle =
+        _lessonById(_selectedLessonId)?.lessonTitle.trim() ?? '';
+    final previewTitle = isLivePreview
+        ? (liveLessonTitle.isNotEmpty
+              ? liveLessonTitle
+              : fallbackLessonTitle.isNotEmpty
+              ? fallbackLessonTitle
+              : 'Lektion')
+        : (savedLessonTitle.isNotEmpty
+              ? savedLessonTitle
+              : fallbackLessonTitle.isNotEmpty
+              ? fallbackLessonTitle
+              : 'Lektion');
+    final previewCoverUrl = isLivePreview
+        ? (_courseCoverPath?.trim().isNotEmpty ?? false
+              ? _courseCoverPath!.trim()
+              : null)
+        : snapshot?.coverResolvedUrl;
+    final previewMedia = isLivePreview
+        ? (_lessonMediaLessonId == _selectedLessonId
+              ? _lessonMediaItemsFromStudioMedia(_lessonMedia)
+              : const <LessonMediaItem>[])
+        : snapshot?.lessonMedia ?? const <LessonMediaItem>[];
+    String? previewMarkdown;
+    String? previewError;
+
+    if (isLivePreview) {
+      try {
+        previewMarkdown = _serializeLessonMarkdownFromController(
+          _lessonContentController,
+        );
+      } catch (error, stackTrace) {
+        final message = AppFailure.from(error, stackTrace).message.trim();
+        previewError = message.isEmpty
+            ? 'Kunde inte rendera live preview.'
+            : 'Kunde inte rendera live preview: $message';
+      }
+    } else {
+      previewMarkdown = snapshot?.markdown;
+      previewError = _persistedLessonPreviewError;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          previewTitle,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        gap6,
+        Text(
+          isLivePreview
+              ? 'Live preview av osparat lektionsinnehåll med samma renderingspipeline som elevvyn.'
+              : 'Saved mirror av sparat backend-innehåll med samma renderingspipeline som elevvyn.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        gap12,
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ChoiceChip(
+              key: const ValueKey<String>('lesson_preview_live_source_chip'),
+              label: const Text('Live preview'),
+              selected: isLivePreview,
+              onSelected: (selected) {
+                if (!selected || isLivePreview) return;
+                unawaited(_setLessonPreviewSource(_LessonPreviewSource.live));
+              },
+            ),
+            ChoiceChip(
+              key: const ValueKey<String>('lesson_preview_saved_source_chip'),
+              label: const Text('Saved mirror'),
+              selected: !isLivePreview,
+              onSelected: (selected) {
+                if (!selected || !isLivePreview) return;
+                unawaited(_setLessonPreviewSource(_LessonPreviewSource.saved));
+              },
+            ),
+          ],
+        ),
+        gap12,
+        if (previewCoverUrl case final coverUrl?)
+          if (coverUrl.trim().isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: double.infinity,
+                height: 120,
+                child: Image.network(
+                  coverUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox.shrink(),
+                ),
+              ),
+            ),
+            gap12,
+          ],
+        Expanded(
+          child: !isLivePreview && _persistedLessonPreviewLoading
+              ? const Center(child: CircularProgressIndicator())
+              : previewMarkdown == null
+              ? Center(
+                  child: Text(
+                    previewError ??
+                        (isLivePreview
+                            ? 'Live preview kunde inte byggas från editorn.'
+                            : 'Saved mirror behöver läsa sparat innehåll.'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: previewError == null
+                          ? theme.colorScheme.onSurfaceVariant
+                          : theme.colorScheme.error,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: EdgeInsets.zero,
+                  child: LearnerLessonContentRenderer(
+                    markdown: previewMarkdown,
+                    lessonMedia: previewMedia,
+                    onLaunchUrl: (url) =>
+                        unawaited(_launchLessonPreviewUrl(url)),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildLessonEditorWorkspace(BuildContext context) {
     final theme = Theme.of(context);
     final titleStyle = theme.textTheme.titleLarge?.copyWith(
@@ -3695,7 +3886,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 : !isDocumentReady
                 ? _buildLessonEditorBootShell(context)
                 : _lessonPreviewMode
-                ? _buildLessonPreviewMode(context)
+                ? _buildActiveLessonPreviewMode(context)
                 : _buildLessonContentEditor(context, expandEditor: true),
           ),
         ],
@@ -3717,7 +3908,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_lessonPreviewMode) {
       return SizedBox(
         height: editorHeight + 180,
-        child: _buildLessonPreviewMode(context),
+        child: _buildActiveLessonPreviewMode(context),
       );
     }
     return _buildLessonContentEditor(context, editorHeight: editorHeight);

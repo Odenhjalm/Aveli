@@ -78,6 +78,7 @@ class _FakeAuthController extends AuthController {
   final _FakeProfileRepository profileRepository;
   int createProfileCalls = 0;
   int loadSessionCalls = 0;
+  int refreshProfileProjectionCalls = 0;
   int completeWelcomeCalls = 0;
   String? savedDisplayName;
   String? savedBio;
@@ -104,6 +105,12 @@ class _FakeAuthController extends AuthController {
   Future<void> loadSession({bool hydrateProfile = true}) async {
     loadSessionCalls += 1;
     state = state.copyWith(profile: profileRepository.profile);
+  }
+
+  @override
+  void refreshProfileProjection(Profile profile) {
+    refreshProfileProjectionCalls += 1;
+    state = state.copyWith(profile: profile);
   }
 
   @override
@@ -316,6 +323,13 @@ void main() {
     ]);
     expect(find.text('Profilbilden är sparad'), findsOneWidget);
     expect(find.text('Profilbilden är sparad.'), findsOneWidget);
+
+    expect(authController.refreshProfileProjectionCalls, 1);
+    expect(authController.loadSessionCalls, 0);
+    expect(
+      authController.state.profile?.photoUrl,
+      '/api/runtime-media/avatar/media-1',
+    );
 
     final button = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Fortsätt till välkomststeget'),

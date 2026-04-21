@@ -315,6 +315,9 @@ class _OnboardingProfilePageState extends ConsumerState<OnboardingProfilePage> {
           setState(() => _avatarUpload = snapshot);
         },
       );
+      ref
+          .read(authControllerProvider.notifier)
+          .refreshProfileProjection(profile);
       if (!mounted) return;
       setState(() {
         _avatarUpload = _avatarUpload.copyWith(

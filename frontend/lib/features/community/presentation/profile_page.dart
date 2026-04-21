@@ -89,7 +89,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             : _displayNameCtrl.text.trim(),
         bio: _bioCtrl.text.trim().isEmpty ? null : _bioCtrl.text.trim(),
       );
-      await ref.read(authControllerProvider.notifier).loadSession();
+      ref
+          .read(authControllerProvider.notifier)
+          .refreshProfileProjection(updated);
       if (!mounted) return;
       setState(() {
         _saving = false;
@@ -121,7 +123,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           setState(() => _avatarUpload = snapshot);
         },
       );
-      await ref.read(authControllerProvider.notifier).loadSession();
+      ref
+          .read(authControllerProvider.notifier)
+          .refreshProfileProjection(updatedProfile);
       if (!mounted) return;
       setState(() {
         _avatarUpload = ProfileAvatarUploadSnapshot(

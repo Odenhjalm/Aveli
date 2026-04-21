@@ -14,6 +14,9 @@ import 'package:aveli/data/models/service.dart';
 import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/auth/presentation/login_page.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/community/presentation/profile_page.dart';
+import 'package:aveli/features/courses/application/course_providers.dart'
+    as courses_front;
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
@@ -300,6 +303,82 @@ void main() {
     expect(find.byType(HomeDashboardPage), findsOneWidget);
     expect(find.byType(LoginPage), findsNothing);
   });
+
+  testWidgets(
+    'profile projection refresh stays on profile route without bootstrap redirect',
+    (tester) async {
+      const entryState = EntryState(
+        canEnterApp: true,
+        onboardingState: 'completed',
+        onboardingCompleted: true,
+        membershipActive: true,
+        needsOnboarding: false,
+        needsPayment: false,
+        role: 'learner',
+      );
+      final profile = Profile(
+        id: 'user-1',
+        email: 'user@example.com',
+        createdAt: DateTime.utc(2024, 1, 1),
+        updatedAt: DateTime.utc(2024, 1, 1),
+        displayName: 'Original User',
+      );
+      final authController = _FakeAuthController(
+        AuthState(
+          entryState: entryState,
+          profile: profile,
+          hasStoredToken: true,
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            envInfoProvider.overrideWith((ref) => envInfoOk),
+            authControllerProvider.overrideWith((ref) => authController),
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost',
+                subscriptionsEnabled: false,
+              ),
+            ),
+            backendAssetResolverProvider.overrideWith(
+              (ref) => TestBackendAssetResolver(),
+            ),
+            landing.popularCoursesProvider.overrideWith(
+              (ref) => Future.value(
+                const landing.LandingSection<CourseSummary>(items: []),
+              ),
+            ),
+            communityServicesProvider.overrideWith(
+              (ref) => Future.value(const <Service>[]),
+            ),
+            courses_front.myCoursesProvider.overrideWith(
+              (ref) async => const [],
+            ),
+          ],
+          child: const AveliApp(),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(HomeDashboardPage), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Profil'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ProfilePage), findsOneWidget);
+
+      authController.refreshProfileProjection(
+        profile.copyWith(displayName: 'Updated User'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ProfilePage), findsOneWidget);
+      expect(find.byType(HomeDashboardPage), findsNothing);
+      expect(find.text('Updated User'), findsOneWidget);
+    },
+  );
 
   testWidgets('backend entry truth routes payment-needed users to payment', (
     tester,

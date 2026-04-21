@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/editor/adapter/editor_to_markdown.dart'
     as editor_to_markdown;
+import 'package:aveli/editor/adapter/markdown_to_editor.dart'
+    as markdown_to_editor;
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
 
 void main() {
@@ -82,16 +84,52 @@ void main() {
     });
 
     test('extracts canonical embedded lesson media ids deterministically', () {
-      final ids = extractLessonEmbeddedMediaIds(
-        '''
+      final ids = extractLessonEmbeddedMediaIds('''
 !image(image-1)
 !audio(audio-1)
 !video(video-1)
 !document(document-1)
-''',
-      );
+''');
 
       expect(ids, {'image-1', 'audio-1', 'video-1', 'document-1'});
     });
+
+    test(
+      'rich text formatting round-trips through markdown deterministically',
+      () {
+        final delta = quill_delta.Delta()
+          ..insert('Heading')
+          ..insert('\n', {quill.Attribute.header.key: 2})
+          ..insert('Bold', {quill.Attribute.bold.key: true})
+          ..insert(' ')
+          ..insert('Italic', {quill.Attribute.italic.key: true})
+          ..insert(' ')
+          ..insert('Underline', {quill.Attribute.underline.key: true})
+          ..insert('\n')
+          ..insert('Ordered item')
+          ..insert('\n', {quill.Attribute.list.key: 'ordered'})
+          ..insert('Bullet item')
+          ..insert('\n', {quill.Attribute.list.key: 'bullet'});
+
+        final markdown = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+          delta: delta,
+        );
+
+        expect(markdown, contains('## Heading'));
+        expect(markdown, contains('**Bold**'));
+        expect(markdown, contains('*Italic*'));
+        expect(markdown, contains('<u>Underline</u>'));
+        expect(markdown, contains('1. Ordered item'));
+        expect(markdown, contains('- Bullet item'));
+
+        final roundTripped = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+          delta: markdown_to_editor
+              .markdownToEditorDocument(markdown: markdown)
+              .toDelta(),
+        );
+
+        expect(roundTripped, markdown);
+      },
+    );
   });
 }

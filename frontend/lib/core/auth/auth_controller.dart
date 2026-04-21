@@ -126,14 +126,14 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  void refreshProfileProjection(Profile profile) {
+    state = state.copyWith(profile: profile, error: null);
+  }
+
   Future<void> _hydrateProfile() async {
     try {
       final profile = await _repo.getCurrentProfile();
-      state = state.copyWith(
-        profile: profile,
-        hasStoredToken: true,
-        error: null,
-      );
+      refreshProfileProjection(profile);
       gate.reset();
     } catch (err, stackTrace) {
       gate.reset();

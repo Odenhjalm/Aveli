@@ -24,7 +24,7 @@ _PRICE_BAND_FILL = (10, 16, 22, 204)
 _JPEG_QUALITY = 90
 _JPEG_SUBSAMPLING = 0
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_LOGO_PATH = _REPO_ROOT / "backend" / "assets" / "loggo_clea.png"
+_LOGO_PATH = _REPO_ROOT / "backend" / "assets" / "loggo_clean.png"
 _FONT_PATH = _REPO_ROOT / "frontend" / "fonts" / "NotoSans-Bold.ttf"
 
 GRID_SPECS = {
