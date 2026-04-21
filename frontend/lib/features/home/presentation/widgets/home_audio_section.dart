@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/features/home/application/home_audio_controller.dart';
 import 'package:aveli/features/home/data/home_audio_repository.dart';
+import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
@@ -16,12 +15,18 @@ class HomeAudioSection extends ConsumerStatefulWidget {
 }
 
 class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
-  String? _expandedMediaId;
+  String? _selectedMediaId;
+  bool _trackListExpanded = false;
+  InlineAudioPlayerVolumeState _volumeState =
+      const InlineAudioPlayerVolumeState();
 
   @override
   Widget build(BuildContext context) {
     final asyncState = ref.watch(homeAudioProvider);
     final state = asyncState.valueOrNull;
+    final logoProvider = ref
+        .watch(backendAssetResolverProvider)
+        .imageProvider('loggo_clean.png');
 
     if (state == null) {
       if (asyncState.isLoading) {
@@ -31,90 +36,160 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
         );
       }
       return _HomeAudioErrorCard(
-        message: _backendOwnedHomeAudioMessage(asyncState.error),
+        logoProvider: logoProvider,
         onRetry: () => ref.read(homeAudioProvider.notifier).refresh(),
       );
     }
 
-    final texts = state.textBundle;
+    final readyItems = state.items
+        .where((item) => item.isReady)
+        .toList(growable: false);
+    final selectedItem = _selectedItemFor(readyItems);
+    final theme = Theme.of(context);
+
     return GlassCard(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
       opacity: 0.14,
       sigmaX: 5,
       sigmaY: 5,
-      borderColor: Theme.of(
-        context,
-      ).colorScheme.primary.withValues(alpha: 0.18),
+      borderColor: theme.colorScheme.primary.withValues(alpha: 0.18),
       child: Column(
         key: const ValueKey('home-audio-section'),
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          Stack(
+            alignment: Alignment.topRight,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      texts.requireValue('home.audio.section_title'),
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  child: SizedBox(
+                    key: const ValueKey('home-audio-logo'),
+                    height: 88,
+                    child: Image(
+                      image: logoProvider,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      texts.requireValue('home.audio.section_description'),
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
+                  ),
                 ),
               ),
               IconButton(
-                tooltip: texts.requireValue('home.audio.retry_action'),
-                onPressed: () => ref.read(homeAudioProvider.notifier).refresh(),
-                icon: const Icon(Icons.refresh),
+                key: const ValueKey('home-audio-track-list-toggle'),
+                onPressed: readyItems.isEmpty
+                    ? null
+                    : () {
+                        setState(() {
+                          _trackListExpanded = !_trackListExpanded;
+                        });
+                      },
+                icon: Icon(
+                  _trackListExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 20,
+                ),
+                visualDensity: VisualDensity.compact,
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          if (state.items.isEmpty)
-            _HomeAudioEmptyState(texts: texts)
-          else
-            Column(
-              children: [
-                for (final item in state.items) ...[
-                  _HomeAudioItemCard(
-                    item: item,
-                    texts: texts,
-                    expanded: _expandedMediaId == (item.media.mediaId ?? ''),
-                    onToggleExpanded: item.isReady
-                        ? () {
-                            final mediaId = item.media.mediaId ?? '';
-                            if (mediaId.isEmpty) {
-                              return;
-                            }
-                            setState(() {
-                              _expandedMediaId = _expandedMediaId == mediaId
-                                  ? null
-                                  : mediaId;
-                            });
-                          }
-                        : null,
-                  ),
-                  if (item != state.items.last) const SizedBox(height: 12),
-                ],
-              ],
+          if (selectedItem != null) ...[
+            const SizedBox(height: 18),
+            InlineAudioPlayer(
+              key: ValueKey(
+                'home-audio-player-${selectedItem.media.mediaId ?? 'unknown'}',
+              ),
+              url: selectedItem.media.resolvedUrl!,
+              title: selectedItem.title,
+              compact: true,
+              homePlayerUi: true,
+              initialVolumeState: _volumeState,
+              onVolumeStateChanged: (nextState) {
+                setState(() {
+                  _volumeState = nextState;
+                });
+              },
             ),
+          ],
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            child: _trackListExpanded && readyItems.isNotEmpty
+                ? Container(
+                    key: const ValueKey('home-audio-track-list'),
+                    margin: const EdgeInsets.only(top: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.06,
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        for (final item in readyItems) ...[
+                          _HomeAudioTrackRow(
+                            item: item,
+                            selected:
+                                (selectedItem?.media.mediaId ?? '') ==
+                                (item.media.mediaId ?? ''),
+                            onTap: () {
+                              final mediaId = item.media.mediaId;
+                              if (mediaId == null || mediaId.isEmpty) {
+                                return;
+                              }
+                              setState(() {
+                                _selectedMediaId = mediaId;
+                              });
+                            },
+                          ),
+                          if (item != readyItems.last)
+                            Divider(
+                              height: 1,
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.05,
+                              ),
+                            ),
+                        ],
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(
+                    key: ValueKey('home-audio-track-list-hidden'),
+                  ),
+          ),
         ],
       ),
     );
   }
+
+  HomeAudioFeedItem? _selectedItemFor(List<HomeAudioFeedItem> readyItems) {
+    if (readyItems.isEmpty) {
+      return null;
+    }
+    final selected = _selectedMediaId;
+    if (selected == null || selected.isEmpty) {
+      return readyItems.first;
+    }
+    for (final item in readyItems) {
+      if (item.media.mediaId == selected) {
+        return item;
+      }
+    }
+    return readyItems.first;
+  }
 }
 
 class _HomeAudioErrorCard extends StatelessWidget {
-  const _HomeAudioErrorCard({required this.message, required this.onRetry});
+  const _HomeAudioErrorCard({
+    required this.logoProvider,
+    required this.onRetry,
+  });
 
-  final String? message;
+  final ImageProvider<Object> logoProvider;
   final VoidCallback onRetry;
 
   @override
@@ -130,57 +205,27 @@ class _HomeAudioErrorCard extends StatelessWidget {
         key: const ValueKey('home-audio-error'),
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.error_outline, size: 36, color: theme.colorScheme.error),
-          if ((message ?? '').trim().isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              message!,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.error,
+          SizedBox(
+            height: 72,
+            child: Image(image: logoProvider, fit: BoxFit.contain),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline_rounded,
+                size: 20,
+                color: theme.colorScheme.error.withValues(alpha: 0.82),
               ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          IconButton(onPressed: onRetry, icon: const Icon(Icons.refresh)),
-        ],
-      ),
-    );
-  }
-}
-
-class _HomeAudioEmptyState extends StatelessWidget {
-  const _HomeAudioEmptyState({required this.texts});
-
-  final HomePlayerTextBundle texts;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Column(
-        children: [
-          Icon(
-            Icons.library_music_outlined,
-            size: 44,
-            color: theme.colorScheme.primary.withValues(alpha: 0.8),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            texts.requireValue('home.audio.empty_title'),
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            texts.requireValue('home.audio.empty_status'),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
+              const SizedBox(width: 12),
+              IconButton(
+                key: const ValueKey('home-audio-retry-button'),
+                onPressed: onRetry,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
           ),
         ],
       ),
@@ -188,206 +233,61 @@ class _HomeAudioEmptyState extends StatelessWidget {
   }
 }
 
-class _HomeAudioItemCard extends StatelessWidget {
-  const _HomeAudioItemCard({
+class _HomeAudioTrackRow extends StatelessWidget {
+  const _HomeAudioTrackRow({
     required this.item,
-    required this.texts,
-    required this.expanded,
-    required this.onToggleExpanded,
+    required this.selected,
+    required this.onTap,
   });
 
   final HomeAudioFeedItem item;
-  final HomePlayerTextBundle texts;
-  final bool expanded;
-  final VoidCallback? onToggleExpanded;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final mediaId = item.media.mediaId ?? 'unknown';
-    return Container(
-      key: ValueKey('home-audio-item-$mediaId'),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.32),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey('home-audio-track-$mediaId'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
             children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: theme.colorScheme.primary.withValues(
-                  alpha: 0.12,
-                ),
-                child: Icon(
-                  item.sourceType == HomeAudioSourceType.directUpload
-                      ? Icons.person_outline
-                      : Icons.menu_book_outlined,
-                  color: theme.colorScheme.primary,
+              Icon(
+                selected
+                    ? Icons.play_circle_fill_rounded
+                    : Icons.music_note_rounded,
+                size: 18,
+                color: theme.colorScheme.onSurface.withValues(
+                  alpha: selected ? 0.88 : 0.52,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    if ((item.lessonTitle ?? '').isNotEmpty)
-                      Text(
-                        item.lessonTitle!,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    if ((item.courseTitle ?? '').isNotEmpty)
-                      Text(
-                        item.courseTitle!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              if (item.isReady)
-                IconButton(
-                  tooltip: texts.requireValue('home.audio.ready_status'),
-                  onPressed: onToggleExpanded,
-                  icon: Icon(
-                    expanded
-                        ? Icons.expand_less_outlined
-                        : Icons.play_circle_outline,
+                child: Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _StatusChip(
-                label: item.sourceType == HomeAudioSourceType.directUpload
-                    ? texts.requireValue('home.audio.direct_upload_label')
-                    : texts.requireValue('home.audio.course_link_label'),
-                background: theme.colorScheme.primary.withValues(alpha: 0.12),
-                foreground: theme.colorScheme.primary,
               ),
-              _StatusChip(
-                label: _statusText(item, texts),
-                background: _statusBackground(theme, item),
-                foreground: _statusForeground(theme, item),
-              ),
+              if (selected)
+                Icon(
+                  Icons.check_rounded,
+                  size: 18,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                ),
             ],
-          ),
-          if (expanded && item.isReady) ...[
-            const SizedBox(height: 14),
-            InlineAudioPlayer(
-              key: ValueKey('home-audio-player-$mediaId'),
-              url: item.media.resolvedUrl!,
-              title: item.title,
-              compact: true,
-              minimalUi: true,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.label,
-    required this.background,
-    required this.foreground,
-  });
-
-  final String label;
-  final Color background;
-  final Color foreground;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: foreground,
-            fontWeight: FontWeight.w700,
           ),
         ),
       ),
     );
   }
-}
-
-String _statusText(HomeAudioFeedItem item, HomePlayerTextBundle texts) {
-  final state = item.media.state.trim().toLowerCase();
-  switch (state) {
-    case 'ready':
-      return texts.requireValue('home.audio.ready_status');
-    case 'failed':
-      return texts.requireValue('home.audio.failed_error');
-    case 'pending_upload':
-      return texts.requireValue('home.audio.pending_status');
-    case 'uploaded':
-    case 'processing':
-      return texts.requireValue('home.audio.processing_status');
-    default:
-      return texts.requireValue('home.audio.processing_status');
-  }
-}
-
-Color _statusBackground(ThemeData theme, HomeAudioFeedItem item) {
-  final state = item.media.state.trim().toLowerCase();
-  switch (state) {
-    case 'ready':
-      return theme.colorScheme.secondary.withValues(alpha: 0.18);
-    case 'failed':
-      return theme.colorScheme.error.withValues(alpha: 0.14);
-    default:
-      return theme.colorScheme.tertiary.withValues(alpha: 0.14);
-  }
-}
-
-Color _statusForeground(ThemeData theme, HomeAudioFeedItem item) {
-  final state = item.media.state.trim().toLowerCase();
-  switch (state) {
-    case 'ready':
-      return theme.colorScheme.secondary;
-    case 'failed':
-      return theme.colorScheme.error;
-    default:
-      return theme.colorScheme.tertiary;
-  }
-}
-
-String? _backendOwnedHomeAudioMessage(Object? error) {
-  if (error == null) {
-    return null;
-  }
-  final failure = AppFailure.from(error);
-  final message = failure.message.trim();
-  if (failure.code != null && message.isNotEmpty) {
-    return message;
-  }
-  return null;
 }

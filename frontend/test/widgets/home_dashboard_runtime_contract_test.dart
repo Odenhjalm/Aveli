@@ -23,8 +23,8 @@ import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
-import 'package:aveli/shared/widgets/inline_audio_player.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
+import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
 import '../helpers/backend_asset_resolver_stub.dart';
 
@@ -141,7 +141,7 @@ Future<void> _pumpDashboard(
 }
 
 void main() {
-  testWidgets('home dashboard mounts learner home audio from GET /home/audio', (
+  testWidgets('home dashboard renders minimalist learner home player shell', (
     tester,
   ) async {
     final harness = await _Harness.create();
@@ -152,22 +152,60 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(harness.adapter.requestsFor('/home/audio'), hasLength(1));
-    expect(find.text('Ljud i Home-spelaren'), findsOneWidget);
-    expect(find.text('Kvällsmeditation'), findsOneWidget);
-    expect(find.text('Andning del 1'), findsOneWidget);
-    expect(find.text('Redo att spela'), findsOneWidget);
-    expect(find.text('Ljudet bearbetas.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-audio-logo')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home-audio-track-list-toggle')),
+      findsOneWidget,
+    );
+    expect(find.byType(InlineAudioPlayer), findsOneWidget);
+    expect(find.text('Ljud i Home-spelaren'), findsNothing);
+    expect(find.text('Redo att spela'), findsNothing);
+    expect(find.text('Ljudet bearbetas.'), findsNothing);
+    expect(find.text('Kvällsmeditation'), findsNothing);
+    expect(find.text('Morgonandning'), findsNothing);
+    expect(find.text('Andning del 1'), findsNothing);
     expect(find.text('Utforska kurser'), findsOneWidget);
     expect(find.text('Gemensam vägg'), findsNothing);
     expect(find.text('Tjänster'), findsNothing);
-
-    await tester.tap(find.byTooltip('Redo att spela'));
-    await tester.pump();
 
     final player = tester.widget<InlineAudioPlayer>(
       find.byType(InlineAudioPlayer),
     );
     expect(player.url, 'https://cdn.test/audio/evening.mp3');
+    expect(player.homePlayerUi, isTrue);
+
+    await tester.tap(
+      find.byKey(const ValueKey('home-audio-track-list-toggle')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.byKey(const ValueKey('home-audio-track-list')), findsOneWidget);
+    expect(find.text('Kvällsmeditation'), findsOneWidget);
+    expect(find.text('Morgonandning'), findsOneWidget);
+    expect(find.text('Andning del 1'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('home-audio-track-media-3')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final updatedPlayer = tester.widget<InlineAudioPlayer>(
+      find.byType(InlineAudioPlayer),
+    );
+    expect(updatedPlayer.url, 'https://cdn.test/audio/morning.mp3');
+
+    await tester.tap(
+      find.byKey(const ValueKey('home-audio-track-list-toggle')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey('home-audio-track-list-hidden')),
+      findsOneWidget,
+    );
+    expect(find.text('Kvällsmeditation'), findsNothing);
+    expect(find.text('Morgonandning'), findsNothing);
   });
 }
 
@@ -210,6 +248,22 @@ class _Harness {
                   'media_id': 'media-1',
                   'state': 'ready',
                   'resolved_url': 'https://cdn.test/audio/evening.mp3',
+                },
+              },
+              {
+                'source_type': 'course_link',
+                'title': 'Morgonandning',
+                'lesson_title': 'Lektion 2',
+                'course_id': 'course-2',
+                'course_title': 'Andning',
+                'course_slug': 'andning',
+                'teacher_id': 'teacher-2',
+                'teacher_name': 'Aveli Course Teacher',
+                'created_at': '2026-04-21T09:30:00Z',
+                'media': {
+                  'media_id': 'media-3',
+                  'state': 'ready',
+                  'resolved_url': 'https://cdn.test/audio/morning.mp3',
                 },
               },
               {
