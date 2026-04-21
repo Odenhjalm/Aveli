@@ -6260,14 +6260,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 ),
                               ),
                               gap12,
-                              TextField(
-                                controller: _courseSlugCtrl,
-                                readOnly: _lessonPreviewMode,
-                                decoration: const InputDecoration(
-                                  labelText: 'Kursadress',
-                                ),
-                              ),
-                              gap12,
+                              const SizedBox.shrink(),
                               _buildCourseCoverPicker(context),
                               gap12,
                               TextField(
