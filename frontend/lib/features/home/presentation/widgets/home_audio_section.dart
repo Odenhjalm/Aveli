@@ -68,20 +68,16 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
             children: [
               SizedBox(
                 width: _homeAudioLogoColumnWidth,
-                child: Transform.translate(
-                  offset: const Offset(0, -10),
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: SizedBox(
-                      key: const ValueKey('home-audio-logo'),
-                      width: _homeAudioLogoColumnWidth,
-                      height: 72,
-                      child: Image(
-                        image: logoProvider,
-                        fit: BoxFit.contain,
-                        alignment: Alignment.topLeft,
-                        filterQuality: FilterQuality.high,
-                      ),
+                child: Center(
+                  child: SizedBox(
+                    key: const ValueKey('home-audio-logo'),
+                    width: _homeAudioLogoColumnWidth,
+                    height: 72,
+                    child: Image(
+                      image: logoProvider,
+                      fit: BoxFit.contain,
+                      alignment: Alignment.center,
+                      filterQuality: FilterQuality.high,
                     ),
                   ),
                 ),
