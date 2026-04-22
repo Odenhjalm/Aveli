@@ -10,7 +10,6 @@ import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
-import 'package:aveli/features/teacher/application/bundle_providers.dart';
 
 class TeacherHomeScreen extends ConsumerStatefulWidget {
   const TeacherHomeScreen({super.key});
@@ -26,9 +25,9 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
   final TextEditingController _referralDurationCtrl = TextEditingController(
     text: '14',
   );
-  final Set<String> _checkoutBundleIds = <String>{};
   String _referralDurationUnit = 'days';
   bool _sendingReferral = false;
+  String? _specialOfferAction;
 
   @override
   void dispose() {
@@ -85,16 +84,16 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Kurs borttagen.')));
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _deletingCourseIds.remove(courseId);
         _hiddenCourseIds.remove(courseId);
       });
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Kunde inte ta bort kursen: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kunde inte ta bort kursen.')),
+      );
     }
   }
 
@@ -128,10 +127,10 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Inbjudan skickad till $email')));
-    } catch (error) {
+    } catch (_) {
       if (!mounted || !context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kunde inte skicka inbjudan: $error')),
+        const SnackBar(content: Text('Kunde inte skicka inbjudan.')),
       );
     } finally {
       if (mounted) {
@@ -140,41 +139,239 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
     }
   }
 
-  Future<void> _startBundleCheckout(
-    BuildContext context,
-    Map<String, dynamic> bundle,
-  ) async {
-    final bundleId = bundle['id'] as String? ?? '';
-    if (bundleId.isEmpty || _checkoutBundleIds.contains(bundleId)) {
+  Future<_SpecialOfferDraft?> _showSpecialOfferDialog(
+    BuildContext context, {
+    required List<CourseStudio> courses,
+    SpecialOfferExecutionState? initialOffer,
+  }) {
+    final priceController = TextEditingController(
+      text: initialOffer == null
+          ? ''
+          : (initialOffer.priceAmountCents ~/ 100).toString(),
+    );
+    final selectedCourseIds = <String>{...?initialOffer?.courseIds};
+    String? validationMessage;
+
+    return showDialog<_SpecialOfferDraft>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                initialOffer == null
+                    ? 'Skapa erbjudande'
+                    : 'Redigera erbjudande',
+              ),
+              content: SizedBox(
+                width: 520,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: priceController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Pris (kr)',
+                          prefixText: 'kr ',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Välj kurser',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+                      for (final course in courses)
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: selectedCourseIds.contains(course.id),
+                          onChanged: (selected) {
+                            setDialogState(() {
+                              if (selected == true) {
+                                if (selectedCourseIds.length < 5) {
+                                  selectedCourseIds.add(course.id);
+                                }
+                              } else {
+                                selectedCourseIds.remove(course.id);
+                              }
+                              validationMessage = null;
+                            });
+                          },
+                          title: Text(course.title),
+                          subtitle: Text(_coursePositionLabel(course)),
+                        ),
+                      if (validationMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          validationMessage!,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Avbryt'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final priceKronor = int.tryParse(
+                      priceController.text.replaceAll(' ', '').trim(),
+                    );
+                    if (priceKronor == null || priceKronor <= 0) {
+                      setDialogState(() {
+                        validationMessage = 'Ange ett giltigt pris.';
+                      });
+                      return;
+                    }
+                    if (selectedCourseIds.isEmpty ||
+                        selectedCourseIds.length > 5) {
+                      setDialogState(() {
+                        validationMessage = 'Välj mellan 1 och 5 kurser.';
+                      });
+                      return;
+                    }
+                    final orderedCourseIds = courses
+                        .where(
+                          (course) => selectedCourseIds.contains(course.id),
+                        )
+                        .map((course) => course.id)
+                        .toList(growable: false);
+                    Navigator.of(dialogContext).pop(
+                      _SpecialOfferDraft(
+                        priceAmountCents: priceKronor * 100,
+                        courseIds: orderedCourseIds,
+                      ),
+                    );
+                  },
+                  child: Text(
+                    initialOffer == null
+                        ? 'Skapa erbjudande'
+                        : 'Spara erbjudande',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(priceController.dispose);
+  }
+
+  Future<void> _editSpecialOffer(
+    BuildContext context, {
+    required List<CourseStudio> courses,
+    SpecialOfferExecutionState? currentOffer,
+  }) async {
+    if (courses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Du behöver minst en kurs för att skapa ett erbjudande.',
+          ),
+        ),
+      );
       return;
     }
 
-    setState(() => _checkoutBundleIds.add(bundleId));
+    final draft = await _showSpecialOfferDialog(
+      context,
+      courses: courses,
+      initialOffer: currentOffer,
+    );
+    if (draft == null) return;
+
+    setState(() => _specialOfferAction = 'save');
     try {
-      final repo = ref.read(courseBundlesRepositoryProvider);
-      final checkout = await repo.createBundleCheckoutSession(bundleId);
-      final url = checkout['url'];
-      final sessionId = checkout['session_id'];
-      final orderId = checkout['order_id'];
-      if (url is! String || url.isEmpty) {
-        throw StateError('Betalningssvaret saknar betalningsadress.');
+      final repo = ref.read(studioRepositoryProvider);
+      if (currentOffer == null) {
+        await repo.createSpecialOfferExecution(
+          courseIds: draft.courseIds,
+          priceAmountCents: draft.priceAmountCents,
+        );
+      } else {
+        await repo.updateSpecialOfferExecution(
+          currentOffer.specialOfferId,
+          courseIds: draft.courseIds,
+          priceAmountCents: draft.priceAmountCents,
+        );
       }
-      if (sessionId is! String || sessionId.isEmpty) {
-        throw StateError('Betalningssvaret saknar sessions-id.');
-      }
-      if (orderId is! String || orderId.isEmpty) {
-        throw StateError('Betalningssvaret saknar order-id.');
-      }
-      if (!mounted || !context.mounted) return;
-      context.pushNamed(AppRoute.checkout, extra: url);
-    } catch (error) {
-      if (!mounted || !context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kunde inte starta betalning: $error')),
-      );
+    } catch (_) {
+      // Execution state is rendered from backend after invalidation below.
     } finally {
       if (mounted) {
-        setState(() => _checkoutBundleIds.remove(bundleId));
+        ref.invalidate(teacherSpecialOfferExecutionProvider);
+        setState(() => _specialOfferAction = null);
+      }
+    }
+  }
+
+  Future<void> _generateSpecialOfferImage(
+    BuildContext context,
+    SpecialOfferExecutionState offer,
+  ) async {
+    setState(() => _specialOfferAction = 'generate');
+    try {
+      final repo = ref.read(studioRepositoryProvider);
+      await repo.generateSpecialOfferImage(offer.specialOfferId);
+    } catch (_) {
+      // Execution state is rendered from backend after invalidation below.
+    } finally {
+      if (mounted) {
+        ref.invalidate(teacherSpecialOfferExecutionProvider);
+        setState(() => _specialOfferAction = null);
+      }
+    }
+  }
+
+  Future<void> _confirmAndRegenerateSpecialOffer(
+    BuildContext context,
+    SpecialOfferExecutionState offer,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Uppdatera erbjudande'),
+        content: const Text(
+          'Detta kommer ersätta den nuvarande bilden. Vill du fortsätta?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Avbryt'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Fortsätt'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _specialOfferAction = 'regenerate');
+    try {
+      final repo = ref.read(studioRepositoryProvider);
+      await repo.regenerateSpecialOfferImage(
+        offer.specialOfferId,
+        confirmOverwrite: true,
+      );
+    } catch (_) {
+      // Execution state is rendered from backend after invalidation below.
+    } finally {
+      if (mounted) {
+        ref.invalidate(teacherSpecialOfferExecutionProvider);
+        setState(() => _specialOfferAction = null);
       }
     }
   }
@@ -184,7 +381,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
     return regex.hasMatch(value);
   }
 
-  String _coursePositionLabel(CourseStudio course) {
+  static String _coursePositionLabel(CourseStudio course) {
     if (course.groupPosition <= 0) return 'Position 0';
     return 'Position ${course.groupPosition}';
   }
@@ -196,11 +393,263 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
     return 'Dropp $interval dagar';
   }
 
+  String _formatPrice(int amountCents) {
+    final kronor = amountCents ~/ 100;
+    final ore = amountCents % 100;
+    final digits = kronor.toString();
+    final buffer = StringBuffer();
+    for (var index = 0; index < digits.length; index += 1) {
+      final reverseIndex = digits.length - index;
+      buffer.write(digits[index]);
+      if (reverseIndex > 1 && reverseIndex % 3 == 1) {
+        buffer.write(' ');
+      }
+    }
+    final formattedWhole = buffer.toString();
+    if (ore == 0) {
+      return '$formattedWhole kr';
+    }
+    return '$formattedWhole,${ore.toString().padLeft(2, '0')} kr';
+  }
+
+  Widget _buildSpecialOfferSection(
+    BuildContext context, {
+    required ThemeData theme,
+    required AsyncValue<List<CourseStudio>> coursesAsync,
+  }) {
+    final specialOfferAsync = ref.watch(teacherSpecialOfferExecutionProvider);
+    final courses = coursesAsync.valueOrNull ?? const <CourseStudio>[];
+    final canOpenOfferEditor =
+        _specialOfferAction == null &&
+        coursesAsync.hasValue &&
+        courses.isNotEmpty;
+    final formActionLabel = specialOfferAsync.valueOrNull == null
+        ? 'Skapa erbjudande'
+        : 'Redigera erbjudande';
+
+    return GlassCard(
+      padding: const EdgeInsets.all(24),
+      opacity: 0.16,
+      borderColor: Colors.white.withValues(alpha: 0.15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Erbjudanden',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Hantera ett backendstyrt erbjudande med bild, pris och aktuell status.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              GradientButton.icon(
+                onPressed: canOpenOfferEditor
+                    ? () => _editSpecialOffer(
+                        context,
+                        courses: courses,
+                        currentOffer: specialOfferAsync.valueOrNull,
+                      )
+                    : null,
+                icon: _specialOfferAction == 'save'
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.local_offer_outlined),
+                label: Text(formActionLabel),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          specialOfferAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+            error: (error, stackTrace) => Text(
+              'Erbjudandet kunde inte laddas.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+            data: (offer) {
+              if (offer == null) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Inget erbjudande skapat ännu.',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Skapa ett erbjudande för att välja kurser, sätta pris och generera en bild.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                );
+              }
+
+              final statusLabel = offer.imageCurrent
+                  ? 'aktuell'
+                  : 'behöver uppdateras';
+              final statusIcon = offer.imageCurrent
+                  ? Icons.check_circle_outline
+                  : Icons.update_outlined;
+              final generatingImage = _specialOfferAction == 'generate';
+              final regeneratingImage = _specialOfferAction == 'regenerate';
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (offer.hasRenderableImage)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: AspectRatio(
+                        aspectRatio: 1,
+                        child: Image.network(
+                          offer.image!.resolvedUrl!,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 28,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.image_outlined,
+                            size: 42,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Ingen erbjudandebild ännu.',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _CourseBadge(
+                        icon: Icons.sell_outlined,
+                        label: _formatPrice(offer.priceAmountCents),
+                      ),
+                      _CourseBadge(icon: statusIcon, label: statusLabel),
+                      _CourseBadge(
+                        icon: Icons.collections_outlined,
+                        label: '${offer.sourceCount} kurser',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _specialOfferAction != null
+                            ? null
+                            : () => _editSpecialOffer(
+                                context,
+                                courses: courses,
+                                currentOffer: offer,
+                              ),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Redigera erbjudande'),
+                      ),
+                      if (offer.activeOutputId == null)
+                        GradientButton.icon(
+                          onPressed: generatingImage
+                              ? null
+                              : () =>
+                                    _generateSpecialOfferImage(context, offer),
+                          icon: generatingImage
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.auto_awesome_outlined),
+                          label: Text(
+                            generatingImage
+                                ? 'Genererar bild...'
+                                : 'Generera bild',
+                          ),
+                        ),
+                      if (offer.activeOutputId != null && offer.imageRequired)
+                        GradientButton.icon(
+                          onPressed: regeneratingImage
+                              ? null
+                              : () => _confirmAndRegenerateSpecialOffer(
+                                  context,
+                                  offer,
+                                ),
+                          icon: regeneratingImage
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_outlined),
+                          label: Text(
+                            regeneratingImage
+                                ? 'Uppdaterar erbjudande...'
+                                : 'Uppdatera erbjudande',
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final coursesAsync = ref.watch(studioCoursesProvider);
-    final bundlesAsync = ref.watch(teacherBundlesProvider);
     return AppScaffold(
       title: 'Kurstudio',
       maxContentWidth: 980,
@@ -227,197 +676,10 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 24),
-              GlassCard(
-                padding: const EdgeInsets.all(24),
-                opacity: 0.16,
-                borderColor: Colors.white.withValues(alpha: 0.15),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Paketpriser',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        GradientButton.icon(
-                          onPressed: () =>
-                              context.goNamed(AppRoute.teacherBundles),
-                          icon: const Icon(Icons.link_outlined),
-                          label: const Text('Skapa paket'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Sätt paketpris för flera kurser och starta betalning när paketet ska köpas.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    bundlesAsync.when(
-                      loading: () => const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: LinearProgressIndicator(minHeight: 2),
-                      ),
-                      error: (error, _) => Text(
-                        'Kunde inte läsa paket: $error',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.error,
-                        ),
-                      ),
-                      data: (bundles) {
-                        if (bundles.isEmpty) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Inga paket ännu',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Skapa ett paket för att kombinera flera kurser till rabatterat pris.',
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                            ],
-                          );
-                        }
-                        return Column(
-                          children: bundles
-                              .map(
-                                (bundle) => Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 6,
-                                  ),
-                                  child: GlassCard(
-                                    opacity: 0.18,
-                                    padding: const EdgeInsets.all(16),
-                                    borderColor: Colors.white.withValues(
-                                      alpha: 0.15,
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                bundle['title'] as String? ??
-                                                    'Paket',
-                                                style: theme
-                                                    .textTheme
-                                                    .titleMedium
-                                                    ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                              ),
-                                            ),
-                                            if (bundle['is_active'] == true)
-                                              _CourseBadge(
-                                                icon:
-                                                    Icons.check_circle_outline,
-                                                label: 'Aktivt',
-                                              )
-                                            else
-                                              _CourseBadge(
-                                                icon: Icons.pause_circle,
-                                                label: 'Inaktivt',
-                                              ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 6),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          children: [
-                                            Builder(
-                                              builder: (context) {
-                                                final bundleId =
-                                                    bundle['id'] as String? ??
-                                                    '';
-                                                final isStarting =
-                                                    _checkoutBundleIds.contains(
-                                                      bundleId,
-                                                    );
-                                                return TextButton.icon(
-                                                  onPressed:
-                                                      bundleId.isEmpty ||
-                                                          isStarting
-                                                      ? null
-                                                      : () =>
-                                                            _startBundleCheckout(
-                                                              context,
-                                                              bundle,
-                                                            ),
-                                                  icon: isStarting
-                                                      ? const SizedBox(
-                                                          width: 18,
-                                                          height: 18,
-                                                          child:
-                                                              CircularProgressIndicator(
-                                                                strokeWidth: 2,
-                                                              ),
-                                                        )
-                                                      : const Icon(
-                                                          Icons
-                                                              .payment_outlined,
-                                                        ),
-                                                  label: Text(
-                                                    isStarting
-                                                        ? 'Öppnar betalning...'
-                                                        : 'Öppna betalning',
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                            const SizedBox(width: 8),
-                                            if (bundle['courses'] is List &&
-                                                (bundle['courses'] as List)
-                                                    .isNotEmpty)
-                                              Wrap(
-                                                spacing: 6,
-                                                children:
-                                                    (bundle['courses']
-                                                            as List<dynamic>)
-                                                        .take(3)
-                                                        .map((course) {
-                                                          final c =
-                                                              course
-                                                                  as Map<
-                                                                    String,
-                                                                    dynamic
-                                                                  >;
-                                                          return _CourseBadge(
-                                                            icon:
-                                                                Icons.menu_book,
-                                                            label:
-                                                                c['title']
-                                                                    as String? ??
-                                                                'Kurs',
-                                                          );
-                                                        })
-                                                        .toList(),
-                                              ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        );
-                      },
-                    ),
-                  ],
-                ),
+              _buildSpecialOfferSection(
+                context,
+                theme: theme,
+                coursesAsync: coursesAsync,
               ),
               const SizedBox(height: 24),
               GlassCard(
@@ -479,10 +741,10 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
                         padding: EdgeInsets.symmetric(vertical: 32),
                         child: Center(child: CircularProgressIndicator()),
                       ),
-                      error: (e, _) => Padding(
+                      error: (error, stackTrace) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24),
                         child: Text(
-                          'Fel vid hämtning av kurser: $e',
+                          'Kurserna kunde inte laddas.',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.error,
                           ),
@@ -771,4 +1033,14 @@ class _CourseBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SpecialOfferDraft {
+  const _SpecialOfferDraft({
+    required this.priceAmountCents,
+    required this.courseIds,
+  });
+
+  final int priceAmountCents;
+  final List<String> courseIds;
 }

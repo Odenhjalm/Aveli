@@ -35,7 +35,6 @@ abstract class AppRoute {
   static const studio = 'studio';
   static const teacherHome = 'teacher-home';
   static const teacherEditor = 'teacher-editor';
-  static const teacherBundles = 'teacher-bundles';
   static const studioProfile = 'studio-profile';
   static const subscribe = 'subscribe';
   static const booking = 'booking';

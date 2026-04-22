@@ -75,6 +75,97 @@ class StudioRepository {
     return StudioStatus.fromResponse(response.data);
   }
 
+  Future<SpecialOfferExecutionState?>
+  fetchCurrentSpecialOfferExecutionState() async {
+    try {
+      final response = await _client.raw.get<Object?>(
+        '/api/teachers/special-offers/execution/current',
+      );
+      return SpecialOfferExecutionState.fromResponse(
+        response.data,
+        label: 'Current special-offer execution state',
+      );
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 404) {
+        return null;
+      }
+      rethrow;
+    }
+  }
+
+  Future<SpecialOfferExecutionState> createSpecialOfferExecution({
+    required List<String> courseIds,
+    required int priceAmountCents,
+  }) async {
+    final response = await _client.raw.post<Object?>(
+      '/api/teachers/special-offers/execution',
+      data: <String, Object?>{
+        'course_ids': courseIds,
+        'price_amount_cents': priceAmountCents,
+      },
+    );
+    return SpecialOfferExecutionState.fromResponse(
+      response.data,
+      label: 'Created special-offer execution state',
+    );
+  }
+
+  Future<SpecialOfferExecutionState> updateSpecialOfferExecution(
+    String specialOfferId, {
+    List<String>? courseIds,
+    int? priceAmountCents,
+  }) async {
+    final response = await _client.raw.patch<Object?>(
+      '/api/teachers/special-offers/$specialOfferId/execution',
+      data: <String, Object?>{
+        if (courseIds != null) 'course_ids': courseIds,
+        if (priceAmountCents != null) 'price_amount_cents': priceAmountCents,
+      },
+    );
+    return SpecialOfferExecutionState.fromResponse(
+      response.data,
+      label: 'Updated special-offer execution state',
+    );
+  }
+
+  Future<SpecialOfferExecutionState> generateSpecialOfferImage(
+    String specialOfferId,
+  ) async {
+    final response = await _client.raw.post<Object?>(
+      '/api/teachers/special-offers/$specialOfferId/execution/generate',
+    );
+    return SpecialOfferExecutionState.fromResponse(
+      response.data,
+      label: 'Generated special-offer execution state',
+    );
+  }
+
+  Future<SpecialOfferExecutionState> regenerateSpecialOfferImage(
+    String specialOfferId, {
+    required bool confirmOverwrite,
+  }) async {
+    final response = await _client.raw.post<Object?>(
+      '/api/teachers/special-offers/$specialOfferId/execution/regenerate',
+      data: <String, Object?>{'confirm_overwrite': confirmOverwrite},
+    );
+    return SpecialOfferExecutionState.fromResponse(
+      response.data,
+      label: 'Regenerated special-offer execution state',
+    );
+  }
+
+  Future<SpecialOfferExecutionState> fetchSpecialOfferExecutionState(
+    String specialOfferId,
+  ) async {
+    final response = await _client.raw.get<Object?>(
+      '/api/teachers/special-offers/$specialOfferId/execution',
+    );
+    return SpecialOfferExecutionState.fromResponse(
+      response.data,
+      label: 'Special-offer execution state',
+    );
+  }
+
   Future<Map<String, Object?>> createReferralInvitation({
     required String email,
     int? freeDays,

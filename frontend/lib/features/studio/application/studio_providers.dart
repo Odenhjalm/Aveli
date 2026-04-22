@@ -63,3 +63,9 @@ final studioUploadQueueProvider =
       ref.onDispose(notifier.dispose);
       return notifier;
     });
+
+final teacherSpecialOfferExecutionProvider =
+    FutureProvider<SpecialOfferExecutionState?>((ref) async {
+      final repo = ref.watch(studioRepositoryProvider);
+      return repo.fetchCurrentSpecialOfferExecutionState();
+    });

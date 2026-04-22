@@ -132,6 +132,26 @@ async def get_special_offer_with_courses(
     return aggregate
 
 
+async def list_teacher_special_offer_ids(
+    conn: Any,
+    *,
+    teacher_id: UUID | str,
+    limit: int = 25,
+) -> list[str]:
+    capped_limit = max(1, min(int(limit or 25), 100))
+    query = """
+        SELECT so.id
+          FROM app.special_offers AS so
+         WHERE so.teacher_id = %s::uuid
+         ORDER BY so.updated_at DESC, so.id DESC
+         LIMIT %s
+    """
+    async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+        await cur.execute(query, (str(teacher_id), capped_limit))
+        rows = await cur.fetchall()
+    return [str(row["id"]) for row in (rows or []) if row.get("id") is not None]
+
+
 async def _get_special_offer_row(
     conn: Any,
     special_offer_id: UUID | str,
@@ -154,6 +174,7 @@ __all__ = [
     "SpecialOfferRow",
     "create_special_offer",
     "get_special_offer_with_courses",
+    "list_teacher_special_offer_ids",
     "replace_special_offer_courses",
     "update_special_offer_price",
 ]

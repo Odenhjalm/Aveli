@@ -12,9 +12,12 @@ from psycopg.rows import dict_row
 from ..config import settings
 from ..repositories import special_offers as special_offers_repo
 from .special_offer_composite_service import create_special_offer_composite
-from .special_offer_source_resolution_service import (
-    ResolvedSource,
-    resolve_special_offer_sources,
+from .special_offer_source_resolution_service import resolve_special_offer_sources
+from .special_offer_text_catalog import (
+    SPECIAL_OFFER_NO_OUTPUT_TO_REGENERATE,
+    SPECIAL_OFFER_OVERWRITE_CONFIRMATION,
+    get_special_offer_error_text_id,
+    get_special_offer_status_text_id,
 )
 from .special_offers_service import SpecialOfferDomainError, get_offer
 from .storage_service import (
@@ -132,47 +135,59 @@ async def generate_special_offer_image(
     special_offer_id: UUID | str,
     teacher_id: UUID | str,
 ) -> dict[str, Any]:
-    normalized_special_offer_id = _normalize_uuid(
-        special_offer_id,
-        code="special_offer_invalid_id",
-    )
-    normalized_teacher_id = _normalize_uuid(
-        teacher_id,
-        code="special_offer_invalid_teacher_id",
-    )
-
-    offer = await get_offer(db, normalized_special_offer_id)
-    await _ensure_owned_offer(
-        db,
-        special_offer_id=normalized_special_offer_id,
-        teacher_id=normalized_teacher_id,
-    )
-    active_output = await _get_active_output(
-        db,
-        special_offer_id=normalized_special_offer_id,
-    )
-    if active_output is not None:
-        raise SpecialOfferDomainError(
-            "special_offer_asset_already_exists",
-            status_code=409,
+    try:
+        normalized_special_offer_id = _normalize_uuid(
+            special_offer_id,
+            code="special_offer_invalid_id",
+        )
+        normalized_teacher_id = _normalize_uuid(
+            teacher_id,
+            code="special_offer_invalid_teacher_id",
         )
 
-    source_bytes = await _load_canonical_source_bytes(
-        db,
-        special_offer_id=normalized_special_offer_id,
-    )
-    result = await create_special_offer_composite(
-        db,
-        special_offer_id=normalized_special_offer_id,
-        source_bytes=source_bytes,
-        price_amount_cents=offer.price_amount_cents,
-        overwrite=False,
-    )
-    return await _build_execution_state(
-        db,
-        special_offer_id=normalized_special_offer_id,
-        latest_result=result,
-    )
+        offer = await get_offer(db, normalized_special_offer_id)
+        await _ensure_owned_offer(
+            db,
+            special_offer_id=normalized_special_offer_id,
+            teacher_id=normalized_teacher_id,
+        )
+        active_output = await _get_active_output(
+            db,
+            special_offer_id=normalized_special_offer_id,
+        )
+        if active_output is not None:
+            raise SpecialOfferDomainError(
+                "special_offer_asset_already_exists",
+                status_code=409,
+            )
+
+        source_bytes = await _load_canonical_source_bytes(
+            db,
+            special_offer_id=normalized_special_offer_id,
+        )
+        result = await create_special_offer_composite(
+            db,
+            special_offer_id=normalized_special_offer_id,
+            source_bytes=source_bytes,
+            price_amount_cents=offer.price_amount_cents,
+            overwrite=False,
+        )
+        return await _build_execution_state(
+            db,
+            special_offer_id=normalized_special_offer_id,
+            latest_result=result,
+        )
+    except SpecialOfferDomainError as exc:
+        mapped_exc = _with_special_offer_text_id(
+            exc,
+            text_id=get_special_offer_error_text_id(
+                exc.code,
+                is_regenerate=False,
+            ),
+        )
+        if mapped_exc is exc:
+            raise
+        raise mapped_exc from exc
 
 
 async def regenerate_special_offer_image(
@@ -182,6 +197,52 @@ async def regenerate_special_offer_image(
     teacher_id: UUID | str,
     confirm_overwrite: bool = False,
 ) -> dict[str, Any]:
+    try:
+        normalized_special_offer_id, normalized_teacher_id, offer = (
+            await _prepare_regenerate_offer(
+                db,
+                special_offer_id=special_offer_id,
+                teacher_id=teacher_id,
+                confirm_overwrite=confirm_overwrite,
+            )
+        )
+
+        source_bytes = await _load_canonical_source_bytes(
+            db,
+            special_offer_id=normalized_special_offer_id,
+        )
+        result = await create_special_offer_composite(
+            db,
+            special_offer_id=normalized_special_offer_id,
+            source_bytes=source_bytes,
+            price_amount_cents=offer.price_amount_cents,
+            overwrite=True,
+        )
+        return await _build_execution_state(
+            db,
+            special_offer_id=normalized_special_offer_id,
+            latest_result=result,
+        )
+    except SpecialOfferDomainError as exc:
+        mapped_exc = _with_special_offer_text_id(
+            exc,
+            text_id=get_special_offer_error_text_id(
+                exc.code,
+                is_regenerate=True,
+            ),
+        )
+        if mapped_exc is exc:
+            raise
+        raise mapped_exc from exc
+
+
+async def _prepare_regenerate_offer(
+    db: Any,
+    *,
+    special_offer_id: UUID | str,
+    teacher_id: UUID | str,
+    confirm_overwrite: bool,
+) -> tuple[str, str, Any]:
     normalized_special_offer_id = _normalize_uuid(
         special_offer_id,
         code="special_offer_invalid_id",
@@ -194,6 +255,7 @@ async def regenerate_special_offer_image(
         raise SpecialOfferDomainError(
             "special_offer_output_conflict",
             status_code=409,
+            context={"text_id": SPECIAL_OFFER_OVERWRITE_CONFIRMATION},
         )
 
     offer = await get_offer(db, normalized_special_offer_id)
@@ -202,6 +264,9 @@ async def regenerate_special_offer_image(
         special_offer_id=normalized_special_offer_id,
         teacher_id=normalized_teacher_id,
     )
+
+    # Regenerate is overwrite-gated and requires an active binding before any
+    # canonical source load or attempt creation can begin.
     active_output = await _get_active_output(
         db,
         special_offer_id=normalized_special_offer_id,
@@ -210,24 +275,10 @@ async def regenerate_special_offer_image(
         raise SpecialOfferDomainError(
             "special_offer_output_conflict",
             status_code=409,
+            context={"text_id": SPECIAL_OFFER_NO_OUTPUT_TO_REGENERATE},
         )
 
-    source_bytes = await _load_canonical_source_bytes(
-        db,
-        special_offer_id=normalized_special_offer_id,
-    )
-    result = await create_special_offer_composite(
-        db,
-        special_offer_id=normalized_special_offer_id,
-        source_bytes=source_bytes,
-        price_amount_cents=offer.price_amount_cents,
-        overwrite=True,
-    )
-    return await _build_execution_state(
-        db,
-        special_offer_id=normalized_special_offer_id,
-        latest_result=result,
-    )
+    return normalized_special_offer_id, normalized_teacher_id, offer
 
 
 async def get_special_offer_execution_state(
@@ -285,8 +336,11 @@ async def _build_execution_state(
     status = latest_result.get("status") if latest_result is not None else None
     if status is None and latest_attempt is not None:
         status = str(latest_attempt["status"])
-    if status is None:
-        status = "succeeded" if image_current else "none"
+    text_id = get_special_offer_status_text_id(
+        status=status,
+        overwrite_applied=overwrite_applied,
+        has_active_output=bool(active_output),
+    )
 
     source_count = (
         int(latest_result["source_count"])
@@ -301,6 +355,7 @@ async def _build_execution_state(
         "state_hash": str(offer.state_hash),
         "attempt_id": attempt_id,
         "status": status,
+        "text_id": text_id,
         "source_count": source_count,
         "overwrite_applied": overwrite_applied,
         "image_current": image_current,
@@ -734,6 +789,23 @@ def _normalize_uuid(value: UUID | str, *, code: str) -> str:
         return str(UUID(str(value).strip()))
     except (TypeError, ValueError, AttributeError) as exc:
         raise SpecialOfferDomainError(code, status_code=400) from exc
+
+
+def _with_special_offer_text_id(
+    exc: SpecialOfferDomainError,
+    *,
+    text_id: str | None,
+) -> SpecialOfferDomainError:
+    resolved_text_id = str(exc.context.get("text_id") or "").strip() or text_id
+    if not resolved_text_id:
+        return exc
+    context = dict(exc.context)
+    context["text_id"] = resolved_text_id
+    return SpecialOfferDomainError(
+        exc.code,
+        status_code=exc.status_code,
+        context=context,
+    )
 
 
 def _map_database_error(exc: PsycopgError) -> SpecialOfferDomainError:

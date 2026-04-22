@@ -48,7 +48,6 @@ import 'package:aveli/features/studio/presentation/course_editor_page.dart';
 import 'package:aveli/features/studio/presentation/profile_media_page.dart';
 import 'package:aveli/features/studio/presentation/studio_page.dart';
 import 'package:aveli/features/studio/presentation/teacher_home_page.dart';
-import 'package:aveli/features/teacher/presentation/course_bundle_page.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
 
 class AppRouterNotifier extends ChangeNotifier {
@@ -475,11 +474,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePath.teacherHome,
         name: AppRoute.teacherHome,
         builder: (context, state) => const TeacherHomeScreen(),
-      ),
-      GoRoute(
-        path: RoutePath.teacherBundles,
-        name: AppRoute.teacherBundles,
-        builder: (context, state) => const CourseBundlePage(),
       ),
       GoRoute(
         path: RoutePath.teacherEditor,

@@ -231,11 +231,6 @@ const List<RouteManifestEntry> routeManifest = [
     access: RouteAccessLevel.teacher,
   ),
   RouteManifestEntry(
-    name: AppRoute.teacherBundles,
-    path: RoutePath.teacherBundles,
-    access: RouteAccessLevel.teacher,
-  ),
-  RouteManifestEntry(
     name: AppRoute.teacherEditor,
     path: RoutePath.teacherEditor,
     access: RouteAccessLevel.teacher,

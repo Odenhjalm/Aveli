@@ -34,7 +34,6 @@ abstract class RoutePath {
   static const studio = '/studio';
   static const teacherHome = '/teacher';
   static const teacherEditor = '/teacher/editor';
-  static const teacherBundles = '/teacher/bundles';
   static const studioProfile = '/studio/profile';
   static const subscribe = '/subscribe';
   static const booking = '/booking';

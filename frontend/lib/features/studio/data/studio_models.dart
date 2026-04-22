@@ -76,6 +76,22 @@ List<Object?> _requiredResponseList(Object? payload, String key, String label) {
   throw StateError('$label field "$key" must be a list');
 }
 
+List<String> _requiredResponseStringList(
+  Object? payload,
+  String key,
+  String label,
+) {
+  final items = _requiredResponseList(payload, key, label);
+  return items
+      .map((item) {
+        if (item is String && item.trim().isNotEmpty) {
+          return item.trim();
+        }
+        throw StateError('$label field "$key" must contain non-empty strings');
+      })
+      .toList(growable: false);
+}
+
 void _rejectResponseFields(
   Object? payload,
   Iterable<String> keys,
@@ -680,5 +696,99 @@ class StudioLessonMediaPreviewBatch {
       }
     }
     return null;
+  }
+}
+
+@immutable
+class SpecialOfferExecutionState {
+  SpecialOfferExecutionState({
+    required this.specialOfferId,
+    required this.activeOutputId,
+    required this.activeMediaAssetId,
+    required this.stateHash,
+    required this.attemptId,
+    required this.status,
+    required this.textId,
+    required this.sourceCount,
+    required this.overwriteApplied,
+    required this.imageCurrent,
+    required this.imageRequired,
+    required this.priceAmountCents,
+    required List<String> courseIds,
+    required this.image,
+  }) : courseIds = List<String>.unmodifiable(courseIds);
+
+  final String specialOfferId;
+  final String? activeOutputId;
+  final String? activeMediaAssetId;
+  final String stateHash;
+  final String? attemptId;
+  final String? status;
+  final String? textId;
+  final int sourceCount;
+  final bool overwriteApplied;
+  final bool imageCurrent;
+  final bool imageRequired;
+  final int priceAmountCents;
+  final List<String> courseIds;
+  final ResolvedMediaData? image;
+
+  bool get hasRenderableImage {
+    final resolvedUrl = image?.resolvedUrl?.trim();
+    return image?.state == 'ready' &&
+        resolvedUrl != null &&
+        resolvedUrl.isNotEmpty;
+  }
+
+  factory SpecialOfferExecutionState.fromResponse(
+    Object? payload, {
+    String label = 'SpecialOfferExecutionState',
+  }) {
+    final imageValue = _requireResponseField(payload, 'image', label);
+    return SpecialOfferExecutionState(
+      specialOfferId: _requiredResponseString(
+        payload,
+        'special_offer_id',
+        label,
+      ),
+      activeOutputId: _nullableResponseString(
+        payload,
+        'active_output_id',
+        label,
+      ),
+      activeMediaAssetId: _nullableResponseString(
+        payload,
+        'active_media_asset_id',
+        label,
+      ),
+      stateHash: _requiredResponseString(payload, 'state_hash', label),
+      attemptId: _nullableResponseString(payload, 'attempt_id', label),
+      status: _nullableResponseString(payload, 'status', label),
+      textId: _nullableResponseString(payload, 'text_id', label),
+      sourceCount: _requiredResponseInt(payload, 'source_count', label),
+      overwriteApplied: _requiredResponseBool(
+        payload,
+        'overwrite_applied',
+        label,
+      ),
+      imageCurrent: _requiredResponseBool(payload, 'image_current', label),
+      imageRequired: _requiredResponseBool(payload, 'image_required', label),
+      priceAmountCents: _requiredResponseInt(
+        payload,
+        'price_amount_cents',
+        label,
+      ),
+      courseIds: _requiredResponseStringList(payload, 'course_ids', label),
+      image: switch (imageValue) {
+        null => null,
+        final Map<String, dynamic> data => ResolvedMediaData.fromJson(data),
+        final Map data => ResolvedMediaData.fromJson(
+          Map<String, dynamic>.from(data),
+        ),
+        final Object _ => throw StateError(
+          '$label field "image" must be an object or null',
+        ),
+      },
+    );
   }
 }

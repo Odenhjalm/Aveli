@@ -148,8 +148,6 @@ const _publishedCourse = CourseStudio(
 const _canonicalLessonMediaUrl = 'https://cdn.test/canonical-lesson-image.webp';
 const _canonicalTrailingDocumentUrl =
     'https://cdn.test/canonical-lesson-document.pdf';
-const _editorTransientMediaPreviewUrl =
-    'https://cdn.test/editor-transient-preview.webp';
 
 const _lesson = LessonStudio(
   id: 'lesson-1',
@@ -180,11 +178,14 @@ StudioLessonContentRead _contentRead({
   );
 }
 
-StudioLessonMediaItem _placementImage(String lessonMediaId) {
+StudioLessonMediaItem _placementImage(
+  String lessonMediaId, {
+  int position = 1,
+}) {
   return StudioLessonMediaItem(
     lessonMediaId: lessonMediaId,
     lessonId: 'lesson-1',
-    position: 1,
+    position: position,
     mediaType: 'image',
     state: 'ready',
     previewReady: true,
@@ -197,11 +198,14 @@ StudioLessonMediaItem _placementImage(String lessonMediaId) {
   );
 }
 
-StudioLessonMediaItem _placementDocument(String lessonMediaId) {
+StudioLessonMediaItem _placementDocument(
+  String lessonMediaId, {
+  int position = 2,
+}) {
   return StudioLessonMediaItem(
     lessonMediaId: lessonMediaId,
     lessonId: 'lesson-1',
-    position: 2,
+    position: position,
     mediaType: 'document',
     state: 'ready',
     previewReady: true,
@@ -214,6 +218,33 @@ StudioLessonMediaItem _placementDocument(String lessonMediaId) {
   );
 }
 
+class _StyledTextSegment {
+  const _StyledTextSegment(this.text, this.style);
+
+  final String text;
+  final TextStyle? style;
+}
+
+void _collectStyledTextSegments(
+  InlineSpan span,
+  List<_StyledTextSegment> segments, {
+  TextStyle? inheritedStyle,
+}) {
+  if (span is! TextSpan) return;
+  final effectiveStyle = inheritedStyle?.merge(span.style) ?? span.style;
+  final text = span.text;
+  if (text != null && text.isNotEmpty) {
+    segments.add(_StyledTextSegment(text, effectiveStyle));
+  }
+  final children = span.children;
+  if (children == null || children.isEmpty) {
+    return;
+  }
+  for (final child in children) {
+    _collectStyledTextSegments(child, segments, inheritedStyle: effectiveStyle);
+  }
+}
+
 Finder _networkImageFinder(String url) {
   return find.byWidgetPredicate(
     (widget) =>
@@ -222,6 +253,31 @@ Finder _networkImageFinder(String url) {
         (widget.image as NetworkImage).url == url,
     description: 'Image.network($url)',
   );
+}
+
+List<_StyledTextSegment> _previewStyledTextSegments(WidgetTester tester) {
+  final segments = <_StyledTextSegment>[];
+  final richTextFinder = find.descendant(
+    of: find.byType(LearnerLessonContentRenderer),
+    matching: find.byType(RichText),
+  );
+  for (final richText in tester.widgetList<RichText>(richTextFinder)) {
+    _collectStyledTextSegments(richText.text, segments);
+  }
+  return segments;
+}
+
+List<TextStyle?> _previewTextStylesForText(WidgetTester tester, String target) {
+  return [
+    for (final segment in _previewStyledTextSegments(tester))
+      if (segment.text.contains(target)) segment.style,
+  ];
+}
+
+String _renderedPreviewText(WidgetTester tester) {
+  return _previewStyledTextSegments(
+    tester,
+  ).map((segment) => segment.text).join();
 }
 
 void _stubBaseStudioData(
@@ -362,16 +418,6 @@ Future<void> _openLessonPreview(WidgetTester tester) async {
   );
   await _pumpUntilFinderFound(tester, previewChip);
   await tester.tap(previewChip);
-  await tester.pump();
-}
-
-Future<void> _switchLessonPreviewSource(
-  WidgetTester tester,
-  String sourceKey,
-) async {
-  final sourceChip = find.byKey(ValueKey<String>(sourceKey));
-  await _pumpUntilFinderFound(tester, sourceChip);
-  await tester.tap(sourceChip);
   await tester.pump();
 }
 
@@ -663,148 +709,8 @@ void main() {
     },
   );
 
-  testWidgets('legacy preview regression placeholder', (tester) async {
-    return;
-
-    await tester.binding.setSurfaceSize(const Size(1400, 1000));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    const embeddedImageId = 'lesson-media-image-1';
-    const trailingDocumentId = 'lesson-media-document-1';
-    final repo = _MockStudioRepository();
-    _stubBaseStudioData(
-      repo,
-      course: _courseWithCover,
-      readContent: (lessonId) async => _contentRead(
-        lessonId: lessonId,
-        contentMarkdown:
-            'Persisted canonical text\n\n!image($embeddedImageId)\n',
-        media: const [
-          StudioLessonContentMediaItem(
-            lessonMediaId: embeddedImageId,
-            position: 1,
-            mediaType: 'image',
-            state: 'ready',
-            mediaAssetId: 'asset-$embeddedImageId',
-          ),
-          StudioLessonContentMediaItem(
-            lessonMediaId: trailingDocumentId,
-            position: 2,
-            mediaType: 'document',
-            state: 'ready',
-            mediaAssetId: 'asset-$trailingDocumentId',
-          ),
-        ],
-        etag: '"content-v1"',
-      ),
-    );
-    when(() => repo.fetchLessonMediaPlacements(any())).thenAnswer((
-      invocation,
-    ) async {
-      final ids = List<String>.from(
-        invocation.positionalArguments.single as List,
-      );
-      return [
-        for (final id in ids)
-          id == trailingDocumentId
-              ? _placementDocument(id)
-              : _placementImage(id),
-      ];
-    });
-    when(() => repo.fetchLessonMediaPreviews(any())).thenAnswer((
-      invocation,
-    ) async {
-      final ids = List<String>.from(
-        invocation.positionalArguments.single as List,
-      );
-      return StudioLessonMediaPreviewBatch(
-        items: [
-          for (final id in ids)
-            StudioLessonMediaPreviewItem(
-              lessonMediaId: id,
-              mediaType: 'image',
-              authoritativeEditorReady: true,
-              previewUrl: _editorTransientMediaPreviewUrl,
-              fileName: 'canonical-lesson-image.webp',
-            ),
-        ],
-      );
-    });
-
-    await _pumpCourseEditor(tester, repo: repo);
-    await _pumpUntilDocumentContains(tester, 'Persisted canonical text');
-    await tester.pump();
-
-    expect(_networkImageFinder(_courseCoverUrl), findsOneWidget);
-    expect(
-      _networkImageFinder(_canonicalLessonMediaUrl),
-      findsAtLeastNWidgets(1),
-    );
-
-    clearInteractions(repo);
-    _insertAtDocumentEnd(' unsaved draft');
-    await tester.pump();
-    expect(editor_test_bridge.getDocument(), contains('unsaved draft'));
-
-    await _openLessonPreview(tester);
-
-    await _pumpUntilFinderFound(tester, find.byType(LessonPageRenderer));
-    await _pumpUntilFinderFound(
-      tester,
-      find.byType(LearnerLessonContentRenderer),
-    );
-    await _pumpUntilFinderFound(tester, find.text('Live preview'));
-    await _pumpUntilFinderFound(
-      tester,
-      find.text(
-        'Skrivskyddad förhandsgranskning med samma renderingspipeline som elevvyn.',
-      ),
-    );
-    await _pumpUntilFinderFound(
-      tester,
-      find.textContaining('Persisted canonical text', findRichText: true),
-    );
-    await _pumpUntilFinderFound(tester, find.text('Dokument'));
-    await _pumpUntilFinderFound(tester, find.text('Ladda ner dokument'));
-
-    expect(
-      find.textContaining('unsaved draft', findRichText: true),
-      findsNothing,
-    );
-    expect(
-      _networkImageFinder(_canonicalLessonMediaUrl),
-      findsAtLeastNWidgets(2),
-    );
-    expect(_networkImageFinder(_courseCoverUrl), findsAtLeastNWidgets(2));
-
-    final placementRead = verify(
-      () => repo.fetchLessonMediaPlacements(captureAny()),
-    )..called(1);
-    expect(placementRead.captured.single, [
-      embeddedImageId,
-      trailingDocumentId,
-    ]);
-    verify(() => repo.readLessonContent('lesson-1')).called(1);
-    verify(() => repo.fetchCourseMeta('course-1')).called(1);
-    verifyNever(() => repo.fetchLessonMediaPreviews(any()));
-    verifyNever(
-      () => repo.updateLessonContent(
-        any(),
-        contentMarkdown: any(named: 'contentMarkdown'),
-        ifMatch: any(named: 'ifMatch'),
-      ),
-    );
-    verifyNever(
-      () => repo.updateLessonStructure(
-        any(),
-        lessonTitle: any(named: 'lessonTitle'),
-        position: any(named: 'position'),
-      ),
-    );
-  });
-
   testWidgets(
-    'live preview uses unsaved markdown while saved mirror stays persisted',
+    'live preview renders formatted markdown and media without saved mirror UI',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -818,7 +724,13 @@ void main() {
         readContent: (lessonId) async => _contentRead(
           lessonId: lessonId,
           contentMarkdown:
-              'Persisted canonical text\n\n!image($embeddedImageId)\n',
+              '## Heading\n\n'
+              '**Bold** *Italic* <u>Underline</u>\n\n'
+              'Body text\n\n'
+              '1. Ordered item\n'
+              '2. Ordered follow-up\n\n'
+              '- Bullet item\n\n'
+              '!image($embeddedImageId)\n',
           media: const [
             StudioLessonContentMediaItem(
               lessonMediaId: embeddedImageId,
@@ -844,16 +756,19 @@ void main() {
         final ids = List<String>.from(
           invocation.positionalArguments.single as List,
         );
-        return [
+        final placements = <StudioLessonMediaItem>[
           for (final id in ids)
-            id == trailingDocumentId
-                ? _placementDocument(id)
-                : _placementImage(id),
+            if (id == trailingDocumentId)
+              _placementDocument(id, position: 2)
+            else
+              _placementImage(id, position: 1),
         ];
+        placements.sort((a, b) => a.position.compareTo(b.position));
+        return placements;
       });
 
       await _pumpCourseEditor(tester, repo: repo);
-      await _pumpUntilDocumentContains(tester, 'Persisted canonical text');
+      await _pumpUntilDocumentContains(tester, 'Body text');
       await tester.pumpAndSettle();
 
       clearInteractions(repo);
@@ -866,51 +781,71 @@ void main() {
         tester,
         find.byType(LearnerLessonContentRenderer),
       );
-      await _pumpUntilFinderFound(tester, find.text('Live preview'));
       await _pumpUntilFinderFound(
         tester,
-        find.textContaining('Persisted canonical text', findRichText: true),
+        find.byKey(const ValueKey<String>('lesson_preview_live_badge')),
       );
       await _pumpUntilFinderFound(
         tester,
-        find.textContaining('unsaved draft', findRichText: true),
+        _networkImageFinder(_canonicalLessonMediaUrl),
       );
       await _pumpUntilFinderFound(tester, find.text('Dokument'));
       await _pumpUntilFinderFound(tester, find.text('Ladda ner dokument'));
 
+      final previewText = _renderedPreviewText(tester);
+      final headingSizes = _previewTextStylesForText(tester, 'Heading')
+          .map((style) => style?.fontSize)
+          .whereType<double>()
+          .toList(growable: false);
+      final bodySizes = _previewTextStylesForText(tester, 'Body text')
+          .map((style) => style?.fontSize)
+          .whereType<double>()
+          .toList(growable: false);
+      final boldStyles = _previewTextStylesForText(tester, 'Bold');
+      final italicStyles = _previewTextStylesForText(tester, 'Italic');
+      final underlineStyles = _previewTextStylesForText(tester, 'Underline');
+
+      expect(find.text('Saved mirror'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('lesson_preview_saved_source_chip')),
+        findsNothing,
+      );
+      expect(previewText, contains('Heading'));
+      expect(previewText, contains('Bold'));
+      expect(previewText, contains('Italic'));
+      expect(previewText, contains('Underline'));
+      expect(previewText, contains('Body text'));
+      expect(previewText, contains('Ordered item'));
+      expect(previewText, contains('Bullet item'));
+      expect(previewText, contains('unsaved draft'));
+      expect(
+        boldStyles.any((style) => style?.fontWeight == FontWeight.bold),
+        isTrue,
+      );
+      expect(
+        italicStyles.any((style) => style?.fontStyle == FontStyle.italic),
+        isTrue,
+      );
+      expect(
+        underlineStyles.any(
+          (style) =>
+              style?.decoration?.contains(TextDecoration.underline) ?? false,
+        ),
+        isTrue,
+      );
+      expect(headingSizes, isNotEmpty);
+      expect(bodySizes, isNotEmpty);
+      final maxHeadingSize = headingSizes.reduce((a, b) => a > b ? a : b);
+      final minBodySize = bodySizes.reduce((a, b) => a < b ? a : b);
+      expect(maxHeadingSize, greaterThan(minBodySize));
+      expect(
+        _networkImageFinder(_canonicalLessonMediaUrl),
+        findsAtLeastNWidgets(1),
+      );
+
       verifyNever(() => repo.readLessonContent(any()));
       verifyNever(() => repo.fetchLessonMediaPlacements(any()));
       verifyNever(() => repo.fetchCourseMeta(any()));
-
-      await _switchLessonPreviewSource(
-        tester,
-        'lesson_preview_saved_source_chip',
-      );
-      await _pumpUntilFinderFound(
-        tester,
-        find.textContaining('Persisted canonical text', findRichText: true),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.textContaining('unsaved draft', findRichText: true),
-        findsNothing,
-      );
-      expect(
-        _networkImageFinder(_canonicalLessonMediaUrl),
-        findsAtLeastNWidgets(2),
-      );
-      expect(_networkImageFinder(_courseCoverUrl), findsAtLeastNWidgets(2));
-
-      final placementRead = verify(
-        () => repo.fetchLessonMediaPlacements(captureAny()),
-      )..called(1);
-      expect(placementRead.captured.single, [
-        embeddedImageId,
-        trailingDocumentId,
-      ]);
-      verify(() => repo.readLessonContent('lesson-1')).called(1);
-      verify(() => repo.fetchCourseMeta('course-1')).called(1);
       verifyNever(() => repo.fetchLessonMediaPreviews(any()));
       verifyNever(
         () => repo.updateLessonContent(
