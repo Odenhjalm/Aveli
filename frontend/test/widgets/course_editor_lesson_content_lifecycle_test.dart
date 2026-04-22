@@ -317,6 +317,13 @@ const _secondLesson = LessonStudio(
   position: 2,
 );
 
+const _thirdLesson = LessonStudio(
+  id: 'lesson-3',
+  courseId: 'course-1',
+  lessonTitle: 'Fördjupning',
+  position: 3,
+);
+
 StudioLessonContentRead _contentRead({
   required String lessonId,
   required String contentMarkdown,
@@ -513,14 +520,6 @@ void _stubBaseStudioData(
       position: invocation.namedArguments[#position] as int,
     );
   });
-}
-
-void _stubEmptyStudioData(_MockStudioRepository repo) {
-  when(() => repo.fetchStatus()).thenAnswer((_) async => _V2TeacherStatus());
-  when(() => repo.myCourses()).thenAnswer((_) async => const <CourseStudio>[]);
-  when(
-    () => repo.myCourseFamilies(),
-  ).thenAnswer((_) async => const <CourseFamilyStudio>[]);
 }
 
 Future<void> _pumpCourseEditor(
@@ -1379,9 +1378,9 @@ void main() {
       when(
         () => repo.fetchCourseMeta('course-1'),
       ).thenAnswer((_) async => currentCourse);
-      when(
-        () => repo.updateCourseDripAuthoring('course-1', any()),
-      ).thenAnswer((invocation) async {
+      when(() => repo.updateCourseDripAuthoring('course-1', any())).thenAnswer((
+        invocation,
+      ) async {
         payload = Map<String, Object?>.from(
           invocation.positionalArguments[1] as Map,
         );
@@ -1409,14 +1408,8 @@ void main() {
       await tester.ensureVisible(firstOffsetField);
       expect(firstOffsetField, findsOneWidget);
       expect(secondOffsetField, findsOneWidget);
-      expect(
-        tester.widget<TextField>(firstOffsetField).controller?.text,
-        '0',
-      );
-      expect(
-        tester.widget<TextField>(secondOffsetField).controller?.text,
-        '3',
-      );
+      expect(tester.widget<TextField>(firstOffsetField).controller?.text, '0');
+      expect(tester.widget<TextField>(secondOffsetField).controller?.text, '3');
 
       await tester.enterText(secondOffsetField, '5');
       final saveButton = find.byKey(
@@ -1437,13 +1430,119 @@ void main() {
           {'lesson_id': 'lesson-2', 'unlock_offset_days': 5},
         ],
       });
-      expect(
-        tester.widget<TextField>(secondOffsetField).controller?.text,
-        '5',
-      );
+      expect(tester.widget<TextField>(secondOffsetField).controller?.text, '5');
       verifyNever(() => repo.updateCourse('course-1', any()));
     },
   );
+
+  testWidgets(
+    'custom course schedule renders timeline summary and first-lesson guidance',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      final currentCourse = _course.copyWith(
+        dripAuthoring: DripAuthoring.custom(
+          rows: const [
+            CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
+            CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 3),
+          ],
+        ),
+      );
+      _stubBaseStudioData(
+        repo,
+        course: currentCourse,
+        lessons: const [_lesson, _secondLesson],
+      );
+      when(
+        () => repo.fetchCourseMeta('course-1'),
+      ).thenAnswer((_) async => currentCourse);
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Lektionsschema');
+      await _pumpUntilFinderFound(
+        tester,
+        find.byKey(const ValueKey<String>('course-custom-summary')),
+      );
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('course-custom-timeline-row-lesson-1'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('course-custom-timeline-row-lesson-2'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Dag 0'), findsWidgets);
+      expect(find.text('Dag 3'), findsWidgets);
+      expect(
+        find.byKey(const ValueKey<String>('course-custom-first-lesson-note')),
+        findsOneWidget,
+      );
+      expect(find.text('2 lektioner'), findsOneWidget);
+      expect(find.text('Start: dag 0'), findsOneWidget);
+      expect(find.text('Sista lektionen: dag 3'), findsOneWidget);
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('custom course schedule shows inline row validation states', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final repo = _MockStudioRepository();
+    final currentCourse = _course.copyWith(
+      dripAuthoring: DripAuthoring.custom(
+        rows: const [
+          CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
+          CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 3),
+          CustomScheduleRow(lessonId: 'lesson-3', unlockOffsetDays: 7),
+        ],
+      ),
+    );
+    _stubBaseStudioData(
+      repo,
+      course: currentCourse,
+      lessons: const [_lesson, _secondLesson, _thirdLesson],
+    );
+    when(
+      () => repo.fetchCourseMeta('course-1'),
+    ).thenAnswer((_) async => currentCourse);
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilTextFound(tester, 'Lektionsschema');
+
+    final thirdOffsetField = find.byKey(
+      const ValueKey<String>('course-custom-offset-lesson-3'),
+    );
+    await _pumpUntilFinderFound(tester, thirdOffsetField);
+    await tester.ensureVisible(thirdOffsetField);
+
+    await tester.enterText(thirdOffsetField, '');
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(thirdOffsetField).controller?.text, '');
+    expect(find.text('Ange antal dagar innan upplåsning.'), findsOneWidget);
+
+    await tester.enterText(thirdOffsetField, '-2');
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(thirdOffsetField).controller?.text, '-2');
+    expect(find.text('Värdet kan inte vara negativt.'), findsOneWidget);
+
+    await tester.enterText(thirdOffsetField, '1');
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(thirdOffsetField).controller?.text, '1');
+    expect(
+      find.text('Kan inte vara tidigare än dag 3 för föregående lektion.'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets(
     'course schedule mode switches use only the drip-authoring endpoint',
@@ -1464,9 +1563,9 @@ void main() {
       when(
         () => repo.fetchCourseMeta('course-1'),
       ).thenAnswer((_) async => currentCourse);
-      when(
-        () => repo.updateCourseDripAuthoring('course-1', any()),
-      ).thenAnswer((invocation) async {
+      when(() => repo.updateCourseDripAuthoring('course-1', any())).thenAnswer((
+        invocation,
+      ) async {
         final nextPayload = Map<String, Object?>.from(
           invocation.positionalArguments[1] as Map,
         );
@@ -1509,6 +1608,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Anpassat schema').last);
       await tester.pumpAndSettle();
+      expect(
+        find.text('Anpassat schema ersätter fast intervall för kursen.'),
+        findsOneWidget,
+      );
 
       final secondOffsetField = find.byKey(
         const ValueKey<String>('course-custom-offset-lesson-2'),
@@ -1554,6 +1657,21 @@ void main() {
       await tester.tap(scheduleSaveButton);
       await tester.pumpAndSettle();
 
+      final noDripModeDropdown = find.byKey(
+        const ValueKey<String>('course-drip-mode-no_drip_immediate_access'),
+      );
+      await tester.ensureVisible(noDripModeDropdown);
+      await tester.tap(noDripModeDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Anpassat schema').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Du anger nu när varje lektion blir tillgänglig i kursens ordning.',
+        ),
+        findsOneWidget,
+      );
+
       expect(payloads, hasLength(3));
       expect(payloads[0], {
         'mode': 'custom_lesson_offsets',
@@ -1573,52 +1691,51 @@ void main() {
     },
   );
 
-  testWidgets(
-    'locked course schedule state disables schedule controls',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1400, 1000));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+  testWidgets('locked course schedule state disables schedule controls', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      final repo = _MockStudioRepository();
-      final lockedCourse = _course.copyWith(
-        dripAuthoring: DripAuthoring.custom(
-          rows: const [
-            CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
-            CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 2),
-          ],
-          scheduleLocked: true,
-          lockReason: DripAuthoringLockReason.firstEnrollmentExists,
-        ),
-      );
-      _stubBaseStudioData(
-        repo,
-        course: lockedCourse,
-        lessons: const [_lesson, _secondLesson],
-      );
-      when(
-        () => repo.fetchCourseMeta('course-1'),
-      ).thenAnswer((_) async => lockedCourse);
+    final repo = _MockStudioRepository();
+    final lockedCourse = _course.copyWith(
+      dripAuthoring: DripAuthoring.custom(
+        rows: const [
+          CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
+          CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 2),
+        ],
+        scheduleLocked: true,
+        lockReason: DripAuthoringLockReason.firstEnrollmentExists,
+      ),
+    );
+    _stubBaseStudioData(
+      repo,
+      course: lockedCourse,
+      lessons: const [_lesson, _secondLesson],
+    );
+    when(
+      () => repo.fetchCourseMeta('course-1'),
+    ).thenAnswer((_) async => lockedCourse);
 
-      await _pumpCourseEditor(tester, repo: repo);
-      await _pumpUntilTextFound(tester, 'Lektionsschema');
-      await _pumpUntilTextFound(
-        tester,
-        'Detta schema är låst eftersom kursen har deltagare.',
-      );
-      final modeField = tester.widget<DropdownButtonFormField<DripAuthoringMode>>(
-        find.byKey(
-          const ValueKey<String>('course-drip-mode-custom_lesson_offsets'),
-        ),
-      );
-      expect(modeField.onChanged, isNull);
-      final secondOffsetField = tester.widget<TextField>(
-        find.byKey(const ValueKey<String>('course-custom-offset-lesson-2')),
-      );
-      expect(secondOffsetField.readOnly, isTrue);
-      verifyNever(() => repo.updateCourseDripAuthoring(any(), any()));
-      await tester.pumpAndSettle();
-    },
-  );
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilTextFound(tester, 'Lektionsschema');
+    await _pumpUntilTextFound(
+      tester,
+      'Detta schema är låst eftersom kursen har deltagare.',
+    );
+    final modeField = tester.widget<DropdownButtonFormField<DripAuthoringMode>>(
+      find.byKey(
+        const ValueKey<String>('course-drip-mode-custom_lesson_offsets'),
+      ),
+    );
+    expect(modeField.onChanged, isNull);
+    final secondOffsetField = tester.widget<TextField>(
+      find.byKey(const ValueKey<String>('course-custom-offset-lesson-2')),
+    );
+    expect(secondOffsetField.readOnly, isTrue);
+    verifyNever(() => repo.updateCourseDripAuthoring(any(), any()));
+    await tester.pumpAndSettle();
+  });
 
   testWidgets(
     'course schedule lock rejection stays on drip-authoring authority path',
@@ -1643,9 +1760,7 @@ void main() {
       when(
         () => repo.fetchCourseMeta('course-1'),
       ).thenAnswer((_) async => currentCourse);
-      when(
-        () => repo.updateCourseDripAuthoring('course-1', any()),
-      ).thenThrow(
+      when(() => repo.updateCourseDripAuthoring('course-1', any())).thenThrow(
         DioException(
           requestOptions: RequestOptions(
             path: '/studio/courses/course-1/drip-authoring',
@@ -1657,7 +1772,8 @@ void main() {
             statusCode: 409,
             data: <String, Object?>{
               'code': 'studio_course_schedule_locked',
-              'detail': 'Schedule-affecting edits are locked after first enrollment.',
+              'detail':
+                  'Schedule-affecting edits are locked after first enrollment.',
               'course_id': 'course-1',
               'schedule_locked': true,
             },

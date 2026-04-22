@@ -2137,7 +2137,15 @@ async def update_lesson_content(
             "LESSON_MARKDOWN_VALIDATION_UNAVAILABLE",
             extra={
                 "lesson_id": lesson_id,
+                "validator_unavailable": True,
                 "validator_failure_reason": getattr(exc, "reason", "runtime_error"),
+                "validator_subprocess_error": getattr(
+                    exc,
+                    "subprocess_error",
+                    None,
+                ),
+                "validator_stderr_output": getattr(exc, "stderr_output", None),
+                "validator_stdout_output": getattr(exc, "stdout_output", None),
                 "validator_failure_detail": str(exc),
                 "submitted_markdown": content_markdown,
                 "normalized_markdown": normalized_markdown,

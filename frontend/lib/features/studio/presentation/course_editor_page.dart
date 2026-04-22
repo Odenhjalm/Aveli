@@ -196,6 +196,81 @@ int? _parsePositiveIntText(String text) {
   return int.tryParse(normalized);
 }
 
+final TextInputFormatter _courseCustomScheduleInputFormatter =
+    TextInputFormatter.withFunction((oldValue, newValue) {
+      final text = newValue.text;
+      if (text.isEmpty || RegExp(r'^-?\d*$').hasMatch(text)) {
+        return newValue;
+      }
+      return oldValue;
+    });
+
+enum _CustomScheduleRowValidationKind {
+  missingValue,
+  invalidInteger,
+  negativeValue,
+  firstLessonMustBeZero,
+  decreasingOffset,
+}
+
+class _CustomScheduleTimelineRowState {
+  const _CustomScheduleTimelineRowState({
+    required this.lesson,
+    required this.index,
+    required this.rawValue,
+    required this.unlockOffsetDays,
+    required this.previousUnlockOffsetDays,
+    required this.validationKind,
+  });
+
+  final LessonStudio lesson;
+  final int index;
+  final String rawValue;
+  final int? unlockOffsetDays;
+  final int? previousUnlockOffsetDays;
+  final _CustomScheduleRowValidationKind? validationKind;
+
+  bool get isFirst => index == 0;
+
+  String get dayLabel {
+    final offsetDays = unlockOffsetDays;
+    if (offsetDays == null) {
+      return 'Dag -';
+    }
+    return 'Dag $offsetDays';
+  }
+
+  String? get errorText {
+    switch (validationKind) {
+      case _CustomScheduleRowValidationKind.missingValue:
+        return 'Ange antal dagar innan uppl\u00E5sning.';
+      case _CustomScheduleRowValidationKind.invalidInteger:
+        return 'Ange ett heltal.';
+      case _CustomScheduleRowValidationKind.negativeValue:
+        return 'V\u00E4rdet kan inte vara negativt.';
+      case _CustomScheduleRowValidationKind.firstLessonMustBeZero:
+        return 'F\u00F6rsta lektionen m\u00E5ste starta dag 0.';
+      case _CustomScheduleRowValidationKind.decreasingOffset:
+        final previousOffsetDays = previousUnlockOffsetDays ?? 0;
+        return 'Kan inte vara tidigare \u00E4n dag $previousOffsetDays f\u00F6r f\u00F6reg\u00E5ende lektion.';
+      case null:
+        return null;
+    }
+  }
+}
+
+class _CustomScheduleSummaryState {
+  const _CustomScheduleSummaryState({
+    required this.lessonCount,
+    required this.startLabel,
+    required this.lastLessonLabel,
+  });
+
+  final int lessonCount;
+  final String startLabel;
+  final String lastLessonLabel;
+}
+
 const String _courseScheduleLockedMessage =
     'Detta schema är låst eftersom kursen har deltagare.';
 
@@ -768,6 +843,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   final Map<String, TextEditingController> _courseCustomScheduleCtrls =
       <String, TextEditingController>{};
   DripAuthoringMode _courseDripMode = DripAuthoringMode.noDripImmediateAccess;
+  DripAuthoringMode? _courseCustomTimelineEntrySourceMode;
   bool _courseScheduleLocked = false;
 
   bool _courseMetaLoading = false;
@@ -1639,10 +1715,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonsNeedingRefresh.clear();
     _moveCourseTargetCourseGroupId = null;
     _courseDripMode = DripAuthoringMode.noDripImmediateAccess;
+    _courseCustomTimelineEntrySourceMode = null;
     _courseScheduleLocked = false;
     _courseDripIntervalCtrl.text = '';
     for (final controller in _courseCustomScheduleCtrls.values) {
-      controller.dispose();
+      _disposeCourseCustomScheduleController(controller);
     }
     _courseCustomScheduleCtrls.clear();
     if (clearLists) {
@@ -1701,7 +1778,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _coursePriceCtrl.dispose();
     _courseDripIntervalCtrl.dispose();
     for (final controller in _courseCustomScheduleCtrls.values) {
-      controller.dispose();
+      _disposeCourseCustomScheduleController(controller);
     }
     _courseCustomScheduleCtrls.clear();
     if (_lessonContentControllerInitialized) {
@@ -1829,6 +1906,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         setState(() {
           _courses = _adoptCourseById(_courses, course);
           _courseDripMode = course.dripAuthoring.mode;
+          _courseCustomTimelineEntrySourceMode = null;
           _courseScheduleLocked = course.dripAuthoring.scheduleLocked;
           _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
             selectedCourseId: courseId,
@@ -6417,13 +6495,36 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  TextEditingController _createCourseCustomScheduleController(String text) {
+    final controller = TextEditingController(text: text);
+    controller.addListener(_handleCustomScheduleControllerUpdated);
+    return controller;
+  }
+
+  void _disposeCourseCustomScheduleController(
+    TextEditingController controller,
+  ) {
+    controller.removeListener(_handleCustomScheduleControllerUpdated);
+    controller.dispose();
+  }
+
+  void _handleCustomScheduleControllerUpdated() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
   void _hydrateCourseCustomScheduleControllers(Map<String, int> seededValues) {
     final validLessonIds = _lessons.isEmpty
         ? seededValues.keys.toSet()
         : <String>{for (final lesson in _lessons) lesson.id};
     for (final lessonId in _courseCustomScheduleCtrls.keys.toList()) {
       if (!validLessonIds.contains(lessonId)) {
-        _courseCustomScheduleCtrls.remove(lessonId)?.dispose();
+        final removed = _courseCustomScheduleCtrls.remove(lessonId);
+        if (removed != null) {
+          _disposeCourseCustomScheduleController(removed);
+        }
       }
     }
 
@@ -6432,9 +6533,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         final controller = _courseCustomScheduleCtrls[entry.key];
         final nextText = '${entry.value}';
         if (controller == null) {
-          _courseCustomScheduleCtrls[entry.key] = TextEditingController(
-            text: nextText,
-          );
+          _courseCustomScheduleCtrls[entry.key] =
+              _createCourseCustomScheduleController(nextText);
         } else {
           _setTextControllerValue(controller, nextText);
         }
@@ -6450,9 +6550,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final nextText = '$nextValue';
       final controller = _courseCustomScheduleCtrls[lesson.id];
       if (controller == null) {
-        _courseCustomScheduleCtrls[lesson.id] = TextEditingController(
-          text: nextText,
-        );
+        _courseCustomScheduleCtrls[lesson.id] =
+            _createCourseCustomScheduleController(nextText);
       } else {
         _setTextControllerValue(controller, nextText);
       }
@@ -6467,7 +6566,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final validLessonIds = <String>{for (final lesson in _lessons) lesson.id};
     for (final lessonId in _courseCustomScheduleCtrls.keys.toList()) {
       if (!validLessonIds.contains(lessonId)) {
-        _courseCustomScheduleCtrls.remove(lessonId)?.dispose();
+        final removed = _courseCustomScheduleCtrls.remove(lessonId);
+        if (removed != null) {
+          _disposeCourseCustomScheduleController(removed);
+        }
       }
     }
 
@@ -6476,9 +6578,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final lesson = _lessons[index];
       final controller = _courseCustomScheduleCtrls[lesson.id];
       if (controller == null) {
-        _courseCustomScheduleCtrls[lesson.id] = TextEditingController(
-          text: '${index == 0 ? 0 : previousOffsetDays}',
-        );
+        _courseCustomScheduleCtrls[lesson.id] =
+            _createCourseCustomScheduleController(
+              '${index == 0 ? 0 : previousOffsetDays}',
+            );
         continue;
       }
       final parsedValue = _parsePositiveIntText(controller.text);
@@ -6500,11 +6603,100 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 _courseCustomScheduleCtrls[_lessons[index - 1].id]?.text ?? '',
               ) ??
               0);
-    final controller = TextEditingController(
-      text: '${index == 0 ? 0 : previousOffsetDays}',
+    final controller = _createCourseCustomScheduleController(
+      '${index == 0 ? 0 : previousOffsetDays}',
     );
     _courseCustomScheduleCtrls[lesson.id] = controller;
     return controller;
+  }
+
+  List<_CustomScheduleTimelineRowState>
+  _buildCustomScheduleTimelineRowStates() {
+    if (_lessons.isEmpty) {
+      return const <_CustomScheduleTimelineRowState>[];
+    }
+
+    final rows = <_CustomScheduleTimelineRowState>[];
+    for (var index = 0; index < _lessons.length; index += 1) {
+      final lesson = _lessons[index];
+      final controller = _customScheduleControllerForLesson(lesson, index);
+      final rawValue = controller.text.trim();
+      final unlockOffsetDays = int.tryParse(rawValue);
+      final previousUnlockOffsetDays = index <= 0
+          ? null
+          : int.tryParse(
+              _customScheduleControllerForLesson(
+                _lessons[index - 1],
+                index - 1,
+              ).text.trim(),
+            );
+      _CustomScheduleRowValidationKind? validationKind;
+      if (rawValue.isEmpty) {
+        validationKind = _CustomScheduleRowValidationKind.missingValue;
+      } else if (unlockOffsetDays == null) {
+        validationKind = _CustomScheduleRowValidationKind.invalidInteger;
+      } else if (unlockOffsetDays < 0) {
+        validationKind = _CustomScheduleRowValidationKind.negativeValue;
+      } else if (index == 0 && unlockOffsetDays != 0) {
+        validationKind = _CustomScheduleRowValidationKind.firstLessonMustBeZero;
+      } else if (previousUnlockOffsetDays != null &&
+          previousUnlockOffsetDays >= 0 &&
+          unlockOffsetDays < previousUnlockOffsetDays) {
+        validationKind = _CustomScheduleRowValidationKind.decreasingOffset;
+      }
+
+      rows.add(
+        _CustomScheduleTimelineRowState(
+          lesson: lesson,
+          index: index,
+          rawValue: rawValue,
+          unlockOffsetDays: unlockOffsetDays,
+          previousUnlockOffsetDays: previousUnlockOffsetDays,
+          validationKind: validationKind,
+        ),
+      );
+    }
+    return rows;
+  }
+
+  _CustomScheduleSummaryState _buildCustomScheduleSummaryState(
+    List<_CustomScheduleTimelineRowState> rows,
+  ) {
+    final firstOffsetDays = rows.isEmpty ? null : rows.first.unlockOffsetDays;
+    final lastOffsetDays = rows.isEmpty ? null : rows.last.unlockOffsetDays;
+    final startLabel = firstOffsetDays == null
+        ? 'dag -'
+        : 'dag $firstOffsetDays';
+    final lastLessonLabel = lastOffsetDays == null
+        ? 'dag -'
+        : 'dag $lastOffsetDays';
+    return _CustomScheduleSummaryState(
+      lessonCount: rows.length,
+      startLabel: startLabel,
+      lastLessonLabel: lastLessonLabel,
+    );
+  }
+
+  String? _customTimelineTransitionExplanationText() {
+    if (_courseDripMode != DripAuthoringMode.customLessonOffsets) {
+      return null;
+    }
+    switch (_courseCustomTimelineEntrySourceMode) {
+      case DripAuthoringMode.legacyUniformDrip:
+        return 'Anpassat schema ers\u00E4tter fast intervall f\u00F6r kursen.';
+      case DripAuthoringMode.noDripImmediateAccess:
+        return 'Du anger nu n\u00E4r varje lektion blir tillg\u00E4nglig i kursens ordning.';
+      case DripAuthoringMode.customLessonOffsets:
+      case null:
+        return null;
+    }
+  }
+
+  String _lessonCountLabel(int lessonCount) {
+    if (lessonCount == 1) {
+      return '1 lektion';
+    }
+    return '$lessonCount lektioner';
   }
 
   List<Map<String, Object?>>? _buildCustomScheduleRowsPayload() {
@@ -6512,41 +6704,43 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       showSnack(context, 'Lektionerna laddas fortfarande.');
       return null;
     }
+    final rowStates = _buildCustomScheduleTimelineRowStates();
+    for (final rowState in rowStates) {
+      switch (rowState.validationKind) {
+        case _CustomScheduleRowValidationKind.missingValue:
+          showSnack(
+            context,
+            'Alla lektioner måste ha ett antal dagar innan upplåsning.',
+          );
+          return null;
+        case _CustomScheduleRowValidationKind.invalidInteger:
+        case _CustomScheduleRowValidationKind.negativeValue:
+          showSnack(
+            context,
+            'Varje lektion måste ha ett heltal större än eller lika med 0.',
+          );
+          return null;
+        case _CustomScheduleRowValidationKind.firstLessonMustBeZero:
+          showSnack(context, 'Första lektionen måste ha värdet 0.');
+          return null;
+        case _CustomScheduleRowValidationKind.decreasingOffset:
+          showSnack(
+            context,
+            'Anpassat schema måste vara icke-minskande i lektionsordning.',
+          );
+          return null;
+        case null:
+          break;
+      }
+    }
     final rows = <Map<String, Object?>>[];
-    var previousOffsetDays = -1;
-    for (var index = 0; index < _lessons.length; index += 1) {
-      final lesson = _lessons[index];
-      final controller = _customScheduleControllerForLesson(lesson, index);
-      final rawText = controller.text.trim();
-      if (rawText.isEmpty) {
-        showSnack(
-          context,
-          'Alla lektioner måste ha ett antal dagar innan upplåsning.',
-        );
+    for (final rowState in rowStates) {
+      final unlockOffsetDays = rowState.unlockOffsetDays;
+      if (unlockOffsetDays == null) {
         return null;
       }
-      final unlockOffsetDays = int.tryParse(rawText);
-      if (unlockOffsetDays == null || unlockOffsetDays < 0) {
-        showSnack(
-          context,
-          'Varje lektion måste ha ett heltal större än eller lika med 0.',
-        );
-        return null;
-      }
-      if (index == 0 && unlockOffsetDays != 0) {
-        showSnack(context, 'Första lektionen måste ha värdet 0.');
-        return null;
-      }
-      if (unlockOffsetDays < previousOffsetDays) {
-        showSnack(
-          context,
-          'Anpassat schema måste vara icke-minskande i lektionsordning.',
-        );
-        return null;
-      }
-      previousOffsetDays = unlockOffsetDays;
       rows.add(<String, Object?>{
-        'lesson_id': lesson.id,
+        'lesson_id': rowState.lesson.id,
         'unlock_offset_days': unlockOffsetDays,
       });
     }
@@ -6936,6 +7130,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       setState(() {
         _courses = _adoptCourseById(_courses, updated);
         _courseDripMode = updated.dripAuthoring.mode;
+        _courseCustomTimelineEntrySourceMode = null;
         _courseScheduleLocked = updated.dripAuthoring.scheduleLocked;
       });
       _invalidateCourseReadProviders();
@@ -6998,6 +7193,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             ? ''
             : formatSekInputFromOre(priceOre);
         _courseDripMode = published.dripAuthoring.mode;
+        _courseCustomTimelineEntrySourceMode = null;
         _courseScheduleLocked = published.dripAuthoring.scheduleLocked;
         _courseDripIntervalCtrl.text =
             published.dripAuthoring.dripIntervalDays?.toString() ?? '';
@@ -7025,16 +7221,265 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (mode == null) {
       return;
     }
+    final previousMode = _courseDripMode;
     if (mode == DripAuthoringMode.customLessonOffsets) {
       _ensureCourseCustomScheduleControllers();
     }
     setState(() {
       _courseDripMode = mode;
+      if (mode == DripAuthoringMode.customLessonOffsets &&
+          previousMode != DripAuthoringMode.customLessonOffsets) {
+        _courseCustomTimelineEntrySourceMode = previousMode;
+      } else if (mode != DripAuthoringMode.customLessonOffsets) {
+        _courseCustomTimelineEntrySourceMode = null;
+      }
       if (mode == DripAuthoringMode.legacyUniformDrip &&
           _courseDripIntervalCtrl.text.trim().isEmpty) {
         _courseDripIntervalCtrl.text = '7';
       }
     });
+  }
+
+  Widget _buildCustomScheduleSummaryChip(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomCourseTimelineRow(
+    BuildContext context,
+    _CustomScheduleTimelineRowState rowState,
+    int rowCount,
+  ) {
+    final theme = Theme.of(context);
+    final isFirst = rowState.isFirst;
+    final isLast = rowState.index == rowCount - 1;
+    final isLocked = _courseScheduleControlsDisabled;
+    final cardColor = isLocked
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.72)
+        : theme.colorScheme.surface;
+    final borderColor = rowState.errorText != null
+        ? theme.colorScheme.error
+        : (isFirst
+              ? theme.colorScheme.primary.withValues(alpha: 0.42)
+              : theme.colorScheme.outlineVariant);
+    final timelineColor = isFirst
+        ? theme.colorScheme.primary
+        : theme.colorScheme.outlineVariant;
+    final controller = _customScheduleControllerForLesson(
+      rowState.lesson,
+      rowState.index,
+    );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 48,
+          child: Column(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: timelineColor.withValues(alpha: isFirst ? 0.14 : 0.1),
+                  border: Border.all(color: timelineColor),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${rowState.lesson.position}',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: isFirst
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (!isLast)
+                Container(
+                  width: 2,
+                  height: 92,
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  color: timelineColor.withValues(alpha: 0.4),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Container(
+            key: ValueKey<String>(
+              'course-custom-timeline-row-${rowState.lesson.id}',
+            ),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: borderColor),
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final useVerticalLayout = constraints.maxWidth < 720;
+                final metadata = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: isFirst ? 0.14 : 0.08,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            isFirst
+                                ? 'Startpunkt'
+                                : 'Lektion ${rowState.lesson.position}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          key: ValueKey<String>(
+                            'course-custom-day-label-${rowState.lesson.id}',
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.secondary.withValues(
+                              alpha: 0.12,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            rowState.dayLabel,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    gap8,
+                    Text(
+                      rowState.lesson.lessonTitle.isEmpty
+                          ? 'Lektion ${rowState.lesson.position}'
+                          : rowState.lesson.lessonTitle,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    gap4,
+                    Text(
+                      isFirst
+                          ? 'Första lektionen startar direkt.'
+                          : 'Upplåsningen följer kursens ordning och kan inte gå bakåt.',
+                      key: isFirst
+                          ? const ValueKey<String>(
+                              'course-custom-first-lesson-note',
+                            )
+                          : null,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: isFirst
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
+                        fontWeight: isFirst ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                );
+                final field = SizedBox(
+                  width: useVerticalLayout ? double.infinity : 220,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        key: ValueKey<String>(
+                          'course-custom-offset-${rowState.lesson.id}',
+                        ),
+                        controller: controller,
+                        readOnly: isLocked,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          signed: true,
+                        ),
+                        inputFormatters: [_courseCustomScheduleInputFormatter],
+                        decoration: InputDecoration(
+                          labelText: 'Upplåses dag',
+                          helperText: isFirst
+                              ? 'Dag 0 är kursstart.'
+                              : 'Ange samma dag eller senare än föregående lektion.',
+                        ),
+                      ),
+                      if (rowState.errorText != null) ...[
+                        gap4,
+                        Text(
+                          rowState.errorText!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+
+                if (useVerticalLayout) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [metadata, gap12, field],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: metadata),
+                    const SizedBox(width: 16),
+                    field,
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildCustomCourseScheduleFields(BuildContext context) {
@@ -7063,77 +7508,90 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     _ensureCourseCustomScheduleControllers();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Ange antal dagar från kursstart för varje lektion. Första lektionen måste vara 0 och ordningen får inte minska.',
-          style: theme.textTheme.bodySmall,
-        ),
-        gap12,
-        for (var index = 0; index < _lessons.length; index += 1) ...[
-          Builder(
-            builder: (context) {
-              final lesson = _lessons[index];
-              final controller = _customScheduleControllerForLesson(
-                lesson,
-                index,
-              );
-              return Padding(
-                padding: EdgeInsets.only(
-                  bottom: index == _lessons.length - 1 ? 0 : 12,
+    final scheduleControllers = <TextEditingController>[
+      for (var index = 0; index < _lessons.length; index += 1)
+        _customScheduleControllerForLesson(_lessons[index], index),
+    ];
+    final scheduleListenable = Listenable.merge(scheduleControllers);
+    return ListenableBuilder(
+      listenable: scheduleListenable,
+      builder: (context, child) {
+        final rowStates = _buildCustomScheduleTimelineRowStates();
+        final summary = _buildCustomScheduleSummaryState(rowStates);
+        final transitionText = _customTimelineTransitionExplanationText();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (transitionText != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.18),
+                  ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            lesson.lessonTitle.isEmpty
-                                ? 'Lektion ${lesson.position + 1}'
-                                : lesson.lessonTitle,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          gap4,
-                          Text(
-                            'Position ${lesson.position}',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    gap12,
-                    SizedBox(
-                      width: 190,
-                      child: TextField(
-                        key: ValueKey<String>(
-                          'course-custom-offset-${lesson.id}',
-                        ),
-                        controller: controller,
-                        readOnly: _courseScheduleControlsDisabled,
-                        keyboardType: const TextInputType.numberWithOptions(),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: InputDecoration(
-                          labelText: 'Dagar',
-                          helperText: index == 0
-                              ? 'Måste vara 0'
-                              : '>= föregående lektion',
-                        ),
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  transitionText,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              );
-            },
-          ),
-        ],
-      ],
+              ),
+              gap12,
+            ],
+            Text(
+              'Bygg kursens tidslinje genom att ange hur många dagar efter kursstart varje lektion blir tillgänglig. Ordningen följer lektionerna och kan inte minska.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            gap12,
+            Container(
+              key: const ValueKey<String>('course-custom-summary'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.55,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+              ),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _buildCustomScheduleSummaryChip(
+                    context,
+                    icon: Icons.format_list_numbered,
+                    label: _lessonCountLabel(summary.lessonCount),
+                  ),
+                  _buildCustomScheduleSummaryChip(
+                    context,
+                    icon: Icons.play_circle_outline,
+                    label: 'Start: ${summary.startLabel}',
+                  ),
+                  _buildCustomScheduleSummaryChip(
+                    context,
+                    icon: Icons.flag_outlined,
+                    label: 'Sista lektionen: ${summary.lastLessonLabel}',
+                  ),
+                ],
+              ),
+            ),
+            gap16,
+            for (var index = 0; index < rowStates.length; index += 1) ...[
+              _buildCustomCourseTimelineRow(
+                context,
+                rowStates[index],
+                rowStates.length,
+              ),
+              if (index < rowStates.length - 1) gap12,
+            ],
+          ],
+        );
+      },
     );
   }
 

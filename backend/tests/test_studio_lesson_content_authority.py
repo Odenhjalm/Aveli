@@ -332,8 +332,97 @@ async def test_studio_lesson_content_saves_when_validator_runtime_is_unavailable
             if record.getMessage() == "LESSON_MARKDOWN_VALIDATION_UNAVAILABLE"
         ]
         assert validation_logs
-        assert getattr(validation_logs[-1], "validator_failure_reason", None) == (
-            "missing_runtime"
+        log_record = validation_logs[-1]
+        assert getattr(log_record, "validator_unavailable", None) is True
+        assert getattr(log_record, "validator_failure_reason", None) == "missing_runtime"
+        assert getattr(log_record, "validator_subprocess_error", None) is None
+        assert getattr(log_record, "validator_stderr_output", None) is None
+    finally:
+        if lesson_id:
+            await async_client.delete(
+                f"/studio/lessons/{lesson_id}",
+                headers=auth_header(teacher_token),
+            )
+        if course_id:
+            await async_client.delete(
+                f"/studio/courses/{course_id}",
+                headers=auth_header(teacher_token),
+            )
+        await cleanup_user(teacher_id)
+
+
+async def test_studio_lesson_content_saves_and_logs_subprocess_validator_failures(
+    async_client,
+    monkeypatch,
+    caplog,
+):
+    teacher_token, teacher_id = await register_user(
+        async_client,
+        prefix="content_teacher_validator_subprocess",
+        promote_teacher=True,
+    )
+    course_id = None
+    lesson_id = None
+
+    def fake_validate(markdown: str):
+        raise courses_service.lesson_markdown_validator.LessonMarkdownValidationRuntimeError(
+            "Lesson markdown round-trip helper failed.",
+            reason="subprocess_error",
+            subprocess_error="returncode=1",
+            stderr_output="stderr: formatter crashed",
+        )
+
+    monkeypatch.setattr(
+        courses_service.lesson_markdown_validator,
+        "validate_lesson_markdown",
+        fake_validate,
+        raising=True,
+    )
+
+    try:
+        course_id, lesson_id = await create_course_and_lesson(
+            async_client,
+            teacher_token,
+        )
+        _read, etag = await read_content(
+            async_client,
+            token=teacher_token,
+            lesson_id=lesson_id,
+        )
+
+        with caplog.at_level("ERROR", logger="app.services.courses_service"):
+            write = await async_client.patch(
+                f"/studio/lessons/{lesson_id}/content",
+                headers={**auth_header(teacher_token), "If-Match": etag},
+                json={"content_markdown": "Fallback save should still succeed."},
+            )
+
+        assert write.status_code == 200, write.text
+        assert write.json() == {
+            "lesson_id": lesson_id,
+            "content_markdown": "Fallback save should still succeed.",
+        }
+
+        stored = await courses_repo.get_lesson(lesson_id)
+        assert stored is not None
+        assert stored["content_markdown"] == "Fallback save should still succeed."
+
+        validation_logs = [
+            record
+            for record in caplog.records
+            if record.getMessage() == "LESSON_MARKDOWN_VALIDATION_UNAVAILABLE"
+        ]
+        assert validation_logs
+        log_record = validation_logs[-1]
+        assert getattr(log_record, "validator_unavailable", None) is True
+        assert getattr(log_record, "validator_failure_reason", None) == (
+            "subprocess_error"
+        )
+        assert getattr(log_record, "validator_subprocess_error", None) == (
+            "returncode=1"
+        )
+        assert getattr(log_record, "validator_stderr_output", None) == (
+            "stderr: formatter crashed"
         )
     finally:
         if lesson_id:

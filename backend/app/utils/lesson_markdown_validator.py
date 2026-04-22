@@ -21,10 +21,28 @@ _LIST_BLANK_LINES_PATTERN = re.compile(r"\n{2,}(?=(?:[-*+] |\d+\. ))")
 _NON_EMPHASIS_ESCAPE_PATTERN = re.compile(r"\\([!().\-\[\]])")
 
 
+def _clean_subprocess_output(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    return cleaned or None
+
+
 class LessonMarkdownValidationRuntimeError(RuntimeError):
-    def __init__(self, message: str, *, reason: str = "runtime_error") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str = "runtime_error",
+        subprocess_error: str | None = None,
+        stdout_output: str | None = None,
+        stderr_output: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.reason = str(reason or "runtime_error")
+        self.subprocess_error = _clean_subprocess_output(subprocess_error)
+        self.stdout_output = _clean_subprocess_output(stdout_output)
+        self.stderr_output = _clean_subprocess_output(stderr_output)
 
 
 @dataclass(frozen=True)
@@ -138,11 +156,15 @@ def _run_roundtrip(markdown: str) -> str:
                 "Lesson markdown round-trip helper timed out "
                 f"after {_ROUNDTRIP_TIMEOUT_SECONDS:g}s",
                 reason="timeout",
+                subprocess_error=f"timed out after {_ROUNDTRIP_TIMEOUT_SECONDS:g}s",
+                stdout_output=getattr(exc, "stdout", None),
+                stderr_output=getattr(exc, "stderr", None),
             ) from exc
         except OSError as exc:
             raise LessonMarkdownValidationRuntimeError(
                 f"Lesson markdown round-trip helper could not start: {exc}",
                 reason="subprocess_error",
+                subprocess_error=str(exc),
             ) from exc
         if completed.returncode != 0:
             raise LessonMarkdownValidationRuntimeError(
@@ -150,6 +172,9 @@ def _run_roundtrip(markdown: str) -> str:
                 f"stdout:\n{completed.stdout}\n"
                 f"stderr:\n{completed.stderr}",
                 reason="subprocess_error",
+                subprocess_error=f"returncode={completed.returncode}",
+                stdout_output=completed.stdout,
+                stderr_output=completed.stderr,
             )
 
         raw_output = output_path.read_text(encoding="utf-8")
@@ -159,6 +184,9 @@ def _run_roundtrip(markdown: str) -> str:
                 f"stdout:\n{completed.stdout}\n"
                 f"stderr:\n{completed.stderr}",
                 reason="subprocess_error",
+                subprocess_error="empty_output",
+                stdout_output=completed.stdout,
+                stderr_output=completed.stderr,
             )
 
         decoded = json.loads(raw_output)
@@ -167,24 +195,36 @@ def _run_roundtrip(markdown: str) -> str:
             raise LessonMarkdownValidationRuntimeError(
                 "Lesson markdown round-trip helper returned invalid JSON",
                 reason="subprocess_error",
+                subprocess_error="invalid_json",
+                stdout_output=completed.stdout,
+                stderr_output=completed.stderr,
             )
         result = raw_results[0]
         if not isinstance(result, dict):
             raise LessonMarkdownValidationRuntimeError(
                 "Lesson markdown round-trip helper returned invalid item payload",
                 reason="subprocess_error",
+                subprocess_error="invalid_item_payload",
+                stdout_output=completed.stdout,
+                stderr_output=completed.stderr,
             )
         error = result.get("error")
         if error is not None:
             raise LessonMarkdownValidationRuntimeError(
                 f"Lesson markdown round-trip helper failed to parse markdown: {error}",
                 reason="subprocess_error",
+                subprocess_error=str(error),
+                stdout_output=completed.stdout,
+                stderr_output=completed.stderr,
             )
         canonical_markdown = result.get("canonical_markdown")
         if canonical_markdown is None:
             raise LessonMarkdownValidationRuntimeError(
                 "Lesson markdown round-trip helper returned no canonical markdown",
                 reason="subprocess_error",
+                subprocess_error="missing_canonical_markdown",
+                stdout_output=completed.stdout,
+                stderr_output=completed.stderr,
             )
         return str(canonical_markdown)
     finally:
