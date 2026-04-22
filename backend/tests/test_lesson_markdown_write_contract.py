@@ -93,7 +93,6 @@ async def _create_course_and_lesson(async_client, headers: dict[str, str]) -> tu
             "title": "Lesson Contract Course",
             "slug": slug,
             "course_group_id": str(uuid.uuid4()),
-            "group_position": 0,
             "price_amount_cents": None,
             "drip_enabled": False,
             "drip_interval_days": None,

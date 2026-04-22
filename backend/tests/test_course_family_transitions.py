@@ -62,7 +62,6 @@ async def _create_course(
     *,
     teacher_id: str,
     course_group_id: str,
-    group_position: int,
     title: str | None = None,
     slug: str | None = None,
 ) -> dict[str, object]:
@@ -72,7 +71,6 @@ async def _create_course(
             "title": title or f"Course {uuid4().hex[:8]}",
             "slug": slug or f"course-{uuid4().hex[:8]}",
             "course_group_id": course_group_id,
-            "group_position": group_position,
             "price_amount_cents": None,
             "drip_enabled": False,
             "drip_interval_days": None,
@@ -123,7 +121,7 @@ async def _course_family_events(course_ids: list[str]) -> list[tuple[str, str, i
     ]
 
 
-async def test_create_course_appends_and_rejects_non_append_positions() -> None:
+async def test_create_course_appends_and_rejects_raw_position_payloads() -> None:
     teacher_id = str(uuid4())
     family_id = str(uuid4())
     created_ids: list[str] = []
@@ -133,22 +131,27 @@ async def test_create_course_appends_and_rejects_non_append_positions() -> None:
         first = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=0,
         )
         created_ids.append(str(first["id"]))
 
         second = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=1,
         )
         created_ids.append(str(second["id"]))
 
-        with pytest.raises(ValueError, match="append"):
-            await _create_course(
+        with pytest.raises(ValueError, match="append within the family automatically"):
+            await courses_service.create_course(
+                {
+                    "title": f"Course {uuid4().hex[:8]}",
+                    "slug": f"course-{uuid4().hex[:8]}",
+                    "course_group_id": family_id,
+                    "group_position": 99,
+                    "price_amount_cents": None,
+                    "drip_enabled": False,
+                    "drip_interval_days": None,
+                },
                 teacher_id=teacher_id,
-                course_group_id=family_id,
-                group_position=1,
             )
 
         assert await _family_rows(family_id) == [
@@ -174,19 +177,16 @@ async def test_reorder_course_within_family_is_transactional() -> None:
         course_a = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=0,
             slug=f"a-{uuid4().hex[:8]}",
         )
         course_b = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=1,
             slug=f"b-{uuid4().hex[:8]}",
         )
         course_c = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=2,
             slug=f"c-{uuid4().hex[:8]}",
         )
         created_ids.extend(
@@ -194,15 +194,15 @@ async def test_reorder_course_within_family_is_transactional() -> None:
         )
 
         with pytest.raises(ValueError, match="current course family"):
-            await courses_service.update_course(
+            await courses_service.reorder_course_within_family(
                 str(course_a["id"]),
-                {"group_position": 3},
+                group_position=3,
                 teacher_id=teacher_id,
             )
 
-        updated = await courses_service.update_course(
+        updated = await courses_service.reorder_course_within_family(
             str(course_a["id"]),
-            {"group_position": 2},
+            group_position=2,
             teacher_id=teacher_id,
         )
 
@@ -229,22 +229,18 @@ async def test_move_between_families_appends_and_collapses_source() -> None:
         source_a = await _create_course(
             teacher_id=teacher_id,
             course_group_id=source_family_id,
-            group_position=0,
         )
         source_b = await _create_course(
             teacher_id=teacher_id,
             course_group_id=source_family_id,
-            group_position=1,
         )
         target_a = await _create_course(
             teacher_id=teacher_id,
             course_group_id=target_family_id,
-            group_position=0,
         )
         target_b = await _create_course(
             teacher_id=teacher_id,
             course_group_id=target_family_id,
-            group_position=1,
         )
         created_ids.extend(
             [
@@ -255,22 +251,16 @@ async def test_move_between_families_appends_and_collapses_source() -> None:
             ]
         )
 
-        with pytest.raises(ValueError, match="target course family"):
-            await courses_service.update_course(
+        with pytest.raises(ValueError, match="different course_group_id"):
+            await courses_service.move_course_to_family(
                 str(source_a["id"]),
-                {
-                    "course_group_id": target_family_id,
-                    "group_position": 0,
-                },
+                course_group_id=source_family_id,
                 teacher_id=teacher_id,
             )
 
-        moved = await courses_service.update_course(
+        moved = await courses_service.move_course_to_family(
             str(source_a["id"]),
-            {
-                "course_group_id": target_family_id,
-                "group_position": 2,
-            },
+            course_group_id=target_family_id,
             teacher_id=teacher_id,
         )
 
@@ -300,17 +290,14 @@ async def test_delete_course_collapses_remaining_family_positions() -> None:
         course_a = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=0,
         )
         course_b = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=1,
         )
         course_c = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=2,
         )
         created_ids.extend(
             [str(course_a["id"]), str(course_b["id"]), str(course_c["id"])]
@@ -342,13 +329,11 @@ async def test_concurrent_family_operations_remain_contiguous() -> None:
         course_a = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=0,
             slug=f"concurrent-a-{uuid4().hex[:8]}",
         )
         course_b = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
-            group_position=1,
             slug=f"concurrent-b-{uuid4().hex[:8]}",
         )
         created_ids.extend([str(course_a["id"]), str(course_b["id"])])
@@ -357,12 +342,11 @@ async def test_concurrent_family_operations_remain_contiguous() -> None:
             _create_course(
                 teacher_id=teacher_id,
                 course_group_id=family_id,
-                group_position=2,
                 slug=f"concurrent-c-{uuid4().hex[:8]}",
             ),
-            courses_service.update_course(
+            courses_service.reorder_course_within_family(
                 str(course_a["id"]),
-                {"group_position": 1},
+                group_position=1,
                 teacher_id=teacher_id,
             ),
         )

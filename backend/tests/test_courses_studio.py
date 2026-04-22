@@ -87,6 +87,22 @@ async def read_lesson_content_etag(
     return etag
 
 
+async def read_course_family_rows(course_group_id: str) -> list[tuple[str, int]]:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT id::text, group_position
+                  FROM app.courses
+                 WHERE course_group_id = %s::uuid
+                 ORDER BY group_position ASC, id ASC
+                """,
+                (course_group_id,),
+            )
+            rows = await cur.fetchall()
+    return [(str(row[0]), int(row[1])) for row in rows]
+
+
 async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_client):
     teacher_email = f"teacher_{uuid.uuid4().hex[:8]}@example.com"
     student_email = f"student_{uuid.uuid4().hex[:8]}@example.com"
@@ -125,7 +141,6 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
                 "title": "Intro to Aveli",
                 "slug": slug,
                 "course_group_id": str(uuid.uuid4()),
-                "group_position": 0,
                 "price_amount_cents": None,
                 "drip_enabled": False,
                 "drip_interval_days": None,
@@ -363,7 +378,6 @@ async def test_studio_lesson_delete_removes_content_and_placements_only(
                 "title": "Delete media boundary",
                 "slug": f"delete-media-{uuid.uuid4().hex[:8]}",
                 "course_group_id": str(uuid.uuid4()),
-                "group_position": 0,
                 "price_amount_cents": None,
                 "drip_enabled": False,
                 "drip_interval_days": None,
@@ -476,4 +490,133 @@ async def test_studio_lesson_delete_removes_content_and_placements_only(
                         (media_asset_id,),
                     )
                     await conn.commit()
+        await cleanup_user(teacher_id)
+
+
+async def test_studio_course_family_transition_endpoints_are_canonical(async_client):
+    teacher_email = f"family_teacher_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+    teacher_token, _, teacher_id = await register_user(
+        async_client,
+        teacher_email,
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+
+    source_family_id = str(uuid.uuid4())
+    target_family_id = str(uuid.uuid4())
+    created_course_ids: list[str] = []
+
+    async def _create_course(*, title: str, slug: str, course_group_id: str) -> dict:
+        response = await async_client.post(
+            "/studio/courses",
+            headers=auth_header(teacher_token),
+            json={
+                "title": title,
+                "slug": slug,
+                "course_group_id": course_group_id,
+                "price_amount_cents": None,
+                "drip_enabled": False,
+                "drip_interval_days": None,
+            },
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        created_course_ids.append(str(body["id"]))
+        assert {
+            "id",
+            "slug",
+            "title",
+            "course_group_id",
+            "group_position",
+            "cover_media_id",
+            "cover",
+            "price_amount_cents",
+            "drip_enabled",
+            "drip_interval_days",
+        }.issubset(body)
+        return body
+
+    try:
+        source_a = await _create_course(
+            title="Source A",
+            slug=f"source-a-{uuid.uuid4().hex[:8]}",
+            course_group_id=source_family_id,
+        )
+        source_b = await _create_course(
+            title="Source B",
+            slug=f"source-b-{uuid.uuid4().hex[:8]}",
+            course_group_id=source_family_id,
+        )
+        target_a = await _create_course(
+            title="Target A",
+            slug=f"target-a-{uuid.uuid4().hex[:8]}",
+            course_group_id=target_family_id,
+        )
+
+        assert await read_course_family_rows(source_family_id) == [
+            (str(source_a["id"]), 0),
+            (str(source_b["id"]), 1),
+        ]
+        assert await read_course_family_rows(target_family_id) == [
+            (str(target_a["id"]), 0),
+        ]
+
+        invalid_position_patch = await async_client.patch(
+            f"/studio/courses/{source_a['id']}",
+            headers=auth_header(teacher_token),
+            json={"group_position": 0},
+        )
+        assert invalid_position_patch.status_code == 422, invalid_position_patch.text
+
+        invalid_family_patch = await async_client.patch(
+            f"/studio/courses/{source_a['id']}",
+            headers=auth_header(teacher_token),
+            json={"course_group_id": target_family_id},
+        )
+        assert invalid_family_patch.status_code == 422, invalid_family_patch.text
+
+        reordered = await async_client.post(
+            f"/studio/courses/{source_b['id']}/reorder",
+            headers=auth_header(teacher_token),
+            json={"group_position": 0},
+        )
+        assert reordered.status_code == 200, reordered.text
+        assert reordered.json()["group_position"] == 0
+        assert reordered.json()["course_group_id"] == source_family_id
+        assert await read_course_family_rows(source_family_id) == [
+            (str(source_b["id"]), 0),
+            (str(source_a["id"]), 1),
+        ]
+
+        invalid_same_family_move = await async_client.post(
+            f"/studio/courses/{source_a['id']}/move-family",
+            headers=auth_header(teacher_token),
+            json={"course_group_id": source_family_id},
+        )
+        assert invalid_same_family_move.status_code == 422, invalid_same_family_move.text
+
+        moved = await async_client.post(
+            f"/studio/courses/{source_a['id']}/move-family",
+            headers=auth_header(teacher_token),
+            json={"course_group_id": target_family_id},
+        )
+        assert moved.status_code == 200, moved.text
+        moved_body = moved.json()
+        assert moved_body["course_group_id"] == target_family_id
+        assert moved_body["group_position"] == 1
+        assert await read_course_family_rows(source_family_id) == [
+            (str(source_b["id"]), 0),
+        ]
+        assert await read_course_family_rows(target_family_id) == [
+            (str(target_a["id"]), 0),
+            (str(source_a["id"]), 1),
+        ]
+    finally:
+        for course_id in reversed(created_course_ids):
+            await async_client.delete(
+                f"/studio/courses/{course_id}",
+                headers=auth_header(teacher_token),
+            )
         await cleanup_user(teacher_id)

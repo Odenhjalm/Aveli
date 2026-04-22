@@ -128,6 +128,8 @@ This law operates under the cross-domain governed media representation defined b
 
 - `POST /studio/courses`
 - `PATCH /studio/courses/{course_id}`
+- `POST /studio/courses/{course_id}/reorder`
+- `POST /studio/courses/{course_id}/move-family`
 - `DELETE /studio/courses/{course_id}`
 - `POST /studio/courses/{course_id}/lessons`
 - `PATCH /studio/lessons/{lesson_id}/structure`
@@ -159,7 +161,6 @@ Request:
   "title": "string",
   "slug": "string",
   "course_group_id": "uuid",
-  "group_position": 0,
   "price_amount_cents": 123,
   "drip_enabled": true,
   "drip_interval_days": 7,
@@ -191,6 +192,8 @@ Response:
 Rules:
 
 - mutates course structure only
+- create appends the new course to the end of the requested family
+- caller-authored `group_position` is forbidden
 - `cover` is a backend-authored read field, not a write authority
 - `cover_media_id` assigns cover identity when non-null
 - `cover_media_id: null` means no cover identity is assigned at creation
@@ -209,8 +212,6 @@ Request:
 {
   "title": "string",
   "slug": "string",
-  "course_group_id": "uuid",
-  "group_position": 0,
   "price_amount_cents": 123,
   "drip_enabled": true,
   "drip_interval_days": 7,
@@ -225,16 +226,68 @@ Same canonical course structure response as course create.
 Rules:
 
 - request is partial
-- mutates course structure only
+- mutates course metadata only
 - `cover_media_id` assigns cover identity when non-null
 - `cover_media_id: null` clears the cover identity
 - omitted `cover_media_id` means no cover change
 - `cover` is a backend-authored read field, not a write authority
+- `course_group_id` is forbidden in this request
+- `group_position` is forbidden in this request
 - `short_description` is forbidden
 - lesson fields are forbidden
 - `content_markdown` is forbidden
 
-### 5.3 Course Delete
+### 5.3 Course Reorder Within Family
+
+Endpoint:
+
+`POST /studio/courses/{course_id}/reorder`
+
+Request:
+
+~~~json
+{
+  "group_position": 0
+}
+~~~
+
+Response:
+
+Same canonical course structure response as course create.
+
+Rules:
+
+- mutates ordering only inside the existing `course_group_id`
+- `group_position` must be canonical for the current family
+- `course_group_id` is forbidden in this request
+- no metadata fields are accepted in this request
+
+### 5.4 Course Move To Family
+
+Endpoint:
+
+`POST /studio/courses/{course_id}/move-family`
+
+Request:
+
+~~~json
+{
+  "course_group_id": "uuid"
+}
+~~~
+
+Response:
+
+Same canonical course structure response as course create.
+
+Rules:
+
+- moves the course to a different family and appends it at the target family end
+- `course_group_id` must differ from the current family
+- `group_position` is forbidden in this request
+- no metadata fields are accepted in this request
+
+### 5.5 Course Delete
 
 Endpoint:
 
@@ -254,7 +307,7 @@ Rules:
 - does not define lesson-content semantics
 - no content payload is accepted
 
-### 5.4 Lesson Create
+### 5.6 Lesson Create
 
 Endpoint:
 
@@ -287,7 +340,7 @@ Rules:
 - `content_markdown` is forbidden
 - lesson runtime alias `title` is forbidden
 
-### 5.5 Lesson Structure Update
+### 5.7 Lesson Structure Update
 
 Endpoint:
 
@@ -320,7 +373,7 @@ Rules:
 - `content_markdown` is forbidden
 - lesson runtime alias `title` is forbidden
 
-### 5.6 Lesson Reorder
+### 5.8 Lesson Reorder
 
 Endpoint:
 
@@ -352,7 +405,7 @@ Rules:
 - `lesson_title` is forbidden
 - `content_markdown` is forbidden
 
-### 5.7 Lesson Delete
+### 5.9 Lesson Delete
 
 Endpoint:
 
@@ -644,6 +697,8 @@ Editor frontend may use only these canonical structure surfaces:
 - `GET /studio/courses/{course_id}/lessons`
 - `POST /studio/courses`
 - `PATCH /studio/courses/{course_id}`
+- `POST /studio/courses/{course_id}/reorder`
+- `POST /studio/courses/{course_id}/move-family`
 - `DELETE /studio/courses/{course_id}`
 - `POST /studio/courses/{course_id}/lessons`
 - `PATCH /studio/lessons/{lesson_id}/structure`

@@ -46,7 +46,6 @@ void main() {
         'title': 'Client draft',
         'slug': 'client-draft',
         'course_group_id': '11111111-1111-1111-1111-111111111111',
-        'group_position': 0,
         'price_amount_cents': 49000,
         'drip_enabled': false,
         'drip_interval_days': null,
@@ -83,6 +82,70 @@ void main() {
       expect(requests.single.data, isNull);
     },
   );
+
+  test('updateCourse rejects raw family transition fields', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    await expectLater(
+      repo.updateCourse('44444444-4444-4444-4444-444444444444', {
+        'group_position': 1,
+      }),
+      throwsA(isA<UnsupportedError>()),
+    );
+
+    expect(
+      harness.adapter.requestsFor(
+        '/studio/courses/44444444-4444-4444-4444-444444444444',
+      ),
+      isEmpty,
+    );
+  });
+
+  test('reorderCourseWithinFamily posts explicit reorder intent', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final course = await repo.reorderCourseWithinFamily(
+      '55555555-5555-5555-5555-555555555555',
+      groupPosition: 0,
+    );
+
+    expect(course.id, '55555555-5555-5555-5555-555555555555');
+    expect(course.groupPosition, 0);
+
+    final requests = harness.adapter.requestsFor(
+      '/studio/courses/55555555-5555-5555-5555-555555555555/reorder',
+    );
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'POST');
+    expect(Map<String, dynamic>.from(requests.single.data as Map), {
+      'group_position': 0,
+    });
+  });
+
+  test('moveCourseToFamily posts explicit move intent', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final course = await repo.moveCourseToFamily(
+      '66666666-6666-6666-6666-666666666666',
+      courseGroupId: '77777777-7777-7777-7777-777777777777',
+    );
+
+    expect(course.id, '66666666-6666-6666-6666-666666666666');
+    expect(course.courseGroupId, '77777777-7777-7777-7777-777777777777');
+    expect(course.groupPosition, 2);
+
+    final requests = harness.adapter.requestsFor(
+      '/studio/courses/66666666-6666-6666-6666-666666666666/move-family',
+    );
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'POST');
+    expect(Map<String, dynamic>.from(requests.single.data as Map), {
+      'course_group_id': '77777777-7777-7777-7777-777777777777',
+    });
+  });
 }
 
 class _Harness {
@@ -133,6 +196,44 @@ class _Harness {
             'title': 'Backend published',
             'course_group_id': '11111111-1111-1111-1111-111111111111',
             'group_position': 0,
+            'cover_media_id': null,
+            'cover': null,
+            'price_amount_cents': 49000,
+            'drip_enabled': false,
+            'drip_interval_days': null,
+          },
+        );
+      }
+      if (options.path ==
+              '/studio/courses/55555555-5555-5555-5555-555555555555/reorder' &&
+          options.method.toUpperCase() == 'POST') {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'id': '55555555-5555-5555-5555-555555555555',
+            'slug': 'backend-reordered',
+            'title': 'Backend reordered',
+            'course_group_id': '11111111-1111-1111-1111-111111111111',
+            'group_position': 0,
+            'cover_media_id': null,
+            'cover': null,
+            'price_amount_cents': 49000,
+            'drip_enabled': false,
+            'drip_interval_days': null,
+          },
+        );
+      }
+      if (options.path ==
+              '/studio/courses/66666666-6666-6666-6666-666666666666/move-family' &&
+          options.method.toUpperCase() == 'POST') {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'id': '66666666-6666-6666-6666-666666666666',
+            'slug': 'backend-moved',
+            'title': 'Backend moved',
+            'course_group_id': '77777777-7777-7777-7777-777777777777',
+            'group_position': 2,
             'cover_media_id': null,
             'cover': null,
             'price_amount_cents': 49000,

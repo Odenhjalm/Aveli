@@ -193,19 +193,19 @@ class StudioRepository {
     required String title,
     required String slug,
     required String courseGroupId,
-    required int groupPosition,
+    int? groupPosition,
     required bool dripEnabled,
     required int? dripIntervalDays,
     int? priceAmountCents,
     String? coverMediaId,
   }) async {
+    assert(groupPosition == null || groupPosition >= 0);
     final response = await _client.raw.post<Object?>(
       '/studio/courses',
       data: <String, Object?>{
         'title': title,
         'slug': slug,
         'course_group_id': courseGroupId,
-        'group_position': groupPosition,
         'price_amount_cents': priceAmountCents,
         'drip_enabled': dripEnabled,
         'drip_interval_days': dripIntervalDays,
@@ -229,6 +229,12 @@ class StudioRepository {
     String courseId,
     Map<String, Object?> patch,
   ) async {
+    if (patch.containsKey('course_group_id') ||
+        patch.containsKey('group_position')) {
+      throw UnsupportedError(
+        'Use explicit course family transition operations for course_group_id/group_position changes',
+      );
+    }
     final response = await _client.raw.patch<Object?>(
       '/studio/courses/$courseId',
       data: patch,
@@ -236,6 +242,34 @@ class StudioRepository {
     return CourseStudio.fromResponse(
       response.data,
       label: 'Updated studio course',
+    );
+  }
+
+  Future<CourseStudio> reorderCourseWithinFamily(
+    String courseId, {
+    required int groupPosition,
+  }) async {
+    final response = await _client.raw.post<Object?>(
+      '/studio/courses/$courseId/reorder',
+      data: <String, Object?>{'group_position': groupPosition},
+    );
+    return CourseStudio.fromResponse(
+      response.data,
+      label: 'Reordered studio course',
+    );
+  }
+
+  Future<CourseStudio> moveCourseToFamily(
+    String courseId, {
+    required String courseGroupId,
+  }) async {
+    final response = await _client.raw.post<Object?>(
+      '/studio/courses/$courseId/move-family',
+      data: <String, Object?>{'course_group_id': courseGroupId},
+    );
+    return CourseStudio.fromResponse(
+      response.data,
+      label: 'Moved studio course',
     );
   }
 

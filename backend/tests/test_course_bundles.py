@@ -29,7 +29,6 @@ async def _create_course(client, token: str, slug: str, price_amount_cents: int)
             "title": f"Course {slug}",
             "slug": slug,
             "course_group_id": str(uuid.uuid4()),
-            "group_position": 1,
             "price_amount_cents": price_amount_cents,
             "drip_enabled": False,
             "drip_interval_days": None,

@@ -617,7 +617,6 @@ async def get_public_course_detail_rows(
 async def create_course(payload: dict[str, Any]) -> CourseRow:
     course_id = str(payload.get("id") or uuid4())
     course_group_id = str(payload["course_group_id"])
-    requested_group_position = int(payload["group_position"])
     query = """
         insert into app.courses (
             id,
@@ -654,8 +653,6 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
                 conn,
                 course_group_id,
             )
-            if requested_group_position != append_group_position:
-                raise ValueError("group_position must append to the course family")
             async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
                 await cur.execute(
                     query,

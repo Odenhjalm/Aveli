@@ -194,7 +194,6 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
                 "title": "Premium Course",
                 "slug": slug,
                 "course_group_id": str(uuid.uuid4()),
-                "group_position": 1,
                 "price_amount_cents": 12900,
                 "drip_enabled": False,
                 "drip_interval_days": None,
@@ -211,7 +210,8 @@ async def test_course_purchase_enrolls_student(async_client, monkeypatch):
                            content_ready = true,
                            stripe_product_id = %s,
                            active_stripe_price_id = %s,
-                           sellable = true
+                           sellable = true,
+                           required_enrollment_source = 'purchase'::app.course_enrollment_source
                      WHERE id = %s
                     """,
                     (

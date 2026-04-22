@@ -642,6 +642,58 @@ void main() {
     },
   );
 
+  testWidgets('malformed lesson markdown is blocked before repository write', (
+    tester,
+  ) async {
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(repo);
+    when(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: any(named: 'ifMatch'),
+      ),
+    ).thenAnswer((invocation) async {
+      return StudioLessonContentWriteResult(
+        lessonId: 'lesson-1',
+        contentMarkdown: invocation.namedArguments[#contentMarkdown] as String,
+        etag: '"content-v2"',
+      );
+    });
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilDocumentContains(tester, 'Persisted content');
+
+    _insertAtDocumentEnd(' *italic*');
+    await tester.pump();
+
+    final saveButton = find.text('Spara lektionsinnehåll');
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Ogiltig formatering i lektionsinnehallet. Korrigera formateringen innan du sparar.',
+      ),
+      findsOneWidget,
+    );
+    verifyNever(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: any(named: 'ifMatch'),
+      ),
+    );
+    verifyNever(
+      () => repo.updateLessonStructure(
+        'lesson-1',
+        lessonTitle: any(named: 'lessonTitle'),
+        position: any(named: 'position'),
+      ),
+    );
+  });
+
   testWidgets(
     'selected lesson media list is reconstructed from canonical placements',
     (tester) async {

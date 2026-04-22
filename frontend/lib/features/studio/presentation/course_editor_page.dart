@@ -21,6 +21,7 @@ import 'package:aveli/editor/adapter/editor_to_markdown.dart'
     as editor_to_markdown;
 import 'package:aveli/editor/debug/editor_debug.dart';
 import 'package:aveli/editor/debug/editor_debug_overlay.dart';
+import 'package:aveli/editor/guardrails/lesson_markdown_integrity_guard.dart';
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
 import 'package:aveli/editor/session/editor_operation_controller.dart';
@@ -430,6 +431,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     milliseconds: 250,
   );
   static const int _lessonEditorTestIdMaxSyncAttempts = 40;
+  static const String _lessonMarkdownIntegritySaveError =
+      'Ogiltig formatering i lektionsinnehallet. Korrigera formateringen innan du sparar.';
   bool _checking = true;
   bool _allowed = false;
   late final StudioRepository _studioRepo;
@@ -2809,13 +2812,36 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final uiPlainText = _lessonContentController.document.toPlainText();
     late final String markdown;
     late final String rawMarkdown;
+    late final LessonMarkdownIntegrityGuardResult integrityResult;
     try {
-      markdown = _serializeLessonMarkdownFromController(
-        _lessonContentController,
+      integrityResult = validateLessonMarkdownIntegrity(
+        delta: _lessonContentController.document.toDelta(),
       );
+      markdown = integrityResult.originalMarkdown;
       rawMarkdown = markdown;
     } catch (error, stackTrace) {
       _showFriendlyErrorSnack('Kunde inte spara lektion', error, stackTrace);
+      return false;
+    }
+
+    if (!integrityResult.ok) {
+      if (kDebugMode) {
+        debugPrint(
+          '[LessonIntegrity] save_blocked '
+          'reason=${integrityResult.failureReason?.name ?? 'unknown'}',
+        );
+        _traceLessonString(
+          'save.guard.original_markdown',
+          integrityResult.originalMarkdown,
+        );
+        _traceLessonString(
+          'save.guard.canonical_markdown',
+          integrityResult.canonicalMarkdown,
+        );
+      }
+      if (mounted && context.mounted) {
+        showSnack(context, _lessonMarkdownIntegritySaveError);
+      }
       return false;
     }
 

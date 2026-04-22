@@ -65,7 +65,6 @@ async def create_course_and_lesson(async_client, token: str) -> tuple[str, str]:
             "title": "Content Authority Course",
             "slug": f"content-authority-{uuid.uuid4().hex[:8]}",
             "course_group_id": str(uuid.uuid4()),
-            "group_position": 0,
             "price_amount_cents": None,
             "drip_enabled": False,
             "drip_interval_days": None,

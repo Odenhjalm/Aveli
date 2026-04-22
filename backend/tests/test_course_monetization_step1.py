@@ -72,7 +72,6 @@ async def test_create_course_with_positive_price_does_not_create_stripe_mapping(
             "title": "Course Step 1",
             "slug": "course-step1",
             "course_group_id": "group_step1",
-            "group_position": 1,
             "price_amount_cents": 1900,
             "drip_enabled": False,
             "drip_interval_days": None,
