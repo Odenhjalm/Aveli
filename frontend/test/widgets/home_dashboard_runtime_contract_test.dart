@@ -338,7 +338,9 @@ void main() {
         ),
       ]);
 
-      await container.read(homeAudioProvider.notifier).refresh();
+      await tester.runAsync(
+        () => container.read(homeAudioProvider.notifier).refresh(),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -406,7 +408,9 @@ void main() {
       homeAudioStatus = 500;
       homeAudioBody = {'detail': 'refresh failed'};
 
-      await container.read(homeAudioProvider.notifier).refresh();
+      await tester.runAsync(
+        () => container.read(homeAudioProvider.notifier).refresh(),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 

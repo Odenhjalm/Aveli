@@ -14,6 +14,7 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 _FRONTEND_DIR = _BACKEND_DIR.parent / "frontend"
 _ROUNDTRIP_HARNESS = _FRONTEND_DIR / "tool" / "lesson_markdown_roundtrip_harness_test.dart"
 _ROUNDTRIP_TEST_NAME = "lesson markdown roundtrip harness"
+_ROUNDTRIP_TIMEOUT_SECONDS = 30.0
 
 _HEADING_BLANK_LINES_PATTERN = re.compile(r"(?m)^(#{1,6}[^\n]*)\n{2,}(?=\S)")
 _LIST_BLANK_LINES_PATTERN = re.compile(r"\n{2,}(?=(?:[-*+] |\d+\. ))")
@@ -21,7 +22,9 @@ _NON_EMPHASIS_ESCAPE_PATTERN = re.compile(r"\\([!().\-\[\]])")
 
 
 class LessonMarkdownValidationRuntimeError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, reason: str = "runtime_error") -> None:
+        super().__init__(message)
+        self.reason = str(reason or "runtime_error")
 
 
 @dataclass(frozen=True)
@@ -69,14 +72,17 @@ def _run_roundtrip(markdown: str) -> str:
     if not executable:
         raise LessonMarkdownValidationRuntimeError(
             "Flutter executable not found for lesson markdown validation",
+            reason="missing_runtime",
         )
     if not _FRONTEND_DIR.exists():
         raise LessonMarkdownValidationRuntimeError(
             f"Frontend directory not found: {_FRONTEND_DIR}",
+            reason="missing_runtime",
         )
     if not _ROUNDTRIP_HARNESS.exists():
         raise LessonMarkdownValidationRuntimeError(
             f"Round-trip harness not found: {_ROUNDTRIP_HARNESS}",
+            reason="missing_runtime",
         )
 
     payload = json.dumps(
@@ -109,27 +115,41 @@ def _run_roundtrip(markdown: str) -> str:
         env["LESSON_MARKDOWN_INPUT_PATH"] = str(input_path)
         env["LESSON_MARKDOWN_OUTPUT_PATH"] = str(output_path)
 
-        completed = subprocess.run(
-            [
-                executable,
-                "test",
-                "tool/lesson_markdown_roundtrip_harness_test.dart",
-                "--plain-name",
-                _ROUNDTRIP_TEST_NAME,
-            ],
-            cwd=_FRONTEND_DIR,
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                [
+                    executable,
+                    "test",
+                    "tool/lesson_markdown_roundtrip_harness_test.dart",
+                    "--plain-name",
+                    _ROUNDTRIP_TEST_NAME,
+                ],
+                cwd=_FRONTEND_DIR,
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=_ROUNDTRIP_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise LessonMarkdownValidationRuntimeError(
+                "Lesson markdown round-trip helper timed out "
+                f"after {_ROUNDTRIP_TIMEOUT_SECONDS:g}s",
+                reason="timeout",
+            ) from exc
+        except OSError as exc:
+            raise LessonMarkdownValidationRuntimeError(
+                f"Lesson markdown round-trip helper could not start: {exc}",
+                reason="subprocess_error",
+            ) from exc
         if completed.returncode != 0:
             raise LessonMarkdownValidationRuntimeError(
                 "Lesson markdown round-trip helper failed.\n"
                 f"stdout:\n{completed.stdout}\n"
                 f"stderr:\n{completed.stderr}",
+                reason="subprocess_error",
             )
 
         raw_output = output_path.read_text(encoding="utf-8")
@@ -138,6 +158,7 @@ def _run_roundtrip(markdown: str) -> str:
                 "Lesson markdown round-trip helper produced no output.\n"
                 f"stdout:\n{completed.stdout}\n"
                 f"stderr:\n{completed.stderr}",
+                reason="subprocess_error",
             )
 
         decoded = json.loads(raw_output)
@@ -145,21 +166,25 @@ def _run_roundtrip(markdown: str) -> str:
         if not isinstance(raw_results, list) or len(raw_results) != 1:
             raise LessonMarkdownValidationRuntimeError(
                 "Lesson markdown round-trip helper returned invalid JSON",
+                reason="subprocess_error",
             )
         result = raw_results[0]
         if not isinstance(result, dict):
             raise LessonMarkdownValidationRuntimeError(
                 "Lesson markdown round-trip helper returned invalid item payload",
+                reason="subprocess_error",
             )
         error = result.get("error")
         if error is not None:
             raise LessonMarkdownValidationRuntimeError(
                 f"Lesson markdown round-trip helper failed to parse markdown: {error}",
+                reason="subprocess_error",
             )
         canonical_markdown = result.get("canonical_markdown")
         if canonical_markdown is None:
             raise LessonMarkdownValidationRuntimeError(
                 "Lesson markdown round-trip helper returned no canonical markdown",
+                reason="subprocess_error",
             )
         return str(canonical_markdown)
     finally:

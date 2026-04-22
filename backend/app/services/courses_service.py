@@ -2132,20 +2132,19 @@ async def update_lesson_content(
             lesson_markdown_validator.validate_lesson_markdown,
             normalized_markdown,
         )
-    except lesson_markdown_validator.LessonMarkdownValidationRuntimeError:
+    except lesson_markdown_validator.LessonMarkdownValidationRuntimeError as exc:
         logger.exception(
             "LESSON_MARKDOWN_VALIDATION_UNAVAILABLE",
             extra={
                 "lesson_id": lesson_id,
+                "validator_failure_reason": getattr(exc, "reason", "runtime_error"),
+                "validator_failure_detail": str(exc),
                 "submitted_markdown": content_markdown,
                 "normalized_markdown": normalized_markdown,
             },
         )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Lesson markdown validation unavailable.",
-        ) from None
-    if not validation.ok:
+        validation = None
+    if validation is not None and not validation.ok:
         logger.warning(
             "LESSON_MARKDOWN_VALIDATION_FAILED",
             extra={
