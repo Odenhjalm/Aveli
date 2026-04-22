@@ -135,12 +135,16 @@ def test_runtime_entrypoints_use_canonical_bootstrap_only() -> None:
         encoding="utf-8"
     )
     dev_backend = (ROOT / "backend" / "scripts" / "dev_backend.sh").read_text(encoding="utf-8")
+    release_manual = (ROOT / ".github" / "workflows" / "release-manual.yml").read_text(
+        encoding="utf-8"
+    )
     verify_all = (ROOT / "ops" / "verify_all.sh").read_text(encoding="utf-8")
     run_server = (ROOT / "backend" / "bootstrap" / "run_server.py").read_text(encoding="utf-8")
     run_worker = (ROOT / "backend" / "bootstrap" / "run_worker.py").read_text(encoding="utf-8")
 
     assert 'app = "python -m backend.bootstrap.run_server"' in fly_config
     assert "python -m backend.bootstrap.run_worker" in fly_config
+    assert 'release_command = "python -m backend.bootstrap.baseline_v2_cutover"' in fly_config
     assert "uvicorn" not in fly_config
     assert "python -m app.services.mvp_worker" not in fly_config
 
@@ -162,6 +166,9 @@ def test_runtime_entrypoints_use_canonical_bootstrap_only() -> None:
     assert "ensure_runtime_execution_ready()" in run_worker
     assert "verify_v2_runtime()" in run_worker
     assert 'runpy.run_module("app.services.mvp_worker", run_name="__main__")' in run_worker
+
+    assert "apply_supabase_migrations.sh" not in release_manual
+    assert "flyctl deploy --config fly.toml" in release_manual
 
 
 def test_replay_v2_is_the_only_lock_driven_replay_entrypoint() -> None:

@@ -6,12 +6,12 @@ ACTIVE
 
 This contract defines the canonical production deployment authority for Aveli.
 It operates under `baseline_v2_authority_freeze_contract.md`,
-`SYSTEM_LAWS.md`, `supabase_integration_boundary_contract.md`,
-`auth_onboarding_contract.md`, `commerce_membership_contract.md`,
-`course_access_contract.md`, `course_public_surface_contract.md`,
-`media_unified_authority_contract.md`, `home_audio_aggregation_contract.md`,
-`profile_community_media_contract.md`, `media_pipeline_contract.md`, and
-`livekit_runtime_contract.md`.
+`baseline_v2_release_cutover_contract.md`, `SYSTEM_LAWS.md`,
+`supabase_integration_boundary_contract.md`, `auth_onboarding_contract.md`,
+`commerce_membership_contract.md`, `course_access_contract.md`,
+`course_public_surface_contract.md`, `media_unified_authority_contract.md`,
+`home_audio_aggregation_contract.md`, `profile_community_media_contract.md`,
+`media_pipeline_contract.md`, and `livekit_runtime_contract.md`.
 
 This contract owns production deployment authority only. It does not redefine
 Supabase substrate law, baseline schema law, auth/onboarding law, commerce law,
@@ -140,6 +140,9 @@ Backend runtime database authority:
 
 - The canonical baseline source is `backend/supabase/baseline_v2_slots/`.
 - The canonical baseline lock is `backend/supabase/baseline_v2_slots.lock.json`.
+- Non-destructive production slot promotion for Baseline V2 is owned by the
+  release-machine cutover defined in
+  `actual_truth/contracts/baseline_v2_release_cutover_contract.md`.
 - Public launch requires the canonical Baseline V2 hosted profile to apply the
   app-owned slot chain and verify the hosted Supabase substrate interface
   against the intended production Supabase database target.
@@ -291,6 +294,8 @@ The production deployment contract is satisfied only when all are true:
 - Production runtime cannot fall back to local database configuration.
 - The current `backend/supabase/baseline_v2_slots.lock.json` hosted profile is
   applied and verified against the intended production Supabase project.
+- Any required production slot delta is executed only through the accepted
+  release-machine cutover path before app and worker Machines update.
 - Legacy migration paths do not define launch authority.
 - Minimum public, protected, media, payment, home-audio, profile/community
   media, and onboarding surfaces pass under the Baseline V2 freeze contract and

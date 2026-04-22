@@ -10,6 +10,7 @@ rollout and Baseline V2 slot additions.
 This policy operates under:
 
 - `actual_truth/contracts/production_deployment_contract.md`
+- `actual_truth/contracts/baseline_v2_release_cutover_contract.md`
 - `actual_truth/contracts/baseline_v2_authority_freeze_contract.md`
 - `actual_truth/contracts/SYSTEM_LAWS.md`
 - `actual_truth/contracts/supabase_integration_boundary_contract.md`
@@ -39,7 +40,7 @@ inputs and their current authoritative equivalents:
 - `actual_truth/contracts/profile_projection_contract.md`
 - `actual_truth/contracts/course_monetization_contract.md`
 - `actual_truth/contracts/SYSTEM_LAWS.md`
-- `backend/supabase/baseline_slots.lock.json`
+- `backend/supabase/baseline_slots.lock.json` (`ARCHIVED_LEGACY_NON_AUTHORITATIVE` input only)
 - `backend/supabase/baseline_v2_slots.lock.json`
 
 The task-requested `baseline_slots_strategy.md` does not exist in this
@@ -50,7 +51,7 @@ The current authoritative replacements for slot strategy are:
 - `actual_truth/contracts/baseline_v2_authority_freeze_contract.md`
 - `actual_truth/AVELI_DATABASE_BASELINE_MANIFEST.md`
 - `backend/supabase/baseline_v2_slots.lock.json`
-- `backend/supabase/baseline_slots/README.md`
+- `backend/supabase/baseline_slots/README.md` (archived legacy and non-authoritative reference only)
 
 The current production deployment strategy was also audited through:
 
@@ -89,6 +90,8 @@ The current production deployment strategy was also audited through:
   recreate `auth` or `storage`.
 - Runtime startup and worker startup verify Baseline V2 and fail closed.
 - Runtime startup will not auto-replay an empty schema.
+- Fly `release_command` is the canonical execute-mode production slot cutover
+  path for bounded Baseline V2 slot deltas.
 
 ## 3. Canonical State Dependencies Protected By This Policy
 
@@ -125,17 +128,17 @@ Deployment interpretation rules:
 
 Current Baseline V2 lock facts:
 
-- Canonical slot chain is `V2_0001` through `V2_0022`.
-- Current highest accepted slot is `V2_0022_special_offer_sync_ready_media.sql`.
+- Canonical slot chain is `V2_0001` through the final slot recorded in
+  `backend/supabase/baseline_v2_slots.lock.json`.
+- Current highest accepted slot is the final slot entry in the canonical V2
+  lock.
 - Lock-protected replay order is strictly ascending and gap-free.
 - `protected_min_slot = 1`.
 - `protected_max_slot = 16`.
 - Slots `0001` through `0016` are immutable protected history.
 - Slots above `0016` are accepted append-only continuation and remain lock
   protected once accepted.
-- Legacy `backend/supabase/baseline_slots/` and
-  `backend/supabase/baseline_slots.lock.json` are archived and
-  non-authoritative.
+- Legacy `backend/supabase/baseline_slots/` and `backend/supabase/baseline_slots.lock.json` are `ARCHIVED_LEGACY_NON_AUTHORITATIVE`.
 
 Replay facts:
 
@@ -154,9 +157,8 @@ Replay facts:
 The audit found the following deployment-relevant gaps:
 
 - `.github/workflows/release-manual.yml` still instructs operators to run
-  `backend/scripts/apply_supabase_migrations.sh`, which uses legacy root
-  `supabase/migrations` rather than Baseline V2 lock authority, and that root
-  path is absent in the current repository.
+  a manual migration step instead of relying on the canonical release-machine
+  cutover path carried by the release artifact.
 - `.github/workflows/backend-ci.yml` and `.github/workflows/flutter.yml` still
   seed CI databases through `backend/scripts/apply_supabase_migrations.sh`.
 - `.github/workflows/flutter.yml` starts backend smoke tests with direct
@@ -174,15 +176,19 @@ The audit found the following deployment-relevant gaps:
 
 Blocking interpretation:
 
-- The repository currently contains no canonical non-destructive production slot
-  applier for accepted V2 slot additions.
+- The repository now contains a canonical non-destructive production slot
+  applier for accepted V2 slot additions:
+  `backend.bootstrap.baseline_v2_cutover`, executed only through Fly
+  `release_command`.
+- The bounded execute-mode authority for the current release lives in
+  `backend/supabase/baseline_v2_production_cutover.json`.
 - `backend/scripts/replay_v2.sh` is replay authority, not production mutation
   authority for stateful business environments.
 - `backend/scripts/apply_supabase_migrations.sh` is legacy migration tooling and
   must not be used as production slot authority.
 - Therefore any production rollout that requires DB mutation for a new V2 slot
-  is blocked until an explicit execute-mode production promotion procedure for
-  the exact new slot delta is approved.
+  is allowed only when the exact release artifact carries an approved bounded
+  cutover plan for the exact slot delta.
 
 ## 6. Non-Negotiable Deployment Guardrails
 
@@ -270,7 +276,7 @@ Forbidden:
 - renumbering accepted slots
 - replacing accepted slot files
 - editing protected history
-- adding slots to `backend/supabase/baseline_slots/`
+- adding slots to the archived legacy baseline directory
 - using `backend/supabase/migrations/` or `supabase/migrations/` as slot
   authority
 
@@ -329,13 +335,36 @@ Before any production slot-related mutation is approved:
 4. Run production read-only environment verification.
 5. Run production read-only DB verification.
 6. Capture pre-deploy snapshots for all affected canonical accounts.
-7. Confirm a non-destructive production promotion procedure exists for the
-   exact slot delta.
+7. Confirm the release-machine cutover contract and bounded cutover plan exist
+   for the exact slot delta.
 
 If step 7 is missing:
 
 - STOP
 - production slot mutation is blocked
+
+### 8.6 Execute-Mode Production Slot Promotion
+
+The only accepted execute-mode production slot promotion path is:
+
+1. Build the exact release artifact that carries the new lock and cutover plan.
+2. Run `fly deploy` for that exact release artifact.
+3. Let Fly execute `release_command` in a temporary release Machine.
+4. Require `backend.bootstrap.baseline_v2_cutover` to:
+   - verify the lock
+   - verify the bounded cutover plan
+   - verify runtime DB target safety
+   - require the DB to be already at the target state or at the exact bounded
+     predecessor state
+   - apply only the listed slot files in strict order
+   - verify post-step schema hash and counts
+   - verify the final state through `verify_v2_runtime()`
+5. Allow app/worker Machine replacement only if the release command exits zero.
+
+If any step fails:
+
+- STOP
+- do not replace app or worker Machines
 
 ## 9. Procedure For Non-Schema Feature Rollout
 
@@ -375,9 +404,11 @@ All production rollouts must pass the following before any write or deploy:
 When production rollout is allowed:
 
 1. Complete the read-only preflight and snapshot steps first.
-2. Apply only the approved non-destructive DB promotion procedure, if the
-   change requires DB mutation.
-3. Deploy backend Fly app for the exact release SHA.
+2. If the release carries a V2 slot delta, deploy the exact release artifact so
+   Fly can execute the canonical release-machine cutover before Machine
+   replacement.
+3. If no DB mutation is required, deploy backend Fly app for the exact release
+   SHA directly.
 4. Verify `GET /healthz` and `GET /readyz`.
 5. Verify worker process group separately for launch-required worker domains.
 6. Trigger Netlify production source build for the same SHA, if needed.
@@ -432,6 +463,7 @@ Deployment must stop immediately if any of the following is true:
   fallback authority
 - post-deploy audit plan is missing
 - the exact production DB promotion method for a new slot delta is undefined
+- the release artifact lacks the bounded cutover plan required for its slot delta
 
 ## 14. Final Assertion
 
@@ -443,6 +475,5 @@ Deployment must stop immediately if any of the following is true:
 - Hosted replay is scoped to local verification or explicit stateless staging
   only.
 - Production deploy and post-deploy audit must fail closed on any ambiguity.
-- Until a canonical non-destructive production slot promotion path exists, new
-  Baseline V2 slot additions are blocked from production mutation even if local
-  replay passes.
+- Baseline V2 slot additions may reach production only through the canonical
+  release-machine cutover path for the exact slot delta.

@@ -61,11 +61,15 @@ jobs:
           MASTER_ENV_FILE=/path/to/backend-release.env VERIFY_WRITE_REPORT=0 APP_ENV=production backend/scripts/db_verify_remote_readonly.sh
           \`\`\`
 
-          ### Apply Canonical Migrations
+          ### Baseline Cutover
 
           \`\`\`bash
-          APP_ENV=production REQUIRE_CLEAN_WORKTREE=1 SUPABASE_PROJECT_REF=<expected-project-ref> SUPABASE_DB_URL=postgresql://... SUPABASE_DB_PASSWORD=... backend/scripts/apply_supabase_migrations.sh
+          flyctl deploy --config fly.toml
           \`\`\`
+
+          - If the release carries a Baseline V2 slot delta, Fly `release_command`
+            runs the canonical bounded cutover inside the exact release artifact.
+          - Do not run legacy migration tooling or manual SQL before this deploy.
 
           ### Deploy Backend
 

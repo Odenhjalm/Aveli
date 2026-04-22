@@ -7,6 +7,9 @@ kill_timeout = "5s"
   dockerfile = "backend/Dockerfile"
   context = "."
 
+[deploy]
+  release_command = "python -m backend.bootstrap.baseline_v2_cutover"
+
 [env]
   APP_ENV = "production"
   CORS_ALLOW_ORIGIN_REGEX = "^https?://localhost(:\\d+)?$"
