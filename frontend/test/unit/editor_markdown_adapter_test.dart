@@ -40,6 +40,34 @@ String _roundtripMarkdown(String markdown) {
   );
 }
 
+String _markdownFromDelta(quill_delta.Delta delta) {
+  return editor_to_markdown.editorDeltaToCanonicalMarkdown(delta: delta);
+}
+
+quill_delta.Delta _canonicalDocumentDelta(quill_delta.Delta delta) {
+  if (delta.toList().isEmpty) {
+    return delta;
+  }
+  final document = quill.Document.fromDelta(delta);
+  return document.root.toDelta();
+}
+
+void _expectDeltaRoundtrip({
+  required quill_delta.Delta delta,
+  required String markdown,
+}) {
+  final serialized = _markdownFromDelta(delta);
+  expect(serialized, markdown);
+
+  final reloaded = markdown_to_editor.markdownToEditorDocument(
+    markdown: serialized,
+  );
+  expect(
+    _canonicalDocumentDelta(reloaded.toDelta()),
+    equals(_canonicalDocumentDelta(delta)),
+  );
+}
+
 EditorOperationQuillController _buildLoadedController(String markdown) {
   final document = markdown_to_editor.markdownToEditorDocument(
     markdown: markdown,
@@ -86,6 +114,24 @@ void main() {
       expect(_roundtripMarkdown(markdown), '**Should have been bold**');
     });
 
+    test('escaped italic markers normalize into canonical italic on load', () {
+      const markdown = r'\*Should have been italic\*';
+
+      final document = markdown_to_editor.markdownToEditorDocument(
+        markdown: markdown,
+      );
+
+      expect(document.toPlainText(), 'Should have been italic\n');
+      expect(
+        _attributesForText(
+          document.toDelta(),
+          'Should have been italic',
+        )['italic'],
+        isTrue,
+      );
+      expect(_roundtripMarkdown(markdown), '*Should have been italic*');
+    });
+
     test('italic roundtrip survives save and load', () {
       const markdown = '*text*';
 
@@ -96,6 +142,15 @@ void main() {
       expect(document.toPlainText(), 'text\n');
       expect(_attributesForText(document.toDelta(), 'text')['italic'], isTrue);
       expect(_roundtripMarkdown(markdown), markdown);
+    });
+
+    test('delta italic serializes with a single asterisk marker', () {
+      final delta = quill_delta.Delta()
+        ..insert('text', {quill.Attribute.italic.key: true})
+        ..insert('\n');
+
+      _expectDeltaRoundtrip(delta: delta, markdown: '*text*');
+      expect(_markdownFromDelta(delta), isNot('**text**'));
     });
 
     test('underline html roundtrip survives save and load', () {
@@ -137,6 +192,36 @@ void main() {
       expect(_roundtripMarkdown(markdown), markdown);
     });
 
+    test('mixed italic and bold sentence roundtrips without leakage', () {
+      final delta = quill_delta.Delta()
+        ..insert('Mix ')
+        ..insert('italic', {quill.Attribute.italic.key: true})
+        ..insert(' and ')
+        ..insert('bold', {quill.Attribute.bold.key: true})
+        ..insert('\n');
+
+      _expectDeltaRoundtrip(
+        delta: delta,
+        markdown: 'Mix *italic* and **bold**',
+      );
+    });
+
+    test('nested bold and italic markdown roundtrips canonically', () {
+      const markdown = '**Bold *Italic***';
+
+      final document = markdown_to_editor.markdownToEditorDocument(
+        markdown: markdown,
+      );
+
+      expect(document.toPlainText(), 'Bold Italic\n');
+      expect(_attributesForText(document.toDelta(), 'Italic')['bold'], isTrue);
+      expect(
+        _attributesForText(document.toDelta(), 'Italic')['italic'],
+        isTrue,
+      );
+      expect(_roundtripMarkdown(markdown), markdown);
+    });
+
     test('bold and underline roundtrip survives save and load', () {
       const markdown = '**<u>text</u>**';
 
@@ -149,6 +234,26 @@ void main() {
       expect(attrs['bold'], isTrue);
       expect(attrs['underline'], isTrue);
       expect(_roundtripMarkdown(markdown), markdown);
+    });
+
+    test('italic punctuation roundtrips without bold promotion', () {
+      final delta = quill_delta.Delta()
+        ..insert('really?', {quill.Attribute.italic.key: true})
+        ..insert('\n');
+
+      final markdown = _markdownFromDelta(delta);
+      expect(markdown, '*really?*');
+      expect(markdown, isNot('**really?**'));
+
+      final document = markdown_to_editor.markdownToEditorDocument(
+        markdown: markdown,
+      );
+      expect(document.toPlainText(), 'really?\n');
+      expect(
+        _attributesForText(document.toDelta(), 'really?')['italic'],
+        isTrue,
+      );
+      expect(document.toPlainText(), isNot(contains('**')));
     });
 
     test('heading roundtrip survives save and load', () {

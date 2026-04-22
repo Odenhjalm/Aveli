@@ -1,0 +1,203 @@
+{
+  "schema": "aveli.supabase_mirror_snapshot.v1",
+  "project_ref": "ihirfhnpjtetdmdvqvyu",
+  "captured_at": "2026-04-22T08:03:11.964327+00:00",
+  "provider_scope": {
+    "auth.users": {
+      "omitted_columns": [
+        "aud",
+        "role",
+        "email_confirmed_at",
+        "confirmed_at",
+        "raw_app_meta_data",
+        "raw_user_meta_data",
+        "is_sso_user",
+        "is_anonymous"
+      ],
+      "exported_columns": [
+        "id",
+        "email",
+        "encrypted_password",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "storage.buckets": {
+      "omitted_columns": [
+        "created_at",
+        "updated_at"
+      ],
+      "exported_columns": [
+        "id",
+        "name",
+        "public"
+      ]
+    },
+    "storage.objects": {
+      "omitted_columns": [
+        "last_accessed_at"
+      ],
+      "exported_columns": [
+        "id",
+        "bucket_id",
+        "name",
+        "metadata",
+        "created_at",
+        "updated_at"
+      ]
+    }
+  },
+  "hash_normalization": "recursive timestamptz strings normalized to UTC ISO-8601 before hashing",
+  "raw_snapshot_sha256": "72a7c152307eb6aa77f0ac0b5628a9310a5185a101d6bebe12f6c1053d8b2bff",
+  "table_manifests": {
+    "auth.users": {
+      "row_count": 4,
+      "sha256": "92ed45e5b84f1404d7a91549c776479ce59d3382204f30e1563a9d13a3241213"
+    },
+    "storage.buckets": {
+      "row_count": 3,
+      "sha256": "cb68b45d1fca2a7edae0531922195ed5a7ef75f8a045d4aee8f38f4414bf52e6"
+    },
+    "storage.objects": {
+      "row_count": 26,
+      "sha256": "bd08c48f97b0bfddcfaf302cda4acee847267112f1448a40e62e63ea7bb63c85"
+    },
+    "app.admin_bootstrap_state": {
+      "row_count": 1,
+      "sha256": "61a6800a9a962da4f318203c45b52a6249f6297d9484e8348e8b2a372f86351a"
+    },
+    "app.auth_events": {
+      "row_count": 1,
+      "sha256": "5beb5a9730dfdeac818ff17dfaf8d6d5f830c94cc9cd6168f4795facf151f281"
+    },
+    "app.auth_subjects": {
+      "row_count": 2,
+      "sha256": "761669ae730e8447c6b4d47c3ced2684a7e950cc147a88bd56368c9034f63441"
+    },
+    "app.billing_logs": {
+      "row_count": 3,
+      "sha256": "19326fbb8daf3da8bf89a82338144865db666707b644a2cc4802cd7917c192a2"
+    },
+    "app.bundle_order_courses": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.course_bundle_courses": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.course_bundles": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.course_enrollments": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.course_family_position_events": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.course_public_content": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.courses": {
+      "row_count": 1,
+      "sha256": "a9d9df4a6c4218e3f9e44a1a9f9321b3009152a20518f3e920d28b7c6e34f039"
+    },
+    "app.home_player_course_links": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.home_player_uploads": {
+      "row_count": 1,
+      "sha256": "01cf3dd788a5d6d8af96a5f5c2f6a3356420c094fed18f0812568135b0dc608d"
+    },
+    "app.lesson_contents": {
+      "row_count": 1,
+      "sha256": "61d7921089ccff01bf973ab5005fdb59d2dac1f4201e2e0d1bd1ee985f597166"
+    },
+    "app.lesson_media": {
+      "row_count": 2,
+      "sha256": "5035925b0b901211090d9841b9ebd39e6e641c6695dd2789befb41a490f3abcd"
+    },
+    "app.lessons": {
+      "row_count": 1,
+      "sha256": "1a81f2e05f3e015e5a845c870ee42bdb97e9924b1191a8af5b4abcd882377676"
+    },
+    "app.livekit_webhook_jobs": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.media_assets": {
+      "row_count": 11,
+      "sha256": "03a59f1ce5a265e4f756144484e941c91b04145779b1d29e7257dc09bff73795"
+    },
+    "app.media_events": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.media_resolution_failures": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.memberships": {
+      "row_count": 2,
+      "sha256": "d63ede05df60c717df77959e9ca38c72f687fd3fa1feba2d1efe141b78aca142"
+    },
+    "app.orders": {
+      "row_count": 1,
+      "sha256": "04c9cbc0231ec98cba01e61b4580819fece44b0e916360fa55791dca7eacca3e"
+    },
+    "app.payment_events": {
+      "row_count": 4,
+      "sha256": "2dfb622572b601e3df0bf8ba8a0c8a97a1bb8d40f289b49f2a14b33b8ea25010"
+    },
+    "app.payments": {
+      "row_count": 1,
+      "sha256": "0f7312111cbb558ecdc7b81677be1ce65618c7bd390f4f0556ebc86e03e8098f"
+    },
+    "app.profile_media_placements": {
+      "row_count": 1,
+      "sha256": "713e6c22a940c97f959a5122389e8a765b9b7b394209b779057cf52f076d44a6"
+    },
+    "app.profiles": {
+      "row_count": 2,
+      "sha256": "9c6a2e503b569413de8ea8bda379df9db763206b8efcc16d61904fbadbd29d3a"
+    },
+    "app.referral_codes": {
+      "row_count": 1,
+      "sha256": "73583bbb172ae5368c5fb7df3a9e30b97774ac326170ddf946b6061349cbaed6"
+    },
+    "app.refresh_tokens": {
+      "row_count": 27,
+      "sha256": "e533639d792009708f524cdd7ebb03b0c3527cd2ec89fc4bae16f7dcfe6e6dcd"
+    },
+    "app.special_offer_composite_image_attempts": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.special_offer_composite_image_outputs": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.special_offer_composite_image_sources": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.special_offer_courses": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.special_offers": {
+      "row_count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "app.stripe_customers": {
+      "row_count": 1,
+      "sha256": "628110c0547fdf5ccfa529a9b532dc147089e733e4fe72ee3376f210b6441a88"
+    }
+  },
+  "snapshot_sha256": "c51a18432c7cb7d110644523eac242c64ad7c5381165fb17dbd0b52bf814c4ca"
+}

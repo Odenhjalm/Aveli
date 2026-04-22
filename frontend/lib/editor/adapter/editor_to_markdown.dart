@@ -1,5 +1,6 @@
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
+import 'package:markdown_quill/markdown_quill.dart';
 
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     show canonicalizeSupportedMarkdown;
@@ -14,6 +15,7 @@ const Set<String> _allowedInlineAttributeKeys = <String>{
 };
 
 final RegExp _escapedUnderlineTagPattern = RegExp(r'\\<(/?)u\\>');
+const String _canonicalItalicMarkdownDelimiter = '*';
 
 String _stripTerminalDocumentNewline(String markdown) {
   return markdown.replaceFirst(RegExp(r'\n+$'), '');
@@ -25,6 +27,68 @@ String _restoreSupportedInlineHtml(String markdown) {
     final slash = match.group(1) ?? '';
     return '<${slash}u>';
   });
+}
+
+Never _throwCanonicalMediaWriteViolation(String raw) {
+  throw StateError(
+    'Canonical text contract violation: media refs must use typed '
+    'lesson_media ids. Could not accept $raw.',
+  );
+}
+
+void _writeCanonicalLessonMediaToken({
+  required String kind,
+  required Object? rawValue,
+  required StringSink output,
+}) {
+  final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(rawValue);
+  if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
+    output.write('!$kind($lessonMediaId)');
+    return;
+  }
+  _throwCanonicalMediaWriteViolation('$rawValue');
+}
+
+DeltaToMarkdown _createCanonicalLessonDeltaToMarkdown() {
+  return DeltaToMarkdown(
+    customEmbedHandlers: {
+      lesson_pipeline.AudioBlockEmbed.embedType: (embed, output) {
+        _writeCanonicalLessonMediaToken(
+          kind: 'audio',
+          rawValue: embed.value.data,
+          output: output,
+        );
+      },
+      quill.BlockEmbed.imageType: (embed, output) {
+        _writeCanonicalLessonMediaToken(
+          kind: 'image',
+          rawValue: embed.value.data,
+          output: output,
+        );
+      },
+      quill.BlockEmbed.videoType: (embed, output) {
+        _writeCanonicalLessonMediaToken(
+          kind: 'video',
+          rawValue: embed.value.data,
+          output: output,
+        );
+      },
+    },
+    customTextAttrsHandlers: {
+      quill.Attribute.italic.key: CustomAttributeHandler(
+        beforeContent: (attribute, node, output) {
+          if (node.previous?.style.containsKey(attribute.key) != true) {
+            output.write(_canonicalItalicMarkdownDelimiter);
+          }
+        },
+        afterContent: (attribute, node, output) {
+          if (node.next?.style.containsKey(attribute.key) != true) {
+            output.write(_canonicalItalicMarkdownDelimiter);
+          }
+        },
+      ),
+    },
+  );
 }
 
 Map<String, dynamic>? _sanitizeAttributes(
@@ -159,9 +223,7 @@ String editorDeltaToCanonicalMarkdown({
 }) {
   final sanitized = sanitizeEditorDeltaForCanonicalMarkdown(delta);
   final markdownReady = _expandUnderlineAttributesForMarkdown(sanitized);
-  var markdown = lesson_pipeline.createLessonDeltaToMarkdown().convert(
-    markdownReady,
-  );
+  var markdown = _createCanonicalLessonDeltaToMarkdown().convert(markdownReady);
   markdown = _restoreSupportedInlineHtml(markdown);
   markdown = canonicalizeSupportedMarkdown(markdown);
   if (enforceStorageContract) {

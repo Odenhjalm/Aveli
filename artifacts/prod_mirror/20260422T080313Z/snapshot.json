@@ -1,0 +1,1951 @@
+{
+  "schema": "aveli.supabase_mirror_snapshot.v1",
+  "tables": {
+    "app.orders": [
+      {
+        "id": "fa65f690-3d68-4a03-a68b-90552c7e4ca0",
+        "status": "paid",
+        "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "currency": "sek",
+        "metadata": {
+          "source": "purchase",
+          "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+          "interval": "month",
+          "price_id": "price_1SNrlgLO8ZqTeCFExFlF5Wxd",
+          "checkout_type": "membership"
+        },
+        "bundle_id": null,
+        "course_id": null,
+        "created_at": "2026-04-21T08:46:19.495818+00:00",
+        "order_type": "subscription",
+        "updated_at": "2026-04-21T08:48:59.100139+00:00",
+        "amount_cents": 13000,
+        "stripe_checkout_id": "cs_live_a1mJ9YpjaPDUq0ivZJuu1VS2ynJmlw6rH63HYW24IGV8tT9Yc3xGBgqcZa",
+        "stripe_customer_id": "cus_UNKbHmcVAvOElF",
+        "stripe_payment_intent": null,
+        "stripe_subscription_id": "sub_1TOZzHLO8ZqTeCFEpU00HFAh"
+      }
+    ],
+    "auth.users": [
+      {
+        "id": "7a49a158-7bc0-4ffd-bb43-85c3480dc3d9",
+        "email": "robin@aveli.app",
+        "created_at": "2026-04-20T19:56:53.491769+00:00",
+        "updated_at": "2026-04-20T20:20:28.803059+00:00",
+        "encrypted_password": "$2a$10$vBGEtw/93JaIdt0qtFPpYOTecF5VR.LoyzcKY.yi0RsVZYAejp6bS"
+      },
+      {
+        "id": "9d036c3b-72f4-4c70-91b1-800b37d971d3",
+        "email": "odenhjalm@outlook.com",
+        "created_at": "2026-04-20T19:56:53.78813+00:00",
+        "updated_at": "2026-04-20T20:20:39.016501+00:00",
+        "encrypted_password": "$2a$10$8MHWIiTBN9gaApKYpudMFuUOoi1chZbs6l2bmvcU8wWBBUpmplkDu"
+      },
+      {
+        "id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "email": "lisaochcarinasutbildningar@gmail.com",
+        "created_at": "2026-04-20T19:56:53.639594+00:00",
+        "updated_at": "2026-04-22T07:58:34.315891+00:00",
+        "encrypted_password": "$2a$10$K6Erc2ZSwClu9ARAnpmiQOD0bFgUIgPP2fxTSgWxBcWQx1IGpob.a"
+      },
+      {
+        "id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "email": "robin_odenhjalm@hotmail.com",
+        "created_at": "2026-04-21T08:45:14.850756+00:00",
+        "updated_at": "2026-04-21T08:45:15.278167+00:00",
+        "encrypted_password": "$2a$10$Gge2HFu9R9EVNi.kgGryWuOiD9nwLU3IZa9Zr5fBez1ubKFsN1nj6"
+      }
+    ],
+    "app.courses": [
+      {
+        "id": "6a1574c7-3f05-4d8c-9c09-f60b409e4bc4",
+        "slug": "ny-kurs-b977bf20",
+        "title": "Färgernas frekvenser och betydelser",
+        "sellable": false,
+        "created_at": "2026-04-21T18:20:33.764132+00:00",
+        "teacher_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "updated_at": "2026-04-21T18:20:33.764132+00:00",
+        "visibility": "draft",
+        "drip_enabled": false,
+        "content_ready": false,
+        "cover_media_id": "8e2e1308-3d54-4879-9526-9df6cc00507c",
+        "group_position": 0,
+        "course_group_id": "6a08905c-2a3a-4942-848a-40694cbec0a6",
+        "stripe_product_id": null,
+        "drip_interval_days": null,
+        "price_amount_cents": null,
+        "active_stripe_price_id": null,
+        "required_enrollment_source": null
+      }
+    ],
+    "app.lessons": [
+      {
+        "id": "f94a56d7-78ac-426d-b86f-c4214ce56d9d",
+        "position": 1,
+        "course_id": "6a1574c7-3f05-4d8c-9c09-f60b409e4bc4",
+        "created_at": "2026-04-21T22:40:21.850307+00:00",
+        "updated_at": "2026-04-21T22:40:21.850307+00:00",
+        "lesson_title": "Ny lektion"
+      }
+    ],
+    "app.payments": [
+      {
+        "id": "6a717f19-6dcc-4239-8eef-0eaeec5491f3",
+        "status": "paid",
+        "currency": "sek",
+        "metadata": {
+          "event": "checkout.session.completed",
+          "checkout_id": "cs_live_a1mJ9YpjaPDUq0ivZJuu1VS2ynJmlw6rH63HYW24IGV8tT9Yc3xGBgqcZa"
+        },
+        "order_id": "fa65f690-3d68-4a03-a68b-90552c7e4ca0",
+        "provider": "stripe",
+        "created_at": "2026-04-21T08:48:59.100139+00:00",
+        "updated_at": "2026-04-21T08:48:59.100139+00:00",
+        "raw_payload": {
+          "id": "cs_live_a1mJ9YpjaPDUq0ivZJuu1VS2ynJmlw6rH63HYW24IGV8tT9Yc3xGBgqcZa",
+          "url": null,
+          "mode": "subscription",
+          "locale": "sv",
+          "object": "checkout.session",
+          "status": "complete",
+          "consent": null,
+          "created": 1776761180,
+          "invoice": "in_1TOZxNLO8ZqTeCFE0CX99nUu",
+          "ui_mode": "embedded",
+          "currency": "sek",
+          "customer": "cus_UNKbHmcVAvOElF",
+          "livemode": true,
+          "metadata": {
+            "source": "purchase",
+            "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+            "interval": "month",
+            "order_id": "fa65f690-3d68-4a03-a68b-90552c7e4ca0",
+            "price_id": "price_1SNrlgLO8ZqTeCFExFlF5Wxd",
+            "checkout_type": "membership"
+          },
+          "discounts": [],
+          "cancel_url": null,
+          "expires_at": 1776847579,
+          "return_url": "http://app.aveli.app/checkout/return?session_id={CHECKOUT_SESSION_ID}",
+          "custom_text": {
+            "submit": null,
+            "after_submit": null,
+            "shipping_address": null,
+            "terms_of_service_acceptance": null
+          },
+          "permissions": null,
+          "submit_type": null,
+          "success_url": null,
+          "amount_total": 0,
+          "payment_link": null,
+          "setup_intent": null,
+          "subscription": "sub_1TOZzHLO8ZqTeCFEpU00HFAh",
+          "automatic_tax": {
+            "status": null,
+            "enabled": false,
+            "provider": null,
+            "liability": null
+          },
+          "client_secret": null,
+          "custom_fields": [],
+          "shipping_cost": null,
+          "total_details": {
+            "amount_tax": 0,
+            "amount_discount": 0,
+            "amount_shipping": 0
+          },
+          "customer_email": null,
+          "origin_context": null,
+          "payment_intent": null,
+          "payment_status": "paid",
+          "recovered_from": null,
+          "wallet_options": null,
+          "amount_subtotal": 0,
+          "adaptive_pricing": {
+            "enabled": true
+          },
+          "after_expiration": null,
+          "customer_account": null,
+          "customer_details": {
+            "name": "Robin Odenhjälm",
+            "email": "robin_odenhjalm@hotmail.com",
+            "phone": null,
+            "address": {
+              "city": null,
+              "line1": null,
+              "line2": null,
+              "state": null,
+              "country": "SE",
+              "postal_code": null
+            },
+            "tax_ids": [],
+            "tax_exempt": "none",
+            "business_name": null,
+            "individual_name": null
+          },
+          "invoice_creation": null,
+          "managed_payments": {
+            "enabled": false
+          },
+          "shipping_options": [],
+          "branding_settings": {
+            "icon": null,
+            "logo": null,
+            "font_family": "default",
+            "border_style": "rounded",
+            "button_color": "#0074d4",
+            "display_name": "Lisaochcarinasutbildningar hb",
+            "background_color": "#ffffff"
+          },
+          "customer_creation": null,
+          "consent_collection": null,
+          "client_reference_id": null,
+          "currency_conversion": null,
+          "payment_method_types": [
+            "card",
+            "klarna",
+            "link",
+            "paypal",
+            "amazon_pay"
+          ],
+          "allow_promotion_codes": null,
+          "collected_information": {
+            "business_name": null,
+            "individual_name": null,
+            "shipping_details": null
+          },
+          "integration_identifier": null,
+          "payment_method_options": {
+            "card": {
+              "request_three_d_secure": "automatic"
+            }
+          },
+          "redirect_on_completion": "always",
+          "phone_number_collection": {
+            "enabled": false
+          },
+          "payment_method_collection": "always",
+          "billing_address_collection": null,
+          "shipping_address_collection": null,
+          "saved_payment_method_options": {
+            "payment_method_save": null,
+            "payment_method_remove": "disabled",
+            "allow_redisplay_filters": [
+              "always"
+            ]
+          },
+          "payment_method_configuration_details": {
+            "id": "pmc_1SNGmhLO8ZqTeCFE16vdLp49",
+            "parent": null
+          }
+        },
+        "amount_cents": 13000,
+        "provider_reference": "cs_live_a1mJ9YpjaPDUq0ivZJuu1VS2ynJmlw6rH63HYW24IGV8tT9Yc3xGBgqcZa"
+      }
+    ],
+    "app.profiles": [
+      {
+        "bio": "Jag utvecklar Aveli",
+        "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "created_at": "2026-04-21T08:45:15.720519+00:00",
+        "updated_at": "2026-04-21T08:49:29.974083+00:00",
+        "display_name": "Robin",
+        "avatar_media_id": null
+      },
+      {
+        "bio": null,
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "created_at": "2026-04-20T19:56:53.639594+00:00",
+        "updated_at": "2026-04-21T22:18:02.37348+00:00",
+        "display_name": "Lise-Lotte",
+        "avatar_media_id": "a1c52f74-a012-46e6-b3cd-49582b56c234"
+      }
+    ],
+    "app.auth_events": [
+      {
+        "event_id": "b96b52ad-1d0f-460c-a511-505b0f071d8f",
+        "metadata": {
+          "current_onboarding_state": "completed",
+          "previous_onboarding_state": "welcome_pending"
+        },
+        "created_at": "2026-04-21T08:50:31.417821+00:00",
+        "event_type": "onboarding_completed",
+        "actor_user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "subject_user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93"
+      }
+    ],
+    "app.memberships": [
+      {
+        "source": "purchase",
+        "status": "active",
+        "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "ended_at": null,
+        "created_at": "2026-04-21T08:48:59.100139+00:00",
+        "expires_at": null,
+        "updated_at": "2026-04-21T09:54:05.915888+00:00",
+        "canceled_at": null,
+        "effective_at": "2026-04-21T08:46:20+00:00",
+        "membership_id": "0f14514b-329c-4086-b29c-ea412d0bd73b",
+        "provider_customer_id": "cus_UNKbHmcVAvOElF",
+        "provider_subscription_id": "sub_1TOZzHLO8ZqTeCFEpU00HFAh"
+      },
+      {
+        "source": "referral",
+        "status": "active",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "ended_at": null,
+        "created_at": "2026-04-22T00:17:43.284456+00:00",
+        "expires_at": "2036-04-22T00:17:43.284456+00:00",
+        "updated_at": "2026-04-22T00:17:43.284456+00:00",
+        "canceled_at": null,
+        "effective_at": "2026-04-22T00:17:43.284456+00:00",
+        "membership_id": "659b4f58-3b0e-4304-bced-9a11dac0ad9b",
+        "provider_customer_id": null,
+        "provider_subscription_id": null
+      }
+    ],
+    "storage.buckets": [
+      {
+        "id": "course-media",
+        "name": "course-media",
+        "public": false
+      },
+      {
+        "id": "profile-media",
+        "name": "profile-media",
+        "public": false
+      },
+      {
+        "id": "public-media",
+        "name": "public-media",
+        "public": true
+      }
+    ],
+    "storage.objects": [
+      {
+        "id": "11324f07-e7e9-4bdf-a015-369a6c9fd1b2",
+        "name": "media/derived/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/2b851191c83244cdbb0df0c9b158314c_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "metadata": {
+          "eTag": "\"7f1d4786a66a8544c8f0a22ff1659463\"",
+          "size": 740650,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T19:10:58.000Z",
+          "contentLength": 740650,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-21T19:10:57.346269+00:00",
+        "updated_at": "2026-04-21T19:10:57.346269+00:00"
+      },
+      {
+        "id": "2ebc8c26-fb20-4ca8-9815-63b0ee3bbe51",
+        "name": "media/derived/lesson-media/image/lessons/530d926d-b042-423b-bd0b-6d623e2d7e71/images/49c4e455f2044130a0980b1184f86762_ok.png",
+        "metadata": {
+          "eTag": "\"fb6bc215dc8c0c6c5b32cd114cf9bfd0\"",
+          "size": 2100083,
+          "mimetype": "image/png",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-20T21:27:13.000Z",
+          "contentLength": 2100083,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-20T21:27:12.256151+00:00",
+        "updated_at": "2026-04-20T21:27:12.256151+00:00"
+      },
+      {
+        "id": "3067b633-44fb-4def-b3fa-97b6b499baca",
+        "name": "media/source/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/2b851191c83244cdbb0df0c9b158314c_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "metadata": {
+          "eTag": "\"ccba1802fe1cdf59941d38ca89582906\"",
+          "size": 740651,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T18:32:07.000Z",
+          "contentLength": 740651,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-21T18:32:06.309306+00:00",
+        "updated_at": "2026-04-21T18:32:06.309306+00:00"
+      },
+      {
+        "id": "32c57ee8-560f-4534-a265-6b2caad589e2",
+        "name": "media/derived/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/720c9ab27f5f40bbac58ce5e885661a8_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "metadata": {
+          "eTag": "\"7f1d4786a66a8544c8f0a22ff1659463\"",
+          "size": 740650,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T19:11:01.000Z",
+          "contentLength": 740650,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-21T19:11:01.012073+00:00",
+        "updated_at": "2026-04-21T19:11:01.012073+00:00"
+      },
+      {
+        "id": "3a8f348d-9c33-40ad-8223-f77ce4352403",
+        "name": "media/source/audio/courses/d31d22f5-d6fe-4b36-ad7d-7227d78f8ffc/lessons/530d926d-b042-423b-bd0b-6d623e2d7e71/7b120bfb90ca482cb8e667f60d91a939_alfa 3.mp3",
+        "metadata": {
+          "eTag": "\"705bd554279d3cf68e4e974addc82380-2\"",
+          "size": 6689479,
+          "mimetype": "audio/mpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-20T21:48:17.000Z",
+          "contentLength": 6689479,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-20T21:48:17.049938+00:00",
+        "updated_at": "2026-04-20T21:48:17.049938+00:00"
+      },
+      {
+        "id": "3d7bd87a-e44d-4f79-9334-ff91cb221329",
+        "name": "media/source/profile-avatar/a101fb71-7cee-4c28-b429-7534d787abeb/f43298f066a6482a9c10fae8d48fc84c_jagochmamma.png",
+        "metadata": {
+          "eTag": "\"d7212f24643235cde90543b10af5269f\"",
+          "size": 2719733,
+          "mimetype": "image/png",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-20T22:04:43.000Z",
+          "contentLength": 2719733,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "profile-media",
+        "created_at": "2026-04-20T22:04:42.524443+00:00",
+        "updated_at": "2026-04-20T22:04:42.524443+00:00"
+      },
+      {
+        "id": "3fa08a6a-ba07-45f4-a1e7-fea5389c19d4",
+        "name": "media/derived/audio/courses/d31d22f5-d6fe-4b36-ad7d-7227d78f8ffc/lessons/530d926d-b042-423b-bd0b-6d623e2d7e71/7b120bfb90ca482cb8e667f60d91a939_alfa 3.mp3",
+        "metadata": {
+          "eTag": "\"705bd554279d3cf68e4e974addc82380-2\"",
+          "size": 6689479,
+          "mimetype": "audio/mpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-20T21:48:28.000Z",
+          "contentLength": 6689479,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-20T21:48:28.075211+00:00",
+        "updated_at": "2026-04-20T21:48:28.075211+00:00"
+      },
+      {
+        "id": "47e3092c-5c0f-4403-aec3-a94d713f111e",
+        "name": "media/source/cover/courses/d31d22f5-d6fe-4b36-ad7d-7227d78f8ffc/3c70bbf9d346478c9a1f37a42df7eeab_eeh.png",
+        "metadata": {
+          "eTag": "\"d6d4925701d87d5224c8b1d7ffc8fb34\"",
+          "size": 2066399,
+          "mimetype": "image/png",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-20T21:23:53.000Z",
+          "contentLength": 2066399,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-20T21:23:52.200705+00:00",
+        "updated_at": "2026-04-20T21:23:52.200705+00:00"
+      },
+      {
+        "id": "5734e8dd-5183-48ec-bd4b-532a18761d9b",
+        "name": "media/source/profile-avatar/a101fb71-7cee-4c28-b429-7534d787abeb/d58e26980099433a9dd6ca60eaca351b_jagochmamma.png",
+        "metadata": {
+          "eTag": "\"d7212f24643235cde90543b10af5269f\"",
+          "size": 2719733,
+          "mimetype": "image/png",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T22:17:24.000Z",
+          "contentLength": 2719733,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "profile-media",
+        "created_at": "2026-04-21T22:17:23.603834+00:00",
+        "updated_at": "2026-04-21T22:17:23.603834+00:00"
+      },
+      {
+        "id": "5f59a37a-66bf-424f-a6de-bebba149dc3a",
+        "name": "media/source/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/b581cc936847480fb1496154bea5ea7e_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "metadata": {
+          "eTag": "\"ccba1802fe1cdf59941d38ca89582906\"",
+          "size": 740651,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T19:11:23.000Z",
+          "contentLength": 740651,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-21T19:11:22.719802+00:00",
+        "updated_at": "2026-04-21T19:11:22.719802+00:00"
+      },
+      {
+        "id": "601c191a-91d6-458f-9d7d-2b950fe2652b",
+        "name": "media/derived/profile-avatar/a101fb71-7cee-4c28-b429-7534d787abeb/f43298f066a6482a9c10fae8d48fc84c_jagochmamma.jpg",
+        "metadata": {
+          "eTag": "\"eda53d833f129420303b6872d418012f\"",
+          "size": 315850,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-20T22:04:57.000Z",
+          "contentLength": 315850,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-20T22:04:56.660434+00:00",
+        "updated_at": "2026-04-20T22:04:56.660434+00:00"
+      },
+      {
+        "id": "6611da4c-326f-4014-b6ac-63801a30150f",
+        "name": "media/derived/profile-avatar/a65b2f10-f5d1-4030-8211-a75e39ff5c93/c79514aa7e0d4fad84603c2e3df0b031_eeh.jpg",
+        "metadata": {
+          "eTag": "\"e7a59fe018d82434423a17f09b35ec35\"",
+          "size": 293529,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T19:10:37.000Z",
+          "contentLength": 293529,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-21T19:10:36.884238+00:00",
+        "updated_at": "2026-04-21T19:10:36.884238+00:00"
+      },
+      {
+        "id": "688ba064-c1f5-4842-83df-80eda24ba7c0",
+        "name": "lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/images/c3e824300ff64ccfa8bd34ede5be8af5_farg.jpg",
+        "metadata": {
+          "eTag": "\"3e5c811318444e1e684b390e849469c3\"",
+          "size": 47628,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T22:51:30.000Z",
+          "contentLength": 47628,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-21T22:51:30.014733+00:00",
+        "updated_at": "2026-04-21T22:51:30.014733+00:00"
+      },
+      {
+        "id": "69dfd351-717e-45ec-add6-7ae712d08846",
+        "name": "media/derived/audio/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/fa_rg.mp3",
+        "metadata": {
+          "eTag": "\"dbd576ce1102c4be6f444d90f5a10f1a\"",
+          "size": 4310322,
+          "mimetype": "audio/mpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T22:52:21.000Z",
+          "contentLength": 4310322,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-21T22:52:20.155275+00:00",
+        "updated_at": "2026-04-21T22:52:20.155275+00:00"
+      },
+      {
+        "id": "91154ac7-83ba-4734-a38c-fbbfdff8b8dd",
+        "name": "media/source/audio/home-player/a101fb71-7cee-4c28-b429-7534d787abeb/7b120bfb90ca482cb8e667f60d91a939_alfa 3.mp3",
+        "metadata": {
+          "eTag": "\"705bd554279d3cf68e4e974addc82380-2\"",
+          "size": 6689479,
+          "mimetype": "audio/mpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T16:07:52.000Z",
+          "contentLength": 6689479,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-21T16:07:51.88085+00:00",
+        "updated_at": "2026-04-21T16:07:51.88085+00:00"
+      },
+      {
+        "id": "9268fb1a-3f72-4707-a00c-4767fefec779",
+        "name": "media/source/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/afb5728c674f4dd383008a15c7da7461_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "metadata": {
+          "eTag": "\"ccba1802fe1cdf59941d38ca89582906\"",
+          "size": 740651,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T18:21:49.000Z",
+          "contentLength": 740651,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-21T18:21:48.731671+00:00",
+        "updated_at": "2026-04-21T18:21:48.731671+00:00"
+      },
+      {
+        "id": "9727f172-9816-4c05-9b17-75fbc9448ff4",
+        "name": "lessons/530d926d-b042-423b-bd0b-6d623e2d7e71/images/49c4e455f2044130a0980b1184f86762_ok.png",
+        "metadata": {
+          "eTag": "\"fb6bc215dc8c0c6c5b32cd114cf9bfd0\"",
+          "size": 2100083,
+          "mimetype": "image/png",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-20T21:27:06.000Z",
+          "contentLength": 2100083,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-20T21:27:05.274828+00:00",
+        "updated_at": "2026-04-20T21:27:05.274828+00:00"
+      },
+      {
+        "id": "9a0f7f69-1168-4a55-9754-6a7b55e890ca",
+        "name": "media/source/audio/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/fa_rg.mp3",
+        "metadata": {
+          "eTag": "\"dbd576ce1102c4be6f444d90f5a10f1a\"",
+          "size": 4310322,
+          "mimetype": "audio/mpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T22:52:05.000Z",
+          "contentLength": 4310322,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-21T22:52:04.181697+00:00",
+        "updated_at": "2026-04-21T22:52:04.181697+00:00"
+      },
+      {
+        "id": "9cb4546c-5115-4209-a396-be8584a84eb2",
+        "name": "media/derived/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/afb5728c674f4dd383008a15c7da7461_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "metadata": {
+          "eTag": "\"7f1d4786a66a8544c8f0a22ff1659463\"",
+          "size": 740650,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T19:10:52.000Z",
+          "contentLength": 740650,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-21T19:10:51.591153+00:00",
+        "updated_at": "2026-04-21T19:10:51.591153+00:00"
+      },
+      {
+        "id": "af9fd5ee-9c34-4261-a0f4-3e5b9ab2ed3d",
+        "name": "media/source/profile-avatar/a65b2f10-f5d1-4030-8211-a75e39ff5c93/c79514aa7e0d4fad84603c2e3df0b031_eeh.png",
+        "metadata": {
+          "eTag": "\"d6d4925701d87d5224c8b1d7ffc8fb34\"",
+          "size": 2066399,
+          "mimetype": "image/png",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T08:49:12.000Z",
+          "contentLength": 2066399,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "profile-media",
+        "created_at": "2026-04-21T08:49:11.846359+00:00",
+        "updated_at": "2026-04-21T08:49:11.846359+00:00"
+      },
+      {
+        "id": "bf48eaad-54c2-4dda-9e9d-b4f0000ebbb8",
+        "name": "media/derived/profile-avatar/a101fb71-7cee-4c28-b429-7534d787abeb/d58e26980099433a9dd6ca60eaca351b_jagochmamma.jpg",
+        "metadata": {
+          "eTag": "\"eda53d833f129420303b6872d418012f\"",
+          "size": 315850,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T22:17:40.000Z",
+          "contentLength": 315850,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-21T22:17:39.280712+00:00",
+        "updated_at": "2026-04-21T22:17:39.280712+00:00"
+      },
+      {
+        "id": "cbda2d2d-cc73-4a94-9c1a-56be9f6b26ff",
+        "name": "media/derived/audio/home-player/a101fb71-7cee-4c28-b429-7534d787abeb/7b120bfb90ca482cb8e667f60d91a939_alfa 3.mp3",
+        "metadata": {
+          "eTag": "\"705bd554279d3cf68e4e974addc82380-2\"",
+          "size": 6689479,
+          "mimetype": "audio/mpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T19:10:45.000Z",
+          "contentLength": 6689479,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-21T19:10:44.42172+00:00",
+        "updated_at": "2026-04-21T19:10:44.42172+00:00"
+      },
+      {
+        "id": "dff9361c-680d-4501-8708-cc9db5a1b97e",
+        "name": "media/derived/lesson-media/image/lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/images/c3e824300ff64ccfa8bd34ede5be8af5_farg.jpg",
+        "metadata": {
+          "eTag": "\"3e5c811318444e1e684b390e849469c3\"",
+          "size": 47628,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T22:51:40.000Z",
+          "contentLength": 47628,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-21T22:51:39.940546+00:00",
+        "updated_at": "2026-04-21T22:51:39.940546+00:00"
+      },
+      {
+        "id": "e9862655-02df-4db0-97a0-56560b9692f0",
+        "name": "media/source/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/720c9ab27f5f40bbac58ce5e885661a8_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "metadata": {
+          "eTag": "\"ccba1802fe1cdf59941d38ca89582906\"",
+          "size": 740651,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T18:34:11.000Z",
+          "contentLength": 740651,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "course-media",
+        "created_at": "2026-04-21T18:34:10.689431+00:00",
+        "updated_at": "2026-04-21T18:34:10.689431+00:00"
+      },
+      {
+        "id": "ea0cf495-8283-424c-99ab-baaa191cd4f1",
+        "name": "media/derived/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/b581cc936847480fb1496154bea5ea7e_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "metadata": {
+          "eTag": "\"7f1d4786a66a8544c8f0a22ff1659463\"",
+          "size": 740650,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-21T19:11:40.000Z",
+          "contentLength": 740650,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-21T19:11:39.137226+00:00",
+        "updated_at": "2026-04-21T19:11:39.137226+00:00"
+      },
+      {
+        "id": "ee195ec2-13aa-4679-bd0b-7369e571c53b",
+        "name": "media/derived/cover/courses/d31d22f5-d6fe-4b36-ad7d-7227d78f8ffc/3c70bbf9d346478c9a1f37a42df7eeab_eeh.jpg",
+        "metadata": {
+          "eTag": "\"e7a59fe018d82434423a17f09b35ec35\"",
+          "size": 293529,
+          "mimetype": "image/jpeg",
+          "cacheControl": "max-age=3600",
+          "lastModified": "2026-04-20T21:24:04.000Z",
+          "contentLength": 293529,
+          "httpStatusCode": 200
+        },
+        "bucket_id": "public-media",
+        "created_at": "2026-04-20T21:24:03.950607+00:00",
+        "updated_at": "2026-04-20T21:24:03.950607+00:00"
+      }
+    ],
+    "app.billing_logs": [
+      {
+        "id": "5751855e-3a0f-4e4b-8c35-fd779d6be8a2",
+        "info": {
+          "interval": "month",
+          "order_id": "fa65f690-3d68-4a03-a68b-90552c7e4ca0",
+          "price_id": "price_1SNrlgLO8ZqTeCFExFlF5Wxd",
+          "session_id": "cs_live_a1mJ9YpjaPDUq0ivZJuu1VS2ynJmlw6rH63HYW24IGV8tT9Yc3xGBgqcZa"
+        },
+        "step": "create_subscription_session",
+        "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "created_at": "2026-04-21T08:46:20.679729+00:00",
+        "related_order_id": null
+      },
+      {
+        "id": "aa0560d5-e609-4ae1-9ecf-288f51f21f31",
+        "info": {
+          "order_id": "fa65f690-3d68-4a03-a68b-90552c7e4ca0",
+          "session_id": "cs_live_a1mJ9YpjaPDUq0ivZJuu1VS2ynJmlw6rH63HYW24IGV8tT9Yc3xGBgqcZa",
+          "subscription_id": "sub_1TOZzHLO8ZqTeCFEpU00HFAh",
+          "payment_recorded": true,
+          "order_marked_paid": true,
+          "membership_activated": true
+        },
+        "step": "membership_checkout_completed",
+        "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "created_at": "2026-04-21T08:48:59.100139+00:00",
+        "related_order_id": null
+      },
+      {
+        "id": "e3a63a6f-4beb-426a-9826-227f0378a3ae",
+        "info": {
+          "email": "lisaochcarinasutbildningar@gmail.com",
+          "reason": "operator-authorized canonical remediation of invalid purchase membership without commerce trail",
+          "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+          "operator": "codex",
+          "old_source": "purchase",
+          "referral_code": "REF-RECOVERY-A101FB71-20260422",
+          "canonical_path": "app.canonical_redeem_referral_code",
+          "duration_months": 120,
+          "intended_new_doctrine": "referral",
+          "invalid_membership_id": "fc9ca4d4-b71e-4b75-acf0-1b044f6b9144",
+          "purchase_history_invented": false
+        },
+        "step": "membership_canonical_referral_remediation",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "created_at": "2026-04-22T00:17:43.284456+00:00",
+        "related_order_id": null
+      }
+    ],
+    "app.lesson_media": [
+      {
+        "id": "a9cc9a91-b07b-457a-8268-40cdb3f15951",
+        "position": 2,
+        "lesson_id": "f94a56d7-78ac-426d-b86f-c4214ce56d9d",
+        "media_asset_id": "97683780-4fef-406a-90ad-5b328b685fac"
+      },
+      {
+        "id": "c8542ea5-a897-422d-a902-9e650d177581",
+        "position": 1,
+        "lesson_id": "f94a56d7-78ac-426d-b86f-c4214ce56d9d",
+        "media_asset_id": "866d1366-f086-47dc-8a23-816ea1e00f53"
+      }
+    ],
+    "app.media_assets": [
+      {
+        "id": "6dd120f0-dd23-423e-b683-b00e95f8d755",
+        "state": "ready",
+        "purpose": "course_cover",
+        "file_size": null,
+        "created_at": "2026-04-21T18:32:03.454033+00:00",
+        "media_type": "image",
+        "updated_at": "2026-04-21T19:10:58.692493+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "jpeg",
+        "next_retry_at": null,
+        "playback_format": "jpg",
+        "processing_attempts": 1,
+        "original_object_path": "media/source/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/2b851191c83244cdbb0df0c9b158314c_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "playback_object_path": "media/derived/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/2b851191c83244cdbb0df0c9b158314c_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "866d1366-f086-47dc-8a23-816ea1e00f53",
+        "state": "ready",
+        "purpose": "lesson_media",
+        "file_size": null,
+        "created_at": "2026-04-21T22:51:27.622464+00:00",
+        "media_type": "image",
+        "updated_at": "2026-04-21T22:51:40.97638+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "jpg",
+        "next_retry_at": null,
+        "playback_format": "jpg",
+        "processing_attempts": 1,
+        "original_object_path": "lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/images/c3e824300ff64ccfa8bd34ede5be8af5_farg.jpg",
+        "playback_object_path": "media/derived/lesson-media/image/lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/images/c3e824300ff64ccfa8bd34ede5be8af5_farg.jpg",
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "8e2e1308-3d54-4879-9526-9df6cc00507c",
+        "state": "ready",
+        "purpose": "course_cover",
+        "file_size": null,
+        "created_at": "2026-04-21T19:11:20.268522+00:00",
+        "media_type": "image",
+        "updated_at": "2026-04-21T19:11:40.49302+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "jpeg",
+        "next_retry_at": null,
+        "playback_format": "jpg",
+        "processing_attempts": 1,
+        "original_object_path": "media/source/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/b581cc936847480fb1496154bea5ea7e_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "playback_object_path": "media/derived/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/b581cc936847480fb1496154bea5ea7e_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "97683780-4fef-406a-90ad-5b328b685fac",
+        "state": "ready",
+        "purpose": "lesson_media",
+        "file_size": null,
+        "created_at": "2026-04-21T22:52:01.348655+00:00",
+        "media_type": "audio",
+        "updated_at": "2026-04-21T22:52:20.892837+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "mp3",
+        "next_retry_at": null,
+        "playback_format": "mp3",
+        "processing_attempts": 1,
+        "original_object_path": "media/source/audio/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/fa_rg.mp3",
+        "playback_object_path": "media/derived/audio/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/fa_rg.mp3",
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "a1c52f74-a012-46e6-b3cd-49582b56c234",
+        "state": "ready",
+        "purpose": "profile_media",
+        "file_size": null,
+        "created_at": "2026-04-21T22:17:21.161988+00:00",
+        "media_type": "image",
+        "updated_at": "2026-04-21T22:17:40.406071+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "png",
+        "next_retry_at": null,
+        "playback_format": "jpg",
+        "processing_attempts": 1,
+        "original_object_path": "media/source/profile-avatar/a101fb71-7cee-4c28-b429-7534d787abeb/d58e26980099433a9dd6ca60eaca351b_jagochmamma.png",
+        "playback_object_path": "media/derived/profile-avatar/a101fb71-7cee-4c28-b429-7534d787abeb/d58e26980099433a9dd6ca60eaca351b_jagochmamma.jpg",
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "a3c7c9e1-1377-470f-907c-38835f1ef9de",
+        "state": "ready",
+        "purpose": "home_player_audio",
+        "file_size": null,
+        "created_at": "2026-04-21T16:07:48.951439+00:00",
+        "media_type": "audio",
+        "updated_at": "2026-04-21T19:10:45.221254+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "mp3",
+        "next_retry_at": null,
+        "playback_format": "mp3",
+        "processing_attempts": 1,
+        "original_object_path": "media/source/audio/home-player/a101fb71-7cee-4c28-b429-7534d787abeb/7b120bfb90ca482cb8e667f60d91a939_alfa 3.mp3",
+        "playback_object_path": "media/derived/audio/home-player/a101fb71-7cee-4c28-b429-7534d787abeb/7b120bfb90ca482cb8e667f60d91a939_alfa 3.mp3",
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "d16836d3-bba7-4de1-a87f-fb360a644fdf",
+        "state": "pending_upload",
+        "purpose": "lesson_media",
+        "file_size": null,
+        "created_at": "2026-04-21T22:45:16.946013+00:00",
+        "media_type": "image",
+        "updated_at": "2026-04-21T22:45:16.946013+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "jpg",
+        "next_retry_at": null,
+        "playback_format": null,
+        "processing_attempts": 0,
+        "original_object_path": "lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/images/25882e1342c64bb89c128cb8719f9abd_färg_2.jpg",
+        "playback_object_path": null,
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "d24774c4-75f6-4e80-a554-8f6206dd3e80",
+        "state": "ready",
+        "purpose": "profile_media",
+        "file_size": null,
+        "created_at": "2026-04-21T08:49:09.588591+00:00",
+        "media_type": "image",
+        "updated_at": "2026-04-21T19:10:38.052231+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "png",
+        "next_retry_at": null,
+        "playback_format": "jpg",
+        "processing_attempts": 1,
+        "original_object_path": "media/source/profile-avatar/a65b2f10-f5d1-4030-8211-a75e39ff5c93/c79514aa7e0d4fad84603c2e3df0b031_eeh.png",
+        "playback_object_path": "media/derived/profile-avatar/a65b2f10-f5d1-4030-8211-a75e39ff5c93/c79514aa7e0d4fad84603c2e3df0b031_eeh.jpg",
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "d8a7f914-0dd1-4c2d-b4da-898ef06bc574",
+        "state": "ready",
+        "purpose": "course_cover",
+        "file_size": null,
+        "created_at": "2026-04-21T18:21:46.113321+00:00",
+        "media_type": "image",
+        "updated_at": "2026-04-21T19:10:53.144395+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "jpeg",
+        "next_retry_at": null,
+        "playback_format": "jpg",
+        "processing_attempts": 1,
+        "original_object_path": "media/source/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/afb5728c674f4dd383008a15c7da7461_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "playback_object_path": "media/derived/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/afb5728c674f4dd383008a15c7da7461_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "ec2d1ee2-c6c6-444b-bdea-c97120e0b8c1",
+        "state": "pending_upload",
+        "purpose": "lesson_media",
+        "file_size": null,
+        "created_at": "2026-04-21T22:48:52.008622+00:00",
+        "media_type": "image",
+        "updated_at": "2026-04-21T22:48:52.008622+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "jpg",
+        "next_retry_at": null,
+        "playback_format": null,
+        "processing_attempts": 0,
+        "original_object_path": "lessons/f94a56d7-78ac-426d-b86f-c4214ce56d9d/images/ac0d3d7b5b434f989e3c8a885d79aa76_färg_2_file_ref_001472.jpg",
+        "playback_object_path": null,
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      },
+      {
+        "id": "f3406c7c-3c1f-4a01-bf67-2a4473c04588",
+        "state": "ready",
+        "purpose": "course_cover",
+        "file_size": null,
+        "created_at": "2026-04-21T18:34:06.713516+00:00",
+        "media_type": "image",
+        "updated_at": "2026-04-21T19:11:02.448065+00:00",
+        "content_hash": null,
+        "error_message": null,
+        "ingest_format": "jpeg",
+        "next_retry_at": null,
+        "playback_format": "jpg",
+        "processing_attempts": 1,
+        "original_object_path": "media/source/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/720c9ab27f5f40bbac58ce5e885661a8_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "playback_object_path": "media/derived/cover/courses/6a1574c7-3f05-4d8c-9c09-f60b409e4bc4/720c9ab27f5f40bbac58ce5e885661a8_0bc9544b21064a88a4313a700885e15e_ChatGPT_Image_4_feb._2026_09_19_32.jpg",
+        "processing_locked_at": null,
+        "content_hash_algorithm": null,
+        "content_identity_error": null,
+        "content_identity_computed_at": null
+      }
+    ],
+    "app.media_events": [],
+    "app.auth_subjects": [
+      {
+        "role": "learner",
+        "email": "robin_odenhjalm@hotmail.com",
+        "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "created_at": "2026-04-21T08:45:15.468248+00:00",
+        "updated_at": "2026-04-21T08:45:15.468248+00:00",
+        "onboarding_state": "completed"
+      },
+      {
+        "role": "teacher",
+        "email": "lisaochcarinasutbildningar@gmail.com",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "created_at": "2026-04-21T08:19:42.14082+00:00",
+        "updated_at": "2026-04-21T08:19:42.14082+00:00",
+        "onboarding_state": "completed"
+      }
+    ],
+    "app.course_bundles": [],
+    "app.payment_events": [
+      {
+        "source": "stripe",
+        "payload": {
+          "id": "evt_1TObsFLO8ZqTeCFEs5GikoGe",
+          "data": {
+            "object": {
+              "id": "cs_live_a1roubed0PjjmbV367DrQuuMPBlkppwTy1k1Y8zilLeTtUXuF2uzYpxr8G",
+              "url": null,
+              "mode": "subscription",
+              "locale": "sv",
+              "object": "checkout.session",
+              "status": "expired",
+              "consent": null,
+              "created": 1776682187,
+              "invoice": null,
+              "ui_mode": "embedded",
+              "currency": "sek",
+              "customer": "cus_UMzNXnOw7HhkaR",
+              "livemode": true,
+              "metadata": {
+                "source": "purchase",
+                "user_id": "a62c44a2-3a4c-4592-8521-0b1537cfabdb",
+                "interval": "month",
+                "order_id": "b20adb4e-9da1-45e2-8ac8-bc32ecfd11bd",
+                "price_id": "price_1SNrlgLO8ZqTeCFExFlF5Wxd",
+                "checkout_type": "membership"
+              },
+              "discounts": [],
+              "cancel_url": null,
+              "expires_at": 1776768587,
+              "return_url": "http://app.aveli.app/checkout/return?session_id={CHECKOUT_SESSION_ID}",
+              "custom_text": {
+                "submit": null,
+                "after_submit": null,
+                "shipping_address": null,
+                "terms_of_service_acceptance": null
+              },
+              "permissions": null,
+              "submit_type": null,
+              "success_url": null,
+              "amount_total": 0,
+              "payment_link": null,
+              "setup_intent": null,
+              "subscription": null,
+              "automatic_tax": {
+                "status": null,
+                "enabled": false,
+                "provider": null,
+                "liability": null
+              },
+              "client_secret": null,
+              "custom_fields": [],
+              "shipping_cost": null,
+              "total_details": {
+                "amount_tax": 0,
+                "amount_discount": 0,
+                "amount_shipping": 0
+              },
+              "customer_email": null,
+              "origin_context": null,
+              "payment_intent": null,
+              "payment_status": "unpaid",
+              "recovered_from": null,
+              "wallet_options": null,
+              "amount_subtotal": 0,
+              "adaptive_pricing": {
+                "enabled": true
+              },
+              "after_expiration": null,
+              "customer_account": null,
+              "customer_details": {
+                "name": null,
+                "email": "odenhjalm@outlook.com",
+                "phone": null,
+                "address": null,
+                "tax_ids": null,
+                "tax_exempt": "none",
+                "business_name": null,
+                "individual_name": null
+              },
+              "invoice_creation": null,
+              "managed_payments": {
+                "enabled": false
+              },
+              "shipping_options": [],
+              "branding_settings": {
+                "icon": null,
+                "logo": null,
+                "font_family": "default",
+                "border_style": "rounded",
+                "button_color": "#0074d4",
+                "display_name": "Lisaochcarinasutbildningar hb",
+                "background_color": "#ffffff"
+              },
+              "customer_creation": null,
+              "consent_collection": null,
+              "client_reference_id": null,
+              "currency_conversion": null,
+              "payment_method_types": [
+                "card",
+                "klarna",
+                "link",
+                "paypal",
+                "amazon_pay"
+              ],
+              "allow_promotion_codes": null,
+              "collected_information": {
+                "business_name": null,
+                "individual_name": null,
+                "shipping_details": null
+              },
+              "integration_identifier": null,
+              "payment_method_options": {
+                "card": {
+                  "request_three_d_secure": "automatic"
+                }
+              },
+              "redirect_on_completion": "always",
+              "phone_number_collection": {
+                "enabled": false
+              },
+              "payment_method_collection": "always",
+              "billing_address_collection": null,
+              "shipping_address_collection": null,
+              "saved_payment_method_options": {
+                "payment_method_save": null,
+                "payment_method_remove": "disabled",
+                "allow_redisplay_filters": [
+                  "always"
+                ]
+              },
+              "payment_method_configuration_details": {
+                "id": "pmc_1SNGmhLO8ZqTeCFE16vdLp49",
+                "parent": null
+              }
+            }
+          },
+          "type": "checkout.session.expired",
+          "object": "event",
+          "created": 1776768587,
+          "request": {
+            "id": null,
+            "idempotency_key": null
+          },
+          "livemode": true,
+          "api_version": "2025-09-30.clover",
+          "pending_webhooks": 1
+        },
+        "event_id": "evt_1TObsFLO8ZqTeCFEs5GikoGe",
+        "metadata": {
+          "status": "completed"
+        },
+        "created_at": "2026-04-21T15:54:09.600913+00:00",
+        "event_type": "checkout.session.expired"
+      },
+      {
+        "source": "stripe",
+        "payload": {
+          "id": "evt_1TOFQHLO8ZqTeCFEYZGnjveb",
+          "data": {
+            "object": {
+              "id": "pm_1TOFPmLO8ZqTeCFE25dAFp6b",
+              "card": {
+                "brand": "mastercard",
+                "last4": "3858",
+                "checks": {
+                  "cvc_check": "pass",
+                  "address_line1_check": null,
+                  "address_postal_code_check": null
+                },
+                "wallet": null,
+                "country": "SE",
+                "funding": "debit",
+                "exp_year": 2030,
+                "networks": {
+                  "available": [
+                    "mastercard"
+                  ],
+                  "preferred": null
+                },
+                "exp_month": 6,
+                "fingerprint": "nus6e3QPqA85MGnN",
+                "display_brand": "mastercard",
+                "generated_from": null,
+                "regulated_status": "unregulated",
+                "three_d_secure_usage": {
+                  "supported": true
+                }
+              },
+              "type": "card",
+              "object": "payment_method",
+              "created": 1776682254,
+              "customer": "cus_UMzNXnOw7HhkaR",
+              "livemode": true,
+              "metadata": {},
+              "allow_redisplay": "limited",
+              "billing_details": {
+                "name": "Robin Odenhjälm",
+                "email": "odenhjalm@outlook.com",
+                "phone": null,
+                "tax_id": null,
+                "address": {
+                  "city": null,
+                  "line1": null,
+                  "line2": null,
+                  "state": null,
+                  "country": "SE",
+                  "postal_code": null
+                }
+              },
+              "customer_account": null
+            }
+          },
+          "type": "payment_method.attached",
+          "object": "event",
+          "created": 1776682285,
+          "request": {
+            "id": null,
+            "idempotency_key": "setatt_1TOFPnLO8ZqTeCFEnGxqComv-setatt_1TOFPnLO8ZqTeCFEnGxqComv"
+          },
+          "livemode": true,
+          "api_version": "2025-09-30.clover",
+          "pending_webhooks": 1
+        },
+        "event_id": "evt_1TOFQHLO8ZqTeCFEYZGnjveb",
+        "metadata": {
+          "status": "completed"
+        },
+        "created_at": "2026-04-22T05:48:01.597054+00:00",
+        "event_type": "payment_method.attached"
+      },
+      {
+        "source": "stripe",
+        "payload": {
+          "id": "evt_1TOZzHLO8ZqTeCFEzcwaCYsM",
+          "data": {
+            "object": {
+              "id": "pm_1TOZxMLO8ZqTeCFE3eVN7UnB",
+              "card": {
+                "brand": "mastercard",
+                "last4": "3858",
+                "checks": {
+                  "cvc_check": "pass",
+                  "address_line1_check": null,
+                  "address_postal_code_check": null
+                },
+                "wallet": null,
+                "country": "SE",
+                "funding": "debit",
+                "exp_year": 2030,
+                "networks": {
+                  "available": [
+                    "mastercard"
+                  ],
+                  "preferred": null
+                },
+                "exp_month": 6,
+                "fingerprint": "nus6e3QPqA85MGnN",
+                "display_brand": "mastercard",
+                "generated_from": null,
+                "regulated_status": "unregulated",
+                "three_d_secure_usage": {
+                  "supported": true
+                }
+              },
+              "type": "card",
+              "object": "payment_method",
+              "created": 1776761217,
+              "customer": "cus_UNKbHmcVAvOElF",
+              "livemode": true,
+              "metadata": {},
+              "allow_redisplay": "limited",
+              "billing_details": {
+                "name": "Robin Odenhjälm",
+                "email": "robin_odenhjalm@hotmail.com",
+                "phone": null,
+                "tax_id": null,
+                "address": {
+                  "city": null,
+                  "line1": null,
+                  "line2": null,
+                  "state": null,
+                  "country": "SE",
+                  "postal_code": null
+                }
+              },
+              "customer_account": null
+            }
+          },
+          "type": "payment_method.attached",
+          "object": "event",
+          "created": 1776761335,
+          "request": {
+            "id": null,
+            "idempotency_key": "setatt_1TOZxOLO8ZqTeCFE7KDYOOqX-setatt_1TOZxOLO8ZqTeCFE7KDYOOqX"
+          },
+          "livemode": true,
+          "api_version": "2025-09-30.clover",
+          "pending_webhooks": 1
+        },
+        "event_id": "evt_1TOZzHLO8ZqTeCFEzcwaCYsM",
+        "metadata": {
+          "status": "completed"
+        },
+        "created_at": "2026-04-21T08:48:56.243532+00:00",
+        "event_type": "payment_method.attached"
+      },
+      {
+        "source": "stripe",
+        "payload": {
+          "id": "evt_1TOZzJLO8ZqTeCFE4PUzYpDI",
+          "data": {
+            "object": {
+              "id": "cs_live_a1mJ9YpjaPDUq0ivZJuu1VS2ynJmlw6rH63HYW24IGV8tT9Yc3xGBgqcZa",
+              "url": null,
+              "mode": "subscription",
+              "locale": "sv",
+              "object": "checkout.session",
+              "status": "complete",
+              "consent": null,
+              "created": 1776761180,
+              "invoice": "in_1TOZxNLO8ZqTeCFE0CX99nUu",
+              "ui_mode": "embedded",
+              "currency": "sek",
+              "customer": "cus_UNKbHmcVAvOElF",
+              "livemode": true,
+              "metadata": {
+                "source": "purchase",
+                "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+                "interval": "month",
+                "order_id": "fa65f690-3d68-4a03-a68b-90552c7e4ca0",
+                "price_id": "price_1SNrlgLO8ZqTeCFExFlF5Wxd",
+                "checkout_type": "membership"
+              },
+              "discounts": [],
+              "cancel_url": null,
+              "expires_at": 1776847579,
+              "return_url": "http://app.aveli.app/checkout/return?session_id={CHECKOUT_SESSION_ID}",
+              "custom_text": {
+                "submit": null,
+                "after_submit": null,
+                "shipping_address": null,
+                "terms_of_service_acceptance": null
+              },
+              "permissions": null,
+              "submit_type": null,
+              "success_url": null,
+              "amount_total": 0,
+              "payment_link": null,
+              "setup_intent": null,
+              "subscription": "sub_1TOZzHLO8ZqTeCFEpU00HFAh",
+              "automatic_tax": {
+                "status": null,
+                "enabled": false,
+                "provider": null,
+                "liability": null
+              },
+              "client_secret": null,
+              "custom_fields": [],
+              "shipping_cost": null,
+              "total_details": {
+                "amount_tax": 0,
+                "amount_discount": 0,
+                "amount_shipping": 0
+              },
+              "customer_email": null,
+              "origin_context": null,
+              "payment_intent": null,
+              "payment_status": "paid",
+              "recovered_from": null,
+              "wallet_options": null,
+              "amount_subtotal": 0,
+              "adaptive_pricing": {
+                "enabled": true
+              },
+              "after_expiration": null,
+              "customer_account": null,
+              "customer_details": {
+                "name": "Robin Odenhjälm",
+                "email": "robin_odenhjalm@hotmail.com",
+                "phone": null,
+                "address": {
+                  "city": null,
+                  "line1": null,
+                  "line2": null,
+                  "state": null,
+                  "country": "SE",
+                  "postal_code": null
+                },
+                "tax_ids": [],
+                "tax_exempt": "none",
+                "business_name": null,
+                "individual_name": null
+              },
+              "invoice_creation": null,
+              "managed_payments": {
+                "enabled": false
+              },
+              "shipping_options": [],
+              "branding_settings": {
+                "icon": null,
+                "logo": null,
+                "font_family": "default",
+                "border_style": "rounded",
+                "button_color": "#0074d4",
+                "display_name": "Lisaochcarinasutbildningar hb",
+                "background_color": "#ffffff"
+              },
+              "customer_creation": null,
+              "consent_collection": null,
+              "client_reference_id": null,
+              "currency_conversion": null,
+              "payment_method_types": [
+                "card",
+                "klarna",
+                "link",
+                "paypal",
+                "amazon_pay"
+              ],
+              "allow_promotion_codes": null,
+              "collected_information": {
+                "business_name": null,
+                "individual_name": null,
+                "shipping_details": null
+              },
+              "integration_identifier": null,
+              "payment_method_options": {
+                "card": {
+                  "request_three_d_secure": "automatic"
+                }
+              },
+              "redirect_on_completion": "always",
+              "phone_number_collection": {
+                "enabled": false
+              },
+              "payment_method_collection": "always",
+              "billing_address_collection": null,
+              "shipping_address_collection": null,
+              "saved_payment_method_options": {
+                "payment_method_save": null,
+                "payment_method_remove": "disabled",
+                "allow_redisplay_filters": [
+                  "always"
+                ]
+              },
+              "payment_method_configuration_details": {
+                "id": "pmc_1SNGmhLO8ZqTeCFE16vdLp49",
+                "parent": null
+              }
+            }
+          },
+          "type": "checkout.session.completed",
+          "object": "event",
+          "created": 1776761337,
+          "request": {
+            "id": null,
+            "idempotency_key": null
+          },
+          "livemode": true,
+          "api_version": "2025-09-30.clover",
+          "pending_webhooks": 1
+        },
+        "event_id": "evt_1TOZzJLO8ZqTeCFE4PUzYpDI",
+        "metadata": {
+          "status": "completed"
+        },
+        "created_at": "2026-04-21T08:48:59.728126+00:00",
+        "event_type": "checkout.session.completed"
+      }
+    ],
+    "app.referral_codes": [
+      {
+        "id": "4f08f146-9238-48b1-9586-944964a4312a",
+        "code": "REF-RECOVERY-A101FB71-20260422",
+        "email": "lisaochcarinasutbildningar@gmail.com",
+        "active": false,
+        "free_days": null,
+        "created_at": "2026-04-22T00:17:43.284456+00:00",
+        "teacher_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "updated_at": "2026-04-22T00:17:43.284456+00:00",
+        "free_months": 120,
+        "redeemed_at": "2026-04-22T00:17:43.284456+00:00",
+        "redeemed_by_user_id": "a101fb71-7cee-4c28-b429-7534d787abeb"
+      }
+    ],
+    "app.refresh_tokens": [
+      {
+        "jti": "01b606b9-1f01-48bd-86e8-2ac7d3c68bd6",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T20:41:20.961197+00:00",
+        "expires_at": "2026-05-21T20:41:20.799385+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T21:00:55.082701+00:00",
+        "token_hash": "ba885187ce3ed02c75e04009bfbea0819e89c503541f179875d8c10e3db3656f",
+        "last_used_at": "2026-04-21T21:00:55.082701+00:00",
+        "rotated_from_jti": "a77516f7-db60-421d-861e-8677b4d98a73"
+      },
+      {
+        "jti": "06002be5-9946-4f63-8ffe-249e68766517",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T22:33:12.973026+00:00",
+        "expires_at": "2026-05-21T22:33:12.817806+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T22:48:24.738817+00:00",
+        "token_hash": "05a5952cf83f604129c2a424ef97e50b24b3374780a999a8c59cdd68c18a1189",
+        "last_used_at": "2026-04-21T22:48:24.738817+00:00",
+        "rotated_from_jti": "40b0e9c5-c807-4c38-848a-2086a52f7f2d"
+      },
+      {
+        "jti": "0bc480dd-60d5-422a-b838-66dbdafc2b70",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T15:53:29.50892+00:00",
+        "expires_at": "2026-05-21T15:53:29.346178+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T16:08:31.789354+00:00",
+        "token_hash": "222bf11f9523783bb502cedcf7e715d03b9f8bbc1c8f9f80965e8b3be1d7252e",
+        "last_used_at": "2026-04-21T16:08:31.789354+00:00",
+        "rotated_from_jti": "798a1e89-ba31-4aaa-bc59-d76f8576176f"
+      },
+      {
+        "jti": "11e8df70-06b8-4cd5-958b-dded553981b0",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T16:08:32.594475+00:00",
+        "expires_at": "2026-05-21T16:08:32.432005+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "0a5c307a54622772639862b1a6c24408f3b7e8089751460332efa25caa83fb6d",
+        "last_used_at": "2026-04-21T16:08:32.594475+00:00",
+        "rotated_from_jti": "0bc480dd-60d5-422a-b838-66dbdafc2b70"
+      },
+      {
+        "jti": "2f3b518d-4480-47a1-9b77-ca06e77fb751",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T18:19:06.323194+00:00",
+        "expires_at": "2026-05-21T18:19:06.169638+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T18:34:07.363035+00:00",
+        "token_hash": "34e54fe59c5cd6892c86664b83f2370cee67dd58a2263464235044bfee94df81",
+        "last_used_at": "2026-04-21T18:34:07.363035+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "3626943a-b1d9-47d8-b364-e07d2dd2cd4a",
+        "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "issued_at": "2026-04-21T08:50:32.527083+00:00",
+        "expires_at": "2026-05-21T08:50:32.363568+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "e48dad38edc50eedfdeed95cd6898ab24729122ac90623333ecd11b17591db2d",
+        "last_used_at": "2026-04-21T08:50:32.527083+00:00",
+        "rotated_from_jti": "524e35bf-273e-411a-a1bd-f55e2b923147"
+      },
+      {
+        "jti": "40b0e9c5-c807-4c38-848a-2086a52f7f2d",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T22:10:20.613482+00:00",
+        "expires_at": "2026-05-21T22:10:20.457868+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T22:33:12.199448+00:00",
+        "token_hash": "82a0bc823a4f3705ec08b3db0be994bafe7bd68d83e06e4aaae374e4fbec41e7",
+        "last_used_at": "2026-04-21T22:33:12.199448+00:00",
+        "rotated_from_jti": "803c7ca0-e5d4-4af4-8d27-8ec72e2f7975"
+      },
+      {
+        "jti": "524e35bf-273e-411a-a1bd-f55e2b923147",
+        "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "issued_at": "2026-04-21T08:45:16.478209+00:00",
+        "expires_at": "2026-05-21T08:45:16.31488+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T08:50:31.729477+00:00",
+        "token_hash": "8c86b483d970fa5e9ce5f596a8fea331bfdf7ed47bcb08b3932b9d8189a138a5",
+        "last_used_at": "2026-04-21T08:50:31.729477+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "63e344a0-62bd-443f-ad66-f3ecf400c841",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-22T07:56:57.259022+00:00",
+        "expires_at": "2026-05-22T07:56:57.096032+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "aa46d1ba45e984695479c8c130c6d510daaf0b40e609d47987320a6147c4b289",
+        "last_used_at": "2026-04-22T07:56:57.259022+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "7483d137-785c-4210-9d07-de107cda3709",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T13:06:10.819799+00:00",
+        "expires_at": "2026-05-21T13:06:10.658688+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "163ef78bf4d4c5e57d3fac4c9f09815a524a98c5a49e50ad96614988cf8244a2",
+        "last_used_at": "2026-04-21T13:06:10.819799+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "798a1e89-ba31-4aaa-bc59-d76f8576176f",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T15:16:19.931493+00:00",
+        "expires_at": "2026-05-21T15:16:19.763153+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T15:53:28.660291+00:00",
+        "token_hash": "b1cc1e0c59482fd2e386a9f8a5a61f42d3889551b986a4c7c58973f6f8ff52fd",
+        "last_used_at": "2026-04-21T15:53:28.660291+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "7e53cb29-eaf6-4c12-a2dc-c8fb2a7337b3",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T21:00:55.8796+00:00",
+        "expires_at": "2026-05-21T21:00:55.717085+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "9b7f93c0e21996cf1ff7e5062423e5e5456f4a8125c3c8efc35e5cb1a886df83",
+        "last_used_at": "2026-04-21T21:00:55.8796+00:00",
+        "rotated_from_jti": "01b606b9-1f01-48bd-86e8-2ac7d3c68bd6"
+      },
+      {
+        "jti": "803c7ca0-e5d4-4af4-8d27-8ec72e2f7975",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T21:35:01.073314+00:00",
+        "expires_at": "2026-05-21T21:35:00.911782+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T22:10:19.84531+00:00",
+        "token_hash": "9c8648873d7238887450d6491c62ed1230959ee6c0f8f9181adecf439bccf3ef",
+        "last_used_at": "2026-04-21T22:10:19.84531+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "80f89476-0f79-47f8-a96c-a1fd6b103161",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T22:48:25.51436+00:00",
+        "expires_at": "2026-05-21T22:48:25.358872+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T23:38:40.463594+00:00",
+        "token_hash": "cc44ece939949a4d9f82b0ffdd5788fbcf45cc03ba4f8269c0456117d02eb511",
+        "last_used_at": "2026-04-21T23:38:40.463594+00:00",
+        "rotated_from_jti": "06002be5-9946-4f63-8ffe-249e68766517"
+      },
+      {
+        "jti": "83e784d4-4c45-410c-baaa-c370af3e3eae",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T19:10:59.627536+00:00",
+        "expires_at": "2026-05-21T19:10:59.464326+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "26cff7f42b5a1e8281954c48e50caf714c73e7b90df327ace85118c6f3ccf0b2",
+        "last_used_at": "2026-04-21T19:10:59.627536+00:00",
+        "rotated_from_jti": "e15acfb1-444a-417e-8bf5-dbd8614b12a9"
+      },
+      {
+        "jti": "8f8ce377-ae45-4def-93a1-f5047f531d68",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T10:13:08.397702+00:00",
+        "expires_at": "2026-05-21T10:13:08.241584+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "29f109cf83e8653be4048ec2a7446eef8cd14f452314e1a17f2cea76819f48b8",
+        "last_used_at": "2026-04-21T10:13:08.397702+00:00",
+        "rotated_from_jti": "b2d31ef3-a59d-4aea-9133-4b8e412b7c69"
+      },
+      {
+        "jti": "934c7d5b-845a-43b5-89b3-8c23cf64b15a",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T23:38:41.225566+00:00",
+        "expires_at": "2026-05-21T23:38:41.070683+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "07998cb3ef56340437a935800886d90bed6b7629613ea1f0ae8da2a8610c6f0d",
+        "last_used_at": "2026-04-21T23:38:41.225566+00:00",
+        "rotated_from_jti": "80f89476-0f79-47f8-a96c-a1fd6b103161"
+      },
+      {
+        "jti": "a57bf268-b2e0-4c29-bbb8-879bba4a3c51",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T21:01:28.893143+00:00",
+        "expires_at": "2026-05-21T21:01:28.723233+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "45ce84ec93f4e1c839ab705adaf5ff80cde200fca1e11ea41a443269793f3fb8",
+        "last_used_at": "2026-04-21T21:01:28.893143+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "a77516f7-db60-421d-861e-8677b4d98a73",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T19:54:41.041012+00:00",
+        "expires_at": "2026-05-21T19:54:40.877207+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T20:41:20.167208+00:00",
+        "token_hash": "82de67181dc724b635142d1479b3f1a9fcd6481dc5d5e0b63485ce0db0f62fb0",
+        "last_used_at": "2026-04-21T20:41:20.167208+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "a7c75228-e4ea-4e7c-b63f-85007cdd504e",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T10:14:06.168653+00:00",
+        "expires_at": "2026-05-21T10:14:06.006968+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "b3687035740467034c62eb82c9c2ea8a7caa1844555a2a4b1dc101c0f041fec3",
+        "last_used_at": "2026-04-21T10:14:06.168653+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "af6fa216-34da-4ce9-8227-646eb6d38a95",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T20:28:35.896451+00:00",
+        "expires_at": "2026-05-21T20:28:35.734582+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "7b590f08d2b792db154608f06d165df044bdab9a832741a723ebb186683f0270",
+        "last_used_at": "2026-04-21T20:28:35.896451+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "b2d31ef3-a59d-4aea-9133-4b8e412b7c69",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T08:19:42.664859+00:00",
+        "expires_at": "2026-05-21T08:19:42.501085+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T10:13:07.604392+00:00",
+        "token_hash": "f33e675f8821322d8c5f695df61d598008d8c3060c5d4a8fd04499555a4b512a",
+        "last_used_at": "2026-04-21T10:13:07.604392+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "c69bacdc-25e9-4c92-9d8e-dc2b98acdeaa",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-22T07:58:35.039277+00:00",
+        "expires_at": "2026-05-22T07:58:34.876216+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "d54dc1eaac3e6b8fc1c65f8e588c7a8e728c38ea8e3861874a42d5c9294df97a",
+        "last_used_at": "2026-04-22T07:58:35.039277+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "cf5edc93-65b0-4a22-aaa7-b7dd56c8747a",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T10:12:15.458512+00:00",
+        "expires_at": "2026-05-21T10:12:15.302436+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "ec7a54731a2ff983a7ac79f5d628c8cbb957caa029f6641bd25bc1b1f08fe571",
+        "last_used_at": "2026-04-21T10:12:15.458512+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "e15acfb1-444a-417e-8bf5-dbd8614b12a9",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T18:34:08.156253+00:00",
+        "expires_at": "2026-05-21T18:34:08.002188+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T19:10:58.826835+00:00",
+        "token_hash": "86bb208e2357336171ce0abf0b1461376f63469d75b8fce96fb3bc733443ef59",
+        "last_used_at": "2026-04-21T19:10:58.826835+00:00",
+        "rotated_from_jti": "2f3b518d-4480-47a1-9b77-ca06e77fb751"
+      },
+      {
+        "jti": "f7eb784c-d78e-492e-b505-4a7870835dd4",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T21:13:04.118714+00:00",
+        "expires_at": "2026-05-21T21:13:03.94963+00:00",
+        "revoked_at": null,
+        "rotated_at": "2026-04-21T21:32:13.364193+00:00",
+        "token_hash": "09851aded38a3d1e080f12299a383deba7bd39f36e44b25e6b82a365bbbed6c3",
+        "last_used_at": "2026-04-21T21:32:13.364193+00:00",
+        "rotated_from_jti": null
+      },
+      {
+        "jti": "ffae3829-9b49-4ba4-a888-645db02870d1",
+        "user_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "issued_at": "2026-04-21T21:32:14.167727+00:00",
+        "expires_at": "2026-05-21T21:32:14.006267+00:00",
+        "revoked_at": null,
+        "rotated_at": null,
+        "token_hash": "e56e4b268c0cbbf84bbd9c95c711c46f865510bcf424076aece02f95fe4bd82e",
+        "last_used_at": "2026-04-21T21:32:14.167727+00:00",
+        "rotated_from_jti": "f7eb784c-d78e-492e-b505-4a7870835dd4"
+      }
+    ],
+    "app.special_offers": [],
+    "app.lesson_contents": [
+      {
+        "lesson_id": "f94a56d7-78ac-426d-b86f-c4214ce56d9d",
+        "created_at": "2026-04-21T22:48:28.095104+00:00",
+        "updated_at": "2026-04-21T22:48:28.095104+00:00",
+        "content_markdown": "!image(c8542ea5-a897-422d-a902-9e650d177581)\n\n\n\n\n\n!audio(a9cc9a91-b07b-457a-8268-40cdb3f15951)\n\n\n\n\n\nFärgernas frekvenser\n\n\n\nNär vi talar om hjärnvågor – Beta, Alfa, Theta, Delta och Gamma – rör vi oss direkt in i frekvensens språk, precis det som färgerna också tillhör\\.\n\n\n\nAllt handlar om svängningshastighet: hjärnan och ljuset vibrerar båda i rytmer\\. Därför går det att koppla varje hjärnvågstillstånd till en färg, en känsla och ett medvetandetillstånd\\.\n\n\n\nHär kommer en helande och esoterisk tolkning av hjärnvågornas färger – inte bara från neurovetenskap, utan ur energimässig och spirituell förståelse:\n\n\n\nAllt i dig är rörelse\\. Tankar, känslor, till och med stillheten har en rytm\\.\n\n\n\nDen rytmen kallas hjärnvågor – små elektriska vibrationer i hjärnan som hela tiden skiftar beroende på om du är aktiv, avslappnad, drömmande eller i djup vila\\.\n\n\n\nNär du vet hur dessa vågor fungerar, kan du också förstå hur du kan påverka ditt inre tillstånd med andetaget, med ljus och med färg\\.\n\n\n\nNär du är vaken, pratar, planerar, tänker och agerar, arbetar hjärnan i Beta\\-vågor\\.\n\n\n\nDet är din dagrytm – hjärnans “arbetsläge”\\.\n\n\n\nI Beta är du alert och utåtriktad, redo att ta in världen omkring dig\\.\n\n\n\nMen ibland blir Beta för stark\\. Tankarna snurrar, kroppen spänns, hjärtat går fort\\. Då kan du sakta ner rytmen med några medvetna, lugna andetag\\.\n\n\n\nDet är så du går från aktivt tänkande till inre närvaro – från Beta till Alfa\\.\n\n\n\nNär du sluter ögonen och tar några djupa, lugna andetag, börjar hjärnan automatiskt växla till Alfa\\-vågor\\.\n\n\n\nDet är ett tillstånd mellan vakenhet och vila – du är medveten, men inifrån\\.\n\n\n\nHär sjunker pulsen, tankarna blir mjukare och intuitionen vaknar\\.\n\n\n\nDet är ofta i Alfa som du får en idé, en insikt, en känsla av “nu förstår jag”\\.\n\n\n\nDu behöver inte anstränga dig – du bara lyssnar inåt, som om du pratade med ditt eget hjärta\\.\n\n\n\nBeta – det vakna ljuset \\(rött till orange\\)\n\n\n\nFrekvens: ca 13–30 Hz\n\nTillstånd: vakenhet, analys, problemlösning, fokus utåt\\.\n\n\n\nNär hjärnan arbetar i Beta är du vaken, tänkande, aktiv i världen\\. Energin flödar snabbt mellan nervcellerna, likt elektriska blixtar\\.\n\n\n\nDenna energi vibrerar i röda och orangea toner – färger som tillhör kroppen, handlingen och den yttre verkligheten\\.\n\n\n\nRött ger livskraft, beslutsamhet och mod\\. Orange tillför rörelse, kreativitet och samspel\\.\n\n\n\nMen om dessa färger blir för starka, förvandlas aktivitet till stress\\. Då behöver du sakta ner mot nästa våglängd – Alfa – för att låta energin svalna\\.\n\n\n\nSymboliskt: Beta = Eld\n\n\n\nFärg: Rött/orange\\.\n\n\n\nMening: Jag verkar i världen\\. Jag agerar\\.\n\n\n\nAlfa – mellan vila och klarhet \\(gult till grönt\\)\n\n\n\nFrekvens: ca 8–13 Hz\n\nTillstånd: avslappnad vakenhet, kreativitet, balans, inspiration\\.\n\n\n\nI Alfa flyttar du fokus inåt men är fortfarande medveten\\. Det är den rytm som uppstår när du sitter i meditation, när du lyssnar till musik, målar, skriver, eller vandrar i naturen\\.\n\n\n\nEnergin skiftar till gult och grönt – färger som hör till harmoni, andning och helhet\\.\n\n\n\nGult representerar tankens klarhet och glädje\\. Grönt är hjärtats balans och lugn\\.\n\n\n\nNär hjärnan vibrerar i Alfa uppstår kreativt flöde: tanken och känslan möts\\. Det är den gyllene bron mellan att göra och att vara\\.\n\n\n\nSymboliskt: Alfa = Luft\n\n\n\nFärg: Gult/grönt\\.\n\nMening: Jag finner balans\\. Jag skapar i stillhet\\.\n\n\n\nTheta – dröm och undermedvetet \\(blått till indigo\\)\n\n\n\nFrekvens: ca 4–8 Hz\n\nTillstånd: djup meditation, dagdröm, hypnos, intuitivt tillstånd\\.\n\n\n\nTheta är porten till själen\\. Det är den rytm som aktiveras i djup avslappning, trumresor, healing, trancetillstånd och dröm\\.\n\n\n\nHjärnan går långsamt, men medvetandet blir rikt\\.\n\n\n\nHär kliver du in i blått och indigo – färger för intuition, tystnad och inre seende\\.\n\n\n\nI Theta blir sinnet flytande, och bilder, ljud, symboler kan tala till dig\\. Det är här de flesta healers och intuitiva människor arbetar\\.\n\n\n\nBlått stillar nervsystemet, indigo öppnar tredje ögat\\.\n\n\n\nSymboliskt: Theta = Vatten\n\n\n\nFärg: Blått/indigo\\.\n\n\n\nMening: Jag ser inåt\\. Jag lyssnar till det osynliga\\.\n\n\n\nDelta – själens djupsömn \\(mörkblått till svart\\)Frekvens: ca 0\\. 5–4 Hz\n\n\n\nTillstånd: djup sömn, trans, cellreparation, drömlös vila\\.\n\n\n\nDelta är den långsammaste vågen, kroppens natt\\.\n\n\n\nHär sjunker medvetandet ner i själva källan – i mörkret där allt liv regenereras\\.\n\n\n\nDen tillhör mörkblått, violett och svart – färger för djup vila och återfödelse\\.\n\n\n\nI Delta arbetar kroppen med att läka, hormoner frigörs, immunförsvaret återställs, och själen vilar i sitt eget hav\\.\n\n\n\nDet är som att sjunka in i skapelsens stilla andetag\\.\n\n\n\nSymboliskt: Delta = Jordens djup\\.\n\nFärg: Mörkblått, violett, svart\\.\n\nMening: Jag vilar i ursprunget\\. Jag helas i stillhet\\.\n\n\n\nGamma – det upplysta ljuset \\(vitt, guld och silver\\)\n\n\n\nFrekvens: ca 30–100 Hz \\(ibland ännu högre\\)\n\n\n\nTillstånd: expansion, hög medvetenhet, mystiska tillstånd, helande\\.\n\n\n\nGamma är ljusets renaste vibration – när alla delar av hjärnan arbetar i samklang\\.\n\n\n\nDet är den frekvens som mätbart aktiveras hos människor i djup bön, tacksamhet, extas och villkorslös kärlek\\.\n\n\n\nDen motsvarar vitt, guld och silver ljus – själens högsta färger\\.\n\n\n\nVitt bär helhetens ton, guld själens kraft och silver intuitionens spegel\\.\n\n\n\nGamma är upplevelsen av att vara ett med allt – när medvetandet vibrerar så snabbt att det blir stilla\\.\n\n\n\nSymboliskt: Gamma = Eter\n\n\n\nFärg: Vitt, guld, silver\\.\n\n\n\nMening: Jag är **ljus**\\. Jag är **helhet\\.**\n\n\n\nNär du rör dig mellan dessa vågor rör du dig också genom färgernas dimensioner\\.\n\n\n\nDet är därför meditation ofta beskrivs som att “gå från rött till violett ljus”, och bön som “kliva in i det vita”\\.\n\n\n\nKroppen svarar på frekvens, och färgerna är dess karta\\.\n\n\n\nLäkning uppstår när du låter alla vågor – från den röda Beta till den vita Gamma – samspela som en enda levande ton\\.\n\n\n\nDet är då du blir hel: en kropp som andas, en själ som lyser, ett medvetande i rytm med universum\\.\n\n\n\n### Övning\n\n\n**Reflektionsfrågor**:\n\n\n\n*Vilken färg ropade högst?*\n\n\n\n*Var i kroppen kändes motstånd?*\n\n\n\n*Vilken mikrorörelse \\(2–5 min\\) kan hedra färgens inbjudan idag?*\n\n\n\n*Hemuppgift: Färgdagbok i sju dagar\\. Notera dagligt: färgen du drogs till, var du såg den, känslan den väckte, och en konkret handling du tog\\.*"
+      }
+    ],
+    "app.stripe_customers": [
+      {
+        "user_id": "a65b2f10-f5d1-4030-8211-a75e39ff5c93",
+        "created_at": "2026-04-21T08:46:19.243054+00:00",
+        "updated_at": "2026-04-21T08:46:19.243054+00:00",
+        "customer_id": "cus_UNKbHmcVAvOElF"
+      }
+    ],
+    "app.course_enrollments": [],
+    "app.home_player_uploads": [
+      {
+        "id": "2e39835c-e344-4bdb-a299-7836fa42ead6",
+        "title": "Alfa",
+        "active": true,
+        "created_at": "2026-04-21T16:07:56.154379+00:00",
+        "teacher_id": "a101fb71-7cee-4c28-b429-7534d787abeb",
+        "updated_at": "2026-04-21T16:07:56.154379+00:00",
+        "media_asset_id": "a3c7c9e1-1377-470f-907c-38835f1ef9de"
+      }
+    ],
+    "app.bundle_order_courses": [],
+    "app.livekit_webhook_jobs": [],
+    "app.admin_bootstrap_state": [
+      {
+        "singleton": true,
+        "created_at": "2026-04-21T07:09:14.065639+00:00",
+        "updated_at": "2026-04-21T07:09:14.065639+00:00",
+        "consumed_at": null,
+        "consumed_by_user_id": null
+      }
+    ],
+    "app.course_bundle_courses": [],
+    "app.course_public_content": [],
+    "app.special_offer_courses": [],
+    "app.home_player_course_links": [],
+    "app.profile_media_placements": [
+      {
+        "id": "e859f73f-c07b-4efc-84ae-002a67d4002e",
+        "created_at": "2026-04-21T22:17:44.361969+00:00",
+        "updated_at": "2026-04-21T22:17:44.361969+00:00",
+        "visibility": "published",
+        "media_asset_id": "a1c52f74-a012-46e6-b3cd-49582b56c234",
+        "subject_user_id": "a101fb71-7cee-4c28-b429-7534d787abeb"
+      }
+    ],
+    "app.media_resolution_failures": [],
+    "app.course_family_position_events": [],
+    "app.special_offer_composite_image_outputs": [],
+    "app.special_offer_composite_image_sources": [],
+    "app.special_offer_composite_image_attempts": []
+  },
+  "captured_at": "2026-04-22T08:03:11.964327+00:00",
+  "project_ref": "ihirfhnpjtetdmdvqvyu",
+  "provider_scope": {
+    "auth.users": {
+      "omitted_columns": [
+        "aud",
+        "role",
+        "email_confirmed_at",
+        "confirmed_at",
+        "raw_app_meta_data",
+        "raw_user_meta_data",
+        "is_sso_user",
+        "is_anonymous"
+      ],
+      "exported_columns": [
+        "id",
+        "email",
+        "encrypted_password",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "storage.buckets": {
+      "omitted_columns": [
+        "created_at",
+        "updated_at"
+      ],
+      "exported_columns": [
+        "id",
+        "name",
+        "public"
+      ]
+    },
+    "storage.objects": {
+      "omitted_columns": [
+        "last_accessed_at"
+      ],
+      "exported_columns": [
+        "id",
+        "bucket_id",
+        "name",
+        "metadata",
+        "created_at",
+        "updated_at"
+      ]
+    }
+  }
+}

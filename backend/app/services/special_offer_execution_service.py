@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import importlib
 from typing import Any, AsyncIterator, Mapping, Sequence
 from uuid import UUID
 
@@ -11,7 +12,6 @@ from psycopg.rows import dict_row
 
 from ..config import settings
 from ..repositories import special_offers as special_offers_repo
-from .special_offer_composite_service import create_special_offer_composite
 from .special_offer_source_resolution_service import resolve_special_offer_sources
 from .special_offer_text_catalog import (
     SPECIAL_OFFER_NO_OUTPUT_TO_REGENERATE,
@@ -165,7 +165,7 @@ async def generate_special_offer_image(
             db,
             special_offer_id=normalized_special_offer_id,
         )
-        result = await create_special_offer_composite(
+        result = await _create_special_offer_composite(
             db,
             special_offer_id=normalized_special_offer_id,
             source_bytes=source_bytes,
@@ -211,7 +211,7 @@ async def regenerate_special_offer_image(
             db,
             special_offer_id=normalized_special_offer_id,
         )
-        result = await create_special_offer_composite(
+        result = await _create_special_offer_composite(
             db,
             special_offer_id=normalized_special_offer_id,
             source_bytes=source_bytes,
@@ -789,6 +789,38 @@ def _normalize_uuid(value: UUID | str, *, code: str) -> str:
         return str(UUID(str(value).strip()))
     except (TypeError, ValueError, AttributeError) as exc:
         raise SpecialOfferDomainError(code, status_code=400) from exc
+
+
+async def _create_special_offer_composite(
+    db: Any,
+    *,
+    special_offer_id: UUID | str,
+    source_bytes: list[bytes],
+    price_amount_cents: int,
+    overwrite: bool,
+) -> dict[str, Any]:
+    try:
+        module = importlib.import_module("app.services.special_offer_composite_service")
+    except ImportError as exc:
+        raise SpecialOfferDomainError(
+            "special_offer_domain_unavailable",
+            status_code=503,
+        ) from exc
+
+    create_special_offer_composite = getattr(module, "create_special_offer_composite", None)
+    if create_special_offer_composite is None:
+        raise SpecialOfferDomainError(
+            "special_offer_domain_unavailable",
+            status_code=503,
+        )
+
+    return await create_special_offer_composite(
+        db,
+        special_offer_id=special_offer_id,
+        source_bytes=source_bytes,
+        price_amount_cents=price_amount_cents,
+        overwrite=overwrite,
+    )
 
 
 def _with_special_offer_text_id(

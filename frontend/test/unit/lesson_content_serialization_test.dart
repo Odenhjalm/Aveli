@@ -8,6 +8,32 @@ import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
 
+quill_delta.Delta _canonicalDocumentDelta(quill_delta.Delta delta) {
+  if (delta.toList().isEmpty) {
+    return delta;
+  }
+  final document = quill.Document.fromDelta(delta);
+  return document.root.toDelta();
+}
+
+void _expectCanonicalRoundTrip({
+  required quill_delta.Delta source,
+  required String markdown,
+}) {
+  final serialized = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+    delta: source,
+  );
+  expect(serialized, markdown);
+
+  final roundTripped = markdown_to_editor
+      .markdownToEditorDocument(markdown: serialized)
+      .toDelta();
+  expect(
+    _canonicalDocumentDelta(roundTripped),
+    equals(_canonicalDocumentDelta(source)),
+  );
+}
+
 void main() {
   group('Lesson content serialization', () {
     const lessonMediaId = '123e4567-e89b-12d3-a456-426614174000';
@@ -129,6 +155,53 @@ void main() {
         );
 
         expect(roundTripped, markdown);
+      },
+    );
+
+    test(
+      'canonical emphasis serialization round-trips across inline edge cases',
+      () {
+        _expectCanonicalRoundTrip(
+          source: quill_delta.Delta()
+            ..insert('Italic', {quill.Attribute.italic.key: true})
+            ..insert('\n'),
+          markdown: '*Italic*',
+        );
+
+        _expectCanonicalRoundTrip(
+          source: quill_delta.Delta()
+            ..insert('Bold', {quill.Attribute.bold.key: true})
+            ..insert('\n'),
+          markdown: '**Bold**',
+        );
+
+        _expectCanonicalRoundTrip(
+          source: quill_delta.Delta()
+            ..insert('Mix ')
+            ..insert('Italic', {quill.Attribute.italic.key: true})
+            ..insert(' and ')
+            ..insert('Bold', {quill.Attribute.bold.key: true})
+            ..insert('\n'),
+          markdown: 'Mix *Italic* and **Bold**',
+        );
+
+        _expectCanonicalRoundTrip(
+          source: quill_delta.Delta()
+            ..insert('Bold ', {quill.Attribute.bold.key: true})
+            ..insert('Italic', {
+              quill.Attribute.bold.key: true,
+              quill.Attribute.italic.key: true,
+            })
+            ..insert('\n'),
+          markdown: '**Bold *Italic***',
+        );
+
+        _expectCanonicalRoundTrip(
+          source: quill_delta.Delta()
+            ..insert('really?', {quill.Attribute.italic.key: true})
+            ..insert('\n'),
+          markdown: '*really?*',
+        );
       },
     );
   });

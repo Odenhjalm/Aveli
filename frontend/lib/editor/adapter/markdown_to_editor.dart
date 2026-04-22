@@ -5,6 +5,10 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
 
+const String _canonicalItalicMarkdownDelimiter = '*';
+const String _canonicalBoldMarkdownDelimiter = '**';
+const String _canonicalBoldItalicMarkdownDelimiter = '***';
+
 final RegExp _strongHtmlPattern = RegExp(
   r'<\s*(strong|b)\s*>(.*?)<\s*/\s*(strong|b)\s*>',
   caseSensitive: false,
@@ -35,6 +39,11 @@ final RegExp _escapedBoldItalicPattern = RegExp(
 
 final RegExp _escapedBoldPattern = RegExp(
   r'\\\*\\\*(?=\S)([^\n]+?)(?<=\S)\\\*\\\*',
+  multiLine: true,
+);
+
+final RegExp _escapedItalicPattern = RegExp(
+  r'\\\*(?=\S)([^\n]+?)(?<=\S)\\\*',
   multiLine: true,
 );
 
@@ -87,22 +96,37 @@ String canonicalizeSupportedMarkdown(String markdown) {
 
   canonical = canonical.replaceAllMapped(_escapedBoldItalicPattern, (match) {
     final body = match.group(1) ?? '';
-    return body.isEmpty ? '' : '***$body***';
+    return body.isEmpty
+        ? ''
+        : '$_canonicalBoldItalicMarkdownDelimiter$body$_canonicalBoldItalicMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_escapedBoldPattern, (match) {
     final body = match.group(1) ?? '';
-    return body.isEmpty ? '' : '**$body**';
+    return body.isEmpty
+        ? ''
+        : '$_canonicalBoldMarkdownDelimiter$body$_canonicalBoldMarkdownDelimiter';
+  });
+
+  canonical = canonical.replaceAllMapped(_escapedItalicPattern, (match) {
+    final body = match.group(1) ?? '';
+    return body.isEmpty
+        ? ''
+        : '$_canonicalItalicMarkdownDelimiter$body$_canonicalItalicMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_strongHtmlPattern, (match) {
     final body = (match.group(2) ?? '').trim();
-    return body.isEmpty ? '' : '**$body**';
+    return body.isEmpty
+        ? ''
+        : '$_canonicalBoldMarkdownDelimiter$body$_canonicalBoldMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_emphasisHtmlPattern, (match) {
     final body = (match.group(2) ?? '').trim();
-    return body.isEmpty ? '' : '*$body*';
+    return body.isEmpty
+        ? ''
+        : '$_canonicalItalicMarkdownDelimiter$body$_canonicalItalicMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_underlineHtmlPattern, (match) {
@@ -114,44 +138,58 @@ String canonicalizeSupportedMarkdown(String markdown) {
     match,
   ) {
     final body = (match.group(1) ?? '').trim();
-    return body.isEmpty ? '' : '***$body***';
+    return body.isEmpty
+        ? ''
+        : '$_canonicalBoldItalicMarkdownDelimiter$body$_canonicalBoldItalicMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_boldItalicItalicWrappedPattern, (
     match,
   ) {
     final body = (match.group(1) ?? '').trim();
-    return body.isEmpty ? '' : '***$body***';
+    return body.isEmpty
+        ? ''
+        : '$_canonicalBoldItalicMarkdownDelimiter$body$_canonicalBoldItalicMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_spacedBoldItalicPattern, (match) {
     final prefix = match.group(1) ?? '';
     final body = (match.group(2) ?? '').trim();
-    return body.isEmpty ? prefix : '$prefix***$body***';
+    return body.isEmpty
+        ? prefix
+        : '$prefix$_canonicalBoldItalicMarkdownDelimiter$body$_canonicalBoldItalicMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_spacedBoldPattern, (match) {
     final prefix = match.group(1) ?? '';
     final body = (match.group(2) ?? '').trim();
-    return body.isEmpty ? prefix : '$prefix**$body**';
+    return body.isEmpty
+        ? prefix
+        : '$prefix$_canonicalBoldMarkdownDelimiter$body$_canonicalBoldMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_spacedItalicPattern, (match) {
     final prefix = match.group(1) ?? '';
     final body = (match.group(2) ?? '').trim();
-    return body.isEmpty ? prefix : '$prefix*$body*';
+    return body.isEmpty
+        ? prefix
+        : '$prefix$_canonicalItalicMarkdownDelimiter$body$_canonicalItalicMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_doubleUnderscorePattern, (match) {
     final prefix = match.group(1) ?? '';
     final body = (match.group(2) ?? '').trim();
-    return body.isEmpty ? prefix : '$prefix**$body**';
+    return body.isEmpty
+        ? prefix
+        : '$prefix$_canonicalBoldMarkdownDelimiter$body$_canonicalBoldMarkdownDelimiter';
   });
 
   canonical = canonical.replaceAllMapped(_singleUnderscorePattern, (match) {
     final prefix = match.group(1) ?? '';
     final body = (match.group(2) ?? '').trim();
-    return body.isEmpty ? prefix : '$prefix*$body*';
+    return body.isEmpty
+        ? prefix
+        : '$prefix$_canonicalItalicMarkdownDelimiter$body$_canonicalItalicMarkdownDelimiter';
   });
 
   return canonical;

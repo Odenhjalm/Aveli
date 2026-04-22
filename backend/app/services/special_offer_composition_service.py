@@ -3,7 +3,16 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+try:
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
+except ImportError as exc:  # pragma: no cover - exercised via explicit guard
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+    ImageOps = None
+    _PIL_IMPORT_ERROR: ImportError | None = exc
+else:
+    _PIL_IMPORT_ERROR = None
 
 from .special_offers_service import SpecialOfferDomainError
 
@@ -41,6 +50,7 @@ async def compose_special_offer_image(
     source_bytes: list[bytes],
     price_amount_cents: int,
 ) -> bytes:
+    _require_pillow_runtime()
     normalized_source_bytes = _require_source_bytes(source_bytes)
     resolved_price_amount_cents = _require_price_amount(price_amount_cents)
 
@@ -94,6 +104,15 @@ def _require_source_bytes(source_bytes: list[bytes]) -> list[bytes]:
             )
         normalized_source_bytes.append(item)
     return normalized_source_bytes
+
+
+def _require_pillow_runtime() -> None:
+    if _PIL_IMPORT_ERROR is None:
+        return
+    raise SpecialOfferDomainError(
+        "special_offer_domain_unavailable",
+        status_code=503,
+    ) from _PIL_IMPORT_ERROR
 
 
 def _require_price_amount(price_amount_cents: int) -> int:

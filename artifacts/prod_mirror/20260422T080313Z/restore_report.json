@@ -1,0 +1,116 @@
+{
+  "artifact_dir": "C:\\Users\\Odenh\\app\\Aveli\\artifacts\\prod_mirror\\20260422T080313Z",
+  "pre_runtime": {
+    "mode": "V2",
+    "profile": "local_dev",
+    "state": "verified",
+    "schema_hash": "eccbfe128419e756f9baa69ac096e6ef3bf8f55fb743d2f010d051a4db658c27",
+    "counts": {
+      "enums": 13,
+      "tables": 34,
+      "views": 5,
+      "fks": 48,
+      "constraints": 182,
+      "triggers": 24,
+      "functions": 38
+    },
+    "substrate_interface": {
+      "auth.users": {
+        "present": true,
+        "required_columns": [
+          "id",
+          "email",
+          "encrypted_password",
+          "created_at",
+          "updated_at"
+        ],
+        "missing_columns": []
+      },
+      "storage.buckets": {
+        "present": true,
+        "required_columns": [
+          "id",
+          "name",
+          "public"
+        ],
+        "missing_columns": []
+      },
+      "storage.objects": {
+        "present": true,
+        "required_columns": [
+          "id",
+          "bucket_id",
+          "name",
+          "metadata",
+          "created_at",
+          "updated_at"
+        ],
+        "missing_columns": []
+      }
+    },
+    "runtime_media_relkind": "v",
+    "forbidden_columns": [
+      {
+        "schema": "app",
+        "table": "media_assets",
+        "column": "owner_id"
+      },
+      {
+        "schema": "app",
+        "table": "payment_events",
+        "column": "processed_at"
+      }
+    ]
+  },
+  "pre_counts": {
+    "app.auth_subjects": 0,
+    "app.media_assets": 0,
+    "app.courses": 0,
+    "app.memberships": 0,
+    "app.orders": 0,
+    "app.payments": 0,
+    "app.course_enrollments": 0,
+    "auth.users": 0,
+    "storage.objects": 0,
+    "app.admin_bootstrap_state": 1
+  },
+  "inserted_rows": {
+    "auth.users": 4,
+    "storage.buckets": 3,
+    "storage.objects": 26,
+    "app.auth_subjects": 2,
+    "app.media_assets": 11,
+    "app.profiles": 2,
+    "app.profile_media_placements": 1,
+    "app.courses": 1,
+    "app.course_public_content": 0,
+    "app.lessons": 1,
+    "app.lesson_contents": 1,
+    "app.lesson_media": 2,
+    "app.home_player_uploads": 1,
+    "app.home_player_course_links": 0,
+    "app.course_bundles": 0,
+    "app.course_bundle_courses": 0,
+    "app.special_offers": 0,
+    "app.special_offer_courses": 0,
+    "app.special_offer_composite_image_outputs": 0,
+    "app.special_offer_composite_image_sources": 0,
+    "app.special_offer_composite_image_attempts": 0,
+    "app.orders": 1,
+    "app.payments": 1,
+    "app.payment_events": 4,
+    "app.stripe_customers": 1,
+    "app.referral_codes": 1,
+    "app.memberships": 2,
+    "app.bundle_order_courses": 0,
+    "app.auth_events": 1,
+    "app.billing_logs": 3,
+    "app.media_events": 0,
+    "app.media_resolution_failures": 0,
+    "app.livekit_webhook_jobs": 0,
+    "app.admin_bootstrap_state": 1,
+    "app.refresh_tokens": 27,
+    "app.course_family_position_events": 0,
+    "app.course_enrollments": 0
+  }
+}
