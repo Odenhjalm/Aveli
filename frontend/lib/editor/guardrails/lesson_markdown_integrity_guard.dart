@@ -52,20 +52,30 @@ class LessonMarkdownIntegrityGuardResult {
 
 LessonMarkdownIntegrityGuardResult validateLessonMarkdownIntegrity({
   required quill_delta.Delta delta,
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
 }) {
   final markdown1 = editor_to_markdown.editorDeltaToCanonicalMarkdown(
     delta: delta,
   );
   final delta2 = markdown_to_editor
-      .markdownToEditorDocument(markdown: markdown1)
+      .markdownToEditorDocument(
+        markdown: markdown1,
+        lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+      )
       .toDelta();
   final markdown3 = editor_to_markdown.editorDeltaToCanonicalMarkdown(
     delta: delta2,
   );
 
   final markdownStable =
-      _canonicalizeMarkdownForGuard(markdown1) ==
-      _canonicalizeMarkdownForGuard(markdown3);
+      _canonicalizeMarkdownForGuard(
+        markdown1,
+        lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+      ) ==
+      _canonicalizeMarkdownForGuard(
+        markdown3,
+        lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+      );
   final semanticStable =
       _deltaSemanticSignature(delta) == _deltaSemanticSignature(delta2);
 
@@ -86,10 +96,14 @@ LessonMarkdownIntegrityGuardResult validateLessonMarkdownIntegrity({
   );
 }
 
-String _canonicalizeMarkdownForGuard(String markdown) {
+String _canonicalizeMarkdownForGuard(
+  String markdown, {
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
+}) {
   final normalized = markdown.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
   final document = markdown_to_editor.markdownToEditorDocument(
     markdown: normalized,
+    lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
   );
   final canonical = editor_to_markdown.editorDeltaToCanonicalMarkdown(
     delta: document.toDelta(),

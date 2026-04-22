@@ -2361,6 +2361,79 @@ void main() {
     },
   );
 
+  testWidgets(
+    'studio editor saves inline document tokens through the owned adapter boundary',
+    (tester) async {
+      const documentId = 'lesson-media-document-1';
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        readContent: (lessonId) async => _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: 'Intro\n\n!document($documentId)\n\nOutro',
+          etag: '"content-v1"',
+          media: const [
+            StudioLessonContentMediaItem(
+              lessonMediaId: documentId,
+              position: 1,
+              mediaType: 'document',
+              state: 'ready',
+              mediaAssetId: 'asset-$documentId',
+            ),
+          ],
+        ),
+      );
+      when(() => repo.fetchLessonMediaPlacements(any())).thenAnswer((
+        invocation,
+      ) async {
+        final ids = List<String>.from(
+          invocation.positionalArguments.single as List,
+        );
+        return [for (final id in ids) _placementDocument(id, position: 1)];
+      });
+      when(
+        () => repo.updateLessonContent(
+          'lesson-1',
+          contentMarkdown: any(named: 'contentMarkdown'),
+          ifMatch: any(named: 'ifMatch'),
+        ),
+      ).thenAnswer((invocation) async {
+        return StudioLessonContentWriteResult(
+          lessonId: 'lesson-1',
+          contentMarkdown:
+              invocation.namedArguments[#contentMarkdown] as String,
+          etag: '"content-v2"',
+        );
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilDocumentContains(tester, 'media_$documentId');
+      await _pumpUntilDocumentContains(tester, 'Outro');
+
+      _insertAtDocumentEnd(' updated');
+      await tester.pumpAndSettle();
+
+      final saveButton = find.text('Spara lektionsinnehåll');
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
+
+      final contentCapture = verify(
+        () => repo.updateLessonContent(
+          'lesson-1',
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          ifMatch: '"content-v1"',
+        ),
+      )..called(1);
+      final savedMarkdown = contentCapture.captured.single as String;
+      expect(savedMarkdown, 'Intro\n\n!document($documentId)\n\nOutro updated');
+      expect(
+        find.textContaining('Ogiltig formatering', findRichText: true),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('malformed lesson markdown is blocked before repository write', (
     tester,
   ) async {

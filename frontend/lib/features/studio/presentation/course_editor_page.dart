@@ -3475,10 +3475,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
     final normalizedDelta = serialization.normalizedDelta;
     final markdown = serialization.markdown;
+    final lessonMediaDocumentLabelsById =
+        _lessonMediaDocumentLabelsByIdForSelectedLesson();
     late final String rawMarkdown;
     late final LessonMarkdownIntegrityGuardResult integrityResult;
     try {
-      integrityResult = validateLessonMarkdownIntegrity(delta: normalizedDelta);
+      integrityResult = validateLessonMarkdownIntegrity(
+        delta: normalizedDelta,
+        lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+      );
       rawMarkdown = integrityResult.originalMarkdown;
     } catch (error, stackTrace) {
       _showFriendlyErrorSnack('Kunde inte spara lektion', error, stackTrace);

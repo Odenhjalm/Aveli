@@ -117,6 +117,26 @@ void main() {
       expect(result.canonicalMarkdown, markdown);
     });
 
+    test('canonical inline document fixture passes with studio label map', () {
+      const markdown = 'Intro\n\n!document(media-document-1)\n\nOutro';
+      const lessonMediaDocumentLabelsById = <String, String>{
+        'media-document-1': 'guide.pdf',
+      };
+      final hydration = markdown_to_editor.hydrateLessonMarkdownForEditor(
+        markdown: markdown,
+        lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+      );
+      final result = validateLessonMarkdownIntegrity(
+        delta: hydration.document.toDelta(),
+        lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+      );
+
+      expect(result.ok, isTrue);
+      expect(result.failureReason, isNull);
+      expect(result.originalMarkdown, markdown);
+      expect(result.canonicalMarkdown, markdown);
+    });
+
     test('canonical heading3 with bold and italic at document end passes', () {
       const markdown = '### Heading3\n**Bold**\n*Italic*';
       const canonicalMarkdown = '### Heading3\n**Bold** *Italic*';
