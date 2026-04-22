@@ -242,5 +242,34 @@ void main() {
           ..insert('\n'),
       );
     });
+
+    test(
+      'repairs EOF plain-space then italic tail into stable canonical markdown',
+      () {
+        final source = quill_delta.Delta()
+          ..insert('Plain')
+          ..insert('Tail', {quill.Attribute.italic.key: true})
+          ..insert(' ')
+          ..insert('\n');
+
+        final markdown = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+          delta: source,
+        );
+
+        expect(markdown, 'Plain *Tail*');
+
+        final roundTripped = markdown_to_editor
+            .markdownToEditorDocument(markdown: markdown)
+            .toDelta();
+        final expected = quill_delta.Delta()
+          ..insert('Plain ')
+          ..insert('Tail', {quill.Attribute.italic.key: true})
+          ..insert('\n');
+        expect(
+          _canonicalDocumentDelta(roundTripped),
+          equals(_canonicalDocumentDelta(expected)),
+        );
+      },
+    );
   });
 }

@@ -17,6 +17,10 @@ const Set<String> _allowedInlineAttributeKeys = <String>{
 };
 
 final RegExp _escapedUnderlineTagPattern = RegExp(r'\\<(/?)u\\>');
+final RegExp _terminalSpaceSeparatedItalicPattern = RegExp(
+  r'(\S)(\*[^*\n]+\*)([ \t]+)$',
+  multiLine: true,
+);
 const String _canonicalItalicMarkdownDelimiter = '*';
 
 String _stripTerminalDocumentNewline(String markdown) {
@@ -28,6 +32,21 @@ String _restoreSupportedInlineHtml(String markdown) {
   return markdown.replaceAllMapped(_escapedUnderlineTagPattern, (match) {
     final slash = match.group(1) ?? '';
     return '<${slash}u>';
+  });
+}
+
+String _repairTerminalSpaceSeparatedItalicMarkdown(String markdown) {
+  if (!markdown.contains('*')) return markdown;
+  return markdown.replaceAllMapped(_terminalSpaceSeparatedItalicPattern, (
+    match,
+  ) {
+    final leftText = match.group(1) ?? '';
+    final italicSpan = match.group(2) ?? '';
+    final spaces = match.group(3) ?? '';
+    if (italicSpan.isEmpty || spaces.isEmpty) {
+      return match.group(0) ?? '';
+    }
+    return '$leftText$spaces$italicSpan';
   });
 }
 
@@ -230,6 +249,7 @@ String editorDeltaToCanonicalMarkdown({
   final markdownReady = _expandUnderlineAttributesForMarkdown(sanitized);
   var markdown = _createCanonicalLessonDeltaToMarkdown().convert(markdownReady);
   markdown = _restoreSupportedInlineHtml(markdown);
+  markdown = _repairTerminalSpaceSeparatedItalicMarkdown(markdown);
   markdown = canonicalizeSupportedMarkdown(markdown);
   if (enforceStorageContract) {
     final markdownWithContract = lesson_pipeline

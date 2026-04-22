@@ -214,4 +214,81 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'Quill editor preserves EOF plain-space then italic text through TextInputClient',
+    (tester) async {
+      final controller = EditorOperationQuillController(
+        document: quill.Document.fromDelta(
+          quill_delta.Delta()..insert('Plain\n'),
+        ),
+        selection: const TextSelection.collapsed(offset: 5),
+      );
+      final focusNode = FocusNode();
+      final scrollController = ScrollController();
+
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      addTearDown(scrollController.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 640,
+              height: 320,
+              child: quill.QuillEditor.basic(
+                controller: controller,
+                focusNode: focusNode,
+                scrollController: scrollController,
+                config: const quill.QuillEditorConfig(
+                  minHeight: 280,
+                  padding: EdgeInsets.all(16),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      focusNode.requestFocus();
+      await tester.pump();
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Plain \n',
+          selection: TextSelection.collapsed(offset: 6),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      controller.updateSelection(
+        const TextSelection.collapsed(offset: 6),
+        quill.ChangeSource.local,
+      );
+      controller.formatSelection(quill.Attribute.italic);
+      await tester.pump();
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Plain Tail\n',
+          selection: TextSelection.collapsed(offset: 10),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      expect(controller.document.toPlainText(), 'Plain Tail\n');
+      expect(
+        hasStyledInsert(
+          controller,
+          text: 'Tail',
+          key: quill.Attribute.italic.key,
+          value: true,
+        ),
+        isTrue,
+      );
+    },
+  );
 }

@@ -2064,6 +2064,81 @@ void main() {
     },
   );
 
+  testWidgets(
+    'EOF space then italic tail saves from the course editor page',
+    (tester) async {
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        readContent: (lessonId) async => _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: 'Plain',
+          etag: '"content-v1"',
+        ),
+      );
+      when(
+        () => repo.updateLessonContent(
+          'lesson-1',
+          contentMarkdown: any(named: 'contentMarkdown'),
+          ifMatch: any(named: 'ifMatch'),
+        ),
+      ).thenAnswer((invocation) async {
+        return StudioLessonContentWriteResult(
+          lessonId: 'lesson-1',
+          contentMarkdown:
+              invocation.namedArguments[#contentMarkdown] as String,
+          etag: '"content-v2"',
+        );
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilDocumentContains(tester, 'Plain');
+
+      final document = editor_test_bridge.getDocument();
+      expect(document, isNotNull);
+      editor_test_bridge.setCursor(document!.length - 1);
+      await tester.pumpAndSettle();
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Plain \n',
+          selection: TextSelection.collapsed(offset: 6),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final italicIcon = find.byIcon(Icons.format_italic).first;
+      await tester.ensureVisible(italicIcon);
+      await tester.tap(italicIcon);
+      await tester.pumpAndSettle();
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Plain Tail\n',
+          selection: TextSelection.collapsed(offset: 10),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final saveButton = find.text('Spara lektionsinnehåll');
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
+
+      final contentCapture = verify(
+        () => repo.updateLessonContent(
+          'lesson-1',
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          ifMatch: '"content-v1"',
+        ),
+      )..called(1);
+      final savedMarkdown = contentCapture.captured.single as String;
+      expect(savedMarkdown, 'Plain *Tail*');
+    },
+  );
+
   testWidgets('malformed lesson markdown is blocked before repository write', (
     tester,
   ) async {
