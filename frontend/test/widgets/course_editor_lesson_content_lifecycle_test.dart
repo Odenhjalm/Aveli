@@ -140,6 +140,32 @@ const _otherFamilyCourse = CourseStudio(
   priceAmountCents: 2100,
 );
 
+const _untitledFamilyLeadCourse = CourseStudio(
+  id: 'course-untitled-intro',
+  title: '',
+  slug: 'untitled-intro',
+  courseGroupId: 'course-group-untitled',
+  groupPosition: 0,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: null,
+);
+
+const _untitledFamilyStepCourse = CourseStudio(
+  id: 'course-untitled-step',
+  title: '',
+  slug: 'untitled-step',
+  courseGroupId: 'course-group-untitled',
+  groupPosition: 1,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: 1200,
+);
+
 const _courseCoverUrl = 'https://cdn.test/course-cover.webp';
 const _courseWithCover = CourseStudio(
   id: 'course-1',
@@ -634,6 +660,68 @@ void main() {
   });
 
   testWidgets(
+    'course family card is topmost and never renders raw course_group_id text',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        course: _course,
+        courses: const <CourseStudio>[
+          _course,
+          _familyLeadCourse,
+          _otherFamilyCourse,
+        ],
+      );
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Current Family: Tarot Foundations');
+      await tester.pumpAndSettle();
+
+      final familySectionTop = tester.getTopLeft(find.text('Course Family')).dy;
+      final courseSectionTop = tester.getTopLeft(find.text('Välj kurs')).dy;
+
+      expect(familySectionTop, lessThan(courseSectionTop));
+      expect(find.text('Stage: Step 1'), findsOneWidget);
+      expect(find.text('Introduction · Tarot Foundations'), findsOneWidget);
+      expect(find.text('Step 1 · Tarot Basics'), findsOneWidget);
+      expect(find.textContaining('course_group_id'), findsNothing);
+      expect(find.textContaining('course-group-1'), findsNothing);
+      expect(find.textContaining('course-group-2'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'course family falls back to default name when no course title exists',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        course: _untitledFamilyStepCourse,
+        courses: const <CourseStudio>[
+          _untitledFamilyStepCourse,
+          _untitledFamilyLeadCourse,
+        ],
+        lessons: const <LessonStudio>[],
+      );
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Current Family: Course Family');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Stage: Step 1'), findsOneWidget);
+      expect(find.text('Introduction · Untitled course'), findsOneWidget);
+      expect(find.text('Step 1 · Untitled course'), findsOneWidget);
+      expect(find.textContaining('course-group-untitled'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'course create appends into the selected family without raw position input',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 1000));
@@ -698,7 +786,7 @@ void main() {
       ).thenAnswer((_) async => StudioLessonMediaPreviewBatch(items: const []));
 
       await _pumpCourseEditor(tester, repo: repo);
-      await _pumpUntilTextFound(tester, 'Kursfamilj');
+      await _pumpUntilTextFound(tester, 'Course Family');
 
       await tester.tap(find.text('Skapa kurs'));
       await tester.pumpAndSettle();
@@ -781,7 +869,7 @@ void main() {
       ).thenAnswer((_) async => StudioLessonMediaPreviewBatch(items: const []));
 
       await _pumpCourseEditor(tester, repo: repo);
-      await _pumpUntilTextFound(tester, 'Position: 2 av 2');
+      await _pumpUntilTextFound(tester, 'Stage: Step 1');
 
       final moveUpButton = find.byKey(
         const ValueKey<String>('course_family_move_up_button'),
@@ -789,12 +877,12 @@ void main() {
       await tester.ensureVisible(moveUpButton);
       await tester.tap(moveUpButton);
       await tester.pumpAndSettle();
-      await _pumpUntilTextFound(tester, 'Position: 1 av 2');
+      await _pumpUntilTextFound(tester, 'Stage: Introduction');
 
       verify(
         () => repo.reorderCourseWithinFamily('course-1', groupPosition: 0),
       ).called(1);
-      expect(find.text('1. Tarot Basics'), findsOneWidget);
+      expect(find.text('Introduction · Tarot Basics'), findsOneWidget);
     },
   );
 
@@ -853,10 +941,7 @@ void main() {
       ).thenAnswer((_) async => StudioLessonMediaPreviewBatch(items: const []));
 
       await _pumpCourseEditor(tester, repo: repo);
-      await _pumpUntilTextFound(
-        tester,
-        'Nuvarande familj: Tarot Foundations (2 kurser)',
-      );
+      await _pumpUntilTextFound(tester, 'Current Family: Tarot Foundations');
 
       final moveButton = find.byKey(
         const ValueKey<String>('course_family_move_submit_button'),
@@ -864,10 +949,7 @@ void main() {
       await tester.ensureVisible(moveButton);
       await tester.tap(moveButton);
       await tester.pumpAndSettle();
-      await _pumpUntilTextFound(
-        tester,
-        'Nuvarande familj: Breathwork Flow (2 kurser)',
-      );
+      await _pumpUntilTextFound(tester, 'Current Family: Breathwork Flow');
 
       verify(
         () => repo.moveCourseToFamily(
@@ -875,7 +957,7 @@ void main() {
           courseGroupId: 'course-group-2',
         ),
       ).called(1);
-      expect(find.text('2. Tarot Basics'), findsOneWidget);
+      expect(find.text('Step 1 · Tarot Basics'), findsOneWidget);
     },
   );
 

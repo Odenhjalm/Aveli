@@ -110,6 +110,7 @@ void main() {
     );
 
     expect(find.text('Intro Start'), findsOneWidget);
+    expect(find.text('Introduction'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('journey-family-row:series:solo')),
       findsNothing,
@@ -195,7 +196,7 @@ void main() {
       expect(find.text('Steg 1'), findsNothing);
       expect(find.text('Steg 2'), findsNothing);
       expect(find.text('Steg 3'), findsNothing);
-      expect(find.text('Position 4'), findsOneWidget);
+      expect(find.text('Step 4'), findsOneWidget);
 
       final slot1X = tester.getTopLeft(slot1).dx;
       final slot2X = tester.getTopLeft(slot2).dx;
@@ -322,6 +323,38 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('family title fallback never renders raw course_group_id text', (
+    tester,
+  ) async {
+    _setLargeSurface(tester);
+    addTearDown(() => _resetSurface(tester));
+
+    await _pumpCatalog(
+      tester,
+      courses: [
+        _course(
+          id: 'untitled-intro',
+          slug: 'untitled-intro',
+          title: '',
+          groupPosition: 0,
+          courseGroupId: 'series:hidden-family-id',
+        ),
+        _course(
+          id: 'untitled-step',
+          slug: 'untitled-step',
+          title: '',
+          groupPosition: 1,
+          courseGroupId: 'series:hidden-family-id',
+          priceCents: 9900,
+        ),
+      ],
+    );
+
+    expect(find.text('Course Family'), findsOneWidget);
+    expect(find.text('Step 1'), findsOneWidget);
+    expect(find.textContaining('series:hidden-family-id'), findsNothing);
   });
 
   testWidgets('renders premium discovery cover without enrollment state', (

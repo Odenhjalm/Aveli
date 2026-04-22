@@ -382,8 +382,8 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
   }
 
   static String _coursePositionLabel(CourseStudio course) {
-    if (course.groupPosition <= 0) return 'Position 0';
-    return 'Position ${course.groupPosition}';
+    if (course.groupPosition <= 0) return 'Introduction';
+    return 'Step ${course.groupPosition}';
   }
 
   String _courseReleaseLabel(CourseStudio course) {

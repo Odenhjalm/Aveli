@@ -109,7 +109,9 @@ String _deltaSemanticSignature(quill_delta.Delta delta) {
     return '[]';
   }
   final document = quill.Document.fromDelta(sanitized);
-  final canonical = document.root.toDelta();
+  final canonicalOperations = _normalizeSemanticInsertOperations(
+    document.root.toDelta(),
+  );
   final lines = <Object?>[];
   var segments = <Object?>[];
 
@@ -154,14 +156,9 @@ String _deltaSemanticSignature(quill_delta.Delta delta) {
     segments = <Object?>[];
   }
 
-  for (final operation in canonical.toList()) {
-    if (!operation.isInsert) {
-      continue;
-    }
-
-    final normalizedAttributes = _normalizeAttributes(operation.attributes);
-    final inlineAttributes = _extractInlineAttributes(normalizedAttributes);
-    final lineAttributes = _extractLineAttributes(normalizedAttributes);
+  for (final operation in canonicalOperations) {
+    final inlineAttributes = operation.inlineAttributes;
+    final lineAttributes = operation.lineAttributes;
     final value = operation.value;
 
     if (value is String) {
@@ -188,6 +185,60 @@ String _deltaSemanticSignature(quill_delta.Delta delta) {
   }
 
   return _stableJson(lines);
+}
+
+List<_SemanticInsertOperation> _normalizeSemanticInsertOperations(
+  quill_delta.Delta delta,
+) {
+  final rawOperations = delta
+      .toList()
+      .where((operation) => operation.isInsert)
+      .toList();
+  while (rawOperations.isNotEmpty) {
+    final value = rawOperations.last.value;
+    if (value is String && value.isEmpty) {
+      rawOperations.removeLast();
+      continue;
+    }
+    break;
+  }
+
+  final normalized = <_SemanticInsertOperation>[];
+  for (final operation in rawOperations) {
+    final normalizedAttributes = _normalizeAttributes(operation.attributes);
+    final inlineAttributes = _extractInlineAttributes(normalizedAttributes);
+    final lineAttributes = _extractLineAttributes(normalizedAttributes);
+    final value = operation.value;
+
+    if (value is String && value.isEmpty) {
+      continue;
+    }
+
+    if (value is String && normalized.isNotEmpty) {
+      final previous = normalized.last;
+      if (previous.value is String &&
+          _stableJson(previous.inlineAttributes) ==
+              _stableJson(inlineAttributes) &&
+          _stableJson(previous.lineAttributes) == _stableJson(lineAttributes)) {
+        normalized[normalized.length - 1] = _SemanticInsertOperation(
+          value: '${previous.value as String}$value',
+          inlineAttributes: previous.inlineAttributes,
+          lineAttributes: previous.lineAttributes,
+        );
+        continue;
+      }
+    }
+
+    normalized.add(
+      _SemanticInsertOperation(
+        value: value,
+        inlineAttributes: inlineAttributes,
+        lineAttributes: lineAttributes,
+      ),
+    );
+  }
+
+  return List<_SemanticInsertOperation>.unmodifiable(normalized);
 }
 
 LessonMarkdownIntegrityFailureReason _resolveFailureReason({
@@ -264,3 +315,15 @@ Object? _stableJsonValue(Object? value) {
 }
 
 String _stableJson(Object? value) => jsonEncode(_stableJsonValue(value));
+
+class _SemanticInsertOperation {
+  const _SemanticInsertOperation({
+    required this.value,
+    required this.inlineAttributes,
+    required this.lineAttributes,
+  });
+
+  final Object value;
+  final Map<String, Object?> inlineAttributes;
+  final Map<String, Object?> lineAttributes;
+}

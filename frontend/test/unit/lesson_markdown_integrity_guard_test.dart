@@ -2,6 +2,8 @@ import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:aveli/editor/adapter/markdown_to_editor.dart'
+    as markdown_to_editor;
 import 'package:aveli/editor/guardrails/lesson_markdown_integrity_guard.dart';
 
 quill_delta.Delta _plainTextDelta(String text) {
@@ -98,6 +100,21 @@ void main() {
       expect(result.ok, isTrue);
       expect(result.originalMarkdown, '## Heading\n\n\nBody');
       expect(result.canonicalMarkdown, '## Heading\nBody');
+    });
+
+    test('canonical heading3 with bold and italic at document end passes', () {
+      const markdown = '### Heading3\n**Bold**\n*Italic*';
+      const canonicalMarkdown = '### Heading3\n**Bold** *Italic*';
+      final result = validateLessonMarkdownIntegrity(
+        delta: markdown_to_editor
+            .markdownToEditorDocument(markdown: markdown)
+            .toDelta(),
+      );
+
+      expect(result.ok, isTrue);
+      expect(result.failureReason, isNull);
+      expect(result.originalMarkdown, canonicalMarkdown);
+      expect(result.canonicalMarkdown, canonicalMarkdown);
     });
 
     test('malformed spaced emphasis fails closed', () {

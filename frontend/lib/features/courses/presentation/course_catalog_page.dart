@@ -318,6 +318,15 @@ class _ActJourneySection extends StatelessWidget {
   }
 }
 
+const String _defaultCourseFamilyName = 'Course Family';
+
+String _courseStageLabel(int groupPosition) {
+  if (groupPosition <= 0) {
+    return 'Introduction';
+  }
+  return 'Step $groupPosition';
+}
+
 String _journeyFamilyTitle(CourseJourneyFamily family) {
   final introTitle = family.introCourse?.title.trim();
   if (introTitle != null && introTitle.isNotEmpty) {
@@ -327,7 +336,7 @@ String _journeyFamilyTitle(CourseJourneyFamily family) {
   if (progressionTitle.isNotEmpty) {
     return progressionTitle;
   }
-  return family.courseGroupId;
+  return _defaultCourseFamilyName;
 }
 
 String _journeyFamilySummary(CourseJourneyFamily family) {
@@ -338,13 +347,13 @@ String _journeyFamilySummary(CourseJourneyFamily family) {
   final firstPosition = progressionCourses.first.groupPosition;
   final lastPosition = progressionCourses.last.groupPosition;
   final positionsLabel = firstPosition == lastPosition
-      ? 'Position $firstPosition'
-      : 'Position $firstPosition-$lastPosition';
+      ? _courseStageLabel(firstPosition)
+      : 'Steps $firstPosition-$lastPosition';
   final introTitle = family.introCourse?.title.trim();
   if (introTitle != null && introTitle.isNotEmpty) {
-    return '$positionsLabel efter $introTitle.';
+    return '$positionsLabel after $introTitle.';
   }
-  return '$positionsLabel i backendens kanoniska ordning.';
+  return '$positionsLabel in canonical backend order.';
 }
 
 class _JourneyFamilyBand extends StatelessWidget {
@@ -578,7 +587,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
                           ),
                         ),
                         const Spacer(),
-                        const CourseIntroBadge(),
+                        const CourseIntroBadge(label: 'Introduction'),
                       ] else ...[
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -725,7 +734,7 @@ class _JourneyCourseCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Position ${course.groupPosition}',
+                      _courseStageLabel(course.groupPosition),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: DesignTokens.bodyTextColor.withValues(
                           alpha: 0.72,

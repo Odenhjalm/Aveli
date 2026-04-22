@@ -166,26 +166,29 @@ class _CourseFamilySummary {
 
   final String courseGroupId;
   final List<CourseStudio> courses;
-
-  CourseStudio get anchorCourse => courses.first;
 }
 
-String _compactCourseGroupId(String courseGroupId) {
-  final normalized = courseGroupId.trim();
-  if (normalized.length <= 8) {
-    return normalized;
+const String _defaultCourseFamilyName = 'Course Family';
+
+String _courseFamilyName(_CourseFamilySummary family) {
+  for (final course in family.courses) {
+    final title = course.title.trim();
+    if (title.isNotEmpty) {
+      return title;
+    }
   }
-  return '${normalized.substring(0, 8)}...';
+  return _defaultCourseFamilyName;
 }
 
 String _courseFamilyDisplayLabel(_CourseFamilySummary family) {
-  final anchorTitle = family.anchorCourse.title.trim();
-  final label = anchorTitle.isEmpty
-      ? 'Familj ${_compactCourseGroupId(family.courseGroupId)}'
-      : anchorTitle;
-  final count = family.courses.length;
-  final noun = count == 1 ? 'kurs' : 'kurser';
-  return '$label ($count $noun)';
+  return _courseFamilyName(family);
+}
+
+String _courseStepLabel(int groupPosition) {
+  if (groupPosition <= 0) {
+    return 'Introduction';
+  }
+  return 'Step $groupPosition';
 }
 
 Widget _dropdownValueLabel(String text) {
@@ -314,7 +317,7 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
               key: const ValueKey<String>('course_create_family_target'),
               isExpanded: true,
               initialValue: _selectedFamilyValue,
-              decoration: const InputDecoration(labelText: 'Kursfamilj'),
+              decoration: const InputDecoration(labelText: 'Course Family'),
               selectedItemBuilder: (context) => [
                 for (final family in widget.familySummaries)
                   _dropdownValueLabel(_courseFamilyDisplayLabel(family)),
@@ -343,7 +346,7 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
             gap8,
             Text(
               _selectedFamilySummary == null
-                  ? 'Kursen skapar en ny familj och blir första kursen i den.'
+                  ? 'Kursen skapar en ny familj. Namnet visas som "Course Family" tills en kurstitel finns.'
                   : 'Kursen placeras sist i ${_courseFamilyDisplayLabel(_selectedFamilySummary!)}.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -2166,11 +2169,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return null;
   }
 
-  String _coursePositionSummary(
-    CourseStudio course,
-    _CourseFamilySummary family,
-  ) {
-    return '${course.groupPosition + 1} av ${family.courses.length}';
+  String _coursePositionSummary(CourseStudio course) {
+    return _courseStepLabel(course.groupPosition);
   }
 
   String _defaultCourseFamilyMoveTargetCourseGroupId({
@@ -6488,21 +6488,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Nuvarande familj: ${_courseFamilyDisplayLabel(selectedFamily)}',
+          'Current Family: ${_courseFamilyName(selectedFamily)}',
           style: theme.textTheme.bodyMedium,
         ),
         gap8,
         Text(
-          'Position: ${_coursePositionSummary(selectedCourse, selectedFamily)}',
+          'Stage: ${_coursePositionSummary(selectedCourse)}',
           style: theme.textTheme.bodyMedium,
         ),
-        gap8,
-        SelectableText(
-          'course_group_id: ${selectedFamily.courseGroupId}',
-          style: theme.textTheme.bodySmall,
-        ),
         gap12,
-        Text('Ordning i familjen', style: theme.textTheme.labelLarge),
+        Text('Family sequence', style: theme.textTheme.labelLarge),
         gap8,
         Wrap(
           spacing: 8,
@@ -6510,7 +6505,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           children: [
             for (final course in selectedFamily.courses)
               Chip(
-                label: Text('${course.groupPosition + 1}. ${course.title}'),
+                label: Text(
+                  '${_courseStepLabel(course.groupPosition)} · ${course.title.trim().isEmpty ? 'Untitled course' : course.title}',
+                ),
                 backgroundColor: course.id == selectedCourse.id
                     ? theme.colorScheme.primary.withValues(alpha: 0.14)
                     : null,
@@ -6684,6 +6681,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _SectionCard(
+                  title: 'Course Family',
+                  child: _buildCourseFamilyAuthoring(context),
+                ),
+                gap12,
+                _SectionCard(
                   title: 'Välj kurs',
                   actions: [
                     OutlinedButton.icon(
@@ -6737,11 +6739,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   ),
                 ),
                 if (_selectedCourseId != null) ...[
-                  gap12,
-                  _SectionCard(
-                    title: 'Kursfamilj',
-                    child: _buildCourseFamilyAuthoring(context),
-                  ),
                   gap12,
                   _SectionCard(
                     title: 'Kursinformation',
