@@ -13,6 +13,36 @@ void main() {
     );
   }
 
+  List<Map<String, Object?>> newlineAttributes(
+    EditorOperationQuillController c,
+  ) {
+    return [
+      for (final op in c.document.toDelta().toJson())
+        if (op['insert'] == '\n')
+          Map<String, Object?>.from(
+            (op['attributes'] as Map?)?.cast<String, Object?>() ??
+                const <String, Object?>{},
+          ),
+    ];
+  }
+
+  bool hasStyledInsert(
+    EditorOperationQuillController controller, {
+    required String text,
+    required String key,
+    required Object? value,
+  }) {
+    return controller.document.toDelta().toJson().any((op) {
+      if (op['insert'] != text) {
+        return false;
+      }
+      final attributes =
+          (op['attributes'] as Map?)?.cast<String, Object?>() ??
+          const <String, Object?>{};
+      return attributes[key] == value;
+    });
+  }
+
   test('replaceText applies immediately without interception', () {
     final controller = buildController();
 
@@ -182,4 +212,74 @@ void main() {
 
     expect(controller.document.toPlainText(), 'Hello\n');
   });
+
+  test(
+    'replaceText strips inline newline attributes for active toggled styles',
+    () {
+      final cases = <({quill.Attribute attribute, String key, Object? value})>[
+        (
+          attribute: quill.Attribute.bold,
+          key: quill.Attribute.bold.key,
+          value: true,
+        ),
+        (
+          attribute: quill.Attribute.italic,
+          key: quill.Attribute.italic.key,
+          value: true,
+        ),
+        (
+          attribute: quill.Attribute.underline,
+          key: quill.Attribute.underline.key,
+          value: true,
+        ),
+        (
+          attribute: const quill.LinkAttribute('https://example.com'),
+          key: quill.Attribute.link.key,
+          value: 'https://example.com',
+        ),
+      ];
+
+      for (final testCase in cases) {
+        final controller = buildController();
+        controller.forceToggledStyle(
+          quill.Style.attr({testCase.attribute.key: testCase.attribute}),
+        );
+
+        expect(
+          () => controller.replaceText(
+            0,
+            0,
+            'Styled\nNext',
+            const TextSelection.collapsed(offset: 11),
+          ),
+          returnsNormally,
+        );
+        expect(controller.document.toPlainText(), 'Styled\nNext\n');
+        expect(
+          newlineAttributes(
+            controller,
+          ).every((attributes) => !attributes.containsKey(testCase.key)),
+          isTrue,
+        );
+        expect(
+          hasStyledInsert(
+            controller,
+            text: 'Styled',
+            key: testCase.key,
+            value: testCase.value,
+          ),
+          isTrue,
+        );
+        expect(
+          hasStyledInsert(
+            controller,
+            text: 'Next',
+            key: testCase.key,
+            value: testCase.value,
+          ),
+          isTrue,
+        );
+      }
+    },
+  );
 }

@@ -70,6 +70,26 @@ async def cleanup_user(user_id: str):
             await conn.commit()
 
 
+async def cleanup_course_families(teacher_id: str):
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "DELETE FROM app.course_families WHERE teacher_id = %s::uuid",
+                (teacher_id,),
+            )
+            await conn.commit()
+
+
+async def create_course_family(async_client, *, token: str, name: str) -> dict:
+    response = await async_client.post(
+        "/studio/course-families",
+        headers=auth_header(token),
+        json={"name": name},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
 async def read_lesson_content_etag(
     async_client,
     *,
@@ -133,6 +153,11 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
         )
         assert student_courses.status_code == 403, student_courses.text
 
+        family = await create_course_family(
+            async_client,
+            token=teacher_token,
+            name="Intro Family",
+        )
         slug = f"course-{uuid.uuid4().hex[:8]}"
         create_course = await async_client.post(
             "/studio/courses",
@@ -140,7 +165,7 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
             json={
                 "title": "Intro to Aveli",
                 "slug": slug,
-                "course_group_id": str(uuid.uuid4()),
+                "course_group_id": family["id"],
                 "price_amount_cents": None,
                 "drip_enabled": False,
                 "drip_interval_days": None,
@@ -327,6 +352,7 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
                         (cover_media_id,),
                     )
                     await conn.commit()
+        await cleanup_course_families(teacher_id)
         await cleanup_user(student_id)
         await cleanup_user(teacher_id)
 
@@ -371,13 +397,18 @@ async def test_studio_lesson_delete_removes_content_and_placements_only(
     )
 
     try:
+        family = await create_course_family(
+            async_client,
+            token=teacher_token,
+            name="Delete Media Family",
+        )
         create_course = await async_client.post(
             "/studio/courses",
             headers=auth_header(teacher_token),
             json={
                 "title": "Delete media boundary",
                 "slug": f"delete-media-{uuid.uuid4().hex[:8]}",
-                "course_group_id": str(uuid.uuid4()),
+                "course_group_id": family["id"],
                 "price_amount_cents": None,
                 "drip_enabled": False,
                 "drip_interval_days": None,
@@ -490,6 +521,7 @@ async def test_studio_lesson_delete_removes_content_and_placements_only(
                         (media_asset_id,),
                     )
                     await conn.commit()
+        await cleanup_course_families(teacher_id)
         await cleanup_user(teacher_id)
 
 
@@ -504,8 +536,6 @@ async def test_studio_course_family_transition_endpoints_are_canonical(async_cli
     )
     await promote_to_teacher(teacher_id)
 
-    source_family_id = str(uuid.uuid4())
-    target_family_id = str(uuid.uuid4())
     created_course_ids: list[str] = []
 
     async def _create_course(*, title: str, slug: str, course_group_id: str) -> dict:
@@ -539,6 +569,26 @@ async def test_studio_course_family_transition_endpoints_are_canonical(async_cli
         return body
 
     try:
+        listed_before = await async_client.get(
+            "/studio/course-families",
+            headers=auth_header(teacher_token),
+        )
+        assert listed_before.status_code == 200, listed_before.text
+        assert listed_before.json()["items"] == []
+
+        source_family = await create_course_family(
+            async_client,
+            token=teacher_token,
+            name="Source Family",
+        )
+        target_family = await create_course_family(
+            async_client,
+            token=teacher_token,
+            name="Target Family",
+        )
+        source_family_id = source_family["id"]
+        target_family_id = target_family["id"]
+
         source_a = await _create_course(
             title="Source A",
             slug=f"source-a-{uuid.uuid4().hex[:8]}",
@@ -613,10 +663,29 @@ async def test_studio_course_family_transition_endpoints_are_canonical(async_cli
             (str(target_a["id"]), 0),
             (str(source_a["id"]), 1),
         ]
+
+        listed_after = await async_client.get(
+            "/studio/course-families",
+            headers=auth_header(teacher_token),
+        )
+        assert listed_after.status_code == 200, listed_after.text
+        listed_payload = listed_after.json()["items"]
+        assert {
+            "id",
+            "name",
+            "teacher_id",
+            "created_at",
+            "course_count",
+        }.issubset(listed_payload[0])
+        assert {item["id"] for item in listed_payload} == {
+            source_family_id,
+            target_family_id,
+        }
     finally:
         for course_id in reversed(created_course_ids):
             await async_client.delete(
                 f"/studio/courses/{course_id}",
                 headers=auth_header(teacher_token),
             )
+        await cleanup_course_families(teacher_id)
         await cleanup_user(teacher_id)

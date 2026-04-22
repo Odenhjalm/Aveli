@@ -13,6 +13,65 @@ class EditorOperationQuillController extends quill.QuillController {
     super.readOnly,
   });
 
+  @override
+  void replaceText(
+    int index,
+    int len,
+    Object? data,
+    TextSelection? textSelection, {
+    bool ignoreFocus = false,
+    bool shouldNotifyListeners = true,
+  }) {
+    if (data is! String || !_shouldSanitizeInlineNewlineInsertion(data)) {
+      super.replaceText(
+        index,
+        len,
+        data,
+        textSelection,
+        ignoreFocus: ignoreFocus,
+        shouldNotifyListeners: shouldNotifyListeners,
+      );
+      return;
+    }
+
+    final replaceCallback = onReplaceText;
+    if (replaceCallback != null && !replaceCallback(index, len, data)) {
+      return;
+    }
+
+    final originalCallback = onReplaceText;
+    final originalToggledStyle = toggledStyle;
+    final newlineToggledStyle = _stripInlineAttributes(originalToggledStyle);
+    final segments = _splitTextByNewline(data);
+    onReplaceText = null;
+
+    try {
+      if (len > 0) {
+        super.replaceText(index, len, '', null, shouldNotifyListeners: false);
+      }
+
+      var offset = index;
+      for (var i = 0; i < segments.length; i += 1) {
+        final segment = segments[i];
+        final isLast = i == segments.length - 1;
+        toggledStyle = segment == '\n'
+            ? newlineToggledStyle
+            : originalToggledStyle;
+        super.replaceText(
+          offset,
+          0,
+          segment,
+          isLast ? textSelection : null,
+          ignoreFocus: isLast ? ignoreFocus : false,
+          shouldNotifyListeners: isLast ? shouldNotifyListeners : false,
+        );
+        offset += segment.length;
+      }
+    } finally {
+      onReplaceText = originalCallback;
+    }
+  }
+
   /// Applies a delta directly to the active controller without rebuilding it.
   void applyDelta(quill_delta.Delta delta, {required TextSelection selection}) {
     final shouldCompose = delta.isNotEmpty;
@@ -97,5 +156,49 @@ class EditorOperationQuillController extends quill.QuillController {
       buffer.writeCharCode(text.codeUnitAt(index));
     }
     return buffer.toString();
+  }
+
+  bool _shouldSanitizeInlineNewlineInsertion(String text) {
+    if (!text.contains('\n')) {
+      return false;
+    }
+    return _retainedInsertionStyle(toggledStyle).isNotEmpty;
+  }
+
+  quill.Style _retainedInsertionStyle(quill.Style style) {
+    return quill.Style.attr(
+      Map<String, quill.Attribute>.fromEntries(
+        style.attributes.entries.where(
+          (entry) => entry.value.scope != quill.AttributeScope.block,
+        ),
+      ),
+    );
+  }
+
+  quill.Style _stripInlineAttributes(quill.Style style) {
+    return quill.Style.attr(
+      Map<String, quill.Attribute>.fromEntries(
+        style.attributes.entries.where((entry) => !entry.value.isInline),
+      ),
+    );
+  }
+
+  List<String> _splitTextByNewline(String text) {
+    final segments = <String>[];
+    var segmentStart = 0;
+    for (var index = 0; index < text.length; index += 1) {
+      if (text.codeUnitAt(index) != 0x0A) {
+        continue;
+      }
+      if (segmentStart < index) {
+        segments.add(text.substring(segmentStart, index));
+      }
+      segments.add('\n');
+      segmentStart = index + 1;
+    }
+    if (segmentStart < text.length) {
+      segments.add(text.substring(segmentStart));
+    }
+    return segments;
   }
 }

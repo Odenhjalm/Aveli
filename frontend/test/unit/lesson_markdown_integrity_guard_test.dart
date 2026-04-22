@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
 import 'package:aveli/editor/guardrails/lesson_markdown_integrity_guard.dart';
+import 'package:aveli/editor/normalization/quill_delta_normalizer.dart';
 
 quill_delta.Delta _plainTextDelta(String text) {
   return quill_delta.Delta()
@@ -116,6 +117,48 @@ void main() {
       expect(result.originalMarkdown, canonicalMarkdown);
       expect(result.canonicalMarkdown, canonicalMarkdown);
     });
+
+    test(
+      'normalizer stabilizes split end-of-document heading3 bold italic delta',
+      () {
+        final normalized = normalizeDeltaForGuard(
+          quill_delta.Delta()
+            ..insert('Heading3')
+            ..insert('\n', {quill.Attribute.header.key: 3})
+            ..insert('Bo', {quill.Attribute.bold.key: true})
+            ..insert('ld', {quill.Attribute.bold.key: true})
+            ..insert('', {quill.Attribute.bold.key: true})
+            ..insert(' ')
+            ..insert('It', {quill.Attribute.italic.key: true})
+            ..insert('alic', {quill.Attribute.italic.key: true})
+            ..insert('\n', {quill.Attribute.italic.key: true})
+            ..insert('', {quill.Attribute.italic.key: true}),
+        );
+        final result = validateLessonMarkdownIntegrity(delta: normalized);
+
+        expect(normalized.toJson(), <Object?>[
+          <String, Object?>{'insert': 'Heading3'},
+          <String, Object?>{
+            'insert': '\n',
+            'attributes': <String, Object?>{'header': 3},
+          },
+          <String, Object?>{
+            'insert': 'Bold',
+            'attributes': <String, Object?>{'bold': true},
+          },
+          <String, Object?>{'insert': ' '},
+          <String, Object?>{
+            'insert': 'Italic',
+            'attributes': <String, Object?>{'italic': true},
+          },
+          <String, Object?>{'insert': '\n'},
+        ]);
+        expect(result.ok, isTrue);
+        expect(result.failureReason, isNull);
+        expect(result.originalMarkdown, '### Heading3\n**Bold** *Italic*');
+        expect(result.canonicalMarkdown, '### Heading3\n**Bold** *Italic*');
+      },
+    );
 
     test('malformed spaced emphasis fails closed', () {
       final result = validateLessonMarkdownIntegrity(

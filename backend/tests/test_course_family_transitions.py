@@ -58,6 +58,29 @@ async def _cleanup_teacher(teacher_id: str) -> None:
             await conn.commit()
 
 
+async def _cleanup_course_families(teacher_id: str) -> None:
+    await _ensure_pool_open()
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                "delete from app.course_families where teacher_id = %s::uuid",
+                (teacher_id,),
+            )
+            await conn.commit()
+
+
+async def _create_course_family(
+    *,
+    teacher_id: str,
+    name: str | None = None,
+) -> dict[str, object]:
+    await _ensure_pool_open()
+    return await courses_service.create_course_family(
+        name=name or f"Course Family {uuid4().hex[:6]}",
+        teacher_id=teacher_id,
+    )
+
+
 async def _create_course(
     *,
     teacher_id: str,
@@ -123,11 +146,12 @@ async def _course_family_events(course_ids: list[str]) -> list[tuple[str, str, i
 
 async def test_create_course_appends_and_rejects_raw_position_payloads() -> None:
     teacher_id = str(uuid4())
-    family_id = str(uuid4())
     created_ids: list[str] = []
 
     await _ensure_teacher(teacher_id)
     try:
+        family = await _create_course_family(teacher_id=teacher_id)
+        family_id = str(family["id"])
         first = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
@@ -164,16 +188,36 @@ async def test_create_course_appends_and_rejects_raw_position_payloads() -> None
         ]
     finally:
         await _cleanup_courses(created_ids)
+        await _cleanup_course_families(teacher_id)
+        await _cleanup_teacher(teacher_id)
+
+
+async def test_create_course_family_exists_without_courses() -> None:
+    teacher_id = str(uuid4())
+
+    await _ensure_teacher(teacher_id)
+    try:
+        family = await _create_course_family(
+            teacher_id=teacher_id,
+            name="Standalone Family",
+        )
+
+        assert str(family["name"]) == "Standalone Family"
+        assert int(family["course_count"]) == 0
+        assert await _family_rows(str(family["id"])) == []
+    finally:
+        await _cleanup_course_families(teacher_id)
         await _cleanup_teacher(teacher_id)
 
 
 async def test_reorder_course_within_family_is_transactional() -> None:
     teacher_id = str(uuid4())
-    family_id = str(uuid4())
     created_ids: list[str] = []
 
     await _ensure_teacher(teacher_id)
     try:
+        family = await _create_course_family(teacher_id=teacher_id)
+        family_id = str(family["id"])
         course_a = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
@@ -215,17 +259,26 @@ async def test_reorder_course_within_family_is_transactional() -> None:
         ]
     finally:
         await _cleanup_courses(created_ids)
+        await _cleanup_course_families(teacher_id)
         await _cleanup_teacher(teacher_id)
 
 
 async def test_move_between_families_appends_and_collapses_source() -> None:
     teacher_id = str(uuid4())
-    source_family_id = str(uuid4())
-    target_family_id = str(uuid4())
     created_ids: list[str] = []
 
     await _ensure_teacher(teacher_id)
     try:
+        source_family = await _create_course_family(
+            teacher_id=teacher_id,
+            name="Source Family",
+        )
+        target_family = await _create_course_family(
+            teacher_id=teacher_id,
+            name="Target Family",
+        )
+        source_family_id = str(source_family["id"])
+        target_family_id = str(target_family["id"])
         source_a = await _create_course(
             teacher_id=teacher_id,
             course_group_id=source_family_id,
@@ -277,16 +330,18 @@ async def test_move_between_families_appends_and_collapses_source() -> None:
         ]
     finally:
         await _cleanup_courses(created_ids)
+        await _cleanup_course_families(teacher_id)
         await _cleanup_teacher(teacher_id)
 
 
 async def test_delete_course_collapses_remaining_family_positions() -> None:
     teacher_id = str(uuid4())
-    family_id = str(uuid4())
     created_ids: list[str] = []
 
     await _ensure_teacher(teacher_id)
     try:
+        family = await _create_course_family(teacher_id=teacher_id)
+        family_id = str(family["id"])
         course_a = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
@@ -316,16 +371,18 @@ async def test_delete_course_collapses_remaining_family_positions() -> None:
         ]
     finally:
         await _cleanup_courses(created_ids)
+        await _cleanup_course_families(teacher_id)
         await _cleanup_teacher(teacher_id)
 
 
 async def test_concurrent_family_operations_remain_contiguous() -> None:
     teacher_id = str(uuid4())
-    family_id = str(uuid4())
     created_ids: list[str] = []
 
     await _ensure_teacher(teacher_id)
     try:
+        family = await _create_course_family(teacher_id=teacher_id)
+        family_id = str(family["id"])
         course_a = await _create_course(
             teacher_id=teacher_id,
             course_group_id=family_id,
@@ -360,4 +417,5 @@ async def test_concurrent_family_operations_remain_contiguous() -> None:
         ]
     finally:
         await _cleanup_courses(created_ids)
+        await _cleanup_course_families(teacher_id)
         await _cleanup_teacher(teacher_id)

@@ -18,7 +18,11 @@ SLOT_DIR = ROOT / "backend" / "supabase" / "baseline_v2_slots"
 def _slot_paths(*, include_0023: bool) -> list[Path]:
     paths = sorted(SLOT_DIR.glob("V2_*.sql"))
     if include_0023:
-        return paths
+        return [
+            path
+            for path in paths
+            if path.name <= "V2_0023_course_family_ordering.sql"
+        ]
     return [path for path in paths if path.name < "V2_0023_course_family_ordering.sql"]
 
 

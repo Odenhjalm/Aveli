@@ -47,6 +47,7 @@ blocking authority.
 
 The canonical course-domain entities are:
 
+- `app.course_families`
 - `app.courses`
 - `app.course_public_content`
 - `app.lessons`
@@ -221,6 +222,9 @@ only authority allowed to produce frontend-facing governed media output.
 The authoritative course-domain relation graph is:
 
 ```text
+app.course_families.id
+  -> app.courses.course_group_id
+
 app.courses.course_group_id + app.courses.group_position
   -> course family membership and deterministic family order
 
@@ -341,15 +345,18 @@ No other persisted field, view field, write field, response field, or
 compatibility field may become canonical course-family or course-order
 authority.
 
-A course family has no separate table, row, or identity owner outside
-`app.courses`.
-A course family exists if and only if one or more `app.courses` rows reference
-a given `course_group_id`.
-If no `app.courses` rows reference a `course_group_id`, that family has no
-canonical persisted existence.
+A course family is a canonical row in `app.course_families`.
+`app.courses.course_group_id` MUST reference `app.course_families.id`.
+A course family MAY exist before it contains courses.
+A course family MAY remain persisted after its last course is removed.
 
 Course family invariants:
 
+- every course family MUST have exactly one canonical `app.course_families.id`
+- every course family MUST have exactly one non-blank canonical
+  `app.course_families.name`
+- every course family MUST have exactly one canonical
+  `app.course_families.teacher_id`
 - every course MUST have exactly one non-null `course_group_id`
 - every course MUST have exactly one non-null `group_position`
 - `group_position` MUST be an integer `>= 0`
@@ -384,38 +391,27 @@ Canonical family transitions are:
 ### CREATE COURSE
 
 - no implicit default course family exists
-- no implicit default course position exists
-- course creation MUST provide explicit `course_group_id` and explicit
-  `group_position`
-- creating a new family is valid only when the submitted `course_group_id` does
-  not yet exist and `group_position = 0`
-- creating into an existing family is valid only when the submitted
-  `group_position` is within `0..n`, where `n` is the current course count of
-  the target family before insert
-- creating into an existing family at position `p` MUST shift every existing
-  course in that family with `group_position >= p` up by `1`
+- explicit course-family creation MAY happen before any course is authored
+- course creation MUST provide explicit `course_group_id`
+- caller-authored `group_position` is forbidden on canonical create surfaces
+- creating into an existing family MUST append at the current family size `n`
+- compatibility create paths MAY seed a canonical `app.course_families` row
+  before insert when the submitted `course_group_id` is unused; the committed
+  result MUST still reference `app.course_families.id`
 - the committed result of create MUST leave the target family contiguous as
-  `0..(n)` after the new course is inserted
+  `0..n` after the new course is inserted
 - the caller supplies authoring intent; backend validation and persistence are
   the only authority allowed to commit resulting canonical family order
 
 ### MOVE COURSE BETWEEN FAMILIES
 
-- a move between families MUST specify explicit target `course_group_id` and
-  explicit target `group_position`
+- a move between families MUST specify explicit target `course_group_id`
 - moving a course to the same `course_group_id` is a reorder, not a
   cross-family move
-- moving a course into a different existing family at position `p` MUST:
-  remove the course from its source family, collapse every source-family
-  position above the old position by `-1`, shift every target-family position
-  `>= p` by `+1`, and persist the moved course at `p`
-- moving a course into a different existing family is valid only when the
-  target `group_position` is within `0..n`, where `n` is the current course
-  count of the target family before insert
-- moving a course into a new family is valid only when the target
-  `course_group_id` is unused and the target `group_position = 0`
-- if the source family becomes empty after the move, the source family ceases
-  to exist canonically by absence of referencing `app.courses` rows
+- moving a course into a different existing family MUST append at the target
+  family end position `n`
+- moving into a family that does not exist canonically is invalid on canonical
+  move surfaces
 - a cross-family move MUST commit atomically across both affected families and
   MUST NOT persist duplicate or sparse positions as committed truth
 
@@ -438,8 +434,8 @@ Canonical family transitions are:
 - after delete, every remaining course in the same family with position above
   the deleted position MUST shift by `-1`
 - delete MUST NOT leave a position gap in the remaining family
-- deleting the final course in a family removes that family's canonical
-  existence by absence of referencing `app.courses` rows
+- deleting the final course in a family removes course membership from that
+  family but does not by itself delete the canonical `app.course_families` row
 
 Cross-domain alignment rules:
 

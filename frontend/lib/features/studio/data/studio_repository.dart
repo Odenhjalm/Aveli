@@ -189,6 +189,34 @@ class StudioRepository {
         .toList(growable: false);
   }
 
+  Future<List<CourseFamilyStudio>> myCourseFamilies() async {
+    final response = await _client.raw.get<Object?>('/studio/course-families');
+    final items = _requiredResponseListField(
+      response.data,
+      'items',
+      'Studio course family list',
+    );
+    return items
+        .map(
+          (item) => CourseFamilyStudio.fromResponse(
+            item,
+            label: 'Studio course family list item',
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<CourseFamilyStudio> createCourseFamily({required String name}) async {
+    final response = await _client.raw.post<Object?>(
+      '/studio/course-families',
+      data: <String, Object?>{'name': name},
+    );
+    return CourseFamilyStudio.fromResponse(
+      response.data,
+      label: 'Created studio course family',
+    );
+  }
+
   Future<CourseStudio> createCourse({
     required String title,
     required String slug,

@@ -930,6 +930,22 @@ class Course(BaseModel):
     purchasable: bool
 
 
+class CourseFamily(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    name: str
+    teacher_id: UUID
+    created_at: datetime
+    course_count: int = Field(ge=0)
+
+
+class CourseFamilyListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: List[CourseFamily]
+
+
 class CoursePricingResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1235,6 +1251,20 @@ class StudioCourseCreate(BaseModel):
                 "drip_interval_days must be null when drip_enabled is false"
             )
         return self
+
+
+class StudioCourseFamilyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name must not be blank")
+        return normalized
 
 
 class StudioCourseUpdate(BaseModel):

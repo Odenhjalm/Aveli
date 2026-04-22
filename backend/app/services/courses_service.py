@@ -1177,6 +1177,18 @@ async def create_course(
     create_payload = dict(payload)
     create_payload.pop("teacher_id", None)
     create_payload["teacher_id"] = normalized_teacher_id
+    target_course_group_id = str(create_payload.get("course_group_id") or "").strip()
+    if not target_course_group_id:
+        raise ValueError("course_group_id is required")
+    target_family = await courses_repo.get_course_family(target_course_group_id)
+    if target_family is None:
+        target_family = await courses_repo.create_course_family(
+            teacher_id=normalized_teacher_id,
+            family_id=target_course_group_id,
+            name=str(create_payload.get("title") or "").strip() or "Course Family",
+        )
+    if str(target_family["teacher_id"]) != normalized_teacher_id:
+        raise PermissionError("Not course family owner")
     if "cover_media_id" in create_payload:
         if create_payload["cover_media_id"] is not None:
             create_payload.setdefault("id", str(uuid4()))
@@ -1279,6 +1291,31 @@ async def update_course(
     return dict(row)
 
 
+async def list_course_families(teacher_id: str | None = None) -> list[dict[str, Any]]:
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise PermissionError("Course family owner required")
+    return await courses_repo.list_course_families(normalized_teacher_id)
+
+
+async def create_course_family(
+    *,
+    name: str,
+    teacher_id: str | None = None,
+) -> dict[str, Any]:
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise PermissionError("Course family owner required")
+    normalized_name = str(name or "").strip()
+    if not normalized_name:
+        raise ValueError("name is required")
+    row = await courses_repo.create_course_family(
+        teacher_id=normalized_teacher_id,
+        name=normalized_name,
+    )
+    return dict(row)
+
+
 async def reorder_course_within_family(
     course_id: str,
     *,
@@ -1323,6 +1360,11 @@ async def move_course_to_family(
     target_course_group_id = str(course_group_id or "").strip()
     if not target_course_group_id:
         raise ValueError("course_group_id is required")
+    target_family = await courses_repo.get_course_family(target_course_group_id)
+    if target_family is None:
+        raise ValueError("course_group_id must reference an existing course family")
+    if str(target_family["teacher_id"]) != normalized_teacher_id:
+        raise PermissionError("Not course family owner")
     if target_course_group_id == str(existing_course["course_group_id"]):
         raise ValueError(
             "move-family requires a different course_group_id; use reorder for same-family changes"

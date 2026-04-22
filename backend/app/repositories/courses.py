@@ -186,6 +186,81 @@ async def _get_course_family_append_position(
     return int(row[0] if row else 0)
 
 
+async def list_course_families(teacher_id: str) -> list[dict[str, Any]]:
+    query = """
+        select f.id::text as id,
+               f.name,
+               f.teacher_id::text as teacher_id,
+               f.created_at,
+               count(c.id)::integer as course_count
+          from app.course_families as f
+          left join app.courses as c
+            on c.course_group_id = f.id
+         where f.teacher_id = %s::uuid
+         group by f.id, f.name, f.teacher_id, f.created_at
+         order by lower(f.name) asc, f.created_at asc, f.id asc
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (teacher_id,))
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def get_course_family(course_group_id: str) -> dict[str, Any] | None:
+    query = """
+        select f.id::text as id,
+               f.name,
+               f.teacher_id::text as teacher_id,
+               f.created_at,
+               (
+                 select count(*)::integer
+                   from app.courses as c
+                  where c.course_group_id = f.id
+               ) as course_count
+          from app.course_families as f
+         where f.id = %s::uuid
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_group_id,))
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def create_course_family(
+    *,
+    teacher_id: str,
+    name: str,
+    family_id: str | None = None,
+) -> dict[str, Any]:
+    query = """
+        insert into app.course_families (
+            id,
+            teacher_id,
+            name
+        )
+        values (
+            coalesce(%s::uuid, gen_random_uuid()),
+            %s::uuid,
+            %s
+        )
+        returning id::text as id,
+                  name,
+                  teacher_id::text as teacher_id,
+                  created_at,
+                  0::integer as course_count
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (family_id, teacher_id, name))
+            row = await cur.fetchone()
+        await conn.commit()
+    if row is None:
+        raise RuntimeError("created course family was not returned")
+    return dict(row)
+
+
 async def _reorder_course_within_family(
     active_conn: Any,
     *,

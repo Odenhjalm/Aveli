@@ -148,7 +148,58 @@ No mixed `POST /studio/lessons` or mixed `PATCH /studio/lessons/{lesson_id}` end
 
 ## 5. STRUCTURE WRITE CONTRACTS
 
-### 5.1 Course Create
+### 5.1 Course Family List
+
+Endpoint:
+
+`GET /studio/course-families`
+
+Response:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "name": "string",
+      "teacher_id": "uuid",
+      "created_at": "iso-datetime",
+      "course_count": 0
+    }
+  ]
+}
+~~~
+
+Rules:
+
+- returns canonical persisted course-family rows
+- `course_count` is a derived read field
+- family identity is still linked to courses through `course_group_id`
+
+### 5.2 Course Family Create
+
+Endpoint:
+
+`POST /studio/course-families`
+
+Request:
+
+~~~json
+{
+  "name": "string"
+}
+~~~
+
+Response:
+
+Same canonical course-family structure as the list response item.
+
+Rules:
+
+- creates a canonical course family before any course exists
+- no course fields are accepted in this request
+
+### 5.3 Course Create
 
 Endpoint:
 
@@ -200,7 +251,7 @@ Rules:
 - `short_description` is forbidden in this request
 - lesson fields are forbidden in this request
 
-### 5.2 Course Update
+### 5.4 Course Update
 
 Endpoint:
 
@@ -237,7 +288,7 @@ Rules:
 - lesson fields are forbidden
 - `content_markdown` is forbidden
 
-### 5.3 Course Reorder Within Family
+### 5.5 Course Reorder Within Family
 
 Endpoint:
 
@@ -262,7 +313,7 @@ Rules:
 - `course_group_id` is forbidden in this request
 - no metadata fields are accepted in this request
 
-### 5.4 Course Move To Family
+### 5.6 Course Move To Family
 
 Endpoint:
 
@@ -287,7 +338,7 @@ Rules:
 - `group_position` is forbidden in this request
 - no metadata fields are accepted in this request
 
-### 5.5 Course Delete
+### 5.7 Course Delete
 
 Endpoint:
 
@@ -307,7 +358,7 @@ Rules:
 - does not define lesson-content semantics
 - no content payload is accepted
 
-### 5.6 Lesson Create
+### 5.8 Lesson Create
 
 Endpoint:
 

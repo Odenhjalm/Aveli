@@ -169,6 +169,36 @@ class CourseCore {
 }
 
 @immutable
+class CourseFamilyStudio {
+  const CourseFamilyStudio({
+    required this.id,
+    required this.name,
+    required this.teacherId,
+    required this.createdAt,
+    required this.courseCount,
+  });
+
+  final String id;
+  final String name;
+  final String teacherId;
+  final DateTime createdAt;
+  final int courseCount;
+
+  factory CourseFamilyStudio.fromResponse(
+    Object? payload, {
+    String label = 'CourseFamily',
+  }) {
+    return CourseFamilyStudio(
+      id: _requiredResponseString(payload, 'id', label),
+      name: _requiredResponseString(payload, 'name', label),
+      teacherId: _requiredResponseString(payload, 'teacher_id', label),
+      createdAt: _requiredResponseUtcDateTime(payload, 'created_at', label),
+      courseCount: _requiredResponseInt(payload, 'course_count', label),
+    );
+  }
+}
+
+@immutable
 class CourseStudio extends CourseCore {
   const CourseStudio({
     required super.id,

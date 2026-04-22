@@ -88,15 +88,15 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "eccbfe128419e756f9baa69ac096e6ef3bf8f55fb743d2f010d051a4db658c27",
+    "expected_schema_hash": "bad6038e08d5d228f7c3357dca6846410fa0f1b6873a0160b9e214918429c341",
     "expected_counts": {
       "enums": 13,
-      "tables": 34,
+      "tables": 35,
       "views": 5,
-      "fks": 48,
-      "constraints": 182,
-      "triggers": 24,
-      "functions": 38
+      "fks": 50,
+      "constraints": 186,
+      "triggers": 25,
+      "functions": 39
     },
     "forbidden_legacy_columns": [
       "role_v2",
@@ -277,6 +277,12 @@
       "filename": "V2_0023_course_family_ordering.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0023_course_family_ordering.sql",
       "sha256": "8569cf0c3844998245d6f63f953e1d9b50d1f4c3b713b0ef2c6071ca8f7546e3"
+    },
+    {
+      "slot": 24,
+      "filename": "V2_0024_course_families.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0024_course_families.sql",
+      "sha256": "c0479846808b6a087994c6dd861023eddade184b9de941934a069989fe27d0fd"
     }
   ]
 }

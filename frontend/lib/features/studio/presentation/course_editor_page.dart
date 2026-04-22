@@ -11,6 +11,7 @@ import 'package:flutter/semantics.dart' show SemanticsBinding, SemanticsHandle;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
+import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -22,6 +23,7 @@ import 'package:aveli/editor/adapter/editor_to_markdown.dart'
 import 'package:aveli/editor/debug/editor_debug.dart';
 import 'package:aveli/editor/debug/editor_debug_overlay.dart';
 import 'package:aveli/editor/guardrails/lesson_markdown_integrity_guard.dart';
+import 'package:aveli/editor/normalization/quill_delta_normalizer.dart';
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
 import 'package:aveli/editor/session/editor_operation_controller.dart';
@@ -148,36 +150,35 @@ class _CourseCreateInput {
     required this.slug,
     required this.courseGroupId,
     required this.priceAmountCents,
+    required this.dripEnabled,
+    required this.dripIntervalDays,
   });
 
   final String title;
   final String slug;
   final String courseGroupId;
   final int? priceAmountCents;
+  final bool dripEnabled;
+  final int? dripIntervalDays;
 }
-
-const String _newCourseFamilySelectionValue = '__new_course_family__';
 
 class _CourseFamilySummary {
   const _CourseFamilySummary({
     required this.courseGroupId,
+    required this.name,
     required this.courses,
   });
 
   final String courseGroupId;
+  final String name;
   final List<CourseStudio> courses;
 }
 
 const String _defaultCourseFamilyName = 'Course Family';
 
 String _courseFamilyName(_CourseFamilySummary family) {
-  for (final course in family.courses) {
-    final title = course.title.trim();
-    if (title.isNotEmpty) {
-      return title;
-    }
-  }
-  return _defaultCourseFamilyName;
+  final name = family.name.trim();
+  return name.isEmpty ? _defaultCourseFamilyName : name;
 }
 
 String _courseFamilyDisplayLabel(_CourseFamilySummary family) {
@@ -198,15 +199,79 @@ Widget _dropdownValueLabel(String text) {
   );
 }
 
+int? _parsePositiveIntText(String text) {
+  final normalized = text.trim();
+  if (normalized.isEmpty) return null;
+  return int.tryParse(normalized);
+}
+
+class _CourseDripConfigurationFields extends StatelessWidget {
+  const _CourseDripConfigurationFields({
+    required this.dripEnabled,
+    required this.dripIntervalController,
+    required this.onDripEnabledChanged,
+    this.readOnly = false,
+  });
+
+  final bool dripEnabled;
+  final TextEditingController dripIntervalController;
+  final ValueChanged<bool> onDripEnabledChanged;
+  final bool readOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Lektionssläpp',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        gap8,
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          value: dripEnabled,
+          onChanged: readOnly ? null : onDripEnabledChanged,
+          title: const Text('Aktivera lektionssläpp (drip)'),
+        ),
+        if (dripEnabled) ...[
+          gap8,
+          TextField(
+            controller: dripIntervalController,
+            readOnly: readOnly,
+            keyboardType: const TextInputType.numberWithOptions(),
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(
+              labelText: 'Antal dagar mellan lektioner',
+              helperText: 'Ange ett heltal större än 0.',
+            ),
+          ),
+          gap8,
+          Text(
+            'Ändringar påverkar alla nuvarande deltagare i kursen.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _CourseCreateDialog extends StatefulWidget {
   const _CourseCreateDialog({
     required this.defaultSlug,
-    required this.familySummaries,
+    required this.courseFamilies,
     required this.initialCourseGroupId,
   });
 
   final String defaultSlug;
-  final List<_CourseFamilySummary> familySummaries;
+  final List<CourseFamilyStudio> courseFamilies;
   final String? initialCourseGroupId;
 
   @override
@@ -217,12 +282,14 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
   late final TextEditingController _titleController;
   late final TextEditingController _slugController;
   late final TextEditingController _priceController;
+  late final TextEditingController _dripIntervalController;
   late String _selectedFamilyValue;
+  bool _dripEnabled = false;
   String? _errorText;
 
-  _CourseFamilySummary? get _selectedFamilySummary {
-    for (final family in widget.familySummaries) {
-      if (family.courseGroupId == _selectedFamilyValue) {
+  CourseFamilyStudio? get _selectedCourseFamily {
+    for (final family in widget.courseFamilies) {
+      if (family.id == _selectedFamilyValue) {
         return family;
       }
     }
@@ -235,14 +302,15 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
     _titleController = TextEditingController(text: 'Ny kurs');
     _slugController = TextEditingController(text: widget.defaultSlug);
     _priceController = TextEditingController();
+    _dripIntervalController = TextEditingController();
     final hasInitialFamily =
         widget.initialCourseGroupId != null &&
-        widget.familySummaries.any(
-          (family) => family.courseGroupId == widget.initialCourseGroupId,
+        widget.courseFamilies.any(
+          (family) => family.id == widget.initialCourseGroupId,
         );
     _selectedFamilyValue = hasInitialFamily
         ? widget.initialCourseGroupId!
-        : _newCourseFamilySelectionValue;
+        : (widget.courseFamilies.isEmpty ? '' : widget.courseFamilies.first.id);
   }
 
   @override
@@ -250,6 +318,7 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
     _titleController.dispose();
     _slugController.dispose();
     _priceController.dispose();
+    _dripIntervalController.dispose();
     super.dispose();
   }
 
@@ -257,19 +326,23 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
     final title = _titleController.text.trim();
     final slug = _slugController.text.trim();
     final rawPriceText = _priceController.text.trim();
+    final rawDripIntervalText = _dripIntervalController.text.trim();
     final priceAmountCents = rawPriceText.isEmpty
         ? null
         : parseSekInputToOre(rawPriceText);
-    final courseGroupId = _selectedFamilyValue == _newCourseFamilySelectionValue
-        ? const Uuid().v4()
-        : _selectedFamilyValue;
-
+    final dripIntervalDays = _dripEnabled
+        ? _parsePositiveIntText(rawDripIntervalText)
+        : null;
     if (title.isEmpty) {
       setState(() => _errorText = 'Titel krävs.');
       return;
     }
     if (slug.isEmpty) {
       setState(() => _errorText = 'Kursadress krävs.');
+      return;
+    }
+    if (_selectedFamilyValue.isEmpty) {
+      setState(() => _errorText = 'Välj en kursfamilj.');
       return;
     }
     if (rawPriceText.isNotEmpty &&
@@ -280,13 +353,21 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
       );
       return;
     }
+    if (_dripEnabled && (dripIntervalDays == null || dripIntervalDays <= 0)) {
+      setState(
+        () => _errorText = 'Antal dagar måste vara ett heltal större än 0.',
+      );
+      return;
+    }
 
     Navigator.of(context).pop(
       _CourseCreateInput(
         title: title,
         slug: slug,
-        courseGroupId: courseGroupId,
+        courseGroupId: _selectedFamilyValue,
         priceAmountCents: priceAmountCents,
+        dripEnabled: _dripEnabled,
+        dripIntervalDays: dripIntervalDays,
       ),
     );
   }
@@ -319,24 +400,19 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
               initialValue: _selectedFamilyValue,
               decoration: const InputDecoration(labelText: 'Course Family'),
               selectedItemBuilder: (context) => [
-                for (final family in widget.familySummaries)
-                  _dropdownValueLabel(_courseFamilyDisplayLabel(family)),
-                _dropdownValueLabel('Ny familj'),
+                for (final family in widget.courseFamilies)
+                  _dropdownValueLabel(family.name),
               ],
               items: [
-                for (final family in widget.familySummaries)
+                for (final family in widget.courseFamilies)
                   DropdownMenuItem<String>(
-                    value: family.courseGroupId,
+                    value: family.id,
                     child: Text(
-                      _courseFamilyDisplayLabel(family),
+                      family.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                const DropdownMenuItem<String>(
-                  value: _newCourseFamilySelectionValue,
-                  child: Text('Ny familj'),
-                ),
               ],
               onChanged: (value) {
                 if (value == null) return;
@@ -345,9 +421,9 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
             ),
             gap8,
             Text(
-              _selectedFamilySummary == null
-                  ? 'Kursen skapar en ny familj. Namnet visas som "Course Family" tills en kurstitel finns.'
-                  : 'Kursen placeras sist i ${_courseFamilyDisplayLabel(_selectedFamilySummary!)}.',
+              _selectedCourseFamily == null
+                  ? 'Skapa en kursfamilj innan du skapar kurser.'
+                  : 'Kursen placeras sist i ${_selectedCourseFamily!.name}.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             gap12,
@@ -361,6 +437,17 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
                 labelText: 'Pris (SEK)',
                 helperText: 'Lämna tomt om kursen inte ska prissättas än.',
               ),
+            ),
+            gap16,
+            _CourseDripConfigurationFields(
+              dripEnabled: _dripEnabled,
+              dripIntervalController: _dripIntervalController,
+              onDripEnabledChanged: (value) {
+                setState(() {
+                  _dripEnabled = value;
+                  _errorText = null;
+                });
+              },
             ),
             if (_errorText != null) ...[
               gap12,
@@ -378,6 +465,77 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
           child: const Text('Avbryt'),
         ),
         FilledButton(onPressed: _submit, child: const Text('Skapa kurs')),
+      ],
+    );
+  }
+}
+
+class _CourseFamilyCreateDialog extends StatefulWidget {
+  const _CourseFamilyCreateDialog();
+
+  @override
+  State<_CourseFamilyCreateDialog> createState() =>
+      _CourseFamilyCreateDialogState();
+}
+
+class _CourseFamilyCreateDialogState extends State<_CourseFamilyCreateDialog> {
+  late final TextEditingController _nameController;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: _defaultCourseFamilyName);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      setState(() => _errorText = 'Familjenamn krävs.');
+      return;
+    }
+    Navigator.of(context).pop(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Skapa kursfamilj'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submit(),
+              decoration: const InputDecoration(labelText: 'Familjenamn'),
+            ),
+            if (_errorText != null) ...[
+              gap12,
+              Text(
+                _errorText!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Avbryt'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Skapa familj')),
       ],
     );
   }
@@ -547,6 +705,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _allowed = false;
   late final StudioRepository _studioRepo;
   List<CourseStudio> _courses = <CourseStudio>[];
+  List<CourseFamilyStudio> _courseFamilies = <CourseFamilyStudio>[];
   String? _selectedCourseId;
 
   List<LessonStudio> _lessons = <LessonStudio>[];
@@ -603,10 +762,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   final TextEditingController _courseTitleCtrl = TextEditingController();
   final TextEditingController _courseSlugCtrl = TextEditingController();
   final TextEditingController _coursePriceCtrl = TextEditingController();
+  final TextEditingController _courseDripIntervalCtrl = TextEditingController();
+  bool _courseDripEnabled = false;
 
   bool _courseMetaLoading = false;
   bool _savingCourseMeta = false;
   bool _creatingCourse = false;
+  bool _creatingCourseFamily = false;
   bool _publishingCourse = false;
   bool _updatingCourseFamily = false;
   String? _moveCourseTargetCourseGroupId;
@@ -1520,6 +1682,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _courseTitleCtrl.dispose();
     _courseSlugCtrl.dispose();
     _coursePriceCtrl.dispose();
+    _courseDripIntervalCtrl.dispose();
     if (_lessonContentControllerInitialized) {
       _detachControllerListener();
       _lessonContentController.dispose();
@@ -1555,8 +1718,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final status = await ref.read(studioRepositoryProvider).fetchStatus();
       final allowed = status.isTeacher;
       List<CourseStudio> myCourses = <CourseStudio>[];
+      List<CourseFamilyStudio> myCourseFamilies = <CourseFamilyStudio>[];
       if (allowed) {
-        myCourses = await _studioRepo.myCourses();
+        final results = await Future.wait<Object>([
+          _studioRepo.myCourses(),
+          _studioRepo.myCourseFamilies(),
+        ]);
+        myCourses = List<CourseStudio>.from(results[0] as List<CourseStudio>);
+        myCourseFamilies = List<CourseFamilyStudio>.from(
+          results[1] as List<CourseFamilyStudio>,
+        );
       }
       if (!mounted) return;
       final initialId = widget.courseId?.trim();
@@ -1569,10 +1740,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       setState(() {
         _allowed = allowed;
         _courses = myCourses;
+        _courseFamilies = myCourseFamilies;
         _selectedCourseId = selected;
         _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
           selectedCourseId: selected,
           courses: myCourses,
+          courseFamilies: myCourseFamilies,
           currentValue: null,
         );
         _checking = false;
@@ -1625,9 +1798,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _coursePriceCtrl.text = priceOre == null
           ? ''
           : formatSekInputFromOre(priceOre);
+      _courseDripIntervalCtrl.text = course.dripIntervalDays?.toString() ?? '';
       if (mounted) {
         setState(() {
           _courses = _adoptCourseById(_courses, course);
+          _courseDripEnabled = course.dripEnabled;
           _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
             selectedCourseId: courseId,
             currentValue: _moveCourseTargetCourseGroupId,
@@ -2093,6 +2268,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return null;
   }
 
+  CourseFamilyStudio? _courseFamilyById(
+    String? id, [
+    List<CourseFamilyStudio>? source,
+  ]) {
+    if (id == null || id.isEmpty) return null;
+    for (final item in source ?? _courseFamilies) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
   List<CourseStudio> _adoptCourseById(
     List<CourseStudio> courses,
     CourseStudio course,
@@ -2149,6 +2335,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       for (final courseGroupId in order)
         _CourseFamilySummary(
           courseGroupId: courseGroupId,
+          name:
+              _courseFamilyById(courseGroupId)?.name ??
+              _defaultCourseFamilyName,
           courses: _sortCoursesWithinFamily(grouped[courseGroupId]!),
         ),
     ];
@@ -2173,40 +2362,54 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return _courseStepLabel(course.groupPosition);
   }
 
+  CourseFamilyStudio? _currentCourseFamily([
+    List<CourseStudio>? courses,
+    List<CourseFamilyStudio>? families,
+  ]) {
+    final selectedCourse = _courseById(_selectedCourseId, courses);
+    if (selectedCourse != null) {
+      return _courseFamilyById(selectedCourse.courseGroupId, families);
+    }
+    final availableFamilies = families ?? _courseFamilies;
+    if (availableFamilies.isEmpty) {
+      return null;
+    }
+    return availableFamilies.first;
+  }
+
   String _defaultCourseFamilyMoveTargetCourseGroupId({
     required String currentCourseGroupId,
-    List<CourseStudio>? courses,
+    List<CourseFamilyStudio>? courseFamilies,
   }) {
-    for (final family in _courseFamilySummaries(courses)) {
-      if (family.courseGroupId != currentCourseGroupId) {
-        return family.courseGroupId;
+    for (final family in courseFamilies ?? _courseFamilies) {
+      if (family.id != currentCourseGroupId) {
+        return family.id;
       }
     }
-    return _newCourseFamilySelectionValue;
+    return '';
   }
 
   String? _courseFamilyMoveTargetForSelection({
     required String? selectedCourseId,
     required String? currentValue,
     List<CourseStudio>? courses,
+    List<CourseFamilyStudio>? courseFamilies,
   }) {
     final selectedCourse = _courseById(selectedCourseId, courses);
     if (selectedCourse == null) {
       return null;
     }
-    if (currentValue == _newCourseFamilySelectionValue) {
-      return currentValue;
-    }
-    for (final family in _courseFamilySummaries(courses)) {
-      if (family.courseGroupId == currentValue &&
-          family.courseGroupId != selectedCourse.courseGroupId) {
+    for (final family in courseFamilies ?? _courseFamilies) {
+      if (family.id == currentValue &&
+          family.id != selectedCourse.courseGroupId) {
         return currentValue;
       }
     }
-    return _defaultCourseFamilyMoveTargetCourseGroupId(
+    final fallback = _defaultCourseFamilyMoveTargetCourseGroupId(
       currentCourseGroupId: selectedCourse.courseGroupId,
-      courses: courses,
+      courseFamilies: courseFamilies,
     );
+    return fallback.isEmpty ? null : fallback;
   }
 
   String? _firstCourseId(List<CourseStudio> items) {
@@ -2621,9 +2824,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String _serializeLessonMarkdownFromController(
     quill.QuillController controller,
   ) {
+    final normalizedDelta = _normalizedLessonDeltaFromController(controller);
     return editor_to_markdown.editorDeltaToCanonicalMarkdown(
-      delta: controller.document.toDelta(),
+      delta: normalizedDelta,
     );
+  }
+
+  quill_delta.Delta _normalizedLessonDeltaFromController(
+    quill.QuillController controller,
+  ) {
+    return normalizeDeltaForGuard(controller.document.toDelta());
   }
 
   Set<String> _embeddedLessonMediaIdsFromController(
@@ -3031,13 +3241,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ? 'Lektion'
         : _lessonTitleCtrl.text.trim();
     final uiPlainText = _lessonContentController.document.toPlainText();
+    final normalizedDelta = _normalizedLessonDeltaFromController(
+      _lessonContentController,
+    );
     late final String markdown;
     late final String rawMarkdown;
     late final LessonMarkdownIntegrityGuardResult integrityResult;
     try {
-      integrityResult = validateLessonMarkdownIntegrity(
-        delta: _lessonContentController.document.toDelta(),
-      );
+      integrityResult = validateLessonMarkdownIntegrity(delta: normalizedDelta);
       markdown = integrityResult.originalMarkdown;
       rawMarkdown = markdown;
     } catch (error, stackTrace) {
@@ -6161,6 +6372,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return parseSekInputToOre(text);
   }
 
+  int? _parseCourseDripIntervalDays() {
+    return _parsePositiveIntText(_courseDripIntervalCtrl.text);
+  }
+
   String _defaultDraftCourseSlug() {
     final suffix = _uuid.v4().replaceAll('-', '').substring(0, 8);
     return 'ny-kurs-$suffix';
@@ -6178,17 +6393,48 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       context: context,
       builder: (_) => _CourseCreateDialog(
         defaultSlug: _defaultDraftCourseSlug(),
-        familySummaries: _courseFamilySummaries(),
-        initialCourseGroupId: _selectedCourseFamilySummary()?.courseGroupId,
+        courseFamilies: _courseFamilies,
+        initialCourseGroupId: _currentCourseFamily()?.id,
       ),
     );
+  }
+
+  Future<String?> _showCourseFamilyCreateDialog() async {
+    return showDialog<String>(
+      context: context,
+      builder: (_) => const _CourseFamilyCreateDialog(),
+    );
+  }
+
+  Future<void> _refreshCourseFamiliesOnly() async {
+    final refreshedFamilies = await _studioRepo.myCourseFamilies();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _courseFamilies = refreshedFamilies;
+      _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
+        selectedCourseId: _selectedCourseId,
+        currentValue: _moveCourseTargetCourseGroupId,
+        courseFamilies: refreshedFamilies,
+      );
+    });
   }
 
   Future<CourseStudio?> _refreshSelectedCourseAuthoringState({
     required String selectedCourseId,
     bool reloadLessons = false,
   }) async {
-    final refreshedCourses = await _studioRepo.myCourses();
+    final results = await Future.wait<Object>([
+      _studioRepo.myCourses(),
+      _studioRepo.myCourseFamilies(),
+    ]);
+    final refreshedCourses = List<CourseStudio>.from(
+      results[0] as List<CourseStudio>,
+    );
+    final refreshedFamilies = List<CourseFamilyStudio>.from(
+      results[1] as List<CourseFamilyStudio>,
+    );
     final canonicalCourse = _courseById(selectedCourseId, refreshedCourses);
     if (!mounted) {
       return canonicalCourse;
@@ -6200,11 +6446,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         : _adoptCourseById(refreshedCourses, canonicalCourse);
     setState(() {
       _courses = nextCourses;
+      _courseFamilies = refreshedFamilies;
       _selectedCourseId = effectiveSelectedCourseId;
       _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
         selectedCourseId: effectiveSelectedCourseId,
         currentValue: _moveCourseTargetCourseGroupId,
         courses: nextCourses,
+        courseFamilies: refreshedFamilies,
       );
     });
     _invalidateCourseReadProviders();
@@ -6261,12 +6509,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (course == null || targetSelection == null || _updatingCourseFamily) {
       return;
     }
-
-    final targetCourseGroupId =
-        targetSelection == _newCourseFamilySelectionValue
-        ? _uuid.v4()
-        : targetSelection;
-    if (targetCourseGroupId == course.courseGroupId) {
+    if (targetSelection == course.courseGroupId) {
       return;
     }
 
@@ -6274,7 +6517,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     try {
       final updated = await _studioRepo.moveCourseToFamily(
         course.id,
-        courseGroupId: targetCourseGroupId,
+        courseGroupId: targetSelection,
       );
       await _refreshSelectedCourseAuthoringState(selectedCourseId: updated.id);
       if (!mounted || !context.mounted) return;
@@ -6297,6 +6540,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     if (_creatingCourse) return;
+    if (_courseFamilies.isEmpty) {
+      showSnack(context, 'Skapa en kursfamilj först.');
+      return;
+    }
     if (!await _maybeSaveLessonEdits()) return;
     if (!mounted) return;
 
@@ -6310,8 +6557,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         slug: input.slug,
         courseGroupId: input.courseGroupId,
         priceAmountCents: input.priceAmountCents,
-        dripEnabled: false,
-        dripIntervalDays: null,
+        dripEnabled: input.dripEnabled,
+        dripIntervalDays: input.dripIntervalDays,
         coverMediaId: null,
       );
       if (!mounted) return;
@@ -6329,6 +6576,36 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  Future<void> _promptCreateCourseFamily() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
+    if (_creatingCourseFamily) return;
+    if (!await _maybeSaveLessonEdits()) return;
+    if (!mounted) return;
+
+    final name = await _showCourseFamilyCreateDialog();
+    if (name == null || !mounted) {
+      return;
+    }
+
+    setState(() => _creatingCourseFamily = true);
+    try {
+      final family = await _studioRepo.createCourseFamily(name: name);
+      await _refreshCourseFamiliesOnly();
+      if (!mounted || !context.mounted) {
+        return;
+      }
+      showSnack(context, 'Kursfamilj skapad: ${family.name}.');
+    } catch (error, stackTrace) {
+      _showFriendlyErrorSnack('Kunde inte skapa kursfamilj', error, stackTrace);
+    } finally {
+      if (mounted) {
+        setState(() => _creatingCourseFamily = false);
+      }
+    }
+  }
+
   Future<void> _saveCourseMeta() async {
     if (!_requireEditModeForMutation()) {
       return;
@@ -6339,6 +6616,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final slug = _courseSlugCtrl.text.trim();
     final rawPriceText = _coursePriceCtrl.text.trim();
     final effectivePriceOre = _parseCoursePriceOre();
+    final effectiveDripIntervalDays = _courseDripEnabled
+        ? _parseCourseDripIntervalDays()
+        : null;
 
     if (title.isEmpty) {
       showSnack(context, 'Titel krävs.');
@@ -6352,10 +6632,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
       return;
     }
+    if (_courseDripEnabled &&
+        (effectiveDripIntervalDays == null || effectiveDripIntervalDays <= 0)) {
+      showSnack(context, 'Antal dagar måste vara ett heltal större än 0.');
+      return;
+    }
 
     final patch = <String, Object?>{
       'title': title,
       'price_amount_cents': effectivePriceOre,
+      'drip_enabled': _courseDripEnabled,
+      'drip_interval_days': _courseDripEnabled
+          ? effectiveDripIntervalDays
+          : null,
     };
     if (slug.isNotEmpty) {
       patch['slug'] = slug;
@@ -6425,6 +6714,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _coursePriceCtrl.text = priceOre == null
             ? ''
             : formatSekInputFromOre(priceOre);
+        _courseDripEnabled = published.dripEnabled;
+        _courseDripIntervalCtrl.text =
+            published.dripIntervalDays?.toString() ?? '';
         _courseCoverPath = published.cover?.resolvedUrl;
       });
       _invalidateCourseReadProviders();
@@ -6448,8 +6740,49 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Widget _buildCourseFamilyAuthoring(BuildContext context) {
     final selectedCourse = _courseById(_selectedCourseId);
     final selectedFamily = _selectedCourseFamilySummary();
+    final currentFamily = _currentCourseFamily();
+    final theme = Theme.of(context);
+    final availableFamilies = _courseFamilies;
+
+    if (availableFamilies.isEmpty) {
+      return const Text(
+        'Skapa en kursfamilj innan du skapar kurser eller hanterar ordning.',
+      );
+    }
+
     if (selectedCourse == null || selectedFamily == null) {
-      return const Text('Välj en kurs för att hantera familj och ordning.');
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Current Family: ${currentFamily?.name ?? _defaultCourseFamilyName}',
+            style: theme.textTheme.bodyMedium,
+          ),
+          gap8,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final family in availableFamilies)
+                Chip(
+                  label: Text(
+                    family.courseCount == 1
+                        ? family.name
+                        : '${family.name} · ${family.courseCount} kurser',
+                  ),
+                  backgroundColor: currentFamily?.id == family.id
+                      ? theme.colorScheme.primary.withValues(alpha: 0.14)
+                      : null,
+                ),
+            ],
+          ),
+          gap12,
+          Text(
+            'Skapa en kurs i en befintlig familj eller välj en kurs för att hantera ordning.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      );
     }
 
     final canMutateFamily = !_lessonPreviewMode && !_updatingCourseFamily;
@@ -6458,23 +6791,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         canMutateFamily &&
         selectedCourse.groupPosition < selectedFamily.courses.length - 1;
     final moveTargetFamilies = [
-      for (final family in _courseFamilySummaries())
-        if (family.courseGroupId != selectedCourse.courseGroupId) family,
+      for (final family in availableFamilies)
+        if (family.id != selectedCourse.courseGroupId) family,
     ];
     final moveTargetItems = <DropdownMenuItem<String>>[
       for (final family in moveTargetFamilies)
         DropdownMenuItem<String>(
-          value: family.courseGroupId,
+          value: family.id,
           child: Text(
-            '${_courseFamilyDisplayLabel(family)} · placeras sist',
+            '${family.name} · placeras sist',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ),
-      const DropdownMenuItem<String>(
-        value: _newCourseFamilySelectionValue,
-        child: Text('Ny familj · kursen blir först'),
-      ),
     ];
     final moveTargetValue =
         moveTargetItems.any(
@@ -6482,14 +6811,31 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         )
         ? _moveCourseTargetCourseGroupId
         : (moveTargetItems.isEmpty ? null : moveTargetItems.first.value);
-    final theme = Theme.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Current Family: ${_courseFamilyName(selectedFamily)}',
+          'Current Family: ${currentFamily?.name ?? _defaultCourseFamilyName}',
           style: theme.textTheme.bodyMedium,
+        ),
+        gap8,
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final family in availableFamilies)
+              Chip(
+                label: Text(
+                  family.courseCount == 1
+                      ? family.name
+                      : '${family.name} · ${family.courseCount} kurser',
+                ),
+                backgroundColor: currentFamily?.id == family.id
+                    ? theme.colorScheme.primary.withValues(alpha: 0.14)
+                    : null,
+              ),
+          ],
         ),
         gap8,
         Text(
@@ -6556,13 +6902,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           decoration: const InputDecoration(
             labelText: 'Flytta till kursfamilj',
           ),
-          selectedItemBuilder: (context) => [
-            for (final family in moveTargetFamilies)
-              _dropdownValueLabel(_courseFamilyDisplayLabel(family)),
-            _dropdownValueLabel('Ny familj'),
-          ],
+          selectedItemBuilder: (context) => moveTargetFamilies
+              .map((family) => _dropdownValueLabel(family.name))
+              .toList(growable: false),
           items: moveTargetItems,
-          onChanged: canMutateFamily
+          onChanged: canMutateFamily && moveTargetValue != null
               ? (value) {
                   if (value == null) return;
                   setState(() => _moveCourseTargetCourseGroupId = value);
@@ -6571,7 +6915,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ),
         gap8,
         Text(
-          'Flytt använder den kanoniska move-family-surface och placerar kursen sist i vald familj.',
+          moveTargetItems.isEmpty
+              ? 'Skapa en annan kursfamilj för att kunna flytta kursen.'
+              : 'Flytt använder den kanoniska move-family-surface och placerar kursen sist i vald familj.',
           style: theme.textTheme.bodySmall,
         ),
         gap12,
@@ -6682,6 +7028,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               children: [
                 _SectionCard(
                   title: 'Course Family',
+                  actions: [
+                    OutlinedButton.icon(
+                      onPressed: _creatingCourseFamily || _lessonPreviewMode
+                          ? null
+                          : _promptCreateCourseFamily,
+                      icon: _creatingCourseFamily
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.create_new_folder_outlined),
+                      label: Text(
+                        _creatingCourseFamily ? 'Skapar...' : 'Skapa familj',
+                      ),
+                    ),
+                  ],
                   child: _buildCourseFamilyAuthoring(context),
                 ),
                 gap12,
@@ -6689,7 +7052,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   title: 'Välj kurs',
                   actions: [
                     OutlinedButton.icon(
-                      onPressed: _creatingCourse || _lessonPreviewMode
+                      onPressed:
+                          _creatingCourse ||
+                              _lessonPreviewMode ||
+                              _courseFamilies.isEmpty
                           ? null
                           : _promptCreateCourse,
                       icon: _creatingCourse
@@ -6731,8 +7097,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                       ),
                       if (courseItems.isEmpty) ...[
                         gap8,
-                        const Text(
-                          'Inga kurser tillgängliga i monterad runtime.',
+                        Text(
+                          _courseFamilies.isEmpty
+                              ? 'Skapa en kursfamilj först. Kurser kan bara skapas i en befintlig familj.'
+                              : 'Inga kurser tillgängliga i monterad runtime.',
                         ),
                       ],
                     ],
@@ -6771,6 +7139,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 decoration: const InputDecoration(
                                   labelText: 'Pris (SEK)',
                                 ),
+                              ),
+                              gap16,
+                              _CourseDripConfigurationFields(
+                                dripEnabled: _courseDripEnabled,
+                                dripIntervalController: _courseDripIntervalCtrl,
+                                readOnly: _lessonPreviewMode,
+                                onDripEnabledChanged: (value) {
+                                  setState(() => _courseDripEnabled = value);
+                                },
                               ),
                               Wrap(
                                 spacing: 12,

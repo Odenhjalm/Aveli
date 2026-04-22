@@ -42,12 +42,27 @@ async def test_create_course_with_positive_price_does_not_create_stripe_mapping(
             price_amount_cents=1900,
         )
 
+    async def fake_get_course_family(course_group_id: str):
+        assert course_group_id == "group_step1"
+        return {
+            "id": "group_step1",
+            "name": "Group Step 1",
+            "teacher_id": teacher_id,
+            "course_count": 0,
+        }
+
     async def fail_ensure_course_stripe_mapping(*args, **kwargs):
         raise AssertionError("create_course must not ensure Stripe mapping")
 
     async def fail_delete_course(*args, **kwargs):
         raise AssertionError("create_course must not roll back through Stripe mapping")
 
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "get_course_family",
+        fake_get_course_family,
+        raising=True,
+    )
     monkeypatch.setattr(
         courses_service.courses_repo,
         "create_course",

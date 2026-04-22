@@ -82,6 +82,32 @@ void main() {
     },
   );
 
+  test('createCourse posts drip fields when enabled', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final course = await repo.createCourse(
+      title: 'Client drip draft',
+      slug: 'client-drip-draft',
+      courseGroupId: '11111111-1111-1111-1111-111111111111',
+      priceAmountCents: 49000,
+      dripEnabled: true,
+      dripIntervalDays: 7,
+      coverMediaId: null,
+    );
+
+    expect(course.dripEnabled, isTrue);
+    expect(course.dripIntervalDays, 7);
+
+    final requests = harness.adapter.requestsFor('/studio/courses');
+    expect(requests, hasLength(1));
+    final payload = Map<String, dynamic>.from(requests.single.data as Map);
+    expect(payload['drip_enabled'], isTrue);
+    expect(payload['drip_interval_days'], 7);
+    expect(payload.containsKey('current_unlock_position'), isFalse);
+    expect(payload.containsKey('drip_started_at'), isFalse);
+  });
+
   test('updateCourse rejects raw family transition fields', () async {
     final harness = await _Harness.create();
     final repo = StudioRepository(client: harness.client);
@@ -145,6 +171,40 @@ void main() {
       'course_group_id': '77777777-7777-7777-7777-777777777777',
     });
   });
+
+  test('myCourseFamilies reads canonical family list', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final families = await repo.myCourseFamilies();
+
+    expect(families, hasLength(2));
+    expect(families.first.id, '11111111-1111-1111-1111-111111111111');
+    expect(families.first.name, 'Tarot Foundations');
+    expect(families.first.courseCount, 2);
+
+    final requests = harness.adapter.requestsFor('/studio/course-families');
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'GET');
+  });
+
+  test('createCourseFamily posts canonical family create payload', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final family = await repo.createCourseFamily(name: 'New Family');
+
+    expect(family.id, '88888888-8888-8888-8888-888888888888');
+    expect(family.name, 'New Family');
+    expect(family.courseCount, 0);
+
+    final requests = harness.adapter.requestsFor('/studio/course-families');
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'POST');
+    expect(Map<String, dynamic>.from(requests.single.data as Map), {
+      'name': 'New Family',
+    });
+  });
 }
 
 class _Harness {
@@ -168,6 +228,7 @@ class _Harness {
     final adapter = _RecordingAdapter((options) {
       if (options.path == '/studio/courses' &&
           options.method.toUpperCase() == 'POST') {
+        final payload = Map<String, dynamic>.from(options.data as Map);
         return _jsonResponse(
           statusCode: 200,
           body: {
@@ -179,8 +240,45 @@ class _Harness {
             'cover_media_id': null,
             'cover': null,
             'price_amount_cents': 49000,
-            'drip_enabled': false,
-            'drip_interval_days': null,
+            'drip_enabled': payload['drip_enabled'] as bool? ?? false,
+            'drip_interval_days': payload['drip_interval_days'] as int?,
+          },
+        );
+      }
+      if (options.path == '/studio/course-families' &&
+          options.method.toUpperCase() == 'GET') {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'items': [
+              {
+                'id': '11111111-1111-1111-1111-111111111111',
+                'name': 'Tarot Foundations',
+                'teacher_id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                'created_at': '2026-01-01T00:00:00Z',
+                'course_count': 2,
+              },
+              {
+                'id': '77777777-7777-7777-7777-777777777777',
+                'name': 'Breathwork Flow',
+                'teacher_id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                'created_at': '2026-01-02T00:00:00Z',
+                'course_count': 1,
+              },
+            ],
+          },
+        );
+      }
+      if (options.path == '/studio/course-families' &&
+          options.method.toUpperCase() == 'POST') {
+        return _jsonResponse(
+          statusCode: 201,
+          body: {
+            'id': '88888888-8888-8888-8888-888888888888',
+            'name': 'New Family',
+            'teacher_id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            'created_at': '2026-01-03T00:00:00Z',
+            'course_count': 0,
           },
         );
       }

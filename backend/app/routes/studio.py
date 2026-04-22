@@ -916,6 +916,8 @@ async def create_course(payload: schemas.StudioCourseCreate, current: TeacherEnt
             payload.model_dump(),
             teacher_id=str(current["id"]),
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except courses_service.CourseCreationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except RuntimeError as exc:
@@ -1938,6 +1940,35 @@ async def publish_course(course_id: str, current: TeacherEntryUser):
         raise HTTPException(status_code=404, detail="Kursen hittades inte")
     await _apply_course_read_contract(row)
     return _course_response(row)
+
+
+@course_lesson_router.get(
+    "/course-families",
+    response_model=schemas.CourseFamilyListResponse,
+)
+async def list_course_families(current: TeacherEntryUser):
+    rows = await courses_service.list_course_families(teacher_id=str(current["id"]))
+    return {"items": rows}
+
+
+@course_lesson_router.post(
+    "/course-families",
+    response_model=schemas.CourseFamily,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_course_family(
+    payload: schemas.StudioCourseFamilyCreate,
+    current: TeacherEntryUser,
+):
+    try:
+        return await courses_service.create_course_family(
+            name=payload.name,
+            teacher_id=str(current["id"]),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @course_lesson_router.patch("/courses/{course_id}", response_model=schemas.Course)
