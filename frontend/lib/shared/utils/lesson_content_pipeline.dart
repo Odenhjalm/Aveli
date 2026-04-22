@@ -389,6 +389,18 @@ Set<String> extractLessonEmbeddedMediaIds(String markdown) {
   return ids;
 }
 
+class PreparedLessonRenderContent {
+  const PreparedLessonRenderContent({
+    required this.canonicalMarkdown,
+    required this.renderMarkdown,
+    required this.embeddedMediaIds,
+  });
+
+  final String canonicalMarkdown;
+  final String renderMarkdown;
+  final Set<String> embeddedMediaIds;
+}
+
 String rewriteLessonMarkdownApiFilesUrls({
   required String markdown,
   required Map<String, String> apiFilesPathToStudioMediaUrl,
@@ -412,7 +424,30 @@ Future<String> prepareLessonMarkdownForRendering(
   Iterable<LessonMediaItem> lessonMedia = const <LessonMediaItem>[],
   Object? pipelineRepository,
 }) async {
-  return markdown;
+  final prepared = await prepareLessonRenderContent(
+    mediaRepository,
+    markdown,
+    lessonMedia: lessonMedia,
+    pipelineRepository: pipelineRepository,
+  );
+  return prepared.renderMarkdown;
+}
+
+Future<PreparedLessonRenderContent> prepareLessonRenderContent(
+  MediaRepository mediaRepository,
+  String markdown, {
+  Iterable<LessonMediaItem> lessonMedia = const <LessonMediaItem>[],
+  Object? pipelineRepository,
+}) async {
+  final canonicalMarkdown = rewriteLegacyLessonMediaUrlsForReadCompatibility(
+    markdown: markdown,
+    lessonMedia: lessonMedia,
+  );
+  return PreparedLessonRenderContent(
+    canonicalMarkdown: canonicalMarkdown,
+    renderMarkdown: canonicalMarkdown,
+    embeddedMediaIds: extractLessonEmbeddedMediaIds(canonicalMarkdown),
+  );
 }
 
 String enforceLessonMarkdownStorageContract(String markdown) {

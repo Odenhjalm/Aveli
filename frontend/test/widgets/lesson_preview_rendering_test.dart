@@ -86,7 +86,7 @@ class _PreviewHarnessState extends State<_PreviewHarness> {
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(12),
-            child: LessonPageRenderer(
+            child: LearnerLessonContentRenderer(
               markdown: markdown,
               lessonMedia: lessonMedia,
             ),

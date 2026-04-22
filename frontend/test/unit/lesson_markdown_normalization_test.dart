@@ -163,5 +163,26 @@ void main() {
         expect(prepared, markdown);
       },
     );
+
+    test(
+      'render composition preserves canonical markdown and embedded ids for locked tokens',
+      () async {
+        final mediaRepository = _buildMediaRepository();
+
+        const markdown =
+            'Intro\n\n!image(media-image)\n\n!document(media-document)\n';
+        final prepared = await prepareLessonRenderContent(
+          mediaRepository,
+          markdown,
+        );
+
+        expect(prepared.canonicalMarkdown, markdown);
+        expect(prepared.renderMarkdown, markdown);
+        expect(
+          prepared.embeddedMediaIds,
+          containsAll(<String>{'media-image', 'media-document'}),
+        );
+      },
+    );
   });
 }

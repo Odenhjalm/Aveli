@@ -2709,6 +2709,83 @@ void main() {
   );
 
   testWidgets(
+    'preview renders persisted inline document tokens without trailing fallback duplication',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const documentId = 'lesson-media-document-1';
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        readContent: (lessonId) async => _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: 'Intro\n\n!document($documentId)\n\nOutro',
+          media: const [
+            StudioLessonContentMediaItem(
+              lessonMediaId: documentId,
+              position: 1,
+              mediaType: 'document',
+              state: 'ready',
+              mediaAssetId: 'asset-$documentId',
+            ),
+          ],
+          etag: '"content-v1"',
+        ),
+      );
+      when(() => repo.fetchLessonMediaPlacements(any())).thenAnswer((
+        invocation,
+      ) async {
+        final ids = List<String>.from(
+          invocation.positionalArguments.single as List,
+        );
+        return [for (final id in ids) _placementDocument(id, position: 1)];
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilDocumentContains(tester, 'Outro');
+      await tester.pumpAndSettle();
+
+      clearInteractions(repo);
+      _insertAtDocumentEnd(' draft');
+      await tester.pump();
+      expect(editor_test_bridge.getDocument(), contains('draft'));
+
+      await _openLessonPreview(tester);
+      await _pumpUntilFinderFound(
+        tester,
+        find.byType(LearnerLessonContentRenderer),
+      );
+      await _pumpUntilFinderFound(
+        tester,
+        find.byKey(const ValueKey<String>('lesson_preview_live_badge')),
+      );
+      await _pumpUntilFinderFound(
+        tester,
+        find.textContaining('Ladda ner dokument', findRichText: true),
+      );
+
+      final previewText = _renderedPreviewText(tester);
+      expect(previewText, contains('Intro'));
+      expect(previewText, contains('Outro'));
+      expect(previewText, contains('Ladda ner dokument'));
+      expect(previewText, isNot(contains('draft')));
+      expect(previewText, isNot(contains('!document(')));
+      expect(find.text('Dokument'), findsNothing);
+
+      verify(() => repo.readLessonContent(any())).called(1);
+      verifyNever(() => repo.fetchLessonMediaPlacements(any()));
+      verifyNever(
+        () => repo.updateLessonContent(
+          any(),
+          contentMarkdown: any(named: 'contentMarkdown'),
+          ifMatch: any(named: 'ifMatch'),
+        ),
+      );
+    },
+  );
+
+  testWidgets(
     'preview ignores unsaved editor changes and refetches persisted content',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 1000));

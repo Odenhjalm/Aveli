@@ -376,7 +376,7 @@ LessonMediaItem? _findLessonMediaItem(
   return null;
 }
 
-class LearnerLessonContentRenderer extends StatelessWidget {
+class LearnerLessonContentRenderer extends ConsumerStatefulWidget {
   const LearnerLessonContentRenderer({
     super.key,
     required this.markdown,
@@ -389,45 +389,111 @@ class LearnerLessonContentRenderer extends StatelessWidget {
   final ValueChanged<String>? onLaunchUrl;
 
   @override
-  Widget build(BuildContext context) {
-    final embeddedMediaIds = extractLessonEmbeddedMediaIds(markdown);
-    final trailingMedia = lessonMedia
-        .where((item) => !embeddedMediaIds.contains(item.id))
-        .where(_isAllowedTrailingLessonMediaType)
-        .toList(growable: false);
+  ConsumerState<LearnerLessonContentRenderer> createState() =>
+      _LearnerLessonContentRendererState();
+}
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        GlassCard(
-          padding: const EdgeInsets.all(16),
-          opacity: 0.16,
-          sigmaX: 10,
-          sigmaY: 10,
-          borderRadius: BorderRadius.circular(22),
-          borderColor: Colors.white.withValues(alpha: 0.16),
-          child: LessonPageRenderer(
-            markdown: markdown,
-            lessonMedia: lessonMedia,
-            onLaunchUrl: onLaunchUrl,
-          ),
-        ),
-        if (trailingMedia.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          GlassCard(
-            padding: const EdgeInsets.all(12),
-            borderRadius: BorderRadius.circular(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ...trailingMedia.map(
-                  (item) => _MediaItem(item: item, onLaunchUrl: onLaunchUrl),
-                ),
-              ],
+class _LearnerLessonContentRendererState
+    extends ConsumerState<LearnerLessonContentRenderer> {
+  late Future<PreparedLessonRenderContent> _preparedContentFuture;
+  late String _lessonMediaSignature;
+
+  @override
+  void initState() {
+    super.initState();
+    _lessonMediaSignature = _buildLessonMediaSignature(widget.lessonMedia);
+    _preparedContentFuture = _createPreparedContentFuture();
+  }
+
+  @override
+  void didUpdateWidget(covariant LearnerLessonContentRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextSignature = _buildLessonMediaSignature(widget.lessonMedia);
+    if (widget.markdown == oldWidget.markdown &&
+        _lessonMediaSignature == nextSignature) {
+      return;
+    }
+    _lessonMediaSignature = nextSignature;
+    _preparedContentFuture = _createPreparedContentFuture();
+  }
+
+  Future<PreparedLessonRenderContent> _createPreparedContentFuture() {
+    final mediaRepo = ref.read(mediaRepositoryProvider);
+    final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
+    return prepareLessonRenderContent(
+      mediaRepo,
+      widget.markdown,
+      lessonMedia: widget.lessonMedia,
+      pipelineRepository: pipelineRepo,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    /*
+    if (providedPreparedContent != null) {
+      if (providedPreparedContent.renderMarkdown.isEmpty) {
+        return const _LessonRendererErrorState(
+          message: 'Lektionsinnehållet saknas.',
+        );
+      }
+      return _LessonQuillContent(
+        markdown: providedPreparedContent.renderMarkdown,
+        lessonMedia: widget.lessonMedia,
+        onLaunchUrl:
+            widget.onLaunchUrl ?? (url) => unawaited(_tryLaunchExternal(url)),
+      );
+    */
+
+    return FutureBuilder<PreparedLessonRenderContent>(
+      future: _preparedContentFuture,
+      builder: (context, snapshot) {
+        final prepared = snapshot.data;
+        final trailingMedia = prepared == null
+            ? const <LessonMediaItem>[]
+            : widget.lessonMedia
+                  .where((item) => !prepared.embeddedMediaIds.contains(item.id))
+                  .where(_isAllowedTrailingLessonMediaType)
+                  .toList(growable: false);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            GlassCard(
+              padding: const EdgeInsets.all(16),
+              opacity: 0.16,
+              sigmaX: 10,
+              sigmaY: 10,
+              borderRadius: BorderRadius.circular(22),
+              borderColor: Colors.white.withValues(alpha: 0.16),
+              child: LessonPageRenderer(
+                markdown: widget.markdown,
+                lessonMedia: widget.lessonMedia,
+                onLaunchUrl: widget.onLaunchUrl,
+                preparedContent: prepared,
+              ),
             ),
-          ),
-        ],
-      ],
+            if (trailingMedia.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              GlassCard(
+                padding: const EdgeInsets.all(12),
+                borderRadius: BorderRadius.circular(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ...trailingMedia.map(
+                      (item) => _MediaItem(
+                        item: item,
+                        onLaunchUrl: widget.onLaunchUrl,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -438,25 +504,27 @@ class LessonPageRenderer extends ConsumerStatefulWidget {
     required this.markdown,
     this.lessonMedia = const <LessonMediaItem>[],
     this.onLaunchUrl,
+    this.preparedContent,
   });
 
   final String markdown;
   final List<LessonMediaItem> lessonMedia;
   final ValueChanged<String>? onLaunchUrl;
+  final PreparedLessonRenderContent? preparedContent;
 
   @override
   ConsumerState<LessonPageRenderer> createState() => _LessonPageRendererState();
 }
 
 class _LessonPageRendererState extends ConsumerState<LessonPageRenderer> {
-  late Future<String> _preparedMarkdownFuture;
+  late Future<PreparedLessonRenderContent> _preparedContentFuture;
   late String _lessonMediaSignature;
 
   @override
   void initState() {
     super.initState();
     _lessonMediaSignature = _buildLessonMediaSignature(widget.lessonMedia);
-    _preparedMarkdownFuture = _createPreparedMarkdownFuture();
+    _preparedContentFuture = _createPreparedContentFuture();
   }
 
   @override
@@ -464,17 +532,22 @@ class _LessonPageRendererState extends ConsumerState<LessonPageRenderer> {
     super.didUpdateWidget(oldWidget);
     final nextSignature = _buildLessonMediaSignature(widget.lessonMedia);
     if (widget.markdown == oldWidget.markdown &&
+        widget.preparedContent == oldWidget.preparedContent &&
         _lessonMediaSignature == nextSignature) {
       return;
     }
     _lessonMediaSignature = nextSignature;
-    _preparedMarkdownFuture = _createPreparedMarkdownFuture();
+    _preparedContentFuture = _createPreparedContentFuture();
   }
 
-  Future<String> _createPreparedMarkdownFuture() {
+  Future<PreparedLessonRenderContent> _createPreparedContentFuture() {
+    final providedPreparedContent = widget.preparedContent;
+    if (providedPreparedContent != null) {
+      return Future.value(providedPreparedContent);
+    }
     final mediaRepo = ref.read(mediaRepositoryProvider);
     final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
-    return prepareLessonMarkdownForRendering(
+    return prepareLessonRenderContent(
       mediaRepo,
       widget.markdown,
       lessonMedia: widget.lessonMedia,
@@ -484,8 +557,23 @@ class _LessonPageRendererState extends ConsumerState<LessonPageRenderer> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<String>(
-      future: _preparedMarkdownFuture,
+    final providedPreparedContent = widget.preparedContent;
+    if (providedPreparedContent != null) {
+      if (providedPreparedContent.renderMarkdown.isEmpty) {
+        return const _LessonRendererErrorState(
+          message: 'Lektionsinnehållet saknas.',
+        );
+      }
+      return _LessonQuillContent(
+        markdown: providedPreparedContent.renderMarkdown,
+        lessonMedia: widget.lessonMedia,
+        onLaunchUrl:
+            widget.onLaunchUrl ?? (url) => unawaited(_tryLaunchExternal(url)),
+      );
+    }
+
+    return FutureBuilder<PreparedLessonRenderContent>(
+      future: _preparedContentFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
@@ -501,13 +589,13 @@ class _LessonPageRendererState extends ConsumerState<LessonPageRenderer> {
         }
 
         final prepared = snapshot.data;
-        if (prepared == null || prepared.isEmpty) {
+        if (prepared == null || prepared.renderMarkdown.isEmpty) {
           return const _LessonRendererErrorState(
             message: 'Lektionsinnehållet saknas.',
           );
         }
         return _LessonQuillContent(
-          markdown: prepared,
+          markdown: prepared.renderMarkdown,
           lessonMedia: widget.lessonMedia,
           onLaunchUrl:
               widget.onLaunchUrl ?? (url) => unawaited(_tryLaunchExternal(url)),
