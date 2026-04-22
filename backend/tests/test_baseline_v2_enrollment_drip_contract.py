@@ -168,6 +168,66 @@ def _insert_lessons(conn: psycopg.Connection, course_id: str, count: int) -> Non
             )
 
 
+def _lesson_rows(conn: psycopg.Connection, course_id: str) -> list[dict[str, object]]:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT id, position
+            FROM app.lessons
+            WHERE course_id = %s
+            ORDER BY position, id
+            """,
+            (course_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def _configure_custom_drip(
+    conn: psycopg.Connection,
+    *,
+    course_id: str,
+    offsets_by_position: dict[int, int],
+) -> None:
+    lessons = _lesson_rows(conn, course_id)
+    lesson_positions = {int(lesson["position"]) for lesson in lessons}
+    assert lesson_positions == set(offsets_by_position)
+
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE app.courses
+                   SET drip_enabled = false,
+                       drip_interval_days = NULL
+                 WHERE id = %s
+                """,
+                (course_id,),
+            )
+            cur.execute(
+                """
+                INSERT INTO app.course_custom_drip_configs (course_id)
+                VALUES (%s)
+                """,
+                (course_id,),
+            )
+            for lesson in lessons:
+                cur.execute(
+                    """
+                    INSERT INTO app.course_custom_drip_lesson_offsets (
+                      course_id,
+                      lesson_id,
+                      unlock_offset_days
+                    )
+                    VALUES (%s, %s, %s)
+                    """,
+                    (
+                        course_id,
+                        str(lesson["id"]),
+                        offsets_by_position[int(lesson["position"])],
+                    ),
+                )
+
+
 def _create_enrollment(
     conn: psycopg.Connection,
     *,
@@ -235,7 +295,7 @@ async def test_enrollment_initialization_uses_required_source_authority():
             conn,
             course_id=paid_course_id,
             slug="paid-full-unlock",
-            group_position=1,
+            group_position=0,
             required_enrollment_source="purchase",
             drip_enabled=False,
             drip_interval_days=None,
@@ -330,7 +390,7 @@ async def test_worker_advances_existing_drip_enrollment_only():
             conn,
             course_id=course_id,
             slug="paid-drip-course",
-            group_position=1,
+            group_position=0,
             required_enrollment_source="purchase",
             drip_enabled=True,
             drip_interval_days=2,
@@ -356,3 +416,411 @@ async def test_worker_advances_existing_drip_enrollment_only():
 
         assert advanced["id"] == enrollment["id"]
         assert advanced["current_unlock_position"] == 3
+
+
+async def test_custom_drip_substrate_rejects_incomplete_schedule_commits():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="custom-incomplete-schedule",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=2)
+        lessons = _lesson_rows(conn, course_id)
+
+        with pytest.raises(
+            psycopg.Error,
+            match="custom drip requires one offset row per lesson",
+        ):
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO app.course_custom_drip_configs (course_id)
+                        VALUES (%s)
+                        """,
+                        (course_id,),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO app.course_custom_drip_lesson_offsets (
+                          course_id,
+                          lesson_id,
+                          unlock_offset_days
+                        )
+                        VALUES (%s, %s, %s)
+                        """,
+                        (course_id, str(lessons[0]["id"]), 0),
+                    )
+
+
+async def test_custom_drip_substrate_rejects_negative_offsets_and_mismatched_lessons():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        other_course_id = str(uuid4())
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="custom-negative-offset",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_course(
+            conn,
+            course_id=other_course_id,
+            slug="custom-mismatched-lesson",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=1)
+        _insert_lessons(conn, other_course_id, count=1)
+        course_lesson = _lesson_rows(conn, course_id)[0]
+        other_course_lesson = _lesson_rows(conn, other_course_id)[0]
+
+        with pytest.raises(
+            psycopg.Error,
+            match="unlock_offset_days_check",
+        ):
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO app.course_custom_drip_configs (course_id)
+                        VALUES (%s)
+                        """,
+                        (course_id,),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO app.course_custom_drip_lesson_offsets (
+                          course_id,
+                          lesson_id,
+                          unlock_offset_days
+                        )
+                        VALUES (%s, %s, %s)
+                        """,
+                        (course_id, str(course_lesson["id"]), -1),
+                    )
+
+        with pytest.raises(
+            psycopg.Error,
+            match="must belong to course",
+        ):
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO app.course_custom_drip_configs (course_id)
+                        VALUES (%s)
+                        """,
+                        (course_id,),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO app.course_custom_drip_lesson_offsets (
+                          course_id,
+                          lesson_id,
+                          unlock_offset_days
+                        )
+                        VALUES (%s, %s, %s)
+                        """,
+                        (course_id, str(other_course_lesson["id"]), 0),
+                    )
+
+
+async def test_custom_drip_substrate_rejects_duplicate_lesson_rows():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="custom-duplicate-row",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=1)
+        lesson = _lesson_rows(conn, course_id)[0]
+
+        with pytest.raises(
+            psycopg.Error,
+            match="course_custom_drip_lesson_offsets_pkey",
+        ):
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO app.course_custom_drip_configs (course_id)
+                        VALUES (%s)
+                        """,
+                        (course_id,),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO app.course_custom_drip_lesson_offsets (
+                          course_id,
+                          lesson_id,
+                          unlock_offset_days
+                        )
+                        VALUES (%s, %s, %s)
+                        """,
+                        (course_id, str(lesson["id"]), 0),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO app.course_custom_drip_lesson_offsets (
+                          course_id,
+                          lesson_id,
+                          unlock_offset_days
+                        )
+                        VALUES (%s, %s, %s)
+                        """,
+                        (course_id, str(lesson["id"]), 0),
+                    )
+
+
+async def test_custom_drip_enrollment_initialization_and_worker_advancement():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        user_id = str(uuid4())
+        granted_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="custom-drip-advancement",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=4)
+        _configure_custom_drip(
+            conn,
+            course_id=course_id,
+            offsets_by_position={1: 0, 2: 2, 3: 7, 4: 14},
+        )
+
+        enrollment = _create_enrollment(
+            conn,
+            enrollment_id=str(uuid4()),
+            user_id=user_id,
+            course_id=course_id,
+            source="intro_enrollment",
+            granted_at=granted_at,
+        )
+        assert enrollment["current_unlock_position"] == 1
+
+        unchanged = _advance_enrollment(
+            conn,
+            enrollment_id=str(enrollment["id"]),
+            evaluated_at=granted_at + timedelta(days=1),
+        )
+        assert unchanged["current_unlock_position"] == 1
+
+        day_2 = _advance_enrollment(
+            conn,
+            enrollment_id=str(enrollment["id"]),
+            evaluated_at=granted_at + timedelta(days=2),
+        )
+        assert day_2["current_unlock_position"] == 2
+
+        day_10 = _advance_enrollment(
+            conn,
+            enrollment_id=str(enrollment["id"]),
+            evaluated_at=granted_at + timedelta(days=10),
+        )
+        assert day_10["current_unlock_position"] == 3
+
+        day_20 = _advance_enrollment(
+            conn,
+            enrollment_id=str(enrollment["id"]),
+            evaluated_at=granted_at + timedelta(days=20),
+        )
+        assert day_20["current_unlock_position"] == 4
+
+
+async def test_custom_drip_initialization_unlocks_all_zero_offset_lessons():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        user_id = str(uuid4())
+        granted_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="custom-drip-zero-offset-range",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=3)
+        _configure_custom_drip(
+            conn,
+            course_id=course_id,
+            offsets_by_position={1: 0, 2: 0, 3: 5},
+        )
+
+        enrollment = _create_enrollment(
+            conn,
+            enrollment_id=str(uuid4()),
+            user_id=user_id,
+            course_id=course_id,
+            source="intro_enrollment",
+            granted_at=granted_at,
+        )
+
+        assert enrollment["current_unlock_position"] == 2
+
+
+async def test_custom_drip_schedule_locks_after_first_enrollment():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        user_id = str(uuid4())
+        granted_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="custom-drip-locks",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=2)
+        _configure_custom_drip(
+            conn,
+            course_id=course_id,
+            offsets_by_position={1: 0, 2: 3},
+        )
+
+        lessons = _lesson_rows(conn, course_id)
+        _create_enrollment(
+            conn,
+            enrollment_id=str(uuid4()),
+            user_id=user_id,
+            course_id=course_id,
+            source="intro_enrollment",
+            granted_at=granted_at,
+        )
+
+        with pytest.raises(
+            psycopg.Error,
+            match="schedule-affecting edits are locked after first enrollment",
+        ):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE app.course_custom_drip_lesson_offsets
+                       SET unlock_offset_days = 4
+                     WHERE course_id = %s
+                       AND lesson_id = %s
+                    """,
+                    (course_id, str(lessons[1]["id"])),
+                )
+
+        with pytest.raises(
+            psycopg.Error,
+            match="schedule-affecting edits are locked after first enrollment",
+        ):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO app.lessons (id, course_id, lesson_title, position)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (str(uuid4()), course_id, "locked-new-lesson", 3),
+                )
+
+
+async def test_invalid_custom_drip_state_fails_closed_without_fallback():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        user_id = str(uuid4())
+        granted_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="custom-drip-fail-closed",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=2)
+        _configure_custom_drip(
+            conn,
+            course_id=course_id,
+            offsets_by_position={1: 0, 2: 3},
+        )
+
+        lesson_to_remove = _lesson_rows(conn, course_id)[1]
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                ALTER TABLE app.course_custom_drip_lesson_offsets
+                DISABLE TRIGGER course_custom_drip_lesson_offsets_schedule_consistency
+                """
+            )
+            cur.execute(
+                """
+                DELETE FROM app.course_custom_drip_lesson_offsets
+                 WHERE course_id = %s
+                   AND lesson_id = %s
+                """,
+                (course_id, str(lesson_to_remove["id"])),
+            )
+            cur.execute(
+                """
+                ALTER TABLE app.course_custom_drip_lesson_offsets
+                ENABLE TRIGGER course_custom_drip_lesson_offsets_schedule_consistency
+                """
+            )
+
+        with pytest.raises(
+            psycopg.Error,
+            match="custom drip requires one offset row per lesson",
+        ):
+            _create_enrollment(
+                conn,
+                enrollment_id=str(uuid4()),
+                user_id=user_id,
+                course_id=course_id,
+                source="intro_enrollment",
+                granted_at=granted_at,
+            )

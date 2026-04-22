@@ -20,7 +20,8 @@ deterministic, enforcement-ready form.
 This contract owns the following course-domain boundaries:
 
 - course identity, structure, display, grouping, pricing display, cover
-  identity, and drip configuration
+  identity, legacy uniform drip field locations, and drip schedule entity
+  boundaries
 - lesson identity, structure, and ordering
 - lesson text content authority
 - lesson media placement authority
@@ -49,6 +50,8 @@ The canonical course-domain entities are:
 
 - `app.course_families`
 - `app.courses`
+- `app.course_custom_drip_configs`
+- `app.course_custom_drip_lesson_offsets`
 - `app.course_public_content`
 - `app.lessons`
 - `app.lesson_contents`
@@ -92,9 +95,13 @@ and lesson unlock position.
 - `cover_media_id`: canonical course-cover media asset identity, or `null`.
 - `price_amount_cents`: canonical course price amount for course display and
   course pricing rules.
-- `drip_enabled`: canonical course-level drip configuration flag.
-- `drip_interval_days`: canonical course-level drip interval when drip is
-  enabled; `null` when drip is disabled.
+- `drip_enabled`: canonical legacy uniform drip flag.
+- `drip_interval_days`: canonical legacy uniform drip interval when legacy drip
+  is enabled; `null` when legacy drip is disabled.
+
+Detailed drip semantics, mode resolution, enrollment initialization, worker
+advancement, invalid-state handling, and post-enrollment schedule locks are
+owned only by `course_drip_schedule_contract.md`.
 
 ### Course Family Terms
 
@@ -217,6 +224,16 @@ only authority allowed to produce frontend-facing governed media output.
 - `drip_started_at`: canonical drip start timestamp; equal to `granted_at`.
 - `current_unlock_position`: canonical highest accessible lesson position.
 
+### Custom Drip Scheduling Entities
+
+`app.course_custom_drip_configs` owns the custom lesson-offset schedule root for
+a course.
+
+`app.course_custom_drip_lesson_offsets` owns per-lesson custom unlock offsets.
+
+Detailed scheduling semantics for those entities are defined only by
+`course_drip_schedule_contract.md`.
+
 ## 4. RELATION GRAPH (authoritative)
 
 The authoritative course-domain relation graph is:
@@ -227,6 +244,15 @@ app.course_families.id
 
 app.courses.course_group_id + app.courses.group_position
   -> course family membership and deterministic family order
+
+app.courses.id
+  -> app.course_custom_drip_configs.course_id
+
+app.course_custom_drip_configs.course_id
+  -> app.course_custom_drip_lesson_offsets.course_id
+
+app.lessons.id
+  -> app.course_custom_drip_lesson_offsets.lesson_id
 
 app.courses.id
   -> app.lessons.course_id
@@ -467,12 +493,22 @@ Rules:
 - lesson-media position MUST be `>= 1`
 - `(lesson_id, position)` MUST be unique
 
-Drip behavior is course-level configuration only:
+Legacy uniform drip field locations on `app.courses` are:
 
 - `drip_enabled = true` requires `drip_interval_days`
 - `drip_enabled = false` requires `drip_interval_days = null`
-- drip behavior MUST NOT be inferred from course type, enrollment source, or
-  frontend state
+
+Custom lesson-offset scheduling entities are:
+
+- `app.course_custom_drip_configs`
+- `app.course_custom_drip_lesson_offsets`
+
+Detailed drip semantics, mode resolution, enrollment initialization, worker
+advancement, invalid-state fail-closed behavior, and post-enrollment schedule
+locks are defined only by `course_drip_schedule_contract.md`.
+
+Drip behavior MUST NOT be inferred from course type, enrollment source, or
+frontend state.
 
 Protected unlock progression is stored only in
 `app.course_enrollments.current_unlock_position`.

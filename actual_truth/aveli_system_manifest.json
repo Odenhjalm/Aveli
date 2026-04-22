@@ -266,12 +266,24 @@
             "implicit_canonical_protected_course_content_access": false,
             "no_visibility_rule_implies_raw_table_access": true,
             "drip_model": {
-                "configuration_authority": "course",
-                "configured_by_fields": [
-                    "drip_enabled",
-                    "drip_interval_days"
+                "semantic_contract": "actual_truth/contracts/course_drip_schedule_contract.md",
+                "legacy_uniform_configuration_authority": {
+                    "owner": "app.courses",
+                    "fields": [
+                        "drip_enabled",
+                        "drip_interval_days"
+                    ]
+                },
+                "custom_lesson_offset_configuration_authority": {
+                    "root": "app.course_custom_drip_configs",
+                    "rows": "app.course_custom_drip_lesson_offsets",
+                    "mode_selector": "config_root_presence"
+                },
+                "mutually_exclusive_modes": [
+                    "custom_lesson_offsets",
+                    "legacy_uniform_drip",
+                    "no_drip_immediate_access"
                 ],
-                "applies_only_when_course_drip_enabled": true,
                 "enrollment_source_controls_drip": false,
                 "stored_state_only": true,
                 "scheduler": "worker_only",
@@ -283,18 +295,31 @@
                 "unlock_anchor": "drip_started_at",
                 "current_unlock_position_field": "current_unlock_position",
                 "lesson_progression_index": "position",
-                "default_interval_days": null,
+                "mode_resolution": [
+                    "valid_custom_config",
+                    "legacy_uniform_when_drip_enabled",
+                    "no_drip_immediate_access"
+                ],
+                "custom_invalid_state": "fail_closed_no_fallback",
                 "initial_unlock_state": {
-                    "drip_enabled_with_lessons": 1,
-                    "drip_enabled_with_zero_lessons": 0,
-                    "drip_disabled_with_lessons": "max_lesson_position",
-                    "drip_disabled_with_zero_lessons": 0,
+                    "custom_lesson_offsets": "highest_lesson_position_with_unlock_offset_days_equal_0",
+                    "legacy_uniform_with_lessons": 1,
+                    "legacy_uniform_with_zero_lessons": 0,
+                    "no_drip_with_lessons": "max_lesson_position",
+                    "no_drip_with_zero_lessons": 0,
                     "all_enrollment_drip_started_at": "granted_at"
                 },
                 "advance_formula": {
-                    "unlocked_count": "1 + floor((now - drip_started_at) / interval)",
-                    "interval_days": "course.drip_interval_days",
-                    "computed_unlock_position": "min(max_lesson_position, unlocked_count)"
+                    "custom_lesson_offsets": "max(lesson.position where unlock_offset_days <= elapsed_days)",
+                    "legacy_uniform_unlocked_count": "1 + floor((now - drip_started_at) / interval)",
+                    "legacy_uniform_interval_days": "course.drip_interval_days",
+                    "legacy_uniform_computed_unlock_position": "min(max_lesson_position, unlocked_count)"
+                },
+                "custom_schedule_requirements": {
+                    "one_row_per_lesson": true,
+                    "unlock_offset_days_non_negative": true,
+                    "first_lesson_offset_zero_when_lessons_exist": true,
+                    "offsets_nondecreasing_by_lesson_position": true
                 },
                 "clamp_behavior": {
                     "never_exceed_max_lesson_position": true,
@@ -305,7 +330,8 @@
                     "same_cron_window_same_result": true,
                     "update_only_when_computed_gt_stored": true,
                     "never_decrease_current_unlock_position": true
-                }
+                },
+                "post_enrollment_schedule_affecting_edits": "forbidden"
             },
             "checkout_outcomes": [
                 "membership",
@@ -638,30 +664,35 @@
         "grouping_semantics": "progression_set_ordered_by_group_position",
         "non_progression_grouping": "forbidden",
         "drip_scheduler": "worker_only",
+        "drip_semantic_contract": "actual_truth/contracts/course_drip_schedule_contract.md",
         "drip_execution_mode": "cron_based",
         "drip_state_updates": "worker_only",
         "runtime_drip_updates": "forbidden",
         "frontend_drip_logic": "forbidden",
-        "drip_configuration_authority": "course",
-        "drip_configuration_fields": [
-            "drip_enabled",
-            "drip_interval_days"
+        "legacy_uniform_drip_configuration_authority": "app.courses.drip_enabled + app.courses.drip_interval_days",
+        "custom_lesson_offset_drip_configuration_authority": "app.course_custom_drip_configs + app.course_custom_drip_lesson_offsets",
+        "drip_mode_resolution_order": [
+            "valid_custom_config",
+            "legacy_uniform_when_drip_enabled",
+            "no_drip_immediate_access"
         ],
-        "drip_no_default_interval": true,
-        "drip_applies_only_when_course_drip_enabled": true,
-        "drip_initial_unlock_when_enabled_with_lessons": 1,
-        "drip_initial_unlock_when_enabled_with_zero_lessons": 0,
-        "drip_initial_unlock_when_disabled_with_lessons": "max_lesson_position",
-        "drip_initial_unlock_when_disabled_with_zero_lessons": 0,
+        "drip_invalid_custom_state": "fail_closed_no_fallback",
+        "drip_initial_unlock_custom_mode": "highest_lesson_position_with_unlock_offset_days_equal_0",
+        "drip_initial_unlock_legacy_uniform_with_lessons": 1,
+        "drip_initial_unlock_legacy_uniform_with_zero_lessons": 0,
+        "drip_initial_unlock_no_drip_with_lessons": "max_lesson_position",
+        "drip_initial_unlock_no_drip_with_zero_lessons": 0,
         "drip_initial_anchor": "granted_at",
-        "drip_formula_unlocked_count": "1 + floor((now - drip_started_at) / interval)",
-        "drip_formula_computed_unlock_position": "min(max_lesson_position, unlocked_count)",
+        "drip_formula_custom_mode": "max(lesson.position where unlock_offset_days <= elapsed_days)",
+        "drip_formula_legacy_uniform_unlocked_count": "1 + floor((now - drip_started_at) / interval)",
+        "drip_formula_legacy_uniform_computed_unlock_position": "min(max_lesson_position, unlocked_count)",
         "drip_clamp_to_max_lesson_position": true,
         "drip_no_op_when_max_reached": true,
         "drip_runs_must_be_deterministic": true,
         "drip_same_cron_window_same_result": true,
         "drip_update_only_when_computed_gt_stored": true,
         "drip_never_decrease_current_unlock_position": true,
+        "drip_post_enrollment_schedule_affecting_edits": "forbidden",
         "playback_authority": "runtime_media_where_in_scope_and_backend_composition",
         "media_intent_authority": "control_plane",
         "media_authority_enforcement": "source_tables_own_inclusion_and_placement_truth_runtime_media_read_projection_where_in_scope_backend_composition_final_read_representation",

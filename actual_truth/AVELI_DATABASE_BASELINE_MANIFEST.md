@@ -106,6 +106,14 @@ Accepted append-only continuation above the protected range:
 - Slot `0022_special_offer_sync_ready_media.sql`
   - Scoped extension of canonical ready-format matrix and lifecycle transition
     for `special_offer_composite_image` final JPG media.
+- Slot `0025_custom_drip_substrate.sql`
+  - Adds canonical custom-drip schedule substrate through
+    `app.course_custom_drip_configs` and
+    `app.course_custom_drip_lesson_offsets`.
+- Slot `0026_custom_drip_runtime_alignment.sql`
+  - Aligns canonical enrollment creation and worker-owned drip advancement to
+    the accepted custom-drip authority model without changing legacy uniform
+    drip ownership on `app.courses`.
 
 ## 3. Domain Classification
 
@@ -130,7 +138,9 @@ owning backend/operator authority:
 | `app.admin_bootstrap_state`    | first-admin operator bootstrap state                                                     | operator-controlled bootstrap only                                                   |
 | `app.refresh_tokens`           | refresh-token persistence, rotation lineage, revocation state                            | backend auth authority                                                               |
 | `app.auth_events`              | canonical auth/onboarding audit-event persistence                                        | backend/operator mutation surfaces only                                              |
-| `app.courses`                  | course identity, structure, pricing fields, grouping, drip configuration, cover identity | studio/course backend authority                                                      |
+| `app.courses`                  | course identity, structure, pricing fields, grouping, legacy uniform drip configuration, and cover identity | studio/course backend authority                                                      |
+| `app.course_custom_drip_configs` | canonical custom-drip schedule root for one course                                      | studio/course scheduling backend authority                                           |
+| `app.course_custom_drip_lesson_offsets` | canonical per-lesson custom-drip unlock offsets                                  | studio/course scheduling backend authority                                           |
 | `app.course_public_content`    | sibling public course content such as `short_description`                                | dedicated public-content backend authority                                           |
 | `app.lessons`                  | lesson identity and structure                                                            | studio lesson-structure backend authority                                            |
 | `app.lesson_contents`          | lesson markdown content                                                                  | studio lesson-content backend authority                                              |
@@ -463,7 +473,26 @@ Rules:
 - Membership, orders, payments, frontend state, and visibility rules must not
   replace course-enrollment authority.
 
-### 5.5 Course And Lesson Structure
+### 5.5 Custom Drip Scheduling
+
+Rules:
+
+- Legacy uniform drip remains canonical only on
+  `app.courses.drip_enabled` and `app.courses.drip_interval_days`.
+- Custom lesson-offset drip remains canonical only on
+  `app.course_custom_drip_configs` and
+  `app.course_custom_drip_lesson_offsets`.
+- Active scheduling authority on one course must be mutually exclusive:
+  custom lesson-offset, legacy uniform drip, or no-drip.
+- Invalid custom-drip state must fail closed and must not silently fall back to
+  legacy uniform drip or no-drip.
+- `app.lessons` remains structure-only and must not absorb custom-drip fields.
+- `app.course_enrollments` remains access-state-only and must not absorb
+  custom-drip snapshot fields.
+- Custom-drip schedule-affecting edits are forbidden after the first enrollment
+  exists for the course.
+
+### 5.6 Course And Lesson Structure
 
 Rules:
 
@@ -477,7 +506,7 @@ Rules:
 - Runtime lesson alias `title` is forbidden.
 - Module-like runtime grouping is forbidden.
 
-### 5.6 Commerce
+### 5.7 Commerce
 
 Rules:
 

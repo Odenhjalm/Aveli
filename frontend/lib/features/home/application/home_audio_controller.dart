@@ -17,10 +17,8 @@ class HomeAudioState extends Equatable {
   const HomeAudioState({required this.items, required this.textBundle});
 
   factory HomeAudioState.fromPayload(HomeAudioFeedPayload payload) {
-    final items = List<HomeAudioFeedItem>.from(payload.items)
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return HomeAudioState(
-      items: List<HomeAudioFeedItem>.unmodifiable(items),
+      items: List<HomeAudioFeedItem>.unmodifiable(payload.items),
       textBundle: payload.textBundle,
     );
   }

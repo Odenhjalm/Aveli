@@ -19,6 +19,7 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/home/application/home_audio_controller.dart';
+import 'package:aveli/features/home/application/home_audio_session_controller.dart';
 import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
@@ -27,6 +28,7 @@ import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
 import '../helpers/backend_asset_resolver_stub.dart';
+import '../helpers/fake_home_audio_engine.dart';
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(AuthState initial)
@@ -89,9 +91,10 @@ final _testProfile = Profile(
   updatedAt: DateTime(2024, 1, 1),
 );
 
-Future<void> _pumpDashboard(
+Future<ProviderContainer> _pumpDashboard(
   WidgetTester tester, {
   required HomeAudioRepository homeAudioRepository,
+  required FakeHomeAudioEngineFactory engineFactory,
 }) async {
   final router = GoRouter(
     initialLocation: '/',
@@ -109,27 +112,32 @@ Future<void> _pumpDashboard(
     ],
   );
 
+  final container = ProviderContainer(
+    overrides: [
+      authControllerProvider.overrideWith(
+        (ref) => _FakeAuthController(AuthState(profile: _testProfile)),
+      ),
+      appConfigProvider.overrideWithValue(
+        const AppConfig(
+          apiBaseUrl: 'https://api.test',
+          subscriptionsEnabled: false,
+        ),
+      ),
+      backendAssetResolverProvider.overrideWith(
+        (ref) => TestBackendAssetResolver(),
+      ),
+      coursesProvider.overrideWith((ref) async => const []),
+      landing.popularCoursesProvider.overrideWith(
+        (ref) async => const landing.LandingSection<CourseSummary>(items: []),
+      ),
+      homeAudioRepositoryProvider.overrideWithValue(homeAudioRepository),
+      homeAudioEngineFactoryProvider.overrideWithValue(engineFactory.create),
+    ],
+  );
+
   await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        authControllerProvider.overrideWith(
-          (ref) => _FakeAuthController(AuthState(profile: _testProfile)),
-        ),
-        appConfigProvider.overrideWithValue(
-          const AppConfig(
-            apiBaseUrl: 'https://api.test',
-            subscriptionsEnabled: false,
-          ),
-        ),
-        backendAssetResolverProvider.overrideWith(
-          (ref) => TestBackendAssetResolver(),
-        ),
-        coursesProvider.overrideWith((ref) async => const []),
-        landing.popularCoursesProvider.overrideWith(
-          (ref) async => const landing.LandingSection<CourseSummary>(items: []),
-        ),
-        homeAudioRepositoryProvider.overrideWithValue(homeAudioRepository),
-      ],
+    UncontrolledProviderScope(
+      container: container,
       child: MaterialApp.router(routerConfig: router),
     ),
   );
@@ -138,6 +146,7 @@ Future<void> _pumpDashboard(
   for (var i = 0; i < 6; i += 1) {
     await tester.pump(const Duration(milliseconds: 100));
   }
+  return container;
 }
 
 void main() {
@@ -146,18 +155,25 @@ void main() {
   ) async {
     final harness = await _Harness.create();
     final repository = HomeAudioRepository(harness.client);
+    final engineFactory = FakeHomeAudioEngineFactory();
 
-    await _pumpDashboard(tester, homeAudioRepository: repository);
+    final container = await _pumpDashboard(
+      tester,
+      homeAudioRepository: repository,
+      engineFactory: engineFactory,
+    );
+    addTearDown(container.dispose);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(harness.adapter.requestsFor('/home/audio'), hasLength(1));
+    expect(engineFactory.createCount, 1);
     expect(find.byKey(const ValueKey('home-audio-logo')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('home-audio-track-list-toggle')),
       findsOneWidget,
     );
-    expect(find.byType(InlineAudioPlayer), findsOneWidget);
+    expect(find.byType(InlineAudioPlayerView), findsOneWidget);
     expect(
       find.byKey(const ValueKey('home-player-play-button')),
       findsOneWidget,
@@ -180,11 +196,11 @@ void main() {
     expect(find.text('Gemensam vägg'), findsNothing);
     expect(find.text('Tjänster'), findsNothing);
 
-    final player = tester.widget<InlineAudioPlayer>(
-      find.byType(InlineAudioPlayer),
+    expect(
+      engineFactory.single.loadedUrls,
+      orderedEquals(['https://cdn.test/audio/evening.mp3']),
     );
-    expect(player.url, 'https://cdn.test/audio/evening.mp3');
-    expect(player.homePlayerUi, isTrue);
+    expect(container.read(homeAudioSessionControllerProvider).currentIndex, 0);
 
     await tester.tap(
       find.byKey(const ValueKey('home-audio-track-list-toggle')),
@@ -194,14 +210,8 @@ void main() {
 
     expect(find.byKey(const ValueKey('home-audio-track-list')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-audio-logo')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('home-audio-track-media-1')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('home-audio-track-media-3')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('home-audio-track-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-audio-track-1')), findsOneWidget);
     expect(find.text('Kvällsmeditation'), findsOneWidget);
     expect(find.text('Morgonandning'), findsOneWidget);
     expect(find.text('Andning del 1'), findsNothing);
@@ -213,14 +223,44 @@ void main() {
     );
     expect(listRect.left, greaterThan(logoRect.right));
 
-    await tester.tap(find.byKey(const ValueKey('home-audio-track-media-3')));
+    final volumeSliderFinder = find.byKey(
+      const ValueKey('home-player-volume-slider'),
+    );
+    final volumeSlider = tester.widget<Slider>(volumeSliderFinder);
+    volumeSlider.onChanged!(0.35);
+    await tester.pump();
+
+    expect(
+      container.read(homeAudioSessionControllerProvider).volume,
+      closeTo(0.35, 0.0001),
+    );
+    expect(engineFactory.single.volumeHistory.last, closeTo(0.35, 0.0001));
+
+    await tester.tap(find.byKey(const ValueKey('home-player-play-button')));
+    await tester.pump();
+
+    expect(
+      container.read(homeAudioSessionControllerProvider).isPlaying,
+      isTrue,
+    );
+    expect(engineFactory.single.playCalls, 1);
+
+    await tester.tap(find.byKey(const ValueKey('home-audio-track-1')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    final updatedPlayer = tester.widget<InlineAudioPlayer>(
-      find.byType(InlineAudioPlayer),
+    final updatedState = container.read(homeAudioSessionControllerProvider);
+    expect(updatedState.currentIndex, 1);
+    expect(updatedState.isPlaying, isTrue);
+    expect(engineFactory.createCount, 1);
+    expect(
+      engineFactory.single.loadedUrls.last,
+      'https://cdn.test/audio/morning.mp3',
     );
-    expect(updatedPlayer.url, 'https://cdn.test/audio/morning.mp3');
+    expect(engineFactory.single.playCalls, greaterThanOrEqualTo(2));
+    expect(updatedState.volume, closeTo(0.35, 0.0001));
+    final updatedVolumeSlider = tester.widget<Slider>(volumeSliderFinder);
+    expect(updatedVolumeSlider.value, closeTo(0.35, 0.0001));
 
     await tester.tap(
       find.byKey(const ValueKey('home-audio-track-list-toggle')),
@@ -234,6 +274,7 @@ void main() {
     );
     expect(find.text('Kvällsmeditation'), findsNothing);
     expect(find.text('Morgonandning'), findsNothing);
+    expect(engineFactory.createCount, 1);
   });
 }
 

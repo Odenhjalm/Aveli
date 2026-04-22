@@ -28,6 +28,10 @@ lesson content write -> backend markdown normalization -> app.lesson_contents
 
 No runtime code, legacy route, or active fallback may override this contract.
 
+Drip scheduling semantics are defined only by
+`course_drip_schedule_contract.md`.
+This contract owns editor structure read/write shapes only.
+
 ## 2. AUTHORITY MODEL
 
 Canonical authorities are:
@@ -86,6 +90,14 @@ Canonical separation rules:
 - `app.lesson_contents` remains content-only
 - `content_markdown` must never appear on a structure-only write endpoint
 - `lesson_title` and `position` must never appear on a content-only write endpoint
+
+Drip shape boundary:
+
+- current canonical editor shapes remain legacy-uniform-drip shapes only
+- future custom-drip editor shapes may be added only as subordinate editor
+  request/response shape definitions
+- this contract must not define custom-drip timing semantics, mode resolution,
+  worker behavior, or schedule locks
 
 ## 3A. COURSE COVER AUTHORING LAW
 

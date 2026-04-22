@@ -72,6 +72,12 @@ It must define:
 - the cutover state hash algorithm for promotion detection
 - the post-state hash and counts for every accepted slot
 
+Interpretation rule:
+
+- slot `post_state_hash` is owned by
+  `release_cutover_verification.state_hash_algorithm`, not by
+  `schema_verification.expected_schema_hash`
+
 The cutover script must:
 
 - derive the live current slot from the production DB by exact match against

@@ -34,6 +34,24 @@ void _expectCanonicalRoundTrip({
   );
 }
 
+void _expectCanonicalFinalLineItalicFromRawDelta(quill_delta.Delta source) {
+  final serialized = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+    delta: source,
+  );
+  expect(serialized, '*Italic*');
+
+  final roundTripped = markdown_to_editor
+      .markdownToEditorDocument(markdown: serialized)
+      .toDelta();
+  final expected = quill_delta.Delta()
+    ..insert('Italic', {quill.Attribute.italic.key: true})
+    ..insert('\n');
+  expect(
+    _canonicalDocumentDelta(roundTripped),
+    equals(_canonicalDocumentDelta(expected)),
+  );
+}
+
 void main() {
   group('Lesson content serialization', () {
     const lessonMediaId = '123e4567-e89b-12d3-a456-426614174000';
@@ -204,5 +222,25 @@ void main() {
         );
       },
     );
+
+    test('canonicalizes raw EOF italic delta variants before markdown', () {
+      _expectCanonicalFinalLineItalicFromRawDelta(
+        quill_delta.Delta()
+          ..insert('Italic\n', {quill.Attribute.italic.key: true}),
+      );
+
+      _expectCanonicalFinalLineItalicFromRawDelta(
+        quill_delta.Delta()
+          ..insert('Italic', {quill.Attribute.italic.key: true})
+          ..insert('\n', {quill.Attribute.italic.key: true}),
+      );
+
+      _expectCanonicalFinalLineItalicFromRawDelta(
+        quill_delta.Delta()
+          ..insert('Italic', {quill.Attribute.italic.key: true})
+          ..insert('', {quill.Attribute.italic.key: true})
+          ..insert('\n'),
+      );
+    });
   });
 }

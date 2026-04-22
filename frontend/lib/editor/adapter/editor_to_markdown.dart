@@ -4,6 +4,8 @@ import 'package:markdown_quill/markdown_quill.dart';
 
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     show canonicalizeSupportedMarkdown;
+import 'package:aveli/editor/normalization/quill_delta_normalizer.dart'
+    show normalizeDeltaForGuard;
 import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
     as lesson_pipeline;
 
@@ -221,7 +223,10 @@ String editorDeltaToCanonicalMarkdown({
   required quill_delta.Delta delta,
   bool enforceStorageContract = true,
 }) {
-  final sanitized = sanitizeEditorDeltaForCanonicalMarkdown(delta);
+  // Canonicalize EOF structure before markdown emission so terminal inline
+  // styles are attached only to text inserts, never newline sentinels.
+  final eofCanonical = normalizeDeltaForGuard(delta);
+  final sanitized = sanitizeEditorDeltaForCanonicalMarkdown(eofCanonical);
   final markdownReady = _expandUnderlineAttributesForMarkdown(sanitized);
   var markdown = _createCanonicalLessonDeltaToMarkdown().convert(markdownReady);
   markdown = _restoreSupportedInlineHtml(markdown);

@@ -1,8 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/features/home/application/home_audio_controller.dart';
-import 'package:aveli/features/home/data/home_audio_repository.dart';
+import 'package:aveli/features/home/application/home_audio_session_controller.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/inline_audio_player.dart';
@@ -20,20 +22,52 @@ class HomeAudioSection extends ConsumerStatefulWidget {
 }
 
 class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
-  String? _selectedMediaId;
+  ProviderSubscription<AsyncValue<HomeAudioState>>? _audioSub;
   bool _trackListExpanded = false;
-  InlineAudioPlayerVolumeState _volumeState =
-      const InlineAudioPlayerVolumeState();
+
+  @override
+  void initState() {
+    super.initState();
+    _audioSub = ref.listenManual<AsyncValue<HomeAudioState>>(
+      homeAudioProvider,
+      (previous, next) {
+        final snapshot = next.valueOrNull;
+        if (snapshot == null) {
+          return;
+        }
+        unawaited(
+          ref
+              .read(homeAudioSessionControllerProvider.notifier)
+              .hydrateQueue(snapshot.items),
+        );
+      },
+    );
+    final initialSnapshot = ref.read(homeAudioProvider).valueOrNull;
+    if (initialSnapshot != null) {
+      unawaited(
+        ref
+            .read(homeAudioSessionControllerProvider.notifier)
+            .hydrateQueue(initialSnapshot.items),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _audioSub?.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final asyncState = ref.watch(homeAudioProvider);
-    final state = asyncState.valueOrNull;
+    final sessionState = ref.watch(homeAudioSessionControllerProvider);
     final logoProvider = ref
         .watch(backendAssetResolverProvider)
         .imageProvider('loggo_clean.png');
+    final controller = ref.read(homeAudioSessionControllerProvider.notifier);
 
-    if (state == null) {
+    if (!sessionState.hasQueue && asyncState.valueOrNull == null) {
       if (asyncState.isLoading) {
         return const Padding(
           padding: EdgeInsets.symmetric(vertical: 12),
@@ -46,10 +80,8 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
       );
     }
 
-    final readyItems = state.items
-        .where((item) => item.isReady)
-        .toList(growable: false);
-    final selectedItem = _selectedItemFor(readyItems);
+    final queue = sessionState.queue;
+    final selectedEntry = sessionState.currentEntry;
     final theme = Theme.of(context);
 
     return GlassCard(
@@ -84,28 +116,28 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
               ),
               const SizedBox(width: _homeAudioLogoColumnGap),
               Expanded(
-                child: selectedItem == null
+                child: selectedEntry == null
                     ? const SizedBox(height: 34)
-                    : InlineAudioPlayer(
-                        key: ValueKey(
-                          'home-audio-player-${selectedItem.media.mediaId ?? 'unknown'}',
-                        ),
-                        url: selectedItem.media.resolvedUrl!,
-                        title: selectedItem.title,
+                    : InlineAudioPlayerView(
+                        key: const ValueKey('home-audio-player-view'),
+                        position: sessionState.position,
+                        duration: sessionState.duration,
+                        volume: sessionState.volume,
+                        isPlaying: sessionState.isPlaying,
+                        isInitializing: sessionState.isInitializing,
+                        errorMessage: sessionState.errorMessage,
+                        title: selectedEntry.title,
                         compact: true,
                         homePlayerUi: true,
-                        initialVolumeState: _volumeState,
-                        onVolumeStateChanged: (nextState) {
-                          setState(() {
-                            _volumeState = nextState;
-                          });
-                        },
+                        onTogglePlayPause: () => controller.toggle(),
+                        onSeek: (position) => controller.seek(position),
+                        onVolumeChanged: (value) => controller.setVolume(value),
                       ),
               ),
               const SizedBox(width: 2),
               IconButton(
                 key: const ValueKey('home-audio-track-list-toggle'),
-                onPressed: readyItems.isEmpty
+                onPressed: queue.isEmpty
                     ? null
                     : () {
                         setState(() {
@@ -128,7 +160,7 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
             duration: const Duration(milliseconds: 180),
             switchInCurve: Curves.easeOut,
             switchOutCurve: Curves.easeIn,
-            child: _trackListExpanded && readyItems.isNotEmpty
+            child: _trackListExpanded && queue.isNotEmpty
                 ? Padding(
                     padding: const EdgeInsets.only(
                       top: 6,
@@ -148,23 +180,14 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          for (final item in readyItems) ...[
+                          for (final entry in queue) ...[
                             _HomeAudioTrackRow(
-                              item: item,
+                              entry: entry,
                               selected:
-                                  (selectedItem?.media.mediaId ?? '') ==
-                                  (item.media.mediaId ?? ''),
-                              onTap: () {
-                                final mediaId = item.media.mediaId;
-                                if (mediaId == null || mediaId.isEmpty) {
-                                  return;
-                                }
-                                setState(() {
-                                  _selectedMediaId = mediaId;
-                                });
-                              },
+                                  (selectedEntry?.index ?? -1) == entry.index,
+                              onTap: () => controller.selectIndex(entry.index),
                             ),
-                            if (item != readyItems.last)
+                            if (entry != queue.last)
                               Divider(
                                 height: 1,
                                 color: theme.colorScheme.onSurface.withValues(
@@ -183,22 +206,6 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
         ],
       ),
     );
-  }
-
-  HomeAudioFeedItem? _selectedItemFor(List<HomeAudioFeedItem> readyItems) {
-    if (readyItems.isEmpty) {
-      return null;
-    }
-    final selected = _selectedMediaId;
-    if (selected == null || selected.isEmpty) {
-      return readyItems.first;
-    }
-    for (final item in readyItems) {
-      if (item.media.mediaId == selected) {
-        return item;
-      }
-    }
-    return readyItems.first;
   }
 }
 
@@ -254,27 +261,26 @@ class _HomeAudioErrorCard extends StatelessWidget {
 
 class _HomeAudioTrackRow extends StatelessWidget {
   const _HomeAudioTrackRow({
-    required this.item,
+    required this.entry,
     required this.selected,
     required this.onTap,
   });
 
-  final HomeAudioFeedItem item;
+  final HomeAudioQueueEntry entry;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final mediaId = item.media.mediaId ?? 'unknown';
     return Semantics(
-      label: item.title,
+      label: entry.title,
       button: true,
       selected: selected,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          key: ValueKey('home-audio-track-$mediaId'),
+          key: ValueKey('home-audio-track-${entry.index}'),
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Ink(
@@ -289,7 +295,7 @@ class _HomeAudioTrackRow extends StatelessWidget {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  item.title,
+                  entry.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(

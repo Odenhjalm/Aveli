@@ -88,15 +88,15 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "bad6038e08d5d228f7c3357dca6846410fa0f1b6873a0160b9e214918429c341",
+    "expected_schema_hash": "aa3b2cfe71b124ae990a69c5f9541ff08841a55f65291f7558709dcc5f3eec6c",
     "expected_counts": {
       "enums": 13,
-      "tables": 35,
+      "tables": 37,
       "views": 5,
-      "fks": 50,
-      "constraints": 186,
-      "triggers": 25,
-      "functions": 39
+      "fks": 53,
+      "constraints": 195,
+      "triggers": 36,
+      "functions": 52
     },
     "forbidden_legacy_columns": [
       "role_v2",
@@ -525,6 +525,38 @@
         "functions": 39,
         "tables": 35,
         "triggers": 25,
+        "views": 5
+      }
+    },
+    {
+      "slot": 25,
+      "filename": "V2_0025_custom_drip_substrate.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0025_custom_drip_substrate.sql",
+      "sha256": "33c4b528110bb0743b6b9149dfa743a3c33dba209e871688fa953e7749942955",
+      "post_state_hash": "e36c9b2cbb3e963401ee061807607d162c948b8f101507f65ddcf10b7b276307",
+      "post_counts": {
+        "constraints": 195,
+        "enums": 13,
+        "fks": 53,
+        "functions": 49,
+        "tables": 37,
+        "triggers": 36,
+        "views": 5
+      }
+    },
+    {
+      "slot": 26,
+      "filename": "V2_0026_custom_drip_runtime_alignment.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0026_custom_drip_runtime_alignment.sql",
+      "sha256": "dd7437465d973de34d39c360d71fa9b54140a25cd794a1047a1755623beb9fb7",
+      "post_state_hash": "e3799c21f12637d84174a638b741e9ce947e0b9b4df9800f1aa94ce3b5ab6f87",
+      "post_counts": {
+        "constraints": 195,
+        "enums": 13,
+        "fks": 53,
+        "functions": 52,
+        "tables": 37,
+        "triggers": 36,
         "views": 5
       }
     }
