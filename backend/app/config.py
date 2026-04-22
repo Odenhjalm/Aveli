@@ -1,11 +1,11 @@
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import quote, urlparse
 
 from pydantic import AliasChoices, AnyUrl, Field, TypeAdapter, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 _PRODUCTION_ENVS = {"prod", "production", "live"}
@@ -18,6 +18,9 @@ _SETTINGS_ENV_FILES = (
     str(_BACKEND_DIR / ".env.local"),
 )
 _ANY_URL_ADAPTER = TypeAdapter(AnyUrl)
+_DEFAULT_CORS_ALLOW_ORIGINS = ("https://aveli.app",)
+_DEFAULT_CORS_ALLOW_ORIGIN_REGEX = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+_OPEN_CORS_ORIGIN_REGEXES = frozenset({"*", ".*", "^.*$", ".+", "^.+$"})
 
 
 def _truthy_env(key: str) -> bool:
@@ -78,6 +81,45 @@ def _normalize_cors_origin(value: str | None) -> str | None:
     return f"{scheme}://{hostname}"
 
 
+def _parse_cors_origins(value: Any) -> Any:
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        if raw.startswith("["):
+            try:
+                value = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise ValueError("ALLOWED_ORIGINS JSON must be a list of strings") from exc
+        else:
+            value = raw.split(",")
+
+    if isinstance(value, (list, tuple, set)):
+        origins: list[str] = []
+        seen: set[str] = set()
+        for origin in value:
+            if not isinstance(origin, str):
+                raise ValueError("ALLOWED_ORIGINS entries must be strings")
+            raw_origin = origin.strip()
+            if not raw_origin:
+                continue
+            if "*" in raw_origin:
+                raise ValueError(
+                    "Wildcard CORS origins are not allowed. "
+                    "Use ALLOWED_ORIGIN_REGEX for localhost port matching."
+                )
+            normalized = _normalize_cors_origin(raw_origin)
+            if not normalized:
+                raise ValueError(f"Invalid CORS origin: {origin!r}")
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            origins.append(normalized)
+        return origins
+    return value
+
+
 def _normalize_db_component(value: str | None) -> str | None:
     if value is None:
         return None
@@ -110,6 +152,7 @@ class Settings(BaseSettings):
         env_file=_SETTINGS_ENV_FILES,
         env_ignore_empty=True,
         extra="ignore",
+        populate_by_name=True,
     )
 
     supabase_url: AnyUrl | None = None
@@ -256,13 +299,14 @@ class Settings(BaseSettings):
     livekit_ws_url: str | None = "wss://lk.wisdom.dev"
     livekit_api_url: str | None = None
     livekit_webhook_secret: str | None = None
-    cors_allow_origins: list[str] = [
-        "https://app.aveli.app",
-        "https://aveli.fly.dev",
-        "http://localhost:3000",
-        "http://localhost:5173",
-    ]
-    cors_allow_origin_regex: str | None = r"http://localhost(:\d+)?"
+    cors_allow_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(_DEFAULT_CORS_ALLOW_ORIGINS),
+        validation_alias=AliasChoices("ALLOWED_ORIGINS", "CORS_ALLOW_ORIGINS"),
+    )
+    cors_allow_origin_regex: str | None = Field(
+        default=_DEFAULT_CORS_ALLOW_ORIGIN_REGEX,
+        validation_alias=AliasChoices("ALLOWED_ORIGIN_REGEX", "CORS_ALLOW_ORIGIN_REGEX"),
+    )
     lesson_media_max_bytes: int = 2 * 1024 * 1024 * 1024
     media_upload_max_image_bytes: int = 25 * 1024 * 1024
     media_upload_max_audio_bytes: int = 5 * 1024 * 1024 * 1024
@@ -459,34 +503,19 @@ class Settings(BaseSettings):
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
     def _split_origins(cls, value):
-        if isinstance(value, str):
-            raw = value.strip()
-            if not raw:
-                return []
-            if raw.startswith("["):
-                try:
-                    value = json.loads(raw)
-                except json.JSONDecodeError as exc:
-                    raise ValueError("cors_allow_origins JSON must be a list of strings") from exc
-            else:
-                value = raw.split(",")
+        return _parse_cors_origins(value)
 
-        if isinstance(value, (list, tuple, set)):
-            origins: list[str] = []
-            seen: set[str] = set()
-            for origin in value:
-                if not isinstance(origin, str):
-                    raise ValueError("cors_allow_origins entries must be strings")
-                normalized = _normalize_cors_origin(origin)
-                if not normalized:
-                    continue
-                key = normalized.lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                origins.append(normalized)
-            return origins
-        return value
+    @field_validator("cors_allow_origin_regex", mode="before")
+    @classmethod
+    def _normalize_origin_regex(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        raw = str(value).strip().strip('"').strip("'")
+        if not raw:
+            return None
+        if raw in _OPEN_CORS_ORIGIN_REGEXES:
+            raise ValueError("Open CORS origin regex is not allowed")
+        return raw
 
 
 settings = Settings()

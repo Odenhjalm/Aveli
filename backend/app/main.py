@@ -89,6 +89,13 @@ _WorkerStop = Callable[[], Awaitable[None]]
 _WorkerStart = Callable[..., Awaitable[None]]
 
 
+class LoggedCORSMiddleware(CORSMiddleware):
+    def is_allowed_origin(self, origin: str) -> bool:
+        allowed = super().is_allowed_origin(origin)
+        logger.debug("CORS origin check origin=%s allowed=%s", origin, allowed)
+        return allowed
+
+
 def _local_background_workers() -> tuple[tuple[str, _WorkerStart, _WorkerStop], ...]:
     return (
         (
@@ -183,11 +190,16 @@ async def lifespan(app: FastAPI):
 
 def _origin_is_allowed(origin: str | None) -> bool:
     if not origin:
+        logger.debug("CORS origin check origin=<missing> allowed=False")
         return False
+    allowed = False
     if origin in settings.cors_allow_origins:
-        return True
-    pattern = settings.cors_allow_origin_regex
-    return bool(pattern and re.fullmatch(pattern, origin))
+        allowed = True
+    else:
+        pattern = settings.cors_allow_origin_regex
+        allowed = bool(pattern and re.fullmatch(pattern, origin))
+    logger.debug("CORS origin check origin=%s allowed=%s", origin, allowed)
+    return allowed
 
 
 def _cors_error_headers(request: Request) -> dict[str, str]:
@@ -212,7 +224,7 @@ def _configure_middleware(app: FastAPI) -> None:
     # before other middleware or route matching runs.
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
-        CORSMiddleware,
+        LoggedCORSMiddleware,
         allow_origins=settings.cors_allow_origins,
         allow_origin_regex=settings.cors_allow_origin_regex,
         allow_credentials=True,

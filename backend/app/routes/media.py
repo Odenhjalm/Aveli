@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 from pathlib import Path
+import re
 from urllib.parse import urlparse
 
 import httpx
@@ -73,6 +74,27 @@ def _normalize_storage_path(storage_path: str) -> str:
             normalized = normalized[len(prefix) :].lstrip("/")
             break
     return normalized
+
+
+def _cors_response_headers(request: Request) -> dict[str, str]:
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+
+    if origin in settings.cors_allow_origins:
+        allowed = True
+    else:
+        pattern = settings.cors_allow_origin_regex
+        allowed = bool(pattern and re.fullmatch(pattern, origin))
+
+    if not allowed:
+        return {}
+
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Vary": "Origin",
+    }
 
 
 def _storage_candidates(
@@ -514,8 +536,8 @@ async def _build_streaming_response(
         )
         response_headers = {
             "Accept-Ranges": upstream.headers.get("accept-ranges", "bytes"),
-            "Access-Control-Allow-Origin": "*",
         }
+        response_headers.update(_cors_response_headers(request))
         cache_seconds = max(0, ttl_seconds)
         if cache_seconds > 0:
             response_headers["Cache-Control"] = f"private, max-age={cache_seconds}"
@@ -586,8 +608,8 @@ async def _build_streaming_response(
 
     headers = {
         "Accept-Ranges": "bytes",
-        "Access-Control-Allow-Origin": "*",
     }
+    headers.update(_cors_response_headers(request))
     filename = row.get("original_name") or Path(storage_path).name
     cache_seconds = max(0, settings.media_signing_ttl_seconds)
     if cache_seconds > 0:
