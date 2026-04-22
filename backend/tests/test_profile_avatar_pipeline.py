@@ -88,10 +88,16 @@ async def test_profile_avatar_init_creates_profile_media_asset(monkeypatch) -> N
         "create_media_asset",
         fake_create_media_asset,
     )
+    monkeypatch.setattr(
+        profile_avatar,
+        "uuid4",
+        lambda: UUID(media_asset_id),
+        raising=True,
+    )
 
     response = await profile_avatar.canonical_issue_profile_avatar_init(
         schemas.CanonicalProfileAvatarInitRequest(
-            filename="avatar.png",
+            filename="avatar #?.png",
             mime_type="image/png",
             size_bytes=1024,
         ),
@@ -107,10 +113,12 @@ async def test_profile_avatar_init_creates_profile_media_asset(monkeypatch) -> N
     assert created["media_type"] == "image"
     assert created["purpose"] == "profile_media"
     assert created["state"] == "pending_upload"
-    assert created["original_filename"] == "avatar.png"
+    assert created["media_asset_id"] == media_asset_id
+    assert created["original_filename"] == "avatar #?.png"
     assert created["owner_user_id"] == user_id
-    assert str(created["original_object_path"]).startswith(
-        f"media/source/profile-avatar/{user_id}/"
+    assert str(created["original_object_path"]) == f"media/{media_asset_id}/source"
+    assert "avatar #?.png" not in str(
+        created["original_object_path"]
     )
     assert "storage" not in response.model_dump()
 

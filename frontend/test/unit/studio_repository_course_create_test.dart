@@ -205,6 +205,97 @@ void main() {
       'name': 'New Family',
     });
   });
+
+  test('myCourses reads studio drip authoring summary', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final courses = await repo.myCourses();
+
+    expect(courses, hasLength(1));
+    expect(courses.single.id, '99999999-9999-9999-9999-999999999999');
+    expect(courses.single.dripAuthoring.mode.apiValue, 'custom_lesson_offsets');
+    expect(courses.single.dripAuthoring.scheduleLocked, isFalse);
+    expect(courses.single.dripAuthoring.customSchedule, isNull);
+
+    final requests = harness.adapter.requestsFor('/studio/courses');
+    expect(requests.where((request) => request.method == 'GET'), hasLength(1));
+  });
+
+  test('fetchCourseMeta reads studio drip authoring detail', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final course = await repo.fetchCourseMeta(
+      '99999999-9999-9999-9999-999999999999',
+    );
+
+    expect(course.dripAuthoring.mode.apiValue, 'custom_lesson_offsets');
+    expect(course.dripAuthoring.customScheduleRows, hasLength(2));
+    expect(course.dripAuthoring.customScheduleRows.first.lessonId, 'lesson-1');
+    expect(
+      course.dripAuthoring.customScheduleRows.last.unlockOffsetDays,
+      3,
+    );
+  });
+
+  test('updateCourse rejects drip authoring patch fields', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    await expectLater(
+      repo.updateCourse('44444444-4444-4444-4444-444444444444', {
+        'drip_enabled': true,
+      }),
+      throwsA(isA<UnsupportedError>()),
+    );
+
+    expect(
+      harness.adapter.requestsFor(
+        '/studio/courses/44444444-4444-4444-4444-444444444444',
+      ),
+      isEmpty,
+    );
+  });
+
+  test('updateCourseDripAuthoring puts canonical dedicated payload', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final course = await repo.updateCourseDripAuthoring(
+      '99999999-9999-9999-9999-999999999999',
+      <String, Object?>{
+        'mode': 'custom_lesson_offsets',
+        'custom_schedule': <String, Object?>{
+          'rows': <Map<String, Object?>>[
+            {'lesson_id': 'lesson-1', 'unlock_offset_days': 0},
+            {'lesson_id': 'lesson-2', 'unlock_offset_days': 5},
+          ],
+        },
+      },
+    );
+
+    expect(course.dripAuthoring.mode.apiValue, 'custom_lesson_offsets');
+    expect(
+      course.dripAuthoring.customScheduleRows.last.unlockOffsetDays,
+      5,
+    );
+
+    final requests = harness.adapter.requestsFor(
+      '/studio/courses/99999999-9999-9999-9999-999999999999/drip-authoring',
+    );
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'PUT');
+    expect(Map<String, dynamic>.from(requests.single.data as Map), {
+      'mode': 'custom_lesson_offsets',
+      'custom_schedule': {
+        'rows': [
+          {'lesson_id': 'lesson-1', 'unlock_offset_days': 0},
+          {'lesson_id': 'lesson-2', 'unlock_offset_days': 5},
+        ],
+      },
+    });
+  });
 }
 
 class _Harness {
@@ -227,6 +318,36 @@ class _Harness {
     );
     final adapter = _RecordingAdapter((options) {
       if (options.path == '/studio/courses' &&
+          options.method.toUpperCase() == 'GET') {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'items': [
+              {
+                'id': '99999999-9999-9999-9999-999999999999',
+                'slug': 'backend-summary',
+                'title': 'Backend summary',
+                'course_group_id': '11111111-1111-1111-1111-111111111111',
+                'group_position': 1,
+                'cover_media_id': null,
+                'cover': null,
+                'price_amount_cents': 49000,
+                'teacher': null,
+                'required_enrollment_source': null,
+                'enrollable': true,
+                'purchasable': true,
+                'drip_authoring': {
+                  'mode': 'custom_lesson_offsets',
+                  'schedule_locked': false,
+                  'lock_reason': null,
+                  'legacy_uniform': null,
+                },
+              },
+            ],
+          },
+        );
+      }
+      if (options.path == '/studio/courses' &&
           options.method.toUpperCase() == 'POST') {
         final payload = Map<String, dynamic>.from(options.data as Map);
         return _jsonResponse(
@@ -242,6 +363,39 @@ class _Harness {
             'price_amount_cents': 49000,
             'drip_enabled': payload['drip_enabled'] as bool? ?? false,
             'drip_interval_days': payload['drip_interval_days'] as int?,
+          },
+        );
+      }
+      if (options.path ==
+              '/studio/courses/99999999-9999-9999-9999-999999999999' &&
+          options.method.toUpperCase() == 'GET') {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'id': '99999999-9999-9999-9999-999999999999',
+            'slug': 'backend-detail',
+            'title': 'Backend detail',
+            'course_group_id': '11111111-1111-1111-1111-111111111111',
+            'group_position': 1,
+            'cover_media_id': null,
+            'cover': null,
+            'price_amount_cents': 49000,
+            'teacher': null,
+            'required_enrollment_source': null,
+            'enrollable': true,
+            'purchasable': true,
+            'drip_authoring': {
+              'mode': 'custom_lesson_offsets',
+              'schedule_locked': false,
+              'lock_reason': null,
+              'legacy_uniform': null,
+              'custom_schedule': {
+                'rows': [
+                  {'lesson_id': 'lesson-1', 'unlock_offset_days': 0},
+                  {'lesson_id': 'lesson-2', 'unlock_offset_days': 3},
+                ],
+              },
+            },
           },
         );
       }
@@ -298,6 +452,35 @@ class _Harness {
             'price_amount_cents': 49000,
             'drip_enabled': false,
             'drip_interval_days': null,
+          },
+        );
+      }
+      if (options.path ==
+              '/studio/courses/99999999-9999-9999-9999-999999999999/drip-authoring' &&
+          options.method.toUpperCase() == 'PUT') {
+        final payload = Map<String, dynamic>.from(options.data as Map);
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'id': '99999999-9999-9999-9999-999999999999',
+            'slug': 'backend-detail',
+            'title': 'Backend detail',
+            'course_group_id': '11111111-1111-1111-1111-111111111111',
+            'group_position': 1,
+            'cover_media_id': null,
+            'cover': null,
+            'price_amount_cents': 49000,
+            'teacher': null,
+            'required_enrollment_source': null,
+            'enrollable': true,
+            'purchasable': true,
+            'drip_authoring': {
+              'mode': payload['mode'],
+              'schedule_locked': false,
+              'lock_reason': null,
+              'legacy_uniform': payload['legacy_uniform'],
+              'custom_schedule': payload['custom_schedule'],
+            },
           },
         );
       }

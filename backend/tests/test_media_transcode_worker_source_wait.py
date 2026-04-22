@@ -478,6 +478,96 @@ async def test_transcode_audio_asset_handles_m4a_input_and_generates_mp3(monkeyp
 
 
 @pytest.mark.anyio("asyncio")
+async def test_transcode_audio_asset_uses_media_asset_id_playback_path_for_new_family(
+    monkeypatch,
+):
+    calls: dict[str, object] = {}
+
+    class DummySigned:
+        url = "https://example.invalid/source"
+
+    class DummyUpload:
+        url = "https://example.invalid/upload"
+        headers = {"content-type": "audio/mpeg"}
+
+    class DummyStorage:
+        bucket = "course-media"
+
+        async def get_presigned_url(self, *args, **kwargs):
+            return DummySigned()
+
+        async def create_upload_url(self, path, *, content_type, upsert, cache_seconds):
+            calls["derived_path"] = path
+            calls["derived_content_type"] = content_type
+            return DummyUpload()
+
+        async def inspect_object(self, path, *, ttl):
+            calls["inspect_path"] = path
+            return worker.storage_service.StorageObjectMetadata(
+                path=path,
+                content_type="audio/mpeg",
+                size_bytes=9,
+            )
+
+    async def fake_download_to_file(url, destination):
+        destination.write_bytes(b"m4a-bytes")
+
+    async def fake_consume_attempt():
+        calls["attempt_consumed"] = True
+
+    async def fake_run_ffmpeg_audio(input_path, output_path):
+        output_path.write_bytes(b"mp3-bytes")
+
+    async def fake_probe_duration(path):
+        return 42
+
+    async def fake_upload_file(url, source, headers):
+        calls["upload_source"] = source
+
+    async def fake_mark_media_asset_ready_from_worker(**kwargs):
+        calls["mark_ready"] = kwargs
+        return True
+
+    monkeypatch.setattr(
+        worker.storage_service, "get_storage_service", lambda bucket: DummyStorage()
+    )
+    monkeypatch.setattr(worker, "_download_to_file", fake_download_to_file)
+    monkeypatch.setattr(worker, "_run_ffmpeg_audio", fake_run_ffmpeg_audio)
+    monkeypatch.setattr(worker, "_probe_duration", fake_probe_duration)
+    monkeypatch.setattr(worker, "_upload_file", fake_upload_file)
+    monkeypatch.setattr(
+        worker.media_assets_repo,
+        "mark_media_asset_ready_from_worker",
+        fake_mark_media_asset_ready_from_worker,
+    )
+
+    asset = {
+        "id": "media-new-audio",
+        "media_type": "audio",
+        "purpose": "home_player_audio",
+        "owner_user_id": "teacher-1",
+        "ingest_format": "m4a",
+        "original_filename": "focus mix #?.m4a",
+        "original_object_path": "media/media-new-audio/source",
+        "storage_bucket": "course-media",
+    }
+
+    await worker._transcode_audio_asset(asset, fake_consume_attempt)
+
+    assert calls["attempt_consumed"] is True
+    assert calls["derived_path"] == "media/media-new-audio/playback.mp3"
+    assert calls["derived_content_type"] == "audio/mpeg"
+    assert calls["mark_ready"] == {
+        "media_id": "media-new-audio",
+        "playback_object_path": "media/media-new-audio/playback.mp3",
+        "playback_format": "mp3",
+        "duration_seconds": 42,
+        "codec": "mp3",
+        "playback_storage_bucket": "course-media",
+    }
+
+
+@pytest.mark.anyio("asyncio")
 @pytest.mark.parametrize(
     (
         "media_type",
@@ -939,6 +1029,72 @@ def test_profile_media_output_path_preserves_subject_scope() -> None:
             "jpg",
         )
         == "media/derived/profile-avatar/user-1/avatar.jpg"
+    )
+
+
+def test_canonical_audio_output_path_uses_media_asset_id_for_new_family() -> None:
+    assert (
+        worker._resolved_audio_output_path(
+            {
+                "id": "media-audio-1",
+                "purpose": "lesson_media",
+                "course_id": "course-1",
+                "lesson_id": "lesson-1",
+                "original_filename": "demo.wav",
+                "original_object_path": "media/media-audio-1/source",
+            },
+            ext="mp3",
+        )
+        == "media/media-audio-1/playback.mp3"
+    )
+
+
+def test_canonical_cover_output_path_uses_media_asset_id_for_new_family() -> None:
+    assert (
+        worker._resolved_cover_output_path(
+            {
+                "id": "media-cover-1",
+                "purpose": "course_cover",
+                "course_id": "course-1",
+                "original_filename": "cover.png",
+                "original_object_path": "media/media-cover-1/source",
+            },
+            ext="jpg",
+        )
+        == "media/media-cover-1/playback.jpg"
+    )
+
+
+def test_canonical_profile_output_path_uses_media_asset_id_for_new_family() -> None:
+    assert (
+        worker._resolved_profile_media_output_path(
+            {
+                "id": "media-profile-1",
+                "purpose": "profile_media",
+                "owner_user_id": "user-1",
+                "original_filename": "avatar.png",
+                "original_object_path": "media/media-profile-1/source",
+            },
+            ext="jpg",
+        )
+        == "media/media-profile-1/playback.jpg"
+    )
+
+
+def test_canonical_lesson_image_output_path_uses_media_asset_id_for_new_family() -> None:
+    assert (
+        worker._resolved_lesson_media_output_path(
+            {
+                "id": "media-image-1",
+                "purpose": "lesson_media",
+                "lesson_id": "lesson-1",
+                "original_filename": "diagram.png",
+                "original_object_path": "media/media-image-1/source",
+            },
+            media_type="image",
+            ext="jpg",
+        )
+        == "media/media-image-1/playback.jpg"
     )
 
 

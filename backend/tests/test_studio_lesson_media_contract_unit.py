@@ -11,6 +11,7 @@ LESSON_ID = "22222222-2222-2222-2222-222222222222"
 LESSON_MEDIA_ID = "11111111-1111-1111-1111-111111111111"
 LESSON_MEDIA_ID_2 = "11111111-1111-1111-1111-111111111112"
 MEDIA_ASSET_ID = "33333333-3333-3333-3333-333333333333"
+MEDIA_ASSET_ID_2 = "33333333-3333-3333-3333-333333333334"
 TEACHER_ID = "44444444-4444-4444-4444-444444444444"
 FORBIDDEN_MEDIA_FIELDS = {
     "upload_url",
@@ -337,6 +338,12 @@ async def test_canonical_upload_url_creates_asset_without_placement(monkeypatch)
         raising=True,
     )
     monkeypatch.setattr(
+        studio,
+        "uuid4",
+        lambda: studio.UUID(MEDIA_ASSET_ID),
+        raising=True,
+    )
+    monkeypatch.setattr(
         studio.courses_repo,
         "create_lesson_media",
         fail_create_lesson_media,
@@ -363,9 +370,12 @@ async def test_canonical_upload_url_creates_asset_without_placement(monkeypatch)
     assert len(asset_calls) == 1
     assert asset_calls[0]["purpose"] == "lesson_media"
     assert asset_calls[0]["state"] == "pending_upload"
+    assert asset_calls[0]["media_asset_id"] == MEDIA_ASSET_ID
     assert asset_calls[0]["original_filename"] == "guide.pdf"
     assert asset_calls[0]["lesson_id"] == LESSON_ID
     assert asset_calls[0]["course_id"] == "55555555-5555-5555-5555-555555555555"
+    assert asset_calls[0]["original_object_path"] == f"media/{MEDIA_ASSET_ID}/source"
+    assert "guide.pdf" not in str(asset_calls[0]["original_object_path"])
     assert upload_calls == []
 
 
@@ -465,6 +475,12 @@ async def test_course_cover_upload_url_persists_metadata_without_exposing_storag
         fake_create_media_asset,
         raising=True,
     )
+    monkeypatch.setattr(
+        studio,
+        "uuid4",
+        lambda: studio.UUID(MEDIA_ASSET_ID),
+        raising=True,
+    )
 
     response = await studio.canonical_issue_course_cover_upload_url(
         course_id=studio.UUID(course_id),
@@ -482,8 +498,11 @@ async def test_course_cover_upload_url_persists_metadata_without_exposing_storag
         FORBIDDEN_MEDIA_FIELDS | {"headers", "storage_bucket"}
     )
     assert created["purpose"] == "course_cover"
+    assert created["media_asset_id"] == MEDIA_ASSET_ID
     assert created["original_filename"] == "cover art.png"
     assert created["course_id"] == course_id
+    assert created["original_object_path"] == f"media/{MEDIA_ASSET_ID}/source"
+    assert "cover art.png" not in str(created["original_object_path"])
 
 
 async def test_home_player_upload_url_persists_owner_metadata_without_exposing_storage(
@@ -499,6 +518,12 @@ async def test_home_player_upload_url_persists_owner_metadata_without_exposing_s
         studio.media_assets_repo,
         "create_media_asset",
         fake_create_media_asset,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio,
+        "uuid4",
+        lambda: studio.UUID(MEDIA_ASSET_ID),
         raising=True,
     )
 
@@ -517,8 +542,60 @@ async def test_home_player_upload_url_persists_owner_metadata_without_exposing_s
         FORBIDDEN_MEDIA_FIELDS | {"headers", "storage_bucket"}
     )
     assert created["purpose"] == "home_player_audio"
+    assert created["media_asset_id"] == MEDIA_ASSET_ID
     assert created["original_filename"] == "focus mix.m4a"
     assert created["owner_user_id"] == TEACHER_ID
+    assert created["original_object_path"] == f"media/{MEDIA_ASSET_ID}/source"
+    assert "focus mix.m4a" not in str(created["original_object_path"])
+
+
+async def test_home_player_upload_url_uses_media_asset_id_paths_for_duplicate_filenames(
+    monkeypatch,
+) -> None:
+    created: list[dict[str, object]] = []
+    media_asset_ids = iter((MEDIA_ASSET_ID, MEDIA_ASSET_ID_2))
+
+    async def fake_create_media_asset(**kwargs):
+        created.append(dict(kwargs))
+        return {"id": kwargs["media_asset_id"], "state": "pending_upload"}
+
+    monkeypatch.setattr(
+        studio.media_assets_repo,
+        "create_media_asset",
+        fake_create_media_asset,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio,
+        "uuid4",
+        lambda: studio.UUID(next(media_asset_ids)),
+        raising=True,
+    )
+
+    first = await studio.canonical_issue_home_player_upload_url(
+        payload=schemas.CanonicalHomePlayerMediaUploadUrlRequest(
+            filename="focus mix #?.m4a",
+            mime_type="audio/mp4",
+            size_bytes=12,
+        ),
+        current={"id": TEACHER_ID},
+    )
+    second = await studio.canonical_issue_home_player_upload_url(
+        payload=schemas.CanonicalHomePlayerMediaUploadUrlRequest(
+            filename="focus mix #?.m4a",
+            mime_type="audio/mp4",
+            size_bytes=12,
+        ),
+        current={"id": TEACHER_ID},
+    )
+
+    assert str(first.media_asset_id) == MEDIA_ASSET_ID
+    assert str(second.media_asset_id) == MEDIA_ASSET_ID_2
+    assert created[0]["original_object_path"] == f"media/{MEDIA_ASSET_ID}/source"
+    assert created[1]["original_object_path"] == f"media/{MEDIA_ASSET_ID_2}/source"
+    assert created[0]["original_object_path"] != created[1]["original_object_path"]
+    assert "focus mix #?.m4a" not in str(created[0]["original_object_path"])
+    assert "focus mix #?.m4a" not in str(created[1]["original_object_path"])
 
 
 async def test_canonical_placement_attaches_uploaded_asset_without_asset_creation(

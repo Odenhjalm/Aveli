@@ -448,6 +448,37 @@ def _asset_text(asset: dict, key: str) -> str | None:
     return value or None
 
 
+def _canonical_source_object_path(asset: dict) -> str | None:
+    media_id = _asset_text(asset, "id")
+    if media_id is None:
+        return None
+    try:
+        return media_paths.build_media_asset_source_object_path(media_id)
+    except ValueError:
+        return None
+
+
+def _canonical_playback_object_path(asset: dict, *, ext: str) -> str | None:
+    media_id = _asset_text(asset, "id")
+    if media_id is None:
+        return None
+    try:
+        return media_paths.build_media_asset_playback_object_path(media_id, ext=ext)
+    except ValueError:
+        return None
+
+
+def _uses_media_asset_id_storage_family(asset: dict) -> bool:
+    source_path = _asset_text(asset, "original_object_path")
+    canonical_source_path = _canonical_source_object_path(asset)
+    if source_path is None or canonical_source_path is None:
+        return False
+    return media_paths.is_canonical_media_asset_source_for_id(
+        source_path,
+        _asset_text(asset, "id"),
+    )
+
+
 def _asset_output_leaf(asset: dict, *, ext: str, fallback: str = "media") -> str:
     filename = media_paths.normalize_media_filename(
         _asset_text(asset, "original_filename")
@@ -458,6 +489,10 @@ def _asset_output_leaf(asset: dict, *, ext: str, fallback: str = "media") -> str
 
 
 def _resolved_audio_output_path(asset: dict, *, ext: str) -> str:
+    canonical_output_path = _canonical_playback_object_path(asset, ext=ext)
+    if canonical_output_path is not None and _uses_media_asset_id_storage_family(asset):
+        return canonical_output_path
+
     purpose = str(asset.get("purpose") or "").strip().lower()
     lesson_id = _asset_text(asset, "lesson_id")
     course_id = _asset_text(asset, "course_id")
@@ -488,6 +523,10 @@ def _resolved_audio_output_path(asset: dict, *, ext: str) -> str:
 
 
 def _resolved_cover_output_path(asset: dict, *, ext: str) -> str:
+    canonical_output_path = _canonical_playback_object_path(asset, ext=ext)
+    if canonical_output_path is not None and _uses_media_asset_id_storage_family(asset):
+        return canonical_output_path
+
     course_id = _asset_text(asset, "course_id")
     if course_id:
         return (
@@ -502,6 +541,10 @@ def _resolved_cover_output_path(asset: dict, *, ext: str) -> str:
 
 
 def _resolved_profile_media_output_path(asset: dict, *, ext: str) -> str:
+    canonical_output_path = _canonical_playback_object_path(asset, ext=ext)
+    if canonical_output_path is not None and _uses_media_asset_id_storage_family(asset):
+        return canonical_output_path
+
     owner_user_id = _asset_text(asset, "owner_user_id")
     if owner_user_id:
         return (
@@ -518,6 +561,10 @@ def _resolved_profile_media_output_path(asset: dict, *, ext: str) -> str:
 
 
 def _resolved_lesson_media_output_path(asset: dict, *, media_type: str, ext: str) -> str:
+    canonical_output_path = _canonical_playback_object_path(asset, ext=ext)
+    if canonical_output_path is not None and _uses_media_asset_id_storage_family(asset):
+        return canonical_output_path
+
     lesson_id = _asset_text(asset, "lesson_id")
     course_id = _asset_text(asset, "course_id")
     leaf = _asset_output_leaf(asset, ext=ext)

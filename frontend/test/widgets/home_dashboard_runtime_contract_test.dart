@@ -276,6 +276,157 @@ void main() {
     expect(find.text('Morgonandning'), findsNothing);
     expect(engineFactory.createCount, 1);
   });
+
+  testWidgets(
+    'provider refresh stages a new candidate while the dashboard keeps rendering the frozen session list',
+    (tester) async {
+      var homeAudioStatus = 200;
+      var homeAudioBody = _simpleHomeAudioBody([
+        _simpleHomeAudioItem(
+          title: 'Active One',
+          mediaId: 'media-1',
+          resolvedUrl: 'https://cdn.test/audio/active-one.mp3',
+          createdAt: '2026-04-22T11:00:00Z',
+        ),
+        _simpleHomeAudioItem(
+          title: 'Active Two',
+          mediaId: 'media-2',
+          resolvedUrl: 'https://cdn.test/audio/active-two.mp3',
+          createdAt: '2026-04-22T10:00:00Z',
+        ),
+      ]);
+
+      final harness = await _Harness.createWithHomeAudioHandler(
+        (_) => _jsonResponse(statusCode: homeAudioStatus, body: homeAudioBody),
+      );
+      final repository = HomeAudioRepository(harness.client);
+      final engineFactory = FakeHomeAudioEngineFactory();
+
+      final container = await _pumpDashboard(
+        tester,
+        homeAudioRepository: repository,
+        engineFactory: engineFactory,
+      );
+      addTearDown(container.dispose);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.tap(find.byKey(const ValueKey('home-player-play-button')));
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const ValueKey('home-audio-track-list-toggle')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(find.text('Active One'), findsOneWidget);
+      expect(find.text('Active Two'), findsOneWidget);
+
+      homeAudioBody = _simpleHomeAudioBody([
+        _simpleHomeAudioItem(
+          title: 'Refresh Lead',
+          mediaId: 'media-9',
+          resolvedUrl: 'https://cdn.test/audio/refresh-lead.mp3',
+          createdAt: '2026-04-22T12:00:00Z',
+        ),
+        _simpleHomeAudioItem(
+          title: 'Refresh Tail',
+          mediaId: 'media-10',
+          resolvedUrl: 'https://cdn.test/audio/refresh-tail.mp3',
+          createdAt: '2026-04-22T11:30:00Z',
+        ),
+      ]);
+
+      await container.read(homeAudioProvider.notifier).refresh();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final state = container.read(homeAudioSessionControllerProvider);
+      expect(state.isPlaying, isTrue);
+      expect(state.currentIndex, 0);
+      expect(
+        state.queue.map((entry) => entry.title),
+        orderedEquals(['Active One', 'Active Two']),
+      );
+      expect(state.hasStagedSnapshot, isTrue);
+      expect(
+        state.stagedQueue.map((entry) => entry.title),
+        orderedEquals(['Refresh Lead', 'Refresh Tail']),
+      );
+      expect(find.text('Active One'), findsOneWidget);
+      expect(find.text('Active Two'), findsOneWidget);
+      expect(find.text('Refresh Lead'), findsNothing);
+      expect(find.text('Refresh Tail'), findsNothing);
+      expect(engineFactory.createCount, 1);
+      expect(
+        engineFactory.single.loadedUrls,
+        orderedEquals(['https://cdn.test/audio/active-one.mp3']),
+      );
+    },
+  );
+
+  testWidgets(
+    'provider refresh failure during an active session does not interrupt the dashboard player',
+    (tester) async {
+      var homeAudioStatus = 200;
+      var homeAudioBody = _simpleHomeAudioBody([
+        _simpleHomeAudioItem(
+          title: 'Stable One',
+          mediaId: 'media-1',
+          resolvedUrl: 'https://cdn.test/audio/stable-one.mp3',
+          createdAt: '2026-04-22T11:00:00Z',
+        ),
+        _simpleHomeAudioItem(
+          title: 'Stable Two',
+          mediaId: 'media-2',
+          resolvedUrl: 'https://cdn.test/audio/stable-two.mp3',
+          createdAt: '2026-04-22T10:00:00Z',
+        ),
+      ]);
+
+      final harness = await _Harness.createWithHomeAudioHandler(
+        (_) => _jsonResponse(statusCode: homeAudioStatus, body: homeAudioBody),
+      );
+      final repository = HomeAudioRepository(harness.client);
+      final engineFactory = FakeHomeAudioEngineFactory();
+
+      final container = await _pumpDashboard(
+        tester,
+        homeAudioRepository: repository,
+        engineFactory: engineFactory,
+      );
+      addTearDown(container.dispose);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.tap(find.byKey(const ValueKey('home-player-play-button')));
+      await tester.pump();
+
+      homeAudioStatus = 500;
+      homeAudioBody = {'detail': 'refresh failed'};
+
+      await container.read(homeAudioProvider.notifier).refresh();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final state = container.read(homeAudioSessionControllerProvider);
+      expect(container.read(homeAudioProvider).hasError, isTrue);
+      expect(state.isPlaying, isTrue);
+      expect(state.currentIndex, 0);
+      expect(
+        state.queue.map((entry) => entry.title),
+        orderedEquals(['Stable One', 'Stable Two']),
+      );
+      expect(find.byType(InlineAudioPlayerView), findsOneWidget);
+      expect(find.byKey(const ValueKey('home-audio-error')), findsNothing);
+      expect(engineFactory.createCount, 1);
+      expect(
+        engineFactory.single.loadedUrls,
+        orderedEquals(['https://cdn.test/audio/stable-one.mp3']),
+      );
+    },
+  );
 }
 
 class _Harness {
@@ -283,6 +434,31 @@ class _Harness {
 
   final ApiClient client;
   final _RecordingAdapter adapter;
+
+  static Future<_Harness> createWithHomeAudioHandler(
+    ResponseBody Function(RequestOptions options) homeAudioHandler,
+  ) async {
+    final storage = _MemoryFlutterSecureStorage();
+    final tokens = TokenStorage(storage: storage);
+    await tokens.saveTokens(
+      accessToken: _jwtWithExpSeconds(4102444800),
+      refreshToken: 'rt-1',
+    );
+
+    final client = ApiClient(
+      baseUrl: 'http://127.0.0.1:1',
+      tokenStorage: tokens,
+    );
+    final adapter = _RecordingAdapter((options) {
+      if (options.path == '/home/audio' &&
+          options.method.toUpperCase() == 'GET') {
+        return homeAudioHandler(options);
+      }
+      return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+    });
+    client.raw.httpClientAdapter = adapter;
+    return _Harness(client: client, adapter: adapter);
+  }
 
   static Future<_Harness> create() async {
     final storage = _MemoryFlutterSecureStorage();
@@ -482,6 +658,34 @@ class _Harness {
     client.raw.httpClientAdapter = adapter;
     return _Harness(client: client, adapter: adapter);
   }
+}
+
+Map<String, Object?> _simpleHomeAudioBody(List<Map<String, Object?>> items) {
+  return {'items': items, 'text_bundle': const <String, Object?>{}};
+}
+
+Map<String, Object?> _simpleHomeAudioItem({
+  required String title,
+  required String mediaId,
+  required String resolvedUrl,
+  required String createdAt,
+}) {
+  return {
+    'source_type': 'direct_upload',
+    'title': title,
+    'lesson_title': null,
+    'course_id': null,
+    'course_title': null,
+    'course_slug': null,
+    'teacher_id': 'teacher-1',
+    'teacher_name': 'Aveli Teacher',
+    'created_at': createdAt,
+    'media': {
+      'media_id': mediaId,
+      'state': 'ready',
+      'resolved_url': resolvedUrl,
+    },
+  };
 }
 
 ResponseBody _jsonResponse({

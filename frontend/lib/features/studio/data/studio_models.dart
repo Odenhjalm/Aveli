@@ -68,6 +68,40 @@ bool _requiredResponseBool(Object? payload, String key, String label) {
   throw StateError('$label field "$key" must be a bool');
 }
 
+Map<String, Object?> _requiredResponseMap(
+  Object? payload,
+  String key,
+  String label,
+) {
+  final value = _requireResponseField(payload, key, label);
+  if (value is Map) {
+    return Map<String, Object?>.from(value);
+  }
+  throw StateError('$label field "$key" must be an object');
+}
+
+Map<String, Object?>? _nullableResponseMap(
+  Object? payload,
+  String key,
+  String label,
+) {
+  switch (payload) {
+    case final Map data when data.containsKey(key):
+      final value = data[key];
+      if (value == null) {
+        return null;
+      }
+      if (value is Map) {
+        return Map<String, Object?>.from(value);
+      }
+      throw StateError('$label field "$key" must be an object or null');
+    case final Map _:
+      return null;
+    default:
+      throw StateError('$label returned a non-object payload');
+  }
+}
+
 List<Object?> _requiredResponseList(Object? payload, String key, String label) {
   final value = _requireResponseField(payload, key, label);
   if (value is List) {
@@ -143,6 +177,295 @@ DateTime _requiredResponseUtcDateTime(
   return DateTime.parse(value);
 }
 
+bool _responseHasField(Object? payload, String key) {
+  return payload is Map && payload.containsKey(key);
+}
+
+enum DripAuthoringMode {
+  noDripImmediateAccess('no_drip_immediate_access'),
+  legacyUniformDrip('legacy_uniform_drip'),
+  customLessonOffsets('custom_lesson_offsets');
+
+  const DripAuthoringMode(this.apiValue);
+
+  final String apiValue;
+
+  static DripAuthoringMode fromApiValue(String value) {
+    for (final mode in values) {
+      if (mode.apiValue == value) {
+        return mode;
+      }
+    }
+    throw StateError('Unknown drip authoring mode: $value');
+  }
+}
+
+enum DripAuthoringLockReason {
+  firstEnrollmentExists('first_enrollment_exists');
+
+  const DripAuthoringLockReason(this.apiValue);
+
+  final String apiValue;
+
+  static DripAuthoringLockReason fromApiValue(String value) {
+    for (final reason in values) {
+      if (reason.apiValue == value) {
+        return reason;
+      }
+    }
+    throw StateError('Unknown drip authoring lock reason: $value');
+  }
+}
+
+@immutable
+class LegacyUniform {
+  const LegacyUniform({required this.dripIntervalDays});
+
+  final int dripIntervalDays;
+
+  factory LegacyUniform.fromResponse(
+    Object? payload, {
+    String label = 'LegacyUniform',
+  }) {
+    return LegacyUniform(
+      dripIntervalDays: _requiredResponseInt(
+        payload,
+        'drip_interval_days',
+        label,
+      ),
+    );
+  }
+
+  Map<String, Object?> toRequest() {
+    return <String, Object?>{'drip_interval_days': dripIntervalDays};
+  }
+}
+
+@immutable
+class CustomScheduleRow {
+  const CustomScheduleRow({
+    required this.lessonId,
+    required this.unlockOffsetDays,
+  });
+
+  final String lessonId;
+  final int unlockOffsetDays;
+
+  factory CustomScheduleRow.fromResponse(
+    Object? payload, {
+    String label = 'CustomScheduleRow',
+  }) {
+    return CustomScheduleRow(
+      lessonId: _requiredResponseString(payload, 'lesson_id', label),
+      unlockOffsetDays: _requiredResponseInt(
+        payload,
+        'unlock_offset_days',
+        label,
+      ),
+    );
+  }
+
+  Map<String, Object?> toRequest() {
+    return <String, Object?>{
+      'lesson_id': lessonId,
+      'unlock_offset_days': unlockOffsetDays,
+    };
+  }
+}
+
+@immutable
+class CustomSchedule {
+  const CustomSchedule({required this.rows});
+
+  final List<CustomScheduleRow> rows;
+
+  factory CustomSchedule.fromResponse(
+    Object? payload, {
+    String label = 'CustomSchedule',
+  }) {
+    final items = _requiredResponseList(payload, 'rows', label);
+    return CustomSchedule(
+      rows: items
+          .map(
+            (item) =>
+                CustomScheduleRow.fromResponse(item, label: '$label.rows[]'),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Map<String, Object?> toRequest() {
+    return <String, Object?>{
+      'rows': rows.map((row) => row.toRequest()).toList(growable: false),
+    };
+  }
+}
+
+@immutable
+class DripAuthoring {
+  const DripAuthoring({
+    required this.mode,
+    required this.scheduleLocked,
+    required this.lockReason,
+    required this.legacyUniform,
+    required this.customSchedule,
+  });
+
+  const DripAuthoring.immediateAccess({
+    this.scheduleLocked = false,
+    this.lockReason,
+  }) : mode = DripAuthoringMode.noDripImmediateAccess,
+       legacyUniform = null,
+       customSchedule = null;
+
+  DripAuthoring.legacyUniform({
+    required int dripIntervalDays,
+    this.scheduleLocked = false,
+    this.lockReason,
+  }) : mode = DripAuthoringMode.legacyUniformDrip,
+       legacyUniform = LegacyUniform(dripIntervalDays: dripIntervalDays),
+       customSchedule = null;
+
+  DripAuthoring.custom({
+    required List<CustomScheduleRow> rows,
+    this.scheduleLocked = false,
+    this.lockReason,
+  }) : mode = DripAuthoringMode.customLessonOffsets,
+       legacyUniform = null,
+       customSchedule = CustomSchedule(rows: rows);
+
+  final DripAuthoringMode mode;
+  final bool scheduleLocked;
+  final DripAuthoringLockReason? lockReason;
+  final LegacyUniform? legacyUniform;
+  final CustomSchedule? customSchedule;
+
+  bool get dripEnabled => mode == DripAuthoringMode.legacyUniformDrip;
+  int? get dripIntervalDays => legacyUniform?.dripIntervalDays;
+  List<CustomScheduleRow> get customScheduleRows =>
+      customSchedule?.rows ?? const <CustomScheduleRow>[];
+
+  factory DripAuthoring.fromResponse(
+    Object? payload, {
+    String label = 'DripAuthoring',
+  }) {
+    final mode = DripAuthoringMode.fromApiValue(
+      _requiredResponseString(payload, 'mode', label),
+    );
+    final lockReasonRaw = _nullableResponseString(
+      payload,
+      'lock_reason',
+      label,
+    );
+    final lockReason = lockReasonRaw == null
+        ? null
+        : DripAuthoringLockReason.fromApiValue(lockReasonRaw);
+    final legacyUniformPayload = _nullableResponseMap(
+      payload,
+      'legacy_uniform',
+      label,
+    );
+    final customSchedulePayload = _nullableResponseMap(
+      payload,
+      'custom_schedule',
+      label,
+    );
+    return DripAuthoring(
+      mode: mode,
+      scheduleLocked: _requiredResponseBool(payload, 'schedule_locked', label),
+      lockReason: lockReason,
+      legacyUniform: legacyUniformPayload == null
+          ? null
+          : LegacyUniform.fromResponse(
+              legacyUniformPayload,
+              label: '$label.legacy_uniform',
+            ),
+      customSchedule: customSchedulePayload == null
+          ? null
+          : CustomSchedule.fromResponse(
+              customSchedulePayload,
+              label: '$label.custom_schedule',
+            ),
+    );
+  }
+}
+
+DripAuthoring _legacyCourseDripAuthoring({
+  required bool dripEnabled,
+  required int? dripIntervalDays,
+  bool scheduleLocked = false,
+  DripAuthoringLockReason? lockReason,
+}) {
+  if (!dripEnabled) {
+    return DripAuthoring.immediateAccess(
+      scheduleLocked: scheduleLocked,
+      lockReason: lockReason,
+    );
+  }
+  if (dripIntervalDays == null || dripIntervalDays <= 0) {
+    throw StateError('dripIntervalDays is required when dripEnabled is true');
+  }
+  return DripAuthoring.legacyUniform(
+    dripIntervalDays: dripIntervalDays,
+    scheduleLocked: scheduleLocked,
+    lockReason: lockReason,
+  );
+}
+
+DripAuthoring _courseDripAuthoringFromResponse(Object? payload, String label) {
+  if (_responseHasField(payload, 'drip_authoring')) {
+    return DripAuthoring.fromResponse(
+      _requiredResponseMap(payload, 'drip_authoring', label),
+      label: '$label.drip_authoring',
+    );
+  }
+  return _legacyCourseDripAuthoring(
+    dripEnabled: _requiredResponseBool(payload, 'drip_enabled', label),
+    dripIntervalDays: _nullableResponseInt(
+      payload,
+      'drip_interval_days',
+      label,
+    ),
+  );
+}
+
+DripAuthoring _copyCourseDripAuthoring(
+  DripAuthoring current, {
+  bool? dripEnabled,
+  int? dripIntervalDays,
+  bool clearDripIntervalDays = false,
+}) {
+  if (dripEnabled == null &&
+      dripIntervalDays == null &&
+      clearDripIntervalDays == false) {
+    return current;
+  }
+
+  final nextDripEnabled =
+      dripEnabled ??
+      (clearDripIntervalDays
+          ? false
+          : (dripIntervalDays != null ? true : current.dripEnabled));
+  if (!nextDripEnabled) {
+    return DripAuthoring.immediateAccess(
+      scheduleLocked: current.scheduleLocked,
+      lockReason: current.lockReason,
+    );
+  }
+
+  final nextIntervalDays = clearDripIntervalDays
+      ? null
+      : (dripIntervalDays ?? current.legacyUniform?.dripIntervalDays);
+  if (nextIntervalDays == null || nextIntervalDays <= 0) {
+    throw StateError('dripIntervalDays is required for legacy drip mode');
+  }
+  return DripAuthoring.legacyUniform(
+    dripIntervalDays: nextIntervalDays,
+    scheduleLocked: current.scheduleLocked,
+    lockReason: current.lockReason,
+  );
+}
+
 @immutable
 class CourseCore {
   const CourseCore({
@@ -151,21 +474,39 @@ class CourseCore {
     required this.slug,
     required this.courseGroupId,
     required this.groupPosition,
-    required this.dripEnabled,
-    required this.dripIntervalDays,
+    DripAuthoring? dripAuthoring,
+    bool dripEnabled = false,
+    int? dripIntervalDays,
     required this.coverMediaId,
     required this.cover,
-  });
+  }) : assert(
+         !dripEnabled || (dripIntervalDays != null && dripIntervalDays > 0),
+         'dripIntervalDays is required when dripEnabled is true',
+       ),
+       _dripAuthoring = dripAuthoring,
+       _dripEnabled = dripEnabled,
+       _dripIntervalDays = dripIntervalDays;
 
   final String id;
   final String title;
   final String slug;
   final String courseGroupId;
   final int groupPosition;
-  final bool dripEnabled;
-  final int? dripIntervalDays;
+  final DripAuthoring? _dripAuthoring;
+  final bool _dripEnabled;
+  final int? _dripIntervalDays;
   final String? coverMediaId;
   final CourseCoverData? cover;
+
+  DripAuthoring get dripAuthoring =>
+      _dripAuthoring ??
+      _legacyCourseDripAuthoring(
+        dripEnabled: _dripEnabled,
+        dripIntervalDays: _dripIntervalDays,
+      );
+  bool get dripEnabled => _dripAuthoring?.dripEnabled ?? _dripEnabled;
+  int? get dripIntervalDays =>
+      _dripAuthoring?.dripIntervalDays ?? _dripIntervalDays;
 }
 
 @immutable
@@ -206,8 +547,9 @@ class CourseStudio extends CourseCore {
     required super.slug,
     required super.courseGroupId,
     required super.groupPosition,
-    required super.dripEnabled,
-    required super.dripIntervalDays,
+    super.dripAuthoring,
+    super.dripEnabled = false,
+    super.dripIntervalDays,
     required super.coverMediaId,
     required super.cover,
     required this.priceAmountCents,
@@ -219,18 +561,14 @@ class CourseStudio extends CourseCore {
     Object? payload, {
     String label = 'Course',
   }) {
+    final dripAuthoring = _courseDripAuthoringFromResponse(payload, label);
     return CourseStudio(
       id: _requiredResponseString(payload, 'id', label),
       title: _requiredResponseString(payload, 'title', label),
       slug: _requiredResponseString(payload, 'slug', label),
       courseGroupId: _requiredResponseString(payload, 'course_group_id', label),
       groupPosition: _requiredResponseInt(payload, 'group_position', label),
-      dripEnabled: _requiredResponseBool(payload, 'drip_enabled', label),
-      dripIntervalDays: _nullableResponseInt(
-        payload,
-        'drip_interval_days',
-        label,
-      ),
+      dripAuthoring: dripAuthoring,
       coverMediaId: _nullableResponseString(payload, 'cover_media_id', label),
       cover: switch (_requireResponseField(payload, 'cover', label)) {
         null => null,
@@ -256,6 +594,7 @@ class CourseStudio extends CourseCore {
     String? slug,
     String? courseGroupId,
     int? groupPosition,
+    DripAuthoring? dripAuthoring,
     bool? dripEnabled,
     int? dripIntervalDays,
     String? coverMediaId,
@@ -267,6 +606,14 @@ class CourseStudio extends CourseCore {
     bool clearCover = false,
     bool clearPriceAmountCents = false,
   }) {
+    final nextDripAuthoring =
+        dripAuthoring ??
+        _copyCourseDripAuthoring(
+          this.dripAuthoring,
+          dripEnabled: dripEnabled,
+          dripIntervalDays: dripIntervalDays,
+          clearDripIntervalDays: clearDripIntervalDays,
+        );
     return CourseStudio(
       id: id ?? this.id,
       title: title ?? this.title,
@@ -275,10 +622,7 @@ class CourseStudio extends CourseCore {
           ? ''
           : (courseGroupId ?? this.courseGroupId),
       groupPosition: groupPosition ?? this.groupPosition,
-      dripEnabled: dripEnabled ?? this.dripEnabled,
-      dripIntervalDays: clearDripIntervalDays
-          ? null
-          : (dripIntervalDays ?? this.dripIntervalDays),
+      dripAuthoring: nextDripAuthoring,
       coverMediaId: clearCoverMediaId
           ? null
           : (coverMediaId ?? this.coverMediaId),

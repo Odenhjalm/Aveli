@@ -160,14 +160,17 @@ async def test_canonical_upload_session_routes_persist_media_ingest_metadata(
             },
         )
         assert lesson_upload.status_code == 200, lesson_upload.text
+        lesson_media_asset_id = lesson_upload.json()["media_asset_id"]
         lesson_asset = await media_assets_repo.get_media_asset(
-            lesson_upload.json()["media_asset_id"]
+            lesson_media_asset_id
         )
         assert lesson_asset is not None
         assert lesson_asset["original_filename"] == "Intro Track #1.wav"
         assert lesson_asset["lesson_id"] == lesson_id
         assert lesson_asset["course_id"] == course_id
         assert lesson_asset["owner_user_id"] is None
+        assert lesson_asset["original_object_path"] == f"media/{lesson_media_asset_id}/source"
+        assert "Intro Track #1.wav" not in str(lesson_asset["original_object_path"])
 
         cover_upload = await async_client.post(
             f"/api/courses/{course_id}/cover-media-assets/upload-url",
@@ -179,14 +182,17 @@ async def test_canonical_upload_session_routes_persist_media_ingest_metadata(
             },
         )
         assert cover_upload.status_code == 200, cover_upload.text
+        cover_media_asset_id = cover_upload.json()["media_asset_id"]
         cover_asset = await media_assets_repo.get_media_asset(
-            cover_upload.json()["media_asset_id"]
+            cover_media_asset_id
         )
         assert cover_asset is not None
         assert cover_asset["original_filename"] == "Course Cover ?.png"
         assert cover_asset["course_id"] == course_id
         assert cover_asset["lesson_id"] is None
         assert cover_asset["owner_user_id"] is None
+        assert cover_asset["original_object_path"] == f"media/{cover_media_asset_id}/source"
+        assert "Course Cover ?.png" not in str(cover_asset["original_object_path"])
 
         home_upload = await async_client.post(
             "/api/home-player/media-assets/upload-url",
@@ -198,33 +204,60 @@ async def test_canonical_upload_session_routes_persist_media_ingest_metadata(
             },
         )
         assert home_upload.status_code == 200, home_upload.text
+        home_media_asset_id = home_upload.json()["media_asset_id"]
         home_asset = await media_assets_repo.get_media_asset(
-            home_upload.json()["media_asset_id"]
+            home_media_asset_id
         )
         assert home_asset is not None
         assert home_asset["original_filename"] == "Focus Mix?.m4a"
         assert home_asset["owner_user_id"] == user_id
         assert home_asset["lesson_id"] is None
         assert home_asset["course_id"] is None
+        assert home_asset["original_object_path"] == f"media/{home_media_asset_id}/source"
+        assert "Focus Mix?.m4a" not in str(home_asset["original_object_path"])
+
+        duplicate_home_upload = await async_client.post(
+            "/api/home-player/media-assets/upload-url",
+            headers=headers,
+            json={
+                "filename": "Focus Mix?.m4a",
+                "mime_type": "audio/mp4",
+                "size_bytes": 128,
+            },
+        )
+        assert duplicate_home_upload.status_code == 200, duplicate_home_upload.text
+        duplicate_home_media_asset_id = duplicate_home_upload.json()["media_asset_id"]
+        duplicate_home_asset = await media_assets_repo.get_media_asset(
+            duplicate_home_media_asset_id
+        )
+        assert duplicate_home_asset is not None
+        assert duplicate_home_asset["original_filename"] == "Focus Mix?.m4a"
+        assert duplicate_home_asset["original_object_path"] == (
+            f"media/{duplicate_home_media_asset_id}/source"
+        )
+        assert duplicate_home_asset["original_object_path"] != home_asset["original_object_path"]
 
         avatar_upload = await async_client.post(
             "/api/media/profile-avatar/init",
             headers=headers,
             json={
-                "filename": "Åvatar #1.png",
+                "filename": "A\u030Avatar #1.png",
                 "mime_type": "image/png",
                 "size_bytes": 128,
             },
         )
         assert avatar_upload.status_code == 200, avatar_upload.text
+        avatar_media_asset_id = avatar_upload.json()["media_asset_id"]
         avatar_asset = await media_assets_repo.get_media_asset(
-            avatar_upload.json()["media_asset_id"]
+            avatar_media_asset_id
         )
         assert avatar_asset is not None
-        assert avatar_asset["original_filename"] == "Åvatar #1.png"
+        assert avatar_asset["original_filename"] == "A\u030Avatar #1.png"
         assert avatar_asset["owner_user_id"] == user_id
         assert avatar_asset["lesson_id"] is None
         assert avatar_asset["course_id"] is None
+        assert avatar_asset["original_object_path"] == f"media/{avatar_media_asset_id}/source"
+        assert "A\u030Avatar #1.png" not in str(avatar_asset["original_object_path"])
     finally:
         await _cleanup_course_families(user_id)
         await _cleanup_user(user_id)

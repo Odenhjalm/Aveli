@@ -27,6 +27,7 @@ from ..repositories import media_assets as media_assets_repo
 from ..repositories import runtime_media as runtime_media_repo
 from ..utils import lesson_content as lesson_content_utils
 from ..utils import lesson_markdown_validator
+from ..utils import media_paths
 from . import lesson_playback_service
 from . import media_cleanup
 from . import studio_authority
@@ -982,6 +983,31 @@ def _course_cover_asset_course_scope(asset: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _course_cover_asset_has_ready_output_path(
+    asset: Mapping[str, Any],
+    *,
+    course_id: str,
+) -> bool:
+    playback_object_path = (
+        str(asset.get("playback_object_path") or "").strip().lstrip("/")
+    )
+    if not playback_object_path:
+        return False
+
+    media_id = str(asset.get("id") or "").strip()
+    if media_id:
+        try:
+            if playback_object_path == media_paths.build_media_asset_playback_object_path(
+                media_id,
+                ext="jpg",
+            ):
+                return True
+        except ValueError:
+            pass
+
+    return playback_object_path.startswith(_canonical_course_cover_derived_prefix(course_id))
+
+
 def _exact_cover_media_id(value: Any) -> str | None:
     if value is None:
         return None
@@ -1023,9 +1049,7 @@ def _require_course_cover_asset_contract(
         raise ValueError("cover_media_id is missing ready media output")
     if playback_format != "jpg":
         raise ValueError("cover_media_id ready media output must be jpg")
-    if not playback_object_path.startswith(
-        _canonical_course_cover_derived_prefix(course_id)
-    ):
+    if not _course_cover_asset_has_ready_output_path(asset, course_id=course_id):
         raise ValueError("cover_media_id ready output is not scoped to this course")
 
     return asset

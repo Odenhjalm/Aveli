@@ -236,23 +236,6 @@ def _studio_course_cover_ingest_format(*, filename: str, mime_type: str) -> str:
     return suffix or "image"
 
 
-def _build_course_cover_source_object_path(course_id: str, filename: str) -> str:
-    safe_name = upload_routes.media_paths.normalize_media_filename(
-        filename,
-        fallback="cover",
-    ) or "cover"
-    token = uuid4().hex
-    path = (
-        Path("media")
-        / "source"
-        / "cover"
-        / "courses"
-        / course_id
-        / f"{token}_{safe_name}"
-    )
-    return path.as_posix()
-
-
 def _asset_metadata_text(media_asset: dict[str, Any], key: str) -> str | None:
     value = str(media_asset.get(key) or "").strip()
     return value or None
@@ -735,7 +718,6 @@ async def _assert_canonical_media_storage_write(media_asset: dict[str, Any]) -> 
 
 async def _issue_canonical_media_upload_session(
     *,
-    object_path: str,
     mime_type: str,
     media_type: str,
     purpose: str,
@@ -746,6 +728,10 @@ async def _issue_canonical_media_upload_session(
     owner_user_id: str | None = None,
 ) -> tuple[dict[str, Any], datetime]:
     del mime_type
+    media_asset_id = str(uuid4())
+    object_path = upload_routes.media_paths.build_media_asset_source_object_path(
+        media_asset_id
+    )
     try:
         validated_object_path = (
             upload_routes.media_paths.validate_new_upload_object_path(object_path)
@@ -757,7 +743,7 @@ async def _issue_canonical_media_upload_session(
         ) from exc
 
     media_asset = await media_assets_repo.create_media_asset(
-        media_asset_id=str(uuid4()),
+        media_asset_id=media_asset_id,
         media_type=media_type,
         purpose=purpose,
         original_filename=original_filename,
@@ -1021,26 +1007,14 @@ async def canonical_issue_lesson_media_upload_url(
             filename=payload.filename,
             mime_type=exact_mime_type,
         )
-        object_path = upload_routes.media_paths.build_lesson_audio_source_object_path(
-            course_id,
-            lesson_id_str,
-            payload.filename,
-        )
     else:
         ingest_format = _studio_passthrough_ingest_format(
             media_type=normalized_media_type,
             filename=payload.filename,
             mime_type=exact_mime_type,
         )
-        object_path = upload_routes.media_paths.build_lesson_passthrough_object_path(
-            course_id=course_id,
-            lesson_id=lesson_id_str,
-            media_kind=normalized_media_type,
-            filename=payload.filename,
-        )
 
     media_asset, expires_at = await _issue_canonical_media_upload_session(
-        object_path=object_path,
         mime_type=exact_mime_type,
         media_type=normalized_media_type,
         purpose="lesson_media",
@@ -1083,12 +1057,7 @@ async def canonical_issue_course_cover_upload_url(
         filename=payload.filename,
         mime_type=exact_mime_type,
     )
-    object_path = _build_course_cover_source_object_path(
-        course_id_str,
-        payload.filename,
-    )
     media_asset, expires_at = await _issue_canonical_media_upload_session(
-        object_path=object_path,
         mime_type=exact_mime_type,
         media_type="image",
         purpose="course_cover",
@@ -1125,12 +1094,7 @@ async def canonical_issue_home_player_upload_url(
         filename=payload.filename,
         mime_type=exact_mime_type,
     )
-    object_path = upload_routes.media_paths.build_home_player_audio_source_object_path(
-        str(current["id"]),
-        payload.filename,
-    )
     media_asset, expires_at = await _issue_canonical_media_upload_session(
-        object_path=object_path,
         mime_type=exact_mime_type,
         media_type="audio",
         purpose="home_player_audio",

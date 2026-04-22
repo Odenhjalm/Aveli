@@ -116,6 +116,12 @@ def test_media_paths_validate_new_upload_object_path_enforces_allowlist():
         )
         == "media/source/audio/courses/course-1/lessons/lesson-1/demo.wav"
     )
+    assert (
+        media_paths.validate_new_upload_object_path(
+            "media/11111111-1111-1111-1111-111111111111/source"
+        )
+        == "media/11111111-1111-1111-1111-111111111111/source"
+    )
     with pytest.raises(ValueError):
         media_paths.validate_new_upload_object_path("avatars/teacher/demo.png")
 

@@ -1345,77 +1345,343 @@ void main() {
       expect(patch['title'], 'Tarot Basics');
       expect(patch['slug'], 'tarot-basics');
       expect(patch['price_amount_cents'], 1200);
-      expect(patch['drip_enabled'], isFalse);
-      expect(patch['drip_interval_days'], isNull);
+      expect(patch.containsKey('drip_enabled'), isFalse);
+      expect(patch.containsKey('drip_interval_days'), isFalse);
       expect(patch.containsKey('course_group_id'), isFalse);
       expect(patch.containsKey('group_position'), isFalse);
       expect(patch.containsKey('current_unlock_position'), isFalse);
       expect(patch.containsKey('drip_started_at'), isFalse);
+      verifyNever(() => repo.updateCourseDripAuthoring(any(), any()));
     },
   );
 
   testWidgets(
-    'course metadata load hydrates drip state and save writes live drip config',
+    'course schedule hydrates custom rows and saves full payload via drip-authoring endpoint',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       final repo = _MockStudioRepository();
       var currentCourse = _course.copyWith(
-        dripEnabled: true,
-        dripIntervalDays: 7,
+        dripAuthoring: DripAuthoring.custom(
+          rows: const [
+            CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
+            CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 3),
+          ],
+        ),
       );
-      _stubBaseStudioData(repo, course: currentCourse);
+      Map<String, Object?>? payload;
+      _stubBaseStudioData(
+        repo,
+        course: currentCourse,
+        lessons: const [_lesson, _secondLesson],
+      );
       when(
         () => repo.fetchCourseMeta('course-1'),
       ).thenAnswer((_) async => currentCourse);
-      when(() => repo.updateCourse('course-1', any())).thenAnswer((_) async {
+      when(
+        () => repo.updateCourseDripAuthoring('course-1', any()),
+      ).thenAnswer((invocation) async {
+        payload = Map<String, Object?>.from(
+          invocation.positionalArguments[1] as Map,
+        );
         currentCourse = currentCourse.copyWith(
-          dripEnabled: true,
-          dripIntervalDays: 14,
+          dripAuthoring: DripAuthoring.custom(
+            rows: const [
+              CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
+              CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 5),
+            ],
+          ),
         );
         return currentCourse;
       });
 
       await _pumpCourseEditor(tester, repo: repo);
-      await _pumpUntilTextFound(tester, 'Spara kurs');
+      await _pumpUntilTextFound(tester, 'Lektionsschema');
 
+      final firstOffsetField = find.byKey(
+        const ValueKey<String>('course-custom-offset-lesson-1'),
+      );
+      final secondOffsetField = find.byKey(
+        const ValueKey<String>('course-custom-offset-lesson-2'),
+      );
+      await _pumpUntilFinderFound(tester, firstOffsetField);
+      await tester.ensureVisible(firstOffsetField);
+      expect(firstOffsetField, findsOneWidget);
+      expect(secondOffsetField, findsOneWidget);
       expect(
-        find.widgetWithText(SwitchListTile, 'Aktivera lektionssläpp (drip)'),
-        findsOneWidget,
+        tester.widget<TextField>(firstOffsetField).controller?.text,
+        '0',
       );
       expect(
-        find.text('Ändringar påverkar alla nuvarande deltagare i kursen.'),
-        findsOneWidget,
+        tester.widget<TextField>(secondOffsetField).controller?.text,
+        '3',
       );
 
-      final dripIntervalField = _textFieldWithLabel(
-        'Antal dagar mellan lektioner',
+      await tester.enterText(secondOffsetField, '5');
+      final saveButton = find.byKey(
+        const ValueKey<String>('course-schedule-save-button'),
       );
-      expect(dripIntervalField, findsOneWidget);
-      final intervalInput = tester.widget<TextField>(dripIntervalField);
-      expect(intervalInput.controller?.text, '7');
-
-      await tester.enterText(dripIntervalField, '14');
-      final saveButton = find.text('Spara kurs');
+      await tester.ensureVisible(saveButton);
       await tester.ensureVisible(saveButton);
       await tester.tap(saveButton);
       await tester.pumpAndSettle();
 
-      final updateCapture = verify(
-        () => repo.updateCourse('course-1', captureAny()),
+      verify(() => repo.updateCourseDripAuthoring('course-1', any())).called(1);
+      expect(payload, isNotNull);
+      expect(payload!.keys, {'mode', 'custom_schedule'});
+      expect(payload!['mode'], 'custom_lesson_offsets');
+      expect(payload!['custom_schedule'], {
+        'rows': [
+          {'lesson_id': 'lesson-1', 'unlock_offset_days': 0},
+          {'lesson_id': 'lesson-2', 'unlock_offset_days': 5},
+        ],
+      });
+      expect(
+        tester.widget<TextField>(secondOffsetField).controller?.text,
+        '5',
       );
-      updateCapture.called(1);
-      final patch = Map<String, Object?>.from(
-        updateCapture.captured.single as Map,
+      verifyNever(() => repo.updateCourse('course-1', any()));
+    },
+  );
+
+  testWidgets(
+    'course schedule mode switches use only the drip-authoring endpoint',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      var currentCourse = _course.copyWith(
+        dripAuthoring: DripAuthoring.legacyUniform(dripIntervalDays: 7),
       );
-      expect(patch['title'], 'Tarot Basics');
-      expect(patch['slug'], 'tarot-basics');
-      expect(patch['price_amount_cents'], 1200);
-      expect(patch['drip_enabled'], isTrue);
-      expect(patch['drip_interval_days'], 14);
-      expect(patch.containsKey('current_unlock_position'), isFalse);
-      expect(patch.containsKey('drip_started_at'), isFalse);
+      final payloads = <Map<String, Object?>>[];
+      _stubBaseStudioData(
+        repo,
+        course: currentCourse,
+        lessons: const [_lesson, _secondLesson],
+      );
+      when(
+        () => repo.fetchCourseMeta('course-1'),
+      ).thenAnswer((_) async => currentCourse);
+      when(
+        () => repo.updateCourseDripAuthoring('course-1', any()),
+      ).thenAnswer((invocation) async {
+        final nextPayload = Map<String, Object?>.from(
+          invocation.positionalArguments[1] as Map,
+        );
+        payloads.add(nextPayload);
+        final mode = nextPayload['mode'] as String;
+        if (mode == 'custom_lesson_offsets') {
+          currentCourse = currentCourse.copyWith(
+            dripAuthoring: DripAuthoring.custom(
+              rows: const [
+                CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
+                CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 4),
+              ],
+            ),
+          );
+        } else if (mode == 'legacy_uniform_drip') {
+          final legacyUniform = Map<String, Object?>.from(
+            nextPayload['legacy_uniform'] as Map,
+          );
+          currentCourse = currentCourse.copyWith(
+            dripAuthoring: DripAuthoring.legacyUniform(
+              dripIntervalDays: legacyUniform['drip_interval_days'] as int,
+            ),
+          );
+        } else {
+          currentCourse = currentCourse.copyWith(
+            dripAuthoring: const DripAuthoring.immediateAccess(),
+          );
+        }
+        return currentCourse;
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Lektionsschema');
+
+      final legacyModeDropdown = find.byKey(
+        const ValueKey<String>('course-drip-mode-legacy_uniform_drip'),
+      );
+      await tester.ensureVisible(legacyModeDropdown);
+      await tester.tap(legacyModeDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Anpassat schema').last);
+      await tester.pumpAndSettle();
+
+      final secondOffsetField = find.byKey(
+        const ValueKey<String>('course-custom-offset-lesson-2'),
+      );
+      await _pumpUntilFinderFound(tester, secondOffsetField);
+      await tester.ensureVisible(secondOffsetField);
+      await tester.enterText(secondOffsetField, '4');
+      final scheduleSaveButton = find.byKey(
+        const ValueKey<String>('course-schedule-save-button'),
+      );
+      await tester.ensureVisible(scheduleSaveButton);
+      await tester.tap(scheduleSaveButton);
+      await tester.pumpAndSettle();
+
+      final customModeDropdown = find.byKey(
+        const ValueKey<String>('course-drip-mode-custom_lesson_offsets'),
+      );
+      await tester.ensureVisible(customModeDropdown);
+      await tester.tap(customModeDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Fast intervall').last);
+      await tester.pumpAndSettle();
+
+      final legacyIntervalField = find.byKey(
+        const ValueKey<String>('course-legacy-interval-field'),
+      );
+      await _pumpUntilFinderFound(tester, legacyIntervalField);
+      await tester.ensureVisible(legacyIntervalField);
+      await tester.enterText(legacyIntervalField, '9');
+      await tester.ensureVisible(scheduleSaveButton);
+      await tester.tap(scheduleSaveButton);
+      await tester.pumpAndSettle();
+
+      final legacyModeDropdownAfterSave = find.byKey(
+        const ValueKey<String>('course-drip-mode-legacy_uniform_drip'),
+      );
+      await tester.ensureVisible(legacyModeDropdownAfterSave);
+      await tester.tap(legacyModeDropdownAfterSave);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Direkt tillgång').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(scheduleSaveButton);
+      await tester.tap(scheduleSaveButton);
+      await tester.pumpAndSettle();
+
+      expect(payloads, hasLength(3));
+      expect(payloads[0], {
+        'mode': 'custom_lesson_offsets',
+        'custom_schedule': {
+          'rows': [
+            {'lesson_id': 'lesson-1', 'unlock_offset_days': 0},
+            {'lesson_id': 'lesson-2', 'unlock_offset_days': 4},
+          ],
+        },
+      });
+      expect(payloads[1], {
+        'mode': 'legacy_uniform_drip',
+        'legacy_uniform': {'drip_interval_days': 9},
+      });
+      expect(payloads[2], {'mode': 'no_drip_immediate_access'});
+      verifyNever(() => repo.updateCourse('course-1', any()));
+    },
+  );
+
+  testWidgets(
+    'locked course schedule state disables schedule controls',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      final lockedCourse = _course.copyWith(
+        dripAuthoring: DripAuthoring.custom(
+          rows: const [
+            CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
+            CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 2),
+          ],
+          scheduleLocked: true,
+          lockReason: DripAuthoringLockReason.firstEnrollmentExists,
+        ),
+      );
+      _stubBaseStudioData(
+        repo,
+        course: lockedCourse,
+        lessons: const [_lesson, _secondLesson],
+      );
+      when(
+        () => repo.fetchCourseMeta('course-1'),
+      ).thenAnswer((_) async => lockedCourse);
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Lektionsschema');
+      await _pumpUntilTextFound(
+        tester,
+        'Detta schema är låst eftersom kursen har deltagare.',
+      );
+      final modeField = tester.widget<DropdownButtonFormField<DripAuthoringMode>>(
+        find.byKey(
+          const ValueKey<String>('course-drip-mode-custom_lesson_offsets'),
+        ),
+      );
+      expect(modeField.onChanged, isNull);
+      final secondOffsetField = tester.widget<TextField>(
+        find.byKey(const ValueKey<String>('course-custom-offset-lesson-2')),
+      );
+      expect(secondOffsetField.readOnly, isTrue);
+      verifyNever(() => repo.updateCourseDripAuthoring(any(), any()));
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'course schedule lock rejection stays on drip-authoring authority path',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      final currentCourse = _course.copyWith(
+        dripAuthoring: DripAuthoring.custom(
+          rows: const [
+            CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
+            CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 2),
+          ],
+        ),
+      );
+      _stubBaseStudioData(
+        repo,
+        course: currentCourse,
+        lessons: const [_lesson, _secondLesson],
+      );
+      when(
+        () => repo.fetchCourseMeta('course-1'),
+      ).thenAnswer((_) async => currentCourse);
+      when(
+        () => repo.updateCourseDripAuthoring('course-1', any()),
+      ).thenThrow(
+        DioException(
+          requestOptions: RequestOptions(
+            path: '/studio/courses/course-1/drip-authoring',
+          ),
+          response: Response<Object?>(
+            requestOptions: RequestOptions(
+              path: '/studio/courses/course-1/drip-authoring',
+            ),
+            statusCode: 409,
+            data: <String, Object?>{
+              'code': 'studio_course_schedule_locked',
+              'detail': 'Schedule-affecting edits are locked after first enrollment.',
+              'course_id': 'course-1',
+              'schedule_locked': true,
+            },
+          ),
+          type: DioExceptionType.badResponse,
+        ),
+      );
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Lektionsschema');
+      final secondOffsetField = find.byKey(
+        const ValueKey<String>('course-custom-offset-lesson-2'),
+      );
+      await _pumpUntilFinderFound(tester, secondOffsetField);
+
+      final scheduleSaveButton = find.byKey(
+        const ValueKey<String>('course-schedule-save-button'),
+      );
+      await tester.ensureVisible(scheduleSaveButton);
+      await tester.tap(scheduleSaveButton);
+      await tester.pumpAndSettle();
+
+      verify(() => repo.updateCourseDripAuthoring('course-1', any())).called(1);
+      verifyNever(() => repo.updateCourse('course-1', any()));
     },
   );
 

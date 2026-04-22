@@ -107,10 +107,8 @@ async def canonical_issue_profile_avatar_init(
         filename=payload.filename,
         mime_type=exact_mime_type,
     )
-    object_path = media_paths.build_profile_avatar_source_object_path(
-        str(current["id"]),
-        payload.filename,
-    )
+    media_asset_id = str(uuid4())
+    object_path = media_paths.build_media_asset_source_object_path(media_asset_id)
     try:
         object_path = media_paths.validate_new_upload_object_path(object_path)
     except ValueError as exc:
@@ -120,7 +118,7 @@ async def canonical_issue_profile_avatar_init(
         ) from exc
 
     media_asset = await media_assets_repo.create_media_asset(
-        media_asset_id=str(uuid4()),
+        media_asset_id=media_asset_id,
         media_type="image",
         purpose="profile_media",
         original_filename=payload.filename,

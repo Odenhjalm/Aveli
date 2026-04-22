@@ -176,15 +176,6 @@ class _CourseFamilySummary {
 
 const String _defaultCourseFamilyName = 'Course Family';
 
-String _courseFamilyName(_CourseFamilySummary family) {
-  final name = family.name.trim();
-  return name.isEmpty ? _defaultCourseFamilyName : name;
-}
-
-String _courseFamilyDisplayLabel(_CourseFamilySummary family) {
-  return _courseFamilyName(family);
-}
-
 String _courseStepLabel(int groupPosition) {
   if (groupPosition <= 0) {
     return 'Introduction';
@@ -205,18 +196,30 @@ int? _parsePositiveIntText(String text) {
   return int.tryParse(normalized);
 }
 
+const String _courseScheduleLockedMessage =
+    'Detta schema är låst eftersom kursen har deltagare.';
+
+String _dripAuthoringModeLabel(DripAuthoringMode mode) {
+  switch (mode) {
+    case DripAuthoringMode.noDripImmediateAccess:
+      return 'Direkt tillgång';
+    case DripAuthoringMode.legacyUniformDrip:
+      return 'Fast intervall';
+    case DripAuthoringMode.customLessonOffsets:
+      return 'Anpassat schema';
+  }
+}
+
 class _CourseDripConfigurationFields extends StatelessWidget {
   const _CourseDripConfigurationFields({
     required this.dripEnabled,
     required this.dripIntervalController,
     required this.onDripEnabledChanged,
-    this.readOnly = false,
   });
 
   final bool dripEnabled;
   final TextEditingController dripIntervalController;
   final ValueChanged<bool> onDripEnabledChanged;
-  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -234,14 +237,13 @@ class _CourseDripConfigurationFields extends StatelessWidget {
         SwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
           value: dripEnabled,
-          onChanged: readOnly ? null : onDripEnabledChanged,
+          onChanged: onDripEnabledChanged,
           title: const Text('Aktivera lektionssläpp (drip)'),
         ),
         if (dripEnabled) ...[
           gap8,
           TextField(
             controller: dripIntervalController,
-            readOnly: readOnly,
             keyboardType: const TextInputType.numberWithOptions(),
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: const InputDecoration(
@@ -763,10 +765,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   final TextEditingController _courseSlugCtrl = TextEditingController();
   final TextEditingController _coursePriceCtrl = TextEditingController();
   final TextEditingController _courseDripIntervalCtrl = TextEditingController();
-  bool _courseDripEnabled = false;
+  final Map<String, TextEditingController> _courseCustomScheduleCtrls =
+      <String, TextEditingController>{};
+  DripAuthoringMode _courseDripMode = DripAuthoringMode.noDripImmediateAccess;
+  bool _courseScheduleLocked = false;
 
   bool _courseMetaLoading = false;
   bool _savingCourseMeta = false;
+  bool _savingCourseDripAuthoring = false;
   bool _creatingCourse = false;
   bool _creatingCourseFamily = false;
   bool _publishingCourse = false;
@@ -794,6 +800,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _lessonContentRequestId = 0;
   int _lessonPreviewRequestId = 0;
   int _saveCourseRequestId = 0;
+  int _saveCourseDripRequestId = 0;
   int _publishCourseRequestId = 0;
 
   quill.QuillController get _lessonContentController =>
@@ -881,6 +888,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final message = detail.isEmpty ? prefix : '$prefix: $detail';
     showSnack(context, message);
   }
+
+  bool get _courseScheduleControlsDisabled =>
+      _lessonPreviewMode || _courseScheduleLocked || _savingCourseDripAuthoring;
 
   bool _isStaleRequest({
     required int requestId,
@@ -1628,6 +1638,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _mediaLoading = false;
     _lessonsNeedingRefresh.clear();
     _moveCourseTargetCourseGroupId = null;
+    _courseDripMode = DripAuthoringMode.noDripImmediateAccess;
+    _courseScheduleLocked = false;
+    _courseDripIntervalCtrl.text = '';
+    for (final controller in _courseCustomScheduleCtrls.values) {
+      controller.dispose();
+    }
+    _courseCustomScheduleCtrls.clear();
     if (clearLists) {
       _lessons = <LessonStudio>[];
       _setSelectedLessonId(null);
@@ -1683,6 +1700,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _courseSlugCtrl.dispose();
     _coursePriceCtrl.dispose();
     _courseDripIntervalCtrl.dispose();
+    for (final controller in _courseCustomScheduleCtrls.values) {
+      controller.dispose();
+    }
+    _courseCustomScheduleCtrls.clear();
     if (_lessonContentControllerInitialized) {
       _detachControllerListener();
       _lessonContentController.dispose();
@@ -1798,11 +1819,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _coursePriceCtrl.text = priceOre == null
           ? ''
           : formatSekInputFromOre(priceOre);
-      _courseDripIntervalCtrl.text = course.dripIntervalDays?.toString() ?? '';
+      _courseDripIntervalCtrl.text =
+          course.dripAuthoring.dripIntervalDays?.toString() ?? '';
+      _hydrateCourseCustomScheduleControllers(<String, int>{
+        for (final row in course.dripAuthoring.customScheduleRows)
+          row.lessonId: row.unlockOffsetDays,
+      });
       if (mounted) {
         setState(() {
           _courses = _adoptCourseById(_courses, course);
-          _courseDripEnabled = course.dripEnabled;
+          _courseDripMode = course.dripAuthoring.mode;
+          _courseScheduleLocked = course.dripAuthoring.scheduleLocked;
           _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
             selectedCourseId: courseId,
             currentValue: _moveCourseTargetCourseGroupId,
@@ -1899,6 +1926,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _lessonMediaLessonId = selected;
         }
       });
+      _ensureCourseCustomScheduleControllers();
       if (_selectedLessonId != null) {
         await _bootSelectedLesson();
       } else if (mounted) {
@@ -6376,6 +6404,206 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return _parsePositiveIntText(_courseDripIntervalCtrl.text);
   }
 
+  void _setTextControllerValue(
+    TextEditingController controller,
+    String nextText,
+  ) {
+    if (controller.text == nextText) {
+      return;
+    }
+    controller.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextText.length),
+    );
+  }
+
+  void _hydrateCourseCustomScheduleControllers(Map<String, int> seededValues) {
+    final validLessonIds = _lessons.isEmpty
+        ? seededValues.keys.toSet()
+        : <String>{for (final lesson in _lessons) lesson.id};
+    for (final lessonId in _courseCustomScheduleCtrls.keys.toList()) {
+      if (!validLessonIds.contains(lessonId)) {
+        _courseCustomScheduleCtrls.remove(lessonId)?.dispose();
+      }
+    }
+
+    if (_lessons.isEmpty) {
+      for (final entry in seededValues.entries) {
+        final controller = _courseCustomScheduleCtrls[entry.key];
+        final nextText = '${entry.value}';
+        if (controller == null) {
+          _courseCustomScheduleCtrls[entry.key] = TextEditingController(
+            text: nextText,
+          );
+        } else {
+          _setTextControllerValue(controller, nextText);
+        }
+      }
+      return;
+    }
+
+    var previousOffsetDays = 0;
+    for (var index = 0; index < _lessons.length; index += 1) {
+      final lesson = _lessons[index];
+      final nextValue =
+          seededValues[lesson.id] ?? (index == 0 ? 0 : previousOffsetDays);
+      final nextText = '$nextValue';
+      final controller = _courseCustomScheduleCtrls[lesson.id];
+      if (controller == null) {
+        _courseCustomScheduleCtrls[lesson.id] = TextEditingController(
+          text: nextText,
+        );
+      } else {
+        _setTextControllerValue(controller, nextText);
+      }
+      previousOffsetDays = nextValue;
+    }
+  }
+
+  void _ensureCourseCustomScheduleControllers() {
+    if (_lessons.isEmpty) {
+      return;
+    }
+    final validLessonIds = <String>{for (final lesson in _lessons) lesson.id};
+    for (final lessonId in _courseCustomScheduleCtrls.keys.toList()) {
+      if (!validLessonIds.contains(lessonId)) {
+        _courseCustomScheduleCtrls.remove(lessonId)?.dispose();
+      }
+    }
+
+    var previousOffsetDays = 0;
+    for (var index = 0; index < _lessons.length; index += 1) {
+      final lesson = _lessons[index];
+      final controller = _courseCustomScheduleCtrls[lesson.id];
+      if (controller == null) {
+        _courseCustomScheduleCtrls[lesson.id] = TextEditingController(
+          text: '${index == 0 ? 0 : previousOffsetDays}',
+        );
+        continue;
+      }
+      final parsedValue = _parsePositiveIntText(controller.text);
+      previousOffsetDays = parsedValue ?? (index == 0 ? 0 : previousOffsetDays);
+    }
+  }
+
+  TextEditingController _customScheduleControllerForLesson(
+    LessonStudio lesson,
+    int index,
+  ) {
+    final existing = _courseCustomScheduleCtrls[lesson.id];
+    if (existing != null) {
+      return existing;
+    }
+    final previousOffsetDays = index <= 0
+        ? 0
+        : (_parsePositiveIntText(
+                _courseCustomScheduleCtrls[_lessons[index - 1].id]?.text ?? '',
+              ) ??
+              0);
+    final controller = TextEditingController(
+      text: '${index == 0 ? 0 : previousOffsetDays}',
+    );
+    _courseCustomScheduleCtrls[lesson.id] = controller;
+    return controller;
+  }
+
+  List<Map<String, Object?>>? _buildCustomScheduleRowsPayload() {
+    if (_lessonsLoading) {
+      showSnack(context, 'Lektionerna laddas fortfarande.');
+      return null;
+    }
+    final rows = <Map<String, Object?>>[];
+    var previousOffsetDays = -1;
+    for (var index = 0; index < _lessons.length; index += 1) {
+      final lesson = _lessons[index];
+      final controller = _customScheduleControllerForLesson(lesson, index);
+      final rawText = controller.text.trim();
+      if (rawText.isEmpty) {
+        showSnack(
+          context,
+          'Alla lektioner måste ha ett antal dagar innan upplåsning.',
+        );
+        return null;
+      }
+      final unlockOffsetDays = int.tryParse(rawText);
+      if (unlockOffsetDays == null || unlockOffsetDays < 0) {
+        showSnack(
+          context,
+          'Varje lektion måste ha ett heltal större än eller lika med 0.',
+        );
+        return null;
+      }
+      if (index == 0 && unlockOffsetDays != 0) {
+        showSnack(context, 'Första lektionen måste ha värdet 0.');
+        return null;
+      }
+      if (unlockOffsetDays < previousOffsetDays) {
+        showSnack(
+          context,
+          'Anpassat schema måste vara icke-minskande i lektionsordning.',
+        );
+        return null;
+      }
+      previousOffsetDays = unlockOffsetDays;
+      rows.add(<String, Object?>{
+        'lesson_id': lesson.id,
+        'unlock_offset_days': unlockOffsetDays,
+      });
+    }
+    return rows;
+  }
+
+  Map<String, Object?>? _buildCourseDripAuthoringPayload() {
+    switch (_courseDripMode) {
+      case DripAuthoringMode.noDripImmediateAccess:
+        return <String, Object?>{'mode': _courseDripMode.apiValue};
+      case DripAuthoringMode.legacyUniformDrip:
+        final intervalDays = _parseCourseDripIntervalDays();
+        if (intervalDays == null || intervalDays <= 0) {
+          showSnack(context, 'Antal dagar måste vara ett heltal större än 0.');
+          return null;
+        }
+        return <String, Object?>{
+          'mode': _courseDripMode.apiValue,
+          'legacy_uniform': <String, Object?>{
+            'drip_interval_days': intervalDays,
+          },
+        };
+      case DripAuthoringMode.customLessonOffsets:
+        final rows = _buildCustomScheduleRowsPayload();
+        if (rows == null) {
+          return null;
+        }
+        return <String, Object?>{
+          'mode': _courseDripMode.apiValue,
+          'custom_schedule': <String, Object?>{'rows': rows},
+        };
+    }
+  }
+
+  bool _isCourseScheduleLockedError(Object error) {
+    if (error is! DioException) {
+      return false;
+    }
+    final data = error.response?.data;
+    if (data is Map) {
+      if (data['code'] == 'studio_course_schedule_locked') {
+        return true;
+      }
+      if (data['schedule_locked'] == true) {
+        return true;
+      }
+      final detail = data['detail'];
+      if (detail is String &&
+          detail.toLowerCase().contains(
+            'schedule-affecting edits are locked',
+          )) {
+        return true;
+      }
+    }
+    return error.response?.statusCode == 409;
+  }
+
   String _defaultDraftCourseSlug() {
     final suffix = _uuid.v4().replaceAll('-', '').substring(0, 8);
     return 'ny-kurs-$suffix';
@@ -6616,9 +6844,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final slug = _courseSlugCtrl.text.trim();
     final rawPriceText = _coursePriceCtrl.text.trim();
     final effectivePriceOre = _parseCoursePriceOre();
-    final effectiveDripIntervalDays = _courseDripEnabled
-        ? _parseCourseDripIntervalDays()
-        : null;
 
     if (title.isEmpty) {
       showSnack(context, 'Titel krävs.');
@@ -6632,19 +6857,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       );
       return;
     }
-    if (_courseDripEnabled &&
-        (effectiveDripIntervalDays == null || effectiveDripIntervalDays <= 0)) {
-      showSnack(context, 'Antal dagar måste vara ett heltal större än 0.');
-      return;
-    }
-
     final patch = <String, Object?>{
       'title': title,
       'price_amount_cents': effectivePriceOre,
-      'drip_enabled': _courseDripEnabled,
-      'drip_interval_days': _courseDripEnabled
-          ? effectiveDripIntervalDays
-          : null,
     };
     if (slug.isNotEmpty) {
       patch['slug'] = slug;
@@ -6686,6 +6901,74 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  Future<void> _saveCourseDripAuthoring() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
+    final courseId = _selectedCourseId;
+    if (courseId == null || _savingCourseDripAuthoring) {
+      return;
+    }
+    if (_courseScheduleLocked) {
+      showSnack(context, _courseScheduleLockedMessage);
+      return;
+    }
+
+    final payload = _buildCourseDripAuthoringPayload();
+    if (payload == null) {
+      return;
+    }
+
+    final requestId = ++_saveCourseDripRequestId;
+    setState(() => _savingCourseDripAuthoring = true);
+    try {
+      final updated = await _studioRepo.updateCourseDripAuthoring(
+        courseId,
+        payload,
+      );
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _saveCourseDripRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
+      setState(() {
+        _courses = _adoptCourseById(_courses, updated);
+        _courseDripMode = updated.dripAuthoring.mode;
+        _courseScheduleLocked = updated.dripAuthoring.scheduleLocked;
+      });
+      _invalidateCourseReadProviders();
+      await _loadCourseMeta();
+      if (!mounted || !context.mounted) return;
+      showSnack(context, 'Lektionsschema sparat.');
+    } catch (error, stackTrace) {
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _saveCourseDripRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
+      if (_isCourseScheduleLockedError(error)) {
+        if (mounted && context.mounted) {
+          showSnack(context, _courseScheduleLockedMessage);
+        }
+        await _loadCourseMeta();
+        return;
+      }
+      _showFriendlyErrorSnack(
+        'Kunde inte spara lektionsschema',
+        error,
+        stackTrace,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _savingCourseDripAuthoring = false);
+      }
+    }
+  }
+
   Future<void> _publishSelectedCourse() async {
     if (!_requireEditModeForMutation()) {
       return;
@@ -6714,9 +6997,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _coursePriceCtrl.text = priceOre == null
             ? ''
             : formatSekInputFromOre(priceOre);
-        _courseDripEnabled = published.dripEnabled;
+        _courseDripMode = published.dripAuthoring.mode;
+        _courseScheduleLocked = published.dripAuthoring.scheduleLocked;
         _courseDripIntervalCtrl.text =
-            published.dripIntervalDays?.toString() ?? '';
+            published.dripAuthoring.dripIntervalDays?.toString() ?? '';
         _courseCoverPath = published.cover?.resolvedUrl;
       });
       _invalidateCourseReadProviders();
@@ -6735,6 +7019,197 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     } finally {
       if (mounted) setState(() => _publishingCourse = false);
     }
+  }
+
+  void _handleCourseDripModeChanged(DripAuthoringMode? mode) {
+    if (mode == null) {
+      return;
+    }
+    if (mode == DripAuthoringMode.customLessonOffsets) {
+      _ensureCourseCustomScheduleControllers();
+    }
+    setState(() {
+      _courseDripMode = mode;
+      if (mode == DripAuthoringMode.legacyUniformDrip &&
+          _courseDripIntervalCtrl.text.trim().isEmpty) {
+        _courseDripIntervalCtrl.text = '7';
+      }
+    });
+  }
+
+  Widget _buildCustomCourseScheduleFields(BuildContext context) {
+    final theme = Theme.of(context);
+    if (_lessonsLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 12),
+            Expanded(child: Text('Laddar lektionsordning...')),
+          ],
+        ),
+      );
+    }
+    if (_lessons.isEmpty) {
+      return Text(
+        'Inga lektioner finns ännu. Anpassat schema sparas som ett tomt schema tills lektioner läggs till.',
+        style: theme.textTheme.bodyMedium,
+      );
+    }
+
+    _ensureCourseCustomScheduleControllers();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ange antal dagar från kursstart för varje lektion. Första lektionen måste vara 0 och ordningen får inte minska.',
+          style: theme.textTheme.bodySmall,
+        ),
+        gap12,
+        for (var index = 0; index < _lessons.length; index += 1) ...[
+          Builder(
+            builder: (context) {
+              final lesson = _lessons[index];
+              final controller = _customScheduleControllerForLesson(
+                lesson,
+                index,
+              );
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: index == _lessons.length - 1 ? 0 : 12,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            lesson.lessonTitle.isEmpty
+                                ? 'Lektion ${lesson.position + 1}'
+                                : lesson.lessonTitle,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          gap4,
+                          Text(
+                            'Position ${lesson.position}',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    gap12,
+                    SizedBox(
+                      width: 190,
+                      child: TextField(
+                        key: ValueKey<String>(
+                          'course-custom-offset-${lesson.id}',
+                        ),
+                        controller: controller,
+                        readOnly: _courseScheduleControlsDisabled,
+                        keyboardType: const TextInputType.numberWithOptions(),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: InputDecoration(
+                          labelText: 'Dagar',
+                          helperText: index == 0
+                              ? 'Måste vara 0'
+                              : '>= föregående lektion',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCourseScheduleAuthoring(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<DripAuthoringMode>(
+          key: ValueKey<String>('course-drip-mode-${_courseDripMode.apiValue}'),
+          initialValue: _courseDripMode,
+          items: DripAuthoringMode.values
+              .map(
+                (mode) => DropdownMenuItem<DripAuthoringMode>(
+                  value: mode,
+                  child: Text(_dripAuthoringModeLabel(mode)),
+                ),
+              )
+              .toList(growable: false),
+          onChanged: _courseScheduleControlsDisabled
+              ? null
+              : _handleCourseDripModeChanged,
+          decoration: const InputDecoration(labelText: 'Schema'),
+        ),
+        if (_courseScheduleLocked) ...[
+          gap12,
+          Text(
+            _courseScheduleLockedMessage,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.error,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        gap16,
+        if (_courseDripMode == DripAuthoringMode.legacyUniformDrip) ...[
+          TextField(
+            key: const ValueKey<String>('course-legacy-interval-field'),
+            controller: _courseDripIntervalCtrl,
+            readOnly: _courseScheduleControlsDisabled,
+            keyboardType: const TextInputType.numberWithOptions(),
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(
+              labelText: 'Antal dagar mellan lektioner',
+              helperText: 'Ange ett heltal större än 0.',
+            ),
+          ),
+        ],
+        if (_courseDripMode == DripAuthoringMode.customLessonOffsets) ...[
+          _buildCustomCourseScheduleFields(context),
+        ],
+        if (_courseDripMode == DripAuthoringMode.noDripImmediateAccess) ...[
+          Text(
+            'Alla lektioner blir tillgängliga direkt vid kursstart.',
+            style: theme.textTheme.bodyMedium,
+          ),
+        ],
+        gap16,
+        GradientButton.icon(
+          key: const ValueKey<String>('course-schedule-save-button'),
+          onPressed: _courseScheduleControlsDisabled
+              ? null
+              : _saveCourseDripAuthoring,
+          icon: _savingCourseDripAuthoring
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.save_outlined),
+          label: Text(
+            _savingCourseDripAuthoring ? 'Sparar...' : 'Spara schema',
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildCourseFamilyAuthoring(BuildContext context) {
@@ -7141,14 +7616,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 ),
                               ),
                               gap16,
-                              _CourseDripConfigurationFields(
-                                dripEnabled: _courseDripEnabled,
-                                dripIntervalController: _courseDripIntervalCtrl,
-                                readOnly: _lessonPreviewMode,
-                                onDripEnabledChanged: (value) {
-                                  setState(() => _courseDripEnabled = value);
-                                },
-                              ),
                               Wrap(
                                 spacing: 12,
                                 runSpacing: 8,
@@ -7195,6 +7662,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                               ),
                             ],
                           ),
+                  ),
+                  gap12,
+                  _SectionCard(
+                    title: 'Lektionsschema',
+                    child: _courseMetaLoading
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        : _buildCourseScheduleAuthoring(context),
                   ),
                   if (lessonVideoPreview != null) ...[
                     gap12,

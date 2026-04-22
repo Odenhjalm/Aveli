@@ -70,6 +70,40 @@ class StudioRepository {
     return etag;
   }
 
+  static void _rejectCourseDripAuthoringPatch(Map<String, Object?> patch) {
+    const forbiddenFields = <String>{
+      'drip_enabled',
+      'drip_interval_days',
+      'drip_authoring',
+      'legacy_uniform',
+      'custom_schedule',
+      'mode',
+    };
+    final forbidden = patch.keys
+        .where(forbiddenFields.contains)
+        .toList(growable: false);
+    if (forbidden.isEmpty) {
+      return;
+    }
+    throw UnsupportedError(
+      'Use updateCourseDripAuthoring for drip schedule changes: ${forbidden.join(', ')}',
+    );
+  }
+
+  static void _validateCourseDripAuthoringPayload(
+    Map<String, Object?> payload,
+  ) {
+    const allowedFields = <String>{'mode', 'legacy_uniform', 'custom_schedule'};
+    final unexpected = payload.keys.where(
+      (key) => !allowedFields.contains(key),
+    );
+    if (unexpected.isNotEmpty) {
+      throw UnsupportedError(
+        'Course drip authoring payload contains unsupported fields: ${unexpected.join(', ')}',
+      );
+    }
+  }
+
   Future<StudioStatus> fetchStatus() async {
     final response = await _client.raw.get<Object?>('/studio/status');
     return StudioStatus.fromResponse(response.data);
@@ -261,6 +295,7 @@ class StudioRepository {
         'Use explicit course family transition operations for course_group_id/group_position changes',
       );
     }
+    _rejectCourseDripAuthoringPatch(patch);
     final response = await _client.raw.patch<Object?>(
       '/studio/courses/$courseId',
       data: patch,
@@ -268,6 +303,21 @@ class StudioRepository {
     return CourseStudio.fromResponse(
       response.data,
       label: 'Updated studio course',
+    );
+  }
+
+  Future<CourseStudio> updateCourseDripAuthoring(
+    String courseId,
+    Map<String, Object?> payload,
+  ) async {
+    _validateCourseDripAuthoringPayload(payload);
+    final response = await _client.raw.put<Object?>(
+      '/studio/courses/$courseId/drip-authoring',
+      data: payload,
+    );
+    return CourseStudio.fromResponse(
+      response.data,
+      label: 'Updated studio course drip authoring',
     );
   }
 

@@ -157,6 +157,364 @@ void main() {
   );
 
   test(
+    'refresh during active playback stages candidate without replacing active queue',
+    () async {
+      final engineFactory = FakeHomeAudioEngineFactory();
+      final container = ProviderContainer(
+        overrides: [
+          homeAudioEngineFactoryProvider.overrideWithValue(
+            engineFactory.create,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(
+        homeAudioSessionControllerProvider,
+        (previous, next) {},
+        fireImmediately: true,
+      );
+      addTearDown(sub.close);
+
+      final controller = container.read(
+        homeAudioSessionControllerProvider.notifier,
+      );
+      await controller.hydrateQueue([
+        _item(
+          title: 'Track One',
+          mediaId: 'media-1',
+          url: 'https://cdn.test/audio/one.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 11, 0),
+        ),
+        _item(
+          title: 'Track Two',
+          mediaId: 'media-2',
+          url: 'https://cdn.test/audio/two.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 10, 0),
+        ),
+      ]);
+
+      await controller.play();
+      await controller.hydrateQueue([
+        _item(
+          title: 'Fresh Lead',
+          mediaId: 'media-9',
+          url: 'https://cdn.test/audio/fresh.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 12, 0),
+        ),
+        _item(
+          title: 'Track One Updated',
+          mediaId: 'media-1',
+          url: 'https://cdn.test/audio/one-updated.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 11, 30),
+        ),
+      ]);
+
+      final state = container.read(homeAudioSessionControllerProvider);
+      expect(
+        state.queue.map((entry) => entry.title),
+        orderedEquals(['Track One', 'Track Two']),
+      );
+      expect(state.currentIndex, 0);
+      expect(state.isPlaying, isTrue);
+      expect(state.hasStagedSnapshot, isTrue);
+      expect(state.replacementAllowed, isFalse);
+      expect(
+        state.stagedQueue.map((entry) => entry.title),
+        orderedEquals(['Fresh Lead', 'Track One Updated']),
+      );
+      expect(engineFactory.createCount, 1);
+      expect(
+        engineFactory.single.loadedUrls,
+        orderedEquals(['https://cdn.test/audio/one.mp3']),
+      );
+    },
+  );
+
+  test(
+    'refresh during paused hydrated session stages candidate without replacing active queue',
+    () async {
+      final engineFactory = FakeHomeAudioEngineFactory();
+      final container = ProviderContainer(
+        overrides: [
+          homeAudioEngineFactoryProvider.overrideWithValue(
+            engineFactory.create,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(
+        homeAudioSessionControllerProvider,
+        (previous, next) {},
+        fireImmediately: true,
+      );
+      addTearDown(sub.close);
+
+      final controller = container.read(
+        homeAudioSessionControllerProvider.notifier,
+      );
+      await controller.hydrateQueue([
+        _item(
+          title: 'Track One',
+          mediaId: 'media-1',
+          url: 'https://cdn.test/audio/one.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 11, 0),
+        ),
+        _item(
+          title: 'Track Two',
+          mediaId: 'media-2',
+          url: 'https://cdn.test/audio/two.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 10, 0),
+        ),
+      ]);
+
+      await controller.selectIndex(1);
+      await controller.hydrateQueue([
+        _item(
+          title: 'Paused Refresh Lead',
+          mediaId: 'media-7',
+          url: 'https://cdn.test/audio/paused-fresh.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 12, 0),
+        ),
+      ]);
+
+      final state = container.read(homeAudioSessionControllerProvider);
+      expect(state.currentIndex, 1);
+      expect(state.isPlaying, isFalse);
+      expect(state.playbackWanted, isFalse);
+      expect(
+        state.queue.map((entry) => entry.title),
+        orderedEquals(['Track One', 'Track Two']),
+      );
+      expect(state.hasStagedSnapshot, isTrue);
+      expect(
+        state.stagedQueue.map((entry) => entry.title),
+        orderedEquals(['Paused Refresh Lead']),
+      );
+      expect(engineFactory.createCount, 1);
+      expect(
+        engineFactory.single.loadedUrls,
+        orderedEquals([
+          'https://cdn.test/audio/one.mp3',
+          'https://cdn.test/audio/two.mp3',
+        ]),
+      );
+    },
+  );
+
+  test(
+    'multiple refreshes replace the staged candidate without touching the active queue',
+    () async {
+      final engineFactory = FakeHomeAudioEngineFactory();
+      final container = ProviderContainer(
+        overrides: [
+          homeAudioEngineFactoryProvider.overrideWithValue(
+            engineFactory.create,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(
+        homeAudioSessionControllerProvider,
+        (previous, next) {},
+        fireImmediately: true,
+      );
+      addTearDown(sub.close);
+
+      final controller = container.read(
+        homeAudioSessionControllerProvider.notifier,
+      );
+      await controller.hydrateQueue([
+        _item(
+          title: 'Track One',
+          mediaId: 'media-1',
+          url: 'https://cdn.test/audio/one.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 11, 0),
+        ),
+        _item(
+          title: 'Track Two',
+          mediaId: 'media-2',
+          url: 'https://cdn.test/audio/two.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 10, 0),
+        ),
+      ]);
+
+      await controller.hydrateQueue([
+        _item(
+          title: 'First Candidate',
+          mediaId: 'media-5',
+          url: 'https://cdn.test/audio/first-candidate.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 12, 0),
+        ),
+      ]);
+      await controller.hydrateQueue([
+        _item(
+          title: 'Latest Candidate',
+          mediaId: 'media-6',
+          url: 'https://cdn.test/audio/latest-candidate.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 12, 30),
+        ),
+        _item(
+          title: 'Latest Tail',
+          mediaId: 'media-7',
+          url: 'https://cdn.test/audio/latest-tail.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 12, 15),
+        ),
+      ]);
+
+      final state = container.read(homeAudioSessionControllerProvider);
+      expect(
+        state.queue.map((entry) => entry.title),
+        orderedEquals(['Track One', 'Track Two']),
+      );
+      expect(state.hasStagedSnapshot, isTrue);
+      expect(
+        state.stagedQueue.map((entry) => entry.title),
+        orderedEquals(['Latest Candidate', 'Latest Tail']),
+      );
+      expect(engineFactory.single.loadedUrls, hasLength(1));
+      expect(engineFactory.createCount, 1);
+    },
+  );
+
+  test(
+    'refresh removing the active entry stages the latest feed without interrupting the session',
+    () async {
+      final engineFactory = FakeHomeAudioEngineFactory();
+      final container = ProviderContainer(
+        overrides: [
+          homeAudioEngineFactoryProvider.overrideWithValue(
+            engineFactory.create,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(
+        homeAudioSessionControllerProvider,
+        (previous, next) {},
+        fireImmediately: true,
+      );
+      addTearDown(sub.close);
+
+      final controller = container.read(
+        homeAudioSessionControllerProvider.notifier,
+      );
+      await controller.hydrateQueue([
+        _item(
+          title: 'Track One',
+          mediaId: 'media-1',
+          url: 'https://cdn.test/audio/one.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 11, 0),
+        ),
+        _item(
+          title: 'Track Two',
+          mediaId: 'media-2',
+          url: 'https://cdn.test/audio/two.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 10, 0),
+        ),
+      ]);
+
+      await controller.play();
+      await controller.selectIndex(1);
+      await controller.hydrateQueue(const <HomeAudioFeedItem>[]);
+
+      final state = container.read(homeAudioSessionControllerProvider);
+      expect(state.currentIndex, 1);
+      expect(state.isPlaying, isTrue);
+      expect(
+        state.queue.map((entry) => entry.title),
+        orderedEquals(['Track One', 'Track Two']),
+      );
+      expect(state.hasStagedSnapshot, isTrue);
+      expect(state.stagedQueue, isEmpty);
+      expect(engineFactory.createCount, 1);
+      expect(
+        engineFactory.single.loadedUrls,
+        orderedEquals([
+          'https://cdn.test/audio/one.mp3',
+          'https://cdn.test/audio/two.mp3',
+        ]),
+      );
+    },
+  );
+
+  test(
+    'explicit reset adopts the staged snapshot and keeps the engine instance',
+    () async {
+      final engineFactory = FakeHomeAudioEngineFactory();
+      final container = ProviderContainer(
+        overrides: [
+          homeAudioEngineFactoryProvider.overrideWithValue(
+            engineFactory.create,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(
+        homeAudioSessionControllerProvider,
+        (previous, next) {},
+        fireImmediately: true,
+      );
+      addTearDown(sub.close);
+
+      final controller = container.read(
+        homeAudioSessionControllerProvider.notifier,
+      );
+      await controller.hydrateQueue([
+        _item(
+          title: 'Track One',
+          mediaId: 'media-1',
+          url: 'https://cdn.test/audio/one.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 11, 0),
+        ),
+        _item(
+          title: 'Track Two',
+          mediaId: 'media-2',
+          url: 'https://cdn.test/audio/two.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 10, 0),
+        ),
+      ]);
+
+      await controller.setVolume(0.28);
+      await controller.hydrateQueue([
+        _item(
+          title: 'Refresh First',
+          mediaId: 'media-4',
+          url: 'https://cdn.test/audio/refresh-first.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 12, 0),
+        ),
+        _item(
+          title: 'Refresh Second',
+          mediaId: 'media-5',
+          url: 'https://cdn.test/audio/refresh-second.mp3',
+          createdAt: DateTime.utc(2026, 4, 22, 11, 30),
+        ),
+      ]);
+
+      await controller.resetSession();
+
+      final state = container.read(homeAudioSessionControllerProvider);
+      expect(
+        state.queue.map((entry) => entry.title),
+        orderedEquals(['Refresh First', 'Refresh Second']),
+      );
+      expect(state.currentIndex, 0);
+      expect(state.playbackWanted, isFalse);
+      expect(state.hasStagedSnapshot, isFalse);
+      expect(state.replacementAllowed, isFalse);
+      expect(state.volume, closeTo(0.28, 0.0001));
+      expect(engineFactory.createCount, 1);
+      expect(
+        engineFactory.single.loadedUrls,
+        orderedEquals([
+          'https://cdn.test/audio/one.mp3',
+          'https://cdn.test/audio/refresh-first.mp3',
+        ]),
+      );
+      expect(engineFactory.single.volumeHistory.last, closeTo(0.28, 0.0001));
+    },
+  );
+
+  test(
     'manual selection while paused loads the new track without auto-playing',
     () async {
       final engineFactory = FakeHomeAudioEngineFactory();

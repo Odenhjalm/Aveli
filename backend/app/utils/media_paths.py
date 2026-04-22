@@ -10,6 +10,7 @@ ALLOWED_UPLOAD_PATH_PREFIXES = (
     "lessons/",
     "home-player/",
 )
+CANONICAL_MEDIA_ASSET_SOURCE_FAMILY = "media/{media_asset_id}/source"
 PROTECTED_STORAGE_OBJECT_NAMES = frozenset(
     {
         "logga.png",
@@ -44,11 +45,56 @@ def normalize_object_path(path: str) -> str:
     return normalized
 
 
+def build_media_asset_source_object_path(media_asset_id: str) -> str:
+    normalized_media_asset_id = str(media_asset_id or "").strip()
+    if not normalized_media_asset_id:
+        raise ValueError("media_asset_id cannot be empty")
+    return (Path("media") / normalized_media_asset_id / "source").as_posix()
+
+
+def build_media_asset_playback_object_path(media_asset_id: str, *, ext: str) -> str:
+    normalized_media_asset_id = str(media_asset_id or "").strip()
+    normalized_ext = str(ext or "").strip().lstrip(".")
+    if not normalized_media_asset_id:
+        raise ValueError("media_asset_id cannot be empty")
+    if not normalized_ext:
+        raise ValueError("playback extension cannot be empty")
+    return (
+        Path("media") / normalized_media_asset_id / f"playback.{normalized_ext}"
+    ).as_posix()
+
+
+def is_canonical_media_asset_source_object_path(path: str) -> bool:
+    try:
+        normalized = normalize_object_path(path)
+    except ValueError:
+        return False
+    parts = PurePosixPath(normalized).parts
+    return len(parts) == 3 and parts[0] == "media" and bool(parts[1].strip()) and parts[2] == "source"
+
+
+def is_canonical_media_asset_source_for_id(
+    path: str | None,
+    media_asset_id: str | None,
+) -> bool:
+    normalized_media_asset_id = str(media_asset_id or "").strip()
+    if not normalized_media_asset_id:
+        return False
+    try:
+        return normalize_object_path(str(path or "")) == build_media_asset_source_object_path(
+            normalized_media_asset_id
+        )
+    except ValueError:
+        return False
+
+
 def is_allowed_upload_object_path(path: str) -> bool:
     try:
         normalized = normalize_object_path(path)
     except ValueError:
         return False
+    if is_canonical_media_asset_source_object_path(normalized):
+        return True
     return any(normalized.startswith(prefix) for prefix in ALLOWED_UPLOAD_PATH_PREFIXES)
 
 
@@ -70,7 +116,7 @@ def validate_new_upload_object_path(path: str) -> str:
     if not is_allowed_upload_object_path(normalized):
         raise ValueError(
             "storage_path must start with one of: "
-            + ", ".join(ALLOWED_UPLOAD_PATH_PREFIXES)
+            + ", ".join((CANONICAL_MEDIA_ASSET_SOURCE_FAMILY,) + ALLOWED_UPLOAD_PATH_PREFIXES)
         )
     return normalized
 

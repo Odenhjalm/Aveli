@@ -22,6 +22,7 @@ COURSE_GROUP_ID = "22222222-2222-2222-2222-222222222222"
 MEDIA_ID = "33333333-3333-3333-3333-333333333333"
 TEACHER_ID = "44444444-4444-4444-4444-444444444444"
 DERIVED_PATH = "media/derived/cover/courses/course-1/cover.jpg"
+ID_BASED_DERIVED_PATH = f"media/{MEDIA_ID}/playback.jpg"
 LEGACY_URL = "/api/files/public-media/courses/legacy-cover.jpg"
 
 
@@ -115,6 +116,7 @@ def _runtime_row(
 
 def _course_cover_pipeline_asset(
     *,
+    media_id: str = MEDIA_ID,
     media_type: str = "image",
     purpose: str = "course_cover",
     state: str = "ready",
@@ -129,6 +131,7 @@ def _course_cover_pipeline_asset(
         else playback_object_path
     )
     return {
+        "id": media_id,
         "media_type": media_type,
         "purpose": purpose,
         "state": state,
@@ -231,6 +234,29 @@ async def test_validate_course_cover_assignment_prefers_metadata_scope(
     )
 
 
+async def test_validate_course_cover_assignment_accepts_id_based_ready_output(
+    monkeypatch,
+):
+    async def fake_get_pipeline_asset(media_asset_id: str):
+        assert media_asset_id == MEDIA_ID
+        return _course_cover_pipeline_asset(playback_object_path=ID_BASED_DERIVED_PATH)
+
+    monkeypatch.setattr(
+        courses_service.media_assets_repo,
+        "get_course_cover_pipeline_asset",
+        fake_get_pipeline_asset,
+        raising=True,
+    )
+
+    assert (
+        await courses_service._validate_course_cover_assignment(
+            course_id=COURSE_ID,
+            cover_media_id=MEDIA_ID,
+        )
+        == MEDIA_ID
+    )
+
+
 @pytest.mark.parametrize(
     ("cover_media_id", "message"),
     [
@@ -291,6 +317,12 @@ async def test_validate_course_cover_assignment_rejects_non_id_inputs(
         (
             _course_cover_pipeline_asset(
                 playback_object_path="media/derived/cover/courses/wrong-course/cover.jpg"
+            ),
+            "cover_media_id ready output is not scoped to this course",
+        ),
+        (
+            _course_cover_pipeline_asset(
+                playback_object_path="media/not-the-media-id/playback.jpg"
             ),
             "cover_media_id ready output is not scoped to this course",
         ),
