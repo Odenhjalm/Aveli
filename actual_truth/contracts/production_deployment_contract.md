@@ -140,9 +140,13 @@ Backend runtime database authority:
 
 - The canonical baseline source is `backend/supabase/baseline_v2_slots/`.
 - The canonical baseline lock is `backend/supabase/baseline_v2_slots.lock.json`.
+- The canonical baseline lock also carries the per-slot post-state metadata
+  required by the production release-command cutover mechanism.
 - Non-destructive production slot promotion for Baseline V2 is owned by the
   release-machine cutover defined in
   `actual_truth/contracts/baseline_v2_release_cutover_contract.md`.
+- All future Baseline V2 promotions must use the lock-driven release-command
+  `N -> N+1` cutover mechanism. Manual production SQL is forbidden.
 - Public launch requires the canonical Baseline V2 hosted profile to apply the
   app-owned slot chain and verify the hosted Supabase substrate interface
   against the intended production Supabase database target.
@@ -295,7 +299,8 @@ The production deployment contract is satisfied only when all are true:
 - The current `backend/supabase/baseline_v2_slots.lock.json` hosted profile is
   applied and verified against the intended production Supabase project.
 - Any required production slot delta is executed only through the accepted
-  release-machine cutover path before app and worker Machines update.
+  lock-driven release-command `N -> N+1` cutover path before app and worker
+  Machines update.
 - Legacy migration paths do not define launch authority.
 - Minimum public, protected, media, payment, home-audio, profile/community
   media, and onboarding surfaces pass under the Baseline V2 freeze contract and

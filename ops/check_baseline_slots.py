@@ -94,6 +94,18 @@ def main() -> int:
         return _fail("manifest replay_owned_schemas must be ['app']")
     if replay_ownership.get("external_substrate_schemas") != ["auth", "storage"]:
         return _fail("manifest external_substrate_schemas must be ['auth', 'storage']")
+    release_cutover_verification = manifest.get("release_cutover_verification") or {}
+    if release_cutover_verification.get("schema_scope") != "app_owned_schema_only":
+        return _fail(
+            "manifest release_cutover_verification.schema_scope must be "
+            "'app_owned_schema_only'"
+        )
+    if release_cutover_verification.get("state_hash_algorithm") != (
+        "backend.bootstrap.baseline_v2_cutover.app_schema_state_fingerprint_v1"
+    ):
+        return _fail(
+            "manifest release_cutover_verification.state_hash_algorithm is invalid"
+        )
 
     protected_min_slot = int(manifest.get("protected_min_slot", 1))
     protected_max_slot = int(manifest["protected_max_slot"])
@@ -185,6 +197,24 @@ def main() -> int:
                 f"accepted slot content changed: {manifest_entry['filename']} "
                 f"(expected {manifest_entry['sha256']}, got {current_entry['sha256']})"
             )
+        if not isinstance(manifest_entry.get("post_state_hash"), str) or len(
+            manifest_entry["post_state_hash"]
+        ) != 64:
+            return _fail(
+                f"slot {slot:04d} is missing a 64-character post_state_hash"
+            )
+        if not isinstance(manifest_entry.get("post_counts"), dict):
+            return _fail(f"slot {slot:04d} is missing post_counts")
+
+    post_state_hashes = [str(item["post_state_hash"]) for item in manifest_slots]
+    if len(post_state_hashes) != len(set(post_state_hashes)):
+        return _fail("slot post_state_hash values must be unique for deterministic cutover")
+
+    expected_counts = manifest.get("schema_verification", {}).get("expected_counts")
+    if manifest_slots[-1]["post_counts"] != expected_counts:
+        return _fail(
+            "final slot post_counts must match schema_verification.expected_counts"
+        )
 
     for substrate_entry in manifest.get("local_dev_substrate_files") or []:
         substrate_path = Path(str(substrate_entry["path"]))

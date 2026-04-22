@@ -119,6 +119,30 @@ void main() {
     });
 
     test(
+      'normalizer canonicalizes italic last line into a clean newline op',
+      () {
+        const markdown = '*Italic last line*';
+        final normalized = normalizeDeltaForGuard(
+          quill_delta.Delta()
+            ..insert('Italic last line\n', {quill.Attribute.italic.key: true}),
+        );
+        final result = validateLessonMarkdownIntegrity(delta: normalized);
+
+        expect(normalized.toJson(), <Object?>[
+          <String, Object?>{
+            'insert': 'Italic last line',
+            'attributes': <String, Object?>{'italic': true},
+          },
+          <String, Object?>{'insert': '\n'},
+        ]);
+        expect(result.ok, isTrue);
+        expect(result.failureReason, isNull);
+        expect(result.originalMarkdown, markdown);
+        expect(result.canonicalMarkdown, markdown);
+      },
+    );
+
+    test(
       'normalizer stabilizes split end-of-document heading3 bold italic delta',
       () {
         final normalized = normalizeDeltaForGuard(

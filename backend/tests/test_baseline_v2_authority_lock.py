@@ -44,10 +44,16 @@ def test_baseline_v2_lock_is_complete_ordered_and_lf_hashed() -> None:
     )
     assert lock["schema_verification"]["expected_schema_hash"]
     assert "app_tables" not in lock["schema_verification"]["expected_counts"]
+    assert lock["release_cutover_verification"]["schema_scope"] == "app_owned_schema_only"
+    assert lock["release_cutover_verification"]["state_hash_algorithm"] == (
+        "backend.bootstrap.baseline_v2_cutover.app_schema_state_fingerprint_v1"
+    )
 
     slots = lock["slots"]
     assert len(slots) >= 1
     assert [entry["slot"] for entry in slots] == list(range(1, len(slots) + 1))
+    assert len({entry["post_state_hash"] for entry in slots}) == len(slots)
+    assert slots[-1]["post_counts"] == lock["schema_verification"]["expected_counts"]
 
     locked_filenames = [entry["filename"] for entry in slots]
     actual_filenames = [
@@ -60,6 +66,8 @@ def test_baseline_v2_lock_is_complete_ordered_and_lf_hashed() -> None:
         path = ROOT / entry["path"]
         assert path.name == entry["filename"]
         assert _sha256_lf(path) == entry["sha256"]
+        assert len(entry["post_state_hash"]) == 64
+        assert isinstance(entry["post_counts"], dict)
 
     local_substrate_files = lock["local_dev_substrate_files"]
     assert [entry["path"] for entry in local_substrate_files] == [

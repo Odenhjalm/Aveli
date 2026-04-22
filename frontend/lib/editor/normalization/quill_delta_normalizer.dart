@@ -2,13 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 
-const Set<String> _inlineAttributeKeys = <String>{
-  'bold',
-  'italic',
-  'underline',
-  'link',
-};
-
 const Set<String> _blockAttributeKeys = <String>{'header', 'list', 'indent'};
 
 quill_delta.Delta normalizeDeltaForGuard(quill_delta.Delta source) {
@@ -45,19 +38,9 @@ quill_delta.Delta normalizeDeltaForGuard(quill_delta.Delta source) {
     );
   }
 
-  for (final operation in source.toList()) {
-    if (!operation.isInsert) {
-      continue;
-    }
-
-    final value = operation.value;
-    final attributes = operation.attributes == null
-        ? null
-        : Map<String, dynamic>.from(operation.attributes!);
-
-    if (value is! String) {
-      pushInsert(value, attributes);
-      continue;
+  void pushStringInsert(String value, Map<String, dynamic>? attributes) {
+    if (value.isEmpty) {
+      return;
     }
 
     var buffer = StringBuffer();
@@ -77,6 +60,34 @@ quill_delta.Delta normalizeDeltaForGuard(quill_delta.Delta source) {
     if (buffer.isNotEmpty) {
       pushInsert(buffer.toString(), _textAttributes(attributes));
     }
+  }
+
+  for (final operation in source.toList()) {
+    if (!operation.isInsert) {
+      continue;
+    }
+
+    final value = operation.value;
+    final attributes = operation.attributes == null
+        ? null
+        : Map<String, dynamic>.from(operation.attributes!);
+
+    if (value is! String) {
+      pushInsert(value, attributes);
+      continue;
+    }
+
+    pushStringInsert(value, attributes);
+  }
+
+  while (normalizedOperations.isNotEmpty) {
+    final last = normalizedOperations.last;
+    final value = last.value;
+    if (value is! String || !value.contains('\n') || value == '\n') {
+      break;
+    }
+    normalizedOperations.removeLast();
+    pushStringInsert(value, last.attributes);
   }
 
   if (normalizedOperations.isEmpty) {
@@ -143,7 +154,7 @@ Map<String, dynamic>? _newlineAttributes(Map<String, dynamic>? attributes) {
 
   final newlineAttributes = <String, dynamic>{};
   for (final entry in normalized.entries) {
-    if (_inlineAttributeKeys.contains(entry.key)) {
+    if (!_blockAttributeKeys.contains(entry.key)) {
       continue;
     }
     newlineAttributes[entry.key] = entry.value;

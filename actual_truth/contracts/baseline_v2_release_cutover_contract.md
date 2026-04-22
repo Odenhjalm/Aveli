@@ -17,7 +17,7 @@ It operates under:
 
 Execute-mode cutover inputs are:
 
-- `backend/supabase/baseline_v2_production_cutover.json`
+- `backend/supabase/baseline_v2_slots.lock.json`
 - `backend/bootstrap/baseline_v2_cutover.py`
 - `fly.toml`
 
@@ -44,7 +44,7 @@ The canonical cutover mechanism is:
 4. allow app and worker Machines to update only if the cutover succeeds
 
 This is the only accepted execute-mode production mutation path for Baseline V2
-slot deltas of this class.
+single-slot promotions.
 
 ## 3. Verification Law Preservation
 
@@ -54,45 +54,55 @@ Normal runtime verification is not weakened.
 - The cutover path is not an alternate normal boot path.
 - The cutover path is release-machine-only and must fail closed unless
   `RELEASE_COMMAND=1`.
-- The cutover script must run `verify_v2_runtime()` after applying the bounded
-  slot delta and before allowing deploy continuation.
+- The cutover script must run `verify_v2_runtime()` after applying the exact
+  next slot and before allowing deploy continuation.
 
-The release cutover exists to align the DB to the new lock *before* app and
+The release cutover exists to align the DB to the new lock before app and
 worker replacement. It does not authorize runtime drift tolerance.
 
-## 4. Bounded Cutover Plan Authority
+## 4. Lock-Owned Cutover Authority
 
-`backend/supabase/baseline_v2_production_cutover.json` is the canonical bounded
-cutover plan for the current release artifact.
+`backend/supabase/baseline_v2_slots.lock.json` is the canonical cutover
+manifest for the current release artifact.
 
 It must define:
 
-- the exact predecessor schema hash and counts that are allowed
-- the exact target schema hash and counts that must equal the current lock
-- the exact slot files that may be applied
-- the exact slot order
-- any non-destructive invariants that must remain true after promotion
+- the ordered accepted slot chain
+- the final runtime schema hash and counts
+- the cutover state hash algorithm for promotion detection
+- the post-state hash and counts for every accepted slot
+
+The cutover script must:
+
+- derive the live current slot from the production DB by exact match against
+  the lock-carried slot post-state metadata
+- derive the target slot as the exact next slot in the lock
+- require the release artifact final slot to be either:
+  - the current slot, for a deterministic no-op
+  - or the exact next slot, for a deterministic single-slot promotion
 
 Forbidden:
 
+- slot-specific cutover branches
+- external per-release cutover plan files
 - open-ended hash allowlists
+- multi-slot replay
 - normal boot bypasses
 - silent fallback to app startup mutation
-- release-machine behavior that is not encoded in the cutover plan
 
 ## 5. Release-Machine Rules
 
 The release-machine cutover must fail closed unless all are true:
 
 - the lock verifies
-- the cutover plan verifies against the lock
 - runtime DB target validation passes
-- the live DB is already at the target state, or exactly at the cutover plan's
-  predecessor state
-- only the cutover plan's listed slot files are executed
-- each executed step reaches its expected post-step schema hash and counts
-- required non-destructive invariants hold
-- final `verify_v2_runtime()` succeeds against the target lock
+- the live DB matches exactly one accepted lock slot post-state
+- the release artifact final slot is either the current slot or the exact next
+  slot
+- if promotion is required, only the exact next slot file is executed
+- existing app-table row counts remain unchanged
+- the observed post-state hash and counts match the target slot entry exactly
+- final `verify_v2_runtime()` succeeds against the top-level lock target
 
 If any check fails:
 
@@ -102,15 +112,22 @@ If any check fails:
 
 ## 6. Reuse Rule
 
-This mechanism is reusable for future slot promotions of the same class only by
-updating the bounded cutover plan to the next exact predecessor -> target delta.
+This mechanism is reusable for future Baseline V2 promotions without redesign
+only when all are true:
+
+- each release adds at most one new accepted slot
+- the same change updates `backend/supabase/baseline_v2_slots.lock.json`
+  with the new slot entry and its post-state metadata
+- Fly keeps `release_command = "python -m backend.bootstrap.baseline_v2_cutover"`
+- no manual production SQL is used
 
 Future reuse must keep all of the following:
 
 - release-machine-only execution
-- exact predecessor state matching
-- exact slot-list matching
-- strict post-step verification
+- exact current-slot matching
+- exact `N -> N+1` enforcement
+- append-only slot execution
+- strict post-state verification
 - final runtime verification
 - fail-closed deployment stop on any mismatch
 
@@ -122,3 +139,5 @@ Future reuse must keep all of the following:
 - Runtime verification remains strict on normal boot.
 - The release-machine cutover is the only accepted path that may bridge a
   predecessor production DB state to the lock carried by the new release.
+- All future Baseline V2 promotions must use the release-command `N -> N+1`
+  cutover mechanism. Manual production SQL is forbidden.

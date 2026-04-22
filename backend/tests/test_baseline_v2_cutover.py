@@ -10,50 +10,126 @@ from backend.bootstrap import baseline_v2_cutover
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCK_PATH = ROOT / "backend" / "supabase" / "baseline_v2_slots.lock.json"
-CUTOVER_PATH = ROOT / "backend" / "supabase" / "baseline_v2_production_cutover.json"
 
 
 def _load_lock() -> dict:
     return json.loads(LOCK_PATH.read_text(encoding="utf-8"))
 
 
-def _load_cutover() -> dict:
-    return json.loads(CUTOVER_PATH.read_text(encoding="utf-8"))
+def _lock_entries() -> list[dict]:
+    return baseline_v2_cutover._lock_slot_entries(_load_lock())
 
 
-def test_cutover_manifest_matches_current_lock() -> None:
+def test_cutover_lock_matches_current_lock_final_slot() -> None:
+    entries = _lock_entries()
     lock = _load_lock()
-    plan = baseline_v2_cutover._validate_cutover_plan_against_lock(lock, _load_cutover())
 
-    assert plan["target"]["slot_count"] == len(lock["slots"])
-    assert plan["target"]["last_slot"] == lock["slots"][-1]["filename"]
-    assert plan["steps"][-1]["filename"] == lock["slots"][-1]["filename"]
-    assert plan["steps"][-1]["path"] == lock["slots"][-1]["path"]
-    assert plan["steps"][-1]["sha256"] == lock["slots"][-1]["sha256"]
-    assert plan["post_conditions"]["existing_table_row_counts_unchanged"] is True
-    assert plan["post_conditions"]["new_tables"] == ["app.course_families"]
+    assert entries[-1]["slot"] == len(lock["slots"])
+    assert entries[-1]["filename"] == lock["slots"][-1]["filename"]
+    assert entries[-1]["path"] == lock["slots"][-1]["path"]
+    assert entries[-1]["sha256"] == lock["slots"][-1]["sha256"]
+    assert entries[-1]["post_counts"] == lock["schema_verification"]["expected_counts"]
 
 
-def test_cutover_manifest_only_allows_exact_predecessor_or_target() -> None:
-    plan = baseline_v2_cutover._validate_cutover_plan_against_lock(_load_lock(), _load_cutover())
+def test_cutover_plan_noops_when_db_already_matches_current_final_slot() -> None:
+    entries = _lock_entries()
+    final_slot = len(entries)
+    plan = baseline_v2_cutover._build_cutover_plan(
+        entries,
+        {
+            "state_hash": entries[-1]["post_state_hash"],
+            "counts": entries[-1]["post_counts"],
+        },
+    )
 
-    predecessor = {
-        "schema_hash": plan["from"]["schema_hash"],
-        "counts": plan["from"]["counts"],
-    }
-    target = {
-        "schema_hash": plan["target"]["schema_hash"],
-        "counts": plan["target"]["counts"],
-    }
-    drift = {
-        "schema_hash": "deadbeef",
-        "counts": dict(plan["from"]["counts"]),
-    }
+    assert plan["action"] == "noop"
+    assert plan["current_slot"]["slot"] == final_slot
+    assert plan["target_slot"]["slot"] == final_slot
+    assert plan["artifact_slot"]["slot"] == final_slot
+    assert plan["applied_slot"] is None
 
-    assert baseline_v2_cutover._schema_state_equals(predecessor, predecessor)
-    assert baseline_v2_cutover._schema_state_equals(target, target)
-    assert not baseline_v2_cutover._schema_state_equals(predecessor, target)
-    assert not baseline_v2_cutover._schema_state_equals(predecessor, drift)
+
+def test_cutover_plan_applies_exact_next_slot_for_current_release() -> None:
+    entries = _lock_entries()
+    final_slot = len(entries)
+    plan = baseline_v2_cutover._build_cutover_plan(
+        entries,
+        {
+            "state_hash": entries[-2]["post_state_hash"],
+            "counts": entries[-2]["post_counts"],
+        },
+    )
+
+    assert plan["action"] == "apply"
+    assert plan["current_slot"]["slot"] == final_slot - 1
+    assert plan["target_slot"]["slot"] == final_slot
+    assert plan["artifact_slot"]["slot"] == final_slot
+    assert plan["applied_slot"]["filename"] == entries[-1]["filename"]
+
+
+def test_cutover_plan_would_handle_hypothetical_24_to_25() -> None:
+    entries = _lock_entries()
+    final_slot = len(entries)
+    hypothetical_entries = [
+        *entries,
+        {
+            "slot": final_slot + 1,
+            "filename": f"V2_{final_slot + 1:04d}_hypothetical.sql",
+            "path": f"backend/supabase/baseline_v2_slots/V2_{final_slot + 1:04d}_hypothetical.sql",
+            "sha256": "f" * 64,
+            "post_state_hash": "e" * 64,
+            "post_counts": {
+                **entries[-1]["post_counts"],
+                "tables": entries[-1]["post_counts"]["tables"] + 1,
+            },
+        },
+    ]
+    plan = baseline_v2_cutover._build_cutover_plan(
+        hypothetical_entries,
+        {
+            "state_hash": entries[-1]["post_state_hash"],
+            "counts": entries[-1]["post_counts"],
+        },
+    )
+
+    assert plan["action"] == "apply"
+    assert plan["current_slot"]["slot"] == final_slot
+    assert plan["target_slot"]["slot"] == final_slot + 1
+    assert plan["artifact_slot"]["slot"] == final_slot + 1
+    assert plan["applied_slot"]["filename"] == f"V2_{final_slot + 1:04d}_hypothetical.sql"
+
+
+def test_cutover_plan_rejects_db_not_at_an_exact_lock_slot() -> None:
+    entries = _lock_entries()
+
+    with pytest.raises(
+        baseline_v2_cutover.BaselineV2CutoverError,
+        match="does not match any accepted lock slot state",
+    ):
+        baseline_v2_cutover._build_cutover_plan(
+            entries,
+            {
+                "state_hash": "deadbeef" * 8,
+                "counts": dict(entries[-1]["post_counts"]),
+            },
+        )
+
+
+def test_cutover_plan_rejects_more_than_one_unapplied_slot_gap() -> None:
+    entries = _lock_entries()
+    stale_entry = entries[-3]
+
+    with pytest.raises(
+        baseline_v2_cutover.BaselineV2CutoverError,
+        match="more than one unapplied slot",
+    ):
+        baseline_v2_cutover._build_cutover_plan(
+            entries,
+            {
+                "state_hash": stale_entry["post_state_hash"],
+                "counts": stale_entry["post_counts"],
+            },
+        )
 
 
 def test_cutover_main_requires_release_command(monkeypatch) -> None:
@@ -109,3 +185,14 @@ def test_qualified_table_count_uses_psycopg_composable_sql() -> None:
     assert count == 7
     assert isinstance(captured["query"], sql.Composed)
     assert captured["params"] is None
+
+
+def test_cutover_mechanism_contains_no_destructive_sql_of_its_own() -> None:
+    source = (ROOT / "backend" / "bootstrap" / "baseline_v2_cutover.py").read_text(
+        encoding="utf-8"
+    ).lower()
+
+    assert "delete from " not in source
+    assert "truncate " not in source
+    assert "drop table " not in source
+    assert "drop schema " not in source

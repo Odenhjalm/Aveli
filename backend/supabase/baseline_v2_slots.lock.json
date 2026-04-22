@@ -139,150 +139,394 @@
       "canonical_worker_transition_media_asset"
     ]
   },
+  "release_cutover_verification": {
+    "schema_scope": "app_owned_schema_only",
+    "state_hash_algorithm": "backend.bootstrap.baseline_v2_cutover.app_schema_state_fingerprint_v1"
+  },
   "slots": [
     {
       "slot": 1,
       "filename": "V2_0001_foundation_enums.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0001_foundation_enums.sql",
-      "sha256": "bec74d76a409f4d960f92d4b4f2f6c3ea1e6111b43f6a38ea06dc9d7d184534f"
+      "sha256": "bec74d76a409f4d960f92d4b4f2f6c3ea1e6111b43f6a38ea06dc9d7d184534f",
+      "post_state_hash": "3db2617f30c48a2b28bd30869fe0c8395e17f81bfd8f381d12dcf30fe81a7849",
+      "post_counts": {
+        "constraints": 0,
+        "enums": 13,
+        "fks": 0,
+        "functions": 0,
+        "tables": 0,
+        "triggers": 0,
+        "views": 0
+      }
     },
     {
       "slot": 2,
       "filename": "V2_0002_auth_subjects.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0002_auth_subjects.sql",
-      "sha256": "5b1696ee8531d877f32328694b89a03e68394dff267b988ef0465f0bd0d3cb57"
+      "sha256": "5b1696ee8531d877f32328694b89a03e68394dff267b988ef0465f0bd0d3cb57",
+      "post_state_hash": "7022379d89670e7112ecf3bcc9574b4ab005ffea2c1fab2bfd6cbb9873c08cd9",
+      "post_counts": {
+        "constraints": 1,
+        "enums": 13,
+        "fks": 0,
+        "functions": 0,
+        "tables": 1,
+        "triggers": 0,
+        "views": 0
+      }
     },
     {
       "slot": 3,
       "filename": "V2_0003_media_assets.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0003_media_assets.sql",
-      "sha256": "e3b0d4f0490e40f1c3f866ee8de5bccd8c3c23b513a45a4becbc6d339b157ada"
+      "sha256": "e3b0d4f0490e40f1c3f866ee8de5bccd8c3c23b513a45a4becbc6d339b157ada",
+      "post_state_hash": "3ed72f66f359dbde4feffe768d68ae9bcbe077033186cae0afb67dc75c66640f",
+      "post_counts": {
+        "constraints": 11,
+        "enums": 13,
+        "fks": 0,
+        "functions": 1,
+        "tables": 2,
+        "triggers": 1,
+        "views": 0
+      }
     },
     {
       "slot": 4,
       "filename": "V2_0004_courses_and_public_content.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0004_courses_and_public_content.sql",
-      "sha256": "9e93cd8514487bfe208ef9d341060dfac789a37a6cbcf1a0fb7ee3f3edf938cd"
+      "sha256": "9e93cd8514487bfe208ef9d341060dfac789a37a6cbcf1a0fb7ee3f3edf938cd",
+      "post_state_hash": "3b3bb803ac11d17d7d69a6c167e78b6477c1264a138632da795c81f11b3152b2",
+      "post_counts": {
+        "constraints": 26,
+        "enums": 13,
+        "fks": 3,
+        "functions": 2,
+        "tables": 4,
+        "triggers": 2,
+        "views": 0
+      }
     },
     {
       "slot": 5,
       "filename": "V2_0005_lessons_content_and_access.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0005_lessons_content_and_access.sql",
-      "sha256": "227a4b3a1ccb135a00ac1845efd5a3b8e8d807e1360af4313cdb3145446d029a"
+      "sha256": "227a4b3a1ccb135a00ac1845efd5a3b8e8d807e1360af4313cdb3145446d029a",
+      "post_state_hash": "e3252c762fab5bb21b88718c0d80d3e610c0996bce6935bdc728ac7a0dd7e238",
+      "post_counts": {
+        "constraints": 39,
+        "enums": 13,
+        "fks": 7,
+        "functions": 4,
+        "tables": 7,
+        "triggers": 3,
+        "views": 0
+      }
     },
     {
       "slot": 6,
       "filename": "V2_0006_media_placement_and_home_audio.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0006_media_placement_and_home_audio.sql",
-      "sha256": "b19f4ce0a86969cf11c221ec44849dd9a7518e266b355be4e2e004933f9b925c"
+      "sha256": "b19f4ce0a86969cf11c221ec44849dd9a7518e266b355be4e2e004933f9b925c",
+      "post_state_hash": "aedf276c356790027a079c484b50aee1bb11f1dc68c618e0a45b5939c8047bff",
+      "post_counts": {
+        "constraints": 52,
+        "enums": 13,
+        "fks": 12,
+        "functions": 7,
+        "tables": 10,
+        "triggers": 6,
+        "views": 0
+      }
     },
     {
       "slot": 7,
       "filename": "V2_0007_profile_media.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0007_profile_media.sql",
-      "sha256": "43fff3a840d41001e00135ec1b45c9b8e21b5e54bbb1480e32c2314dc90e4ac2"
+      "sha256": "43fff3a840d41001e00135ec1b45c9b8e21b5e54bbb1480e32c2314dc90e4ac2",
+      "post_state_hash": "ee84d88f04a939c4702eeca36e1ecec105b6a27b24262b40061f0e47fe861f84",
+      "post_counts": {
+        "constraints": 56,
+        "enums": 13,
+        "fks": 14,
+        "functions": 8,
+        "tables": 11,
+        "triggers": 7,
+        "views": 0
+      }
     },
     {
       "slot": 8,
       "filename": "V2_0008_commerce_membership.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0008_commerce_membership.sql",
-      "sha256": "f28a431025605c1aad36b46e2c6a451fe55b8dd41429aea33b43e6424fc21bc4"
+      "sha256": "f28a431025605c1aad36b46e2c6a451fe55b8dd41429aea33b43e6424fc21bc4",
+      "post_state_hash": "ec2ea4f7799eb85dfb104014d97008e1e1b3acdc5e4e73e376ae697975df734d",
+      "post_counts": {
+        "constraints": 83,
+        "enums": 13,
+        "fks": 22,
+        "functions": 9,
+        "tables": 16,
+        "triggers": 8,
+        "views": 0
+      }
     },
     {
       "slot": 9,
       "filename": "V2_0009_runtime_support_inert.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0009_runtime_support_inert.sql",
-      "sha256": "32da9b38d3d8005481f9b8031899cffbcbf030df7f82e60707b048f81a5d5a0a"
+      "sha256": "32da9b38d3d8005481f9b8031899cffbcbf030df7f82e60707b048f81a5d5a0a",
+      "post_state_hash": "a3c763f2c43df4421ee974f5824798b0a8c99b1ef8645a0e7947aedc9f169b65",
+      "post_counts": {
+        "constraints": 104,
+        "enums": 13,
+        "fks": 28,
+        "functions": 11,
+        "tables": 22,
+        "triggers": 10,
+        "views": 0
+      }
     },
     {
       "slot": 10,
       "filename": "V2_0010_read_projections.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0010_read_projections.sql",
-      "sha256": "97548c0b77da58eb82cd941936a646305c06be57879dd290c1147b354663e74a"
+      "sha256": "97548c0b77da58eb82cd941936a646305c06be57879dd290c1147b354663e74a",
+      "post_state_hash": "3bbb316a0eb7c73db9e174dc4d7b9dfcd2f4ae61e2e64f5ffd4b41da57304483",
+      "post_counts": {
+        "constraints": 104,
+        "enums": 13,
+        "fks": 28,
+        "functions": 11,
+        "tables": 22,
+        "triggers": 10,
+        "views": 5
+      }
     },
     {
       "slot": 11,
       "filename": "V2_0011_auth_session_and_subject_authority.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0011_auth_session_and_subject_authority.sql",
-      "sha256": "4e12f28c937fea3596161a184676efb6ea54ee9a8a7b0e74fb35443669a0ba4a"
+      "sha256": "4e12f28c937fea3596161a184676efb6ea54ee9a8a7b0e74fb35443669a0ba4a",
+      "post_state_hash": "46e636b641e12ae770fc3055db793f5df20c5a31b0fefc31af797ff91a9698a7",
+      "post_counts": {
+        "constraints": 117,
+        "enums": 13,
+        "fks": 31,
+        "functions": 12,
+        "tables": 24,
+        "triggers": 10,
+        "views": 5
+      }
     },
     {
       "slot": 12,
       "filename": "V2_0012_core_substrate_profiles_storage_referrals.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0012_core_substrate_profiles_storage_referrals.sql",
-      "sha256": "19010be1b2926d2fe3c876b6320c4f81ec3b1415849709e7e240b1813427f59e"
+      "sha256": "19010be1b2926d2fe3c876b6320c4f81ec3b1415849709e7e240b1813427f59e",
+      "post_state_hash": "ed953fbf190eca2a0ffc053d813e6c7d29af295689b3758697257cc6f0606fca",
+      "post_counts": {
+        "constraints": 133,
+        "enums": 13,
+        "fks": 36,
+        "functions": 14,
+        "tables": 27,
+        "triggers": 11,
+        "views": 5
+      }
     },
     {
       "slot": 13,
       "filename": "V2_0013_workers.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0013_workers.sql",
-      "sha256": "d23221fc997c74a2847b36a7f86719e20cffce419fb209ce8726d5f1ffd7eb66"
+      "sha256": "d23221fc997c74a2847b36a7f86719e20cffce419fb209ce8726d5f1ffd7eb66",
+      "post_state_hash": "5c0aede46bc0910bafacbf6328e9f0287365c0253bf677e5060bedb42bd94325",
+      "post_counts": {
+        "constraints": 133,
+        "enums": 13,
+        "fks": 36,
+        "functions": 16,
+        "tables": 27,
+        "triggers": 11,
+        "views": 5
+      }
     },
     {
       "slot": 14,
       "filename": "V2_0014_media_asset_content_identity.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0014_media_asset_content_identity.sql",
-      "sha256": "9a43f5d8db6acf8084bb2ec12209a793e84e0d5e6da12dc93fdce8ff529bc697"
+      "sha256": "9a43f5d8db6acf8084bb2ec12209a793e84e0d5e6da12dc93fdce8ff529bc697",
+      "post_state_hash": "10a776b8baeca71264d54bffac2082398ca52a1d33969efe362fb2d17ca90d86",
+      "post_counts": {
+        "constraints": 136,
+        "enums": 13,
+        "fks": 36,
+        "functions": 16,
+        "tables": 27,
+        "triggers": 11,
+        "views": 5
+      }
     },
     {
       "slot": 15,
       "filename": "V2_0015_media_worker_lifecycle_functions.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0015_media_worker_lifecycle_functions.sql",
-      "sha256": "89a929da0e794af860e43e69ccbc8de20517580d6b435da841788f2d1f98ec73"
+      "sha256": "89a929da0e794af860e43e69ccbc8de20517580d6b435da841788f2d1f98ec73",
+      "post_state_hash": "ff4466abd6c98d2dd17f6ce60407c1bdf317284b1c3bcfe7add62b777e653b7e",
+      "post_counts": {
+        "constraints": 136,
+        "enums": 13,
+        "fks": 36,
+        "functions": 20,
+        "tables": 27,
+        "triggers": 11,
+        "views": 5
+      }
     },
     {
       "slot": 16,
       "filename": "V2_0016_media_worker_failed_requeue.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0016_media_worker_failed_requeue.sql",
-      "sha256": "7c926a424747359718f4e5077660057947e661d94df46d7affbb8a4a26780884"
+      "sha256": "7c926a424747359718f4e5077660057947e661d94df46d7affbb8a4a26780884",
+      "post_state_hash": "955b31254cdfce3a4fc69d7c898c3d576847a434c0100571489c4a0fd16d192d",
+      "post_counts": {
+        "constraints": 136,
+        "enums": 13,
+        "fks": 36,
+        "functions": 21,
+        "tables": 27,
+        "triggers": 11,
+        "views": 5
+      }
     },
     {
       "slot": 17,
       "filename": "V2_0017_bundle_order_courses.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0017_bundle_order_courses.sql",
-      "sha256": "9047f7c29d27460bf838015f428d29c939e98af3b280c388e30113ee7eee5164"
+      "sha256": "9047f7c29d27460bf838015f428d29c939e98af3b280c388e30113ee7eee5164",
+      "post_state_hash": "40426f5179d0ca72f07ae7fdee2504b421669aa0d0da75194bf08ae1c80498db",
+      "post_counts": {
+        "constraints": 144,
+        "enums": 13,
+        "fks": 39,
+        "functions": 23,
+        "tables": 28,
+        "triggers": 13,
+        "views": 5
+      }
     },
     {
       "slot": 18,
       "filename": "V2_0018_course_access_classification.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0018_course_access_classification.sql",
-      "sha256": "ac7f2fc9a4a92b75c8f9c9878bf40900b78507ba131b7aea0387633b25a7b6a0"
+      "sha256": "ac7f2fc9a4a92b75c8f9c9878bf40900b78507ba131b7aea0387633b25a7b6a0",
+      "post_state_hash": "6f4fb575a173f03f9ee8edef8037a291725d63624217244fdc51641d12dc4688",
+      "post_counts": {
+        "constraints": 145,
+        "enums": 13,
+        "fks": 39,
+        "functions": 23,
+        "tables": 28,
+        "triggers": 13,
+        "views": 5
+      }
     },
     {
       "slot": 19,
       "filename": "V2_0019_media_worker_stale_lock_release_parity.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0019_media_worker_stale_lock_release_parity.sql",
-      "sha256": "31bc2f145c4fdc1a7f616637d12da8ded20bacff2ce7873c018d093d1070eb21"
+      "sha256": "31bc2f145c4fdc1a7f616637d12da8ded20bacff2ce7873c018d093d1070eb21",
+      "post_state_hash": "47576c077b3395ddf9ddaf4e08a4cb616dcff2d6846be9505d16095b2f15cf62",
+      "post_counts": {
+        "constraints": 145,
+        "enums": 13,
+        "fks": 39,
+        "functions": 23,
+        "tables": 28,
+        "triggers": 13,
+        "views": 5
+      }
     },
     {
       "slot": 20,
       "filename": "V2_0020_media_ready_format_matrix.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0020_media_ready_format_matrix.sql",
-      "sha256": "17edc4ed1a715b8f749e354be5fa8a3e9db529f28094208c58aa299597eede94"
+      "sha256": "17edc4ed1a715b8f749e354be5fa8a3e9db529f28094208c58aa299597eede94",
+      "post_state_hash": "14fe8defb9e4020e9cf4fa146200aaec71c18348faa8fea834c672e6205002cf",
+      "post_counts": {
+        "constraints": 146,
+        "enums": 13,
+        "fks": 39,
+        "functions": 23,
+        "tables": 28,
+        "triggers": 13,
+        "views": 5
+      }
     },
     {
       "slot": 21,
       "filename": "V2_0021_special_offer_substrate.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0021_special_offer_substrate.sql",
-      "sha256": "69bb1c2d6622f70ba307ba2f2a5cbc2ed498b9139ad1509da8c164d9c25ae214"
+      "sha256": "69bb1c2d6622f70ba307ba2f2a5cbc2ed498b9139ad1509da8c164d9c25ae214",
+      "post_state_hash": "aaaa589ba4113bfa6fc177d001c3a427bd3fd8a59d2ad77910ee24c217c65be8",
+      "post_counts": {
+        "constraints": 176,
+        "enums": 13,
+        "fks": 48,
+        "functions": 33,
+        "tables": 33,
+        "triggers": 21,
+        "views": 5
+      }
     },
     {
       "slot": 22,
       "filename": "V2_0022_special_offer_sync_ready_media.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0022_special_offer_sync_ready_media.sql",
-      "sha256": "bd9c74f4f460a7859b625bba6f6ae9c51a974efd8e01140daf17889a63d218e2"
+      "sha256": "bd9c74f4f460a7859b625bba6f6ae9c51a974efd8e01140daf17889a63d218e2",
+      "post_state_hash": "d2fc7d97e8199f7927e0597f3a80a459b5d3f30c225c87b0a31a8548ce305b0a",
+      "post_counts": {
+        "constraints": 176,
+        "enums": 13,
+        "fks": 48,
+        "functions": 33,
+        "tables": 33,
+        "triggers": 21,
+        "views": 5
+      }
     },
     {
       "slot": 23,
       "filename": "V2_0023_course_family_ordering.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0023_course_family_ordering.sql",
-      "sha256": "8569cf0c3844998245d6f63f953e1d9b50d1f4c3b713b0ef2c6071ca8f7546e3"
+      "sha256": "8569cf0c3844998245d6f63f953e1d9b50d1f4c3b713b0ef2c6071ca8f7546e3",
+      "post_state_hash": "df715d0da7956f4bb4d1a776179c412621d52190a0f542a787f11ab5eb0905fd",
+      "post_counts": {
+        "constraints": 182,
+        "enums": 13,
+        "fks": 48,
+        "functions": 38,
+        "tables": 34,
+        "triggers": 24,
+        "views": 5
+      }
     },
     {
       "slot": 24,
       "filename": "V2_0024_course_families.sql",
       "path": "backend/supabase/baseline_v2_slots/V2_0024_course_families.sql",
-      "sha256": "c0479846808b6a087994c6dd861023eddade184b9de941934a069989fe27d0fd"
+      "sha256": "c0479846808b6a087994c6dd861023eddade184b9de941934a069989fe27d0fd",
+      "post_state_hash": "beabdfef8c782e28d61e2843fbee4ff51c6e6fcf620083d7ff3afef61a80fc6d",
+      "post_counts": {
+        "constraints": 186,
+        "enums": 13,
+        "fks": 50,
+        "functions": 39,
+        "tables": 35,
+        "triggers": 25,
+        "views": 5
+      }
     }
   ]
 }

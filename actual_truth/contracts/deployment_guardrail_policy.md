@@ -91,7 +91,7 @@ The current production deployment strategy was also audited through:
 - Runtime startup and worker startup verify Baseline V2 and fail closed.
 - Runtime startup will not auto-replay an empty schema.
 - Fly `release_command` is the canonical execute-mode production slot cutover
-  path for bounded Baseline V2 slot deltas.
+  path for lock-driven Baseline V2 `N -> N+1` slot promotions.
 
 ## 3. Canonical State Dependencies Protected By This Policy
 
@@ -180,15 +180,16 @@ Blocking interpretation:
   applier for accepted V2 slot additions:
   `backend.bootstrap.baseline_v2_cutover`, executed only through Fly
   `release_command`.
-- The bounded execute-mode authority for the current release lives in
-  `backend/supabase/baseline_v2_production_cutover.json`.
+- The execute-mode authority for the current release lives in the lock-carried
+  `release_cutover_verification` section plus per-slot post-state metadata in
+  `backend/supabase/baseline_v2_slots.lock.json`.
 - `backend/scripts/replay_v2.sh` is replay authority, not production mutation
   authority for stateful business environments.
 - `backend/scripts/apply_supabase_migrations.sh` is legacy migration tooling and
   must not be used as production slot authority.
 - Therefore any production rollout that requires DB mutation for a new V2 slot
-  is allowed only when the exact release artifact carries an approved bounded
-  cutover plan for the exact slot delta.
+  is allowed only when the exact release artifact carries lock metadata for the
+  exact `N -> N+1` promotion and nothing broader.
 
 ## 6. Non-Negotiable Deployment Guardrails
 
@@ -335,8 +336,8 @@ Before any production slot-related mutation is approved:
 4. Run production read-only environment verification.
 5. Run production read-only DB verification.
 6. Capture pre-deploy snapshots for all affected canonical accounts.
-7. Confirm the release-machine cutover contract and bounded cutover plan exist
-   for the exact slot delta.
+7. Confirm the release-machine cutover contract exists and the lock carries the
+   release-command metadata for the exact next slot only.
 
 If step 7 is missing:
 
@@ -347,17 +348,19 @@ If step 7 is missing:
 
 The only accepted execute-mode production slot promotion path is:
 
-1. Build the exact release artifact that carries the new lock and cutover plan.
+1. Build the exact release artifact that carries the new lock.
 2. Run `fly deploy` for that exact release artifact.
 3. Let Fly execute `release_command` in a temporary release Machine.
 4. Require `backend.bootstrap.baseline_v2_cutover` to:
    - verify the lock
-   - verify the bounded cutover plan
+   - verify the lock-carried release cutover metadata
    - verify runtime DB target safety
-   - require the DB to be already at the target state or at the exact bounded
-     predecessor state
-   - apply only the listed slot files in strict order
-   - verify post-step schema hash and counts
+   - derive the current DB slot from exact lock slot post-state matching
+   - require the artifact final slot to be either the current slot or the
+     exact next slot
+   - apply only the exact next slot file when promotion is required
+   - verify post-state hash and counts against the target slot entry
+   - verify existing app-table row counts remain unchanged
    - verify the final state through `verify_v2_runtime()`
 5. Allow app/worker Machine replacement only if the release command exits zero.
 
@@ -463,7 +466,8 @@ Deployment must stop immediately if any of the following is true:
   fallback authority
 - post-deploy audit plan is missing
 - the exact production DB promotion method for a new slot delta is undefined
-- the release artifact lacks the bounded cutover plan required for its slot delta
+- the release artifact lacks the lock-carried `N -> N+1` cutover metadata or
+  carries more than one unapplied slot
 
 ## 14. Final Assertion
 
@@ -476,4 +480,4 @@ Deployment must stop immediately if any of the following is true:
   only.
 - Production deploy and post-deploy audit must fail closed on any ambiguity.
 - Baseline V2 slot additions may reach production only through the canonical
-  release-machine cutover path for the exact slot delta.
+  release-command `N -> N+1` cutover path. Manual production SQL is forbidden.
