@@ -92,6 +92,236 @@ def _course_create_db_log_context(
     }
 
 
+async def _acquire_course_transition_lock(
+    active_conn: Any,
+    *,
+    scope: str,
+    key: str,
+) -> None:
+    async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+        await cur.execute(
+            "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (f"app.courses.{scope}:{key}",),
+        )
+
+
+async def _acquire_course_family_locks(
+    active_conn: Any,
+    course_group_ids: Sequence[str],
+) -> None:
+    normalized_ids = sorted({str(course_group_id).strip() for course_group_id in course_group_ids if str(course_group_id).strip()})
+    for course_group_id in normalized_ids:
+        await _acquire_course_transition_lock(
+            active_conn,
+            scope="family",
+            key=course_group_id,
+        )
+
+
+async def _get_course_transition_row(
+    active_conn: Any,
+    course_id: str,
+    *,
+    for_update: bool = False,
+) -> dict[str, Any] | None:
+    query = """
+        select
+            c.id::text as id,
+            c.teacher_id::text as teacher_id,
+            c.course_group_id::text as course_group_id,
+            c.group_position
+        from app.courses as c
+        where c.id = %s::uuid
+        limit 1
+    """
+    if for_update:
+        query = """
+            select
+                c.id::text as id,
+                c.teacher_id::text as teacher_id,
+                c.course_group_id::text as course_group_id,
+                c.group_position
+            from app.courses as c
+            where c.id = %s::uuid
+            for update
+        """
+
+    async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+        await cur.execute(query, (course_id,))
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def _get_course_family_size(
+    active_conn: Any,
+    course_group_id: str,
+) -> int:
+    async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+        await cur.execute(
+            """
+            select count(*)::integer
+            from app.courses
+            where course_group_id = %s::uuid
+            """,
+            (course_group_id,),
+        )
+        row = await cur.fetchone()
+    return int(row[0] if row else 0)
+
+
+async def _get_course_family_append_position(
+    active_conn: Any,
+    course_group_id: str,
+) -> int:
+    async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+        await cur.execute(
+            """
+            select coalesce(max(group_position), -1)::integer + 1
+            from app.courses
+            where course_group_id = %s::uuid
+            """,
+            (course_group_id,),
+        )
+        row = await cur.fetchone()
+    return int(row[0] if row else 0)
+
+
+async def _reorder_course_within_family(
+    active_conn: Any,
+    *,
+    course_id: str,
+    course_group_id: str,
+    current_position: int,
+    new_position: int,
+) -> None:
+    family_size = await _get_course_family_size(active_conn, course_group_id)
+    if new_position < 0 or new_position >= family_size:
+        raise ValueError("group_position must stay within the current course family")
+    if new_position == current_position:
+        return
+
+    async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+        await cur.execute(
+            """
+            update app.courses
+               set group_position = case
+                 when id = %(course_id)s::uuid then %(new_position)s
+                 when %(new_position)s < %(current_position)s
+                      and group_position between %(new_position)s and %(current_position)s - 1
+                   then group_position + 1
+                 when %(new_position)s > %(current_position)s
+                      and group_position between %(current_position)s + 1 and %(new_position)s
+                   then group_position - 1
+                 else group_position
+               end
+             where course_group_id = %(course_group_id)s::uuid
+               and (
+                 id = %(course_id)s::uuid
+                 or (
+                   %(new_position)s < %(current_position)s
+                   and group_position between %(new_position)s and %(current_position)s - 1
+                 )
+                 or (
+                   %(new_position)s > %(current_position)s
+                   and group_position between %(current_position)s + 1 and %(new_position)s
+                 )
+               )
+            """,
+            {
+                "course_id": course_id,
+                "course_group_id": course_group_id,
+                "current_position": current_position,
+                "new_position": new_position,
+            },
+        )
+
+
+async def _move_course_to_family_end(
+    active_conn: Any,
+    *,
+    course_id: str,
+    source_course_group_id: str,
+    source_group_position: int,
+    target_course_group_id: str,
+) -> int:
+    target_group_position = await _get_course_family_append_position(
+        active_conn,
+        target_course_group_id,
+    )
+
+    async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+        await cur.execute(
+            """
+            with moved as (
+                update app.courses
+                   set course_group_id = %s::uuid,
+                       group_position = %s
+                 where id = %s::uuid
+                 returning %s::uuid as source_course_group_id,
+                           %s::integer as source_group_position
+            )
+            update app.courses as c
+               set group_position = c.group_position - 1
+              from moved
+             where c.course_group_id = moved.source_course_group_id
+               and c.group_position > moved.source_group_position
+            """,
+            (
+                target_course_group_id,
+                target_group_position,
+                course_id,
+                source_course_group_id,
+                source_group_position,
+            ),
+        )
+
+    return target_group_position
+
+
+async def _apply_course_metadata_patch(
+    active_conn: Any,
+    *,
+    course_id: str,
+    patch: dict[str, Any],
+) -> None:
+    assignments: list[str] = []
+    params: list[Any] = []
+    field_specs = (
+        ("title", "title = %s", lambda value: value),
+        ("slug", "slug = %s", lambda value: value),
+        (
+            "required_enrollment_source",
+            "required_enrollment_source = %s::app.course_enrollment_source",
+            lambda value: str(value) if value is not None else None,
+        ),
+        ("price_amount_cents", "price_amount_cents = %s", lambda value: value),
+        ("drip_enabled", "drip_enabled = %s", lambda value: value),
+        ("drip_interval_days", "drip_interval_days = %s", lambda value: value),
+        (
+            "cover_media_id",
+            "cover_media_id = %s::uuid",
+            lambda value: str(value) if value else None,
+        ),
+    )
+    for key, sql, serializer in field_specs:
+        if key not in patch:
+            continue
+        assignments.append(sql)
+        params.append(serializer(patch[key]))
+
+    if not assignments:
+        return
+
+    params.append(course_id)
+    query = f"""
+        update app.courses
+        set {", ".join(assignments)}
+        where id = %s::uuid
+    """
+    async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+        await cur.execute(query, params)
+
+
 def _lesson_columns(include_content: bool) -> str:
     columns = [
         "l.id",
@@ -386,6 +616,8 @@ async def get_public_course_detail_rows(
 
 async def create_course(payload: dict[str, Any]) -> CourseRow:
     course_id = str(payload.get("id") or uuid4())
+    course_group_id = str(payload["course_group_id"])
+    requested_group_position = int(payload["group_position"])
     query = """
         insert into app.courses (
             id,
@@ -413,25 +645,34 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
             %s,
             %s::uuid
         )
-        returning id
+            returning id
     """
-    params = (
-        course_id,
-        str(payload["teacher_id"]),
-        payload["title"],
-        payload["slug"],
-        str(payload["course_group_id"]),
-        payload["group_position"],
-        payload.get("required_enrollment_source"),
-        payload.get("price_amount_cents"),
-        payload["drip_enabled"],
-        payload["drip_interval_days"],
-        str(payload["cover_media_id"]) if payload.get("cover_media_id") else None,
-    )
     try:
         async with pool.connection() as conn:  # type: ignore
+            await _acquire_course_family_locks(conn, (course_group_id,))
+            append_group_position = await _get_course_family_append_position(
+                conn,
+                course_group_id,
+            )
+            if requested_group_position != append_group_position:
+                raise ValueError("group_position must append to the course family")
             async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-                await cur.execute(query, params)
+                await cur.execute(
+                    query,
+                    (
+                        course_id,
+                        str(payload["teacher_id"]),
+                        payload["title"],
+                        payload["slug"],
+                        course_group_id,
+                        append_group_position,
+                        payload.get("required_enrollment_source"),
+                        payload.get("price_amount_cents"),
+                        payload["drip_enabled"],
+                        payload["drip_interval_days"],
+                        str(payload["cover_media_id"]) if payload.get("cover_media_id") else None,
+                    ),
+                )
                 await cur.fetchone()
                 await conn.commit()
         row = await get_course(course_id=course_id)
@@ -449,47 +690,104 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
 
 
 async def update_course(course_id: str, patch: dict[str, Any]) -> CourseRow | None:
-    assignments: list[str] = []
-    params: list[Any] = []
-    field_specs = (
-        ("title", "title = %s", lambda value: value),
-        ("slug", "slug = %s", lambda value: value),
-        ("course_group_id", "course_group_id = %s::uuid", lambda value: str(value)),
-        ("group_position", "group_position = %s", lambda value: int(value)),
-        (
-            "required_enrollment_source",
-            "required_enrollment_source = %s::app.course_enrollment_source",
-            lambda value: str(value) if value is not None else None,
-        ),
-        ("price_amount_cents", "price_amount_cents = %s", lambda value: value),
-        ("drip_enabled", "drip_enabled = %s", lambda value: value),
-        ("drip_interval_days", "drip_interval_days = %s", lambda value: value),
-        ("cover_media_id", "cover_media_id = %s::uuid", lambda value: str(value) if value else None),
-    )
-    for key, sql, serializer in field_specs:
-        if key not in patch:
-            continue
-        assignments.append(sql)
-        params.append(serializer(patch[key]))
-
-    if not assignments:
-        return await get_course(course_id=course_id)
-
-    params.append(course_id)
-    query = f"""
-        update app.courses
-        set {", ".join(assignments)}
-        where id = %s::uuid
-        returning id
-    """
     async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, params)
-            row = await cur.fetchone()
+        await _acquire_course_transition_lock(
+            conn,
+            scope="course",
+            key=course_id,
+        )
+        current_row = await _get_course_transition_row(conn, course_id)
+        if current_row is None:
+            return None
+
+        requested_course_group_id = (
+            str(patch["course_group_id"])
+            if "course_group_id" in patch and patch["course_group_id"] is not None
+            else None
+        )
+        requested_group_position = (
+            int(patch["group_position"])
+            if "group_position" in patch and patch["group_position"] is not None
+            else None
+        )
+        target_course_group_id = requested_course_group_id or str(
+            current_row["course_group_id"]
+        )
+
+        if "course_group_id" in patch or "group_position" in patch:
+            await _acquire_course_family_locks(
+                conn,
+                (
+                    str(current_row["course_group_id"]),
+                    target_course_group_id,
+                ),
+            )
+
+        locked_row = await _get_course_transition_row(
+            conn,
+            course_id,
+            for_update=True,
+        )
+        if locked_row is None:
+            return None
+
+        current_course_group_id = str(locked_row["course_group_id"])
+        current_group_position = int(locked_row["group_position"])
+        transition_applied = False
+
+        if target_course_group_id != current_course_group_id:
+            append_group_position = await _get_course_family_append_position(
+                conn,
+                target_course_group_id,
+            )
+            if (
+                requested_group_position is not None
+                and requested_group_position != append_group_position
+            ):
+                raise ValueError(
+                    "group_position must append to the target course family"
+                )
+            await _move_course_to_family_end(
+                conn,
+                course_id=course_id,
+                source_course_group_id=current_course_group_id,
+                source_group_position=current_group_position,
+                target_course_group_id=target_course_group_id,
+            )
+            transition_applied = True
+        elif (
+            requested_group_position is not None
+            and requested_group_position != current_group_position
+        ):
+            await _reorder_course_within_family(
+                conn,
+                course_id=course_id,
+                course_group_id=current_course_group_id,
+                current_position=current_group_position,
+                new_position=requested_group_position,
+            )
+            transition_applied = True
+
+        metadata_patch = {
+            key: value
+            for key, value in patch.items()
+            if key not in {"course_group_id", "group_position"}
+        }
+        await _apply_course_metadata_patch(
+            conn,
+            course_id=course_id,
+            patch=metadata_patch,
+        )
+
+        if transition_applied or metadata_patch:
             await conn.commit()
+        else:
+            await conn.rollback()
+
+    row = await get_course(course_id=course_id)
     if row is None:
         return None
-    return await get_course(course_id=course_id)
+    return row
 
 
 async def update_course_stripe_mapping(
@@ -602,13 +900,43 @@ async def update_course_sellability(
 
 
 async def delete_course(course_id: str) -> bool:
-    query = "delete from app.courses where id = %s::uuid"
     async with pool.connection() as conn:  # type: ignore
+        await _acquire_course_transition_lock(
+            conn,
+            scope="course",
+            key=course_id,
+        )
+        current_row = await _get_course_transition_row(conn, course_id)
+        if current_row is None:
+            return False
+
+        await _acquire_course_family_locks(
+            conn,
+            (str(current_row["course_group_id"]),),
+        )
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, (course_id,))
-            deleted = cur.rowcount > 0
-            await conn.commit()
-    return deleted
+            await cur.execute(
+                """
+                with deleted as (
+                    delete from app.courses
+                    where id = %s::uuid
+                    returning course_group_id, group_position
+                ),
+                shifted as (
+                    update app.courses as c
+                       set group_position = c.group_position - 1
+                      from deleted
+                     where c.course_group_id = deleted.course_group_id
+                       and c.group_position > deleted.group_position
+                    returning c.id
+                )
+                select exists(select 1 from deleted)
+                """,
+                (course_id,),
+            )
+            row = await cur.fetchone()
+        await conn.commit()
+    return bool(row[0]) if row else False
 
 
 async def is_course_owner(course_id: str, teacher_id: str) -> bool:
