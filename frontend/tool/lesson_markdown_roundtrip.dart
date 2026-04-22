@@ -1,10 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:aveli/editor/adapter/editor_to_markdown.dart'
-    as editor_to_markdown;
-import 'package:aveli/editor/adapter/markdown_to_editor.dart'
-    as markdown_to_editor;
+import 'package:aveli/editor/adapter/lesson_markdown_validation.dart'
+    as lesson_markdown_validation;
 
 String roundTripLessonMarkdownPayload(String input) {
   if (input.trim().isEmpty) {
@@ -34,16 +32,16 @@ String roundTripLessonMarkdownPayload(String input) {
     final markdown = '${item['markdown'] ?? ''}';
 
     try {
-      final document = markdown_to_editor.markdownToEditorDocument(
-        markdown: markdown,
-      );
-      final canonical = editor_to_markdown.editorDeltaToCanonicalMarkdown(
-        delta: document.toDelta(),
-      );
+      final roundTrip = lesson_markdown_validation
+          .roundTripLessonMarkdownForValidation(markdown: markdown);
+      final canonical = roundTrip.canonicalMarkdown;
       results.add(<String, Object?>{
         'lesson_id': lessonId,
         'canonical_markdown': canonical,
-        'plain_text': document.toPlainText(),
+        'input_comparison_markdown': lesson_markdown_validation
+            .normalizeLessonMarkdownForValidationComparison(markdown),
+        'canonical_comparison_markdown': roundTrip.comparisonMarkdown,
+        'plain_text': roundTrip.document.toPlainText(),
         'error': null,
       });
     } catch (error, stackTrace) {

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -15,10 +14,6 @@ _FRONTEND_DIR = _BACKEND_DIR.parent / "frontend"
 _ROUNDTRIP_HARNESS = _FRONTEND_DIR / "tool" / "lesson_markdown_roundtrip_harness_test.dart"
 _ROUNDTRIP_TEST_NAME = "lesson markdown roundtrip harness"
 _ROUNDTRIP_TIMEOUT_SECONDS = 30.0
-
-_HEADING_BLANK_LINES_PATTERN = re.compile(r"(?m)^(#{1,6}[^\n]*)\n{2,}(?=\S)")
-_LIST_BLANK_LINES_PATTERN = re.compile(r"\n{2,}(?=(?:[-*+] |\d+\. ))")
-_NON_EMPHASIS_ESCAPE_PATTERN = re.compile(r"\\([!().\-\[\]])")
 
 
 def _clean_subprocess_output(value: str | None) -> str | None:
@@ -53,39 +48,30 @@ class LessonMarkdownValidationResult:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class LessonMarkdownRoundTripResult:
+    canonical_markdown: str
+    input_comparison_markdown: str
+    canonical_comparison_markdown: str
+    plain_text: str | None
+
+
 def validate_lesson_markdown(markdown: str) -> LessonMarkdownValidationResult:
     return _validate_lesson_markdown_cached(str(markdown or ""))
 
 
 @lru_cache(maxsize=256)
 def _validate_lesson_markdown_cached(markdown: str) -> LessonMarkdownValidationResult:
-    canonical_markdown = _normalize_roundtrip_markdown(_run_roundtrip(markdown))
-    ok = _normalize_markdown_for_comparison(
-        markdown,
-    ) == _normalize_markdown_for_comparison(canonical_markdown)
+    roundtrip = _run_roundtrip(markdown)
+    ok = roundtrip.input_comparison_markdown == roundtrip.canonical_comparison_markdown
     return LessonMarkdownValidationResult(
         ok=ok,
-        canonical_markdown=canonical_markdown,
+        canonical_markdown=roundtrip.canonical_comparison_markdown,
         failure_reason=None if ok else "markdownRoundTripMismatch",
     )
 
 
-def _normalize_markdown_for_comparison(markdown: str) -> str:
-    normalized = markdown.replace("\r\n", "\n").replace("\r", "\n")
-    normalized = "\n".join(line.rstrip() for line in normalized.split("\n"))
-    normalized = _normalize_roundtrip_markdown(normalized)
-    normalized = normalized.rstrip("\n")
-    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
-    normalized = _HEADING_BLANK_LINES_PATTERN.sub(r"\1\n", normalized)
-    normalized = _LIST_BLANK_LINES_PATTERN.sub("\n", normalized)
-    return normalized
-
-
-def _normalize_roundtrip_markdown(markdown: str) -> str:
-    return _NON_EMPHASIS_ESCAPE_PATTERN.sub(r"\1", markdown)
-
-
-def _run_roundtrip(markdown: str) -> str:
+def _run_roundtrip(markdown: str) -> LessonMarkdownRoundTripResult:
     executable = shutil.which("flutter")
     if not executable:
         raise LessonMarkdownValidationRuntimeError(
@@ -226,7 +212,31 @@ def _run_roundtrip(markdown: str) -> str:
                 stdout_output=completed.stdout,
                 stderr_output=completed.stderr,
             )
-        return str(canonical_markdown)
+        input_comparison_markdown = result.get("input_comparison_markdown")
+        if input_comparison_markdown is None:
+            raise LessonMarkdownValidationRuntimeError(
+                "Lesson markdown round-trip helper returned no input comparison markdown",
+                reason="subprocess_error",
+                subprocess_error="missing_input_comparison_markdown",
+                stdout_output=completed.stdout,
+                stderr_output=completed.stderr,
+            )
+        canonical_comparison_markdown = result.get("canonical_comparison_markdown")
+        if canonical_comparison_markdown is None:
+            raise LessonMarkdownValidationRuntimeError(
+                "Lesson markdown round-trip helper returned no canonical comparison markdown",
+                reason="subprocess_error",
+                subprocess_error="missing_canonical_comparison_markdown",
+                stdout_output=completed.stdout,
+                stderr_output=completed.stderr,
+            )
+        plain_text = result.get("plain_text")
+        return LessonMarkdownRoundTripResult(
+            canonical_markdown=str(canonical_markdown),
+            input_comparison_markdown=str(input_comparison_markdown),
+            canonical_comparison_markdown=str(canonical_comparison_markdown),
+            plain_text=None if plain_text is None else str(plain_text),
+        )
     finally:
         input_path.unlink(missing_ok=True)
         output_path.unlink(missing_ok=True)
