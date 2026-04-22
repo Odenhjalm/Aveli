@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from psycopg import sql
 
 from backend.bootstrap import baseline_v2_cutover
 
@@ -63,3 +64,48 @@ def test_cutover_main_requires_release_command(monkeypatch) -> None:
         match="release-command-only",
     ):
         baseline_v2_cutover._assert_release_machine()
+
+
+def test_list_existing_app_tables_never_sends_percent_i_placeholders(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_fetchall(conn, query: str, params: tuple = ()) -> list[tuple[str, str]]:
+        captured["query"] = query
+        captured["params"] = params
+        return [("app", "courses"), ("app", "course_families")]
+
+    monkeypatch.setattr(baseline_v2_cutover.baseline_v2, "_fetchall", _fake_fetchall)
+
+    tables = baseline_v2_cutover._list_existing_app_tables(conn=object())
+
+    assert tables == ["app.courses", "app.course_families"]
+    assert "%I" not in str(captured["query"])
+    assert captured["params"] == ()
+
+
+def test_qualified_table_count_uses_psycopg_composable_sql() -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeCursor:
+        def execute(self, query, params=None) -> None:
+            captured["query"] = query
+            captured["params"] = params
+
+        def fetchone(self):
+            return (7,)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConnection:
+        def cursor(self):
+            return _FakeCursor()
+
+    count = baseline_v2_cutover._qualified_table_count(_FakeConnection(), "app.course_families")
+
+    assert count == 7
+    assert isinstance(captured["query"], sql.Composed)
+    assert captured["params"] is None

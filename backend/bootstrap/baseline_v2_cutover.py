@@ -178,7 +178,7 @@ def _list_existing_app_tables(conn) -> list[str]:
     rows = baseline_v2._fetchall(
         conn,
         """
-        select format('%I.%I', n.nspname, c.relname)
+        select n.nspname, c.relname
           from pg_class c
           join pg_namespace n on n.oid = c.relnamespace
          where n.nspname = 'app'
@@ -186,7 +186,7 @@ def _list_existing_app_tables(conn) -> list[str]:
          order by 1
         """,
     )
-    return [str(row[0]) for row in rows]
+    return [f"{row[0]}.{row[1]}" for row in rows]
 
 
 def _qualified_table_count(conn, relation: str) -> int:
