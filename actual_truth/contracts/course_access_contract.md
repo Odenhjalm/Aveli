@@ -47,7 +47,10 @@ No purchase flow may bypass that order/payment trail and create course access as
 - If `app.courses.required_enrollment_source` is `null`, protected course access fails closed.
 - `sellable`, `price_amount_cents`, `group_position`, Stripe state, order state, payment state, and frontend state MUST NOT classify protected course access.
 - `/courses/{course_id}/access` MUST expose backend-authored `can_access`.
+- `/courses/{course_id}/access` MUST expose backend-authored `next_unlock_at` as a learner-safe derived timestamp or `null`.
+- `next_unlock_at` must be computed only from canonical backend scheduling authority and MUST NOT expose custom-drip rows, offsets, mode flags, or any frontend-reconstructed schedule.
 - Frontend course gates MUST use backend-authored `can_access` and MUST NOT infer protected course access from enrollment presence, checkout success, order state, payment state, or Stripe state.
+- Frontend learner timing UX MUST use backend-authored `next_unlock_at` and MUST NOT reconstruct drip timing from legacy intervals, custom rows, or authored schedule structures.
 
 ## 5. FORBIDDEN PATTERNS
 

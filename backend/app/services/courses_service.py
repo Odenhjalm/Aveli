@@ -1628,6 +1628,73 @@ async def create_course_family(
     return dict(row)
 
 
+async def rename_course_family(
+    course_family_id: str,
+    *,
+    name: str,
+    teacher_id: str | None = None,
+) -> dict[str, Any] | None:
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise PermissionError("Course family owner required")
+    normalized_course_family_id = str(course_family_id or "").strip()
+    if not normalized_course_family_id:
+        raise ValueError("course_family_id is required")
+    normalized_name = str(name or "").strip()
+    if not normalized_name:
+        raise ValueError("name is required")
+
+    existing_family = await courses_repo.get_course_family(normalized_course_family_id)
+    if existing_family is None:
+        return None
+    if str(existing_family["teacher_id"]) != normalized_teacher_id:
+        raise PermissionError("Not course family owner")
+
+    row = await courses_repo.update_course_family_name(
+        normalized_course_family_id,
+        teacher_id=normalized_teacher_id,
+        name=normalized_name,
+    )
+    return dict(row) if row else None
+
+
+async def delete_course_family(
+    course_family_id: str,
+    *,
+    teacher_id: str | None = None,
+) -> bool:
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise PermissionError("Course family owner required")
+    normalized_course_family_id = str(course_family_id or "").strip()
+    if not normalized_course_family_id:
+        raise ValueError("course_family_id is required")
+
+    existing_family = await courses_repo.get_course_family(normalized_course_family_id)
+    if existing_family is None:
+        return False
+    if str(existing_family["teacher_id"]) != normalized_teacher_id:
+        raise PermissionError("Not course family owner")
+
+    course_count = await courses_repo.count_courses_in_family(normalized_course_family_id)
+    if course_count > 0:
+        raise ValueError("course family must be empty before deletion")
+
+    deleted = await courses_repo.delete_course_family(
+        normalized_course_family_id,
+        teacher_id=normalized_teacher_id,
+    )
+    if deleted:
+        return True
+
+    remaining_course_count = await courses_repo.count_courses_in_family(
+        normalized_course_family_id
+    )
+    if remaining_course_count > 0:
+        raise ValueError("course family must be empty before deletion")
+    return False
+
+
 async def reorder_course_within_family(
     course_id: str,
     *,
@@ -2253,12 +2320,23 @@ async def get_course_enrollment(user_id: str, course_id: str) -> dict[str, Any] 
     return await courses_repo.get_course_enrollment(str(user_id), str(course_id))
 
 
+def _canonical_course_enrollment_payload(
+    enrollment: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if enrollment is None:
+        return None
+    normalized = dict(enrollment)
+    normalized.pop("next_unlock_at", None)
+    return normalized
+
+
 def _canonical_course_state_payload(
     *,
     course: Mapping[str, Any],
     enrollment: Mapping[str, Any] | None,
     required_enrollment_source: str | None,
     can_access: bool,
+    next_unlock_at: Any | None,
 ) -> dict[str, Any]:
     access_model = build_course_access_model(course)
     return {
@@ -2268,7 +2346,8 @@ def _canonical_course_state_payload(
         "enrollable": bool(access_model["enrollable"]),
         "purchasable": bool(access_model["purchasable"]),
         "can_access": bool(can_access),
-        "enrollment": dict(enrollment) if enrollment is not None else None,
+        "next_unlock_at": next_unlock_at if can_access else None,
+        "enrollment": _canonical_course_enrollment_payload(enrollment),
     }
 
 
@@ -2287,11 +2366,13 @@ async def read_canonical_course_access(user_id: str, course_id: str) -> dict[str
         and str(enrollment.get("source") or "").strip().lower()
         == required_enrollment_source
     )
+    next_unlock_at = enrollment.get("next_unlock_at") if enrollment is not None else None
     return {
         "course": course,
-        "enrollment": enrollment,
+        "enrollment": _canonical_course_enrollment_payload(enrollment),
         "required_enrollment_source": required_enrollment_source,
         "can_access": bool(source_matches),
+        "next_unlock_at": next_unlock_at if source_matches else None,
     }
 
 
@@ -2307,6 +2388,7 @@ async def read_canonical_course_state(
         enrollment=access["enrollment"],
         required_enrollment_source=access["required_enrollment_source"],
         can_access=access["can_access"],
+        next_unlock_at=access["next_unlock_at"],
     )
 
 
@@ -2382,4 +2464,5 @@ async def create_intro_course_enrollment(
         enrollment=enrollment,
         required_enrollment_source="intro_enrollment",
         can_access=True,
+        next_unlock_at=enrollment.get("next_unlock_at"),
     )

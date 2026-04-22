@@ -293,6 +293,66 @@ async def create_course_family(
     return dict(row)
 
 
+async def update_course_family_name(
+    course_family_id: str,
+    *,
+    teacher_id: str,
+    name: str,
+) -> dict[str, Any] | None:
+    query = """
+        update app.course_families as f
+           set name = %s
+         where f.id = %s::uuid
+           and f.teacher_id = %s::uuid
+        returning f.id::text as id,
+                  f.name,
+                  f.teacher_id::text as teacher_id,
+                  f.created_at,
+                  (
+                    select count(*)::integer
+                    from app.courses as c
+                    where c.course_group_id = f.id
+                  ) as course_count
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (name, course_family_id, teacher_id))
+            row = await cur.fetchone()
+        await conn.commit()
+    return dict(row) if row else None
+
+
+async def count_courses_in_family(course_family_id: str) -> int:
+    async with pool.connection() as conn:  # type: ignore
+        return await _get_course_family_size(conn, course_family_id)
+
+
+async def delete_course_family(course_family_id: str, *, teacher_id: str) -> bool:
+    async with pool.connection() as conn:  # type: ignore
+        await _acquire_course_family_locks(conn, (course_family_id,))
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                with deleted as (
+                    delete from app.course_families as f
+                    where f.id = %s::uuid
+                      and f.teacher_id = %s::uuid
+                      and not exists (
+                          select 1
+                          from app.courses as c
+                          where c.course_group_id = f.id
+                      )
+                    returning f.id
+                )
+                select exists(select 1 from deleted)
+                """,
+                (course_family_id, teacher_id),
+            )
+            row = await cur.fetchone()
+        await conn.commit()
+    return bool(row[0]) if row else False
+
+
 async def _reorder_course_within_family(
     active_conn: Any,
     *,
@@ -1203,7 +1263,12 @@ async def get_course_enrollment(
             ce.source::text as source,
             ce.granted_at,
             ce.drip_started_at,
-            ce.current_unlock_position
+            ce.current_unlock_position,
+            app.compute_course_next_unlock_at(
+                ce.course_id,
+                ce.drip_started_at,
+                ce.current_unlock_position
+            ) as next_unlock_at
         from app.course_enrollments as ce
         where ce.user_id = %s
           and ce.course_id = %s
@@ -2132,7 +2197,12 @@ async def create_course_enrollment(
             ce.source::text as source,
             ce.granted_at,
             ce.drip_started_at,
-            ce.current_unlock_position
+            ce.current_unlock_position,
+            app.compute_course_next_unlock_at(
+                ce.course_id,
+                ce.drip_started_at,
+                ce.current_unlock_position
+            ) as next_unlock_at
         from app.canonical_create_course_enrollment(
             %s::uuid,
             %s::uuid,

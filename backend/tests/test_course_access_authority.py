@@ -33,8 +33,13 @@ def _course(
     }
 
 
-def _enrollment(*, source: str, position: int = 1) -> dict[str, object]:
-    return {
+def _enrollment(
+    *,
+    source: str,
+    position: int = 1,
+    next_unlock_at: str | None = None,
+) -> dict[str, object]:
+    enrollment = {
         "id": "enrollment-1",
         "user_id": "user-1",
         "course_id": "course-paid",
@@ -43,6 +48,9 @@ def _enrollment(*, source: str, position: int = 1) -> dict[str, object]:
         "drip_started_at": "2026-01-01T00:00:00Z",
         "current_unlock_position": position,
     }
+    if next_unlock_at is not None:
+        enrollment["next_unlock_at"] = next_unlock_at
+    return enrollment
 
 
 def test_course_required_source_uses_required_enrollment_source_only() -> None:
@@ -178,6 +186,36 @@ async def test_canonical_course_access_allows_paid_only_with_purchase_enrollment
     assert access["can_access"] is True
 
 
+async def test_canonical_course_access_projects_next_unlock_at_for_matching_source(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(course_id or "course-paid")
+
+    async def _fake_get_enrollment(user_id: str, course_id: str):
+        del user_id, course_id
+        return _enrollment(
+            source="purchase",
+            next_unlock_at="2026-01-08T00:00:00Z",
+        )
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service,
+        "get_course_enrollment",
+        _fake_get_enrollment,
+        raising=True,
+    )
+
+    access = await courses_service.read_canonical_course_access("user-1", "course-paid")
+
+    assert access["can_access"] is True
+    assert access["next_unlock_at"] == "2026-01-08T00:00:00Z"
+    assert access["enrollment"] is not None
+    assert "next_unlock_at" not in access["enrollment"]
+
+
 async def test_canonical_course_access_denies_wrong_enrollment_source(
     monkeypatch,
 ) -> None:
@@ -202,6 +240,36 @@ async def test_canonical_course_access_denies_wrong_enrollment_source(
     assert access["required_enrollment_source"] == "purchase"
     assert access["enrollment"]["source"] == "intro_enrollment"
     assert access["can_access"] is False
+
+
+async def test_canonical_course_access_hides_next_unlock_at_for_wrong_source(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(course_id or "course-paid")
+
+    async def _fake_get_enrollment(user_id: str, course_id: str):
+        del user_id, course_id
+        return _enrollment(
+            source="intro_enrollment",
+            next_unlock_at="2026-01-08T00:00:00Z",
+        )
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service,
+        "get_course_enrollment",
+        _fake_get_enrollment,
+        raising=True,
+    )
+
+    access = await courses_service.read_canonical_course_access("user-1", "course-paid")
+
+    assert access["can_access"] is False
+    assert access["next_unlock_at"] is None
+    assert access["enrollment"] is not None
+    assert "next_unlock_at" not in access["enrollment"]
 
 
 async def test_canonical_course_access_denies_intro_course_with_purchase_enrollment(
@@ -391,6 +459,7 @@ async def test_course_access_route_projects_backend_can_access(monkeypatch) -> N
             "enrollable": False,
             "purchasable": True,
             "can_access": False,
+            "next_unlock_at": None,
             "enrollment": {
                 "id": "99999999-9999-9999-9999-999999999999",
                 "user_id": "88888888-8888-8888-8888-888888888888",
@@ -415,8 +484,50 @@ async def test_course_access_route_projects_backend_can_access(monkeypatch) -> N
     )
 
     assert response.can_access is False
+    assert response.next_unlock_at is None
     assert response.enrollment is not None
     assert response.enrollment.source == "intro_enrollment"
+
+
+async def test_course_access_route_projects_backend_next_unlock_at(monkeypatch) -> None:
+    course_id = UUID("77777777-7777-7777-7777-777777777777")
+
+    async def _fake_read_course_state_or_404(*, user_id: str, course_id: str):
+        assert user_id == "88888888-8888-8888-8888-888888888888"
+        return {
+            "course_id": course_id,
+            "group_position": 0,
+            "required_enrollment_source": "intro_enrollment",
+            "enrollable": True,
+            "purchasable": False,
+            "can_access": True,
+            "next_unlock_at": "2026-01-08T00:00:00Z",
+            "enrollment": {
+                "id": "99999999-9999-9999-9999-999999999999",
+                "user_id": "88888888-8888-8888-8888-888888888888",
+                "course_id": course_id,
+                "source": "intro_enrollment",
+                "granted_at": "2026-01-01T00:00:00Z",
+                "drip_started_at": "2026-01-01T00:00:00Z",
+                "current_unlock_position": 1,
+            },
+        }
+
+    monkeypatch.setattr(
+        course_routes,
+        "_read_course_state_or_404",
+        _fake_read_course_state_or_404,
+        raising=True,
+    )
+
+    response = await course_routes.course_access(
+        course_id,
+        {"id": UUID("88888888-8888-8888-8888-888888888888")},
+    )
+
+    assert response.can_access is True
+    assert response.next_unlock_at is not None
+    assert response.next_unlock_at.isoformat() == "2026-01-08T00:00:00+00:00"
 
 
 async def test_missing_required_source_fails_closed_even_when_priced_or_sellable(

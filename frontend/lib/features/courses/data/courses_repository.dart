@@ -129,6 +129,17 @@ DateTime _requireDateTime(Object? value, String fieldName) {
   return DateTime.parse(raw);
 }
 
+DateTime? _optionalDateTime(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    case final String raw:
+      return DateTime.parse(raw);
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
 int _requireGroupPosition(Object? value, String fieldName) {
   final position = _requireInt(value, fieldName);
   if (position < 0) {
@@ -351,6 +362,7 @@ class CourseAccessData {
     required this.purchasable,
     required this.canAccess,
     required this.enrollment,
+    this.nextUnlockAt,
   });
 
   final String courseId;
@@ -360,6 +372,7 @@ class CourseAccessData {
   final bool purchasable;
   final bool canAccess;
   final CourseEnrollmentRecord? enrollment;
+  final DateTime? nextUnlockAt;
 
   factory CourseAccessData.fromResponse(Object? payload) {
     _rejectLegacyCourseProgressionFields(payload, 'course_access');
@@ -388,6 +401,10 @@ class CourseAccessData {
       canAccess: _requireBool(
         _requiredField(payload, 'can_access'),
         'can_access',
+      ),
+      nextUnlockAt: _optionalDateTime(
+        _requiredField(payload, 'next_unlock_at'),
+        'next_unlock_at',
       ),
       enrollment: enrollmentPayload == null
           ? null

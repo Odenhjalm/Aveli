@@ -121,6 +121,7 @@ def _course_access_response(payload: dict) -> schemas.CourseAccessStateResponse:
         enrollable=payload["enrollable"],
         purchasable=payload["purchasable"],
         can_access=payload["can_access"],
+        next_unlock_at=payload.get("next_unlock_at"),
         enrollment=(
             schemas.CourseEnrollmentRecord(**enrollment)
             if enrollment is not None

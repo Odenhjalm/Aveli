@@ -184,9 +184,13 @@ void main() {
 
   group('CoursesRepository.fetchCourseState', () {
     test('maps canonical enrollment-backed access state', () async {
+      const nextUnlockAt = '2024-01-17T12:00:00Z';
       final adapter = _RecordingAdapter((options) {
         if (options.path == '/courses/course-1/access') {
-          return _jsonResponse(statusCode: 200, body: _accessPayload());
+          return _jsonResponse(
+            statusCode: 200,
+            body: _accessPayload(nextUnlockAt: nextUnlockAt),
+          );
         }
         return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
       });
@@ -200,6 +204,7 @@ void main() {
       expect(state.enrollable, isFalse);
       expect(state.purchasable, isTrue);
       expect(state.canAccess, isTrue);
+      expect(state.nextUnlockAt, DateTime.parse(nextUnlockAt));
       expect(state.enrollment!.source, 'purchase');
       expect(state.enrollment!.currentUnlockPosition, 1);
       expect(adapter.requestsFor('/courses/course-1/access'), hasLength(1));
@@ -458,6 +463,7 @@ Map<String, Object?> _accessPayload({
   bool enrollable = false,
   bool purchasable = true,
   bool canAccess = true,
+  String? nextUnlockAt,
   Map<String, Object?> extra = const {},
 }) {
   return {
@@ -467,6 +473,7 @@ Map<String, Object?> _accessPayload({
     'enrollable': enrollable,
     'purchasable': purchasable,
     'can_access': canAccess,
+    'next_unlock_at': nextUnlockAt,
     'enrollment': enrollment,
     ...extra,
   };

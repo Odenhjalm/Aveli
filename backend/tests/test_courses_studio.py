@@ -750,3 +750,107 @@ async def test_studio_course_family_transition_endpoints_are_canonical(async_cli
             )
         await cleanup_course_families(teacher_id)
         await cleanup_user(teacher_id)
+
+
+async def test_studio_course_family_rename_and_empty_delete_are_canonical(
+    async_client,
+):
+    teacher_email = f"family_manage_teacher_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+    teacher_token, _, teacher_id = await register_user(
+        async_client,
+        teacher_email,
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+
+    created_course_ids: list[str] = []
+
+    async def _create_course(*, title: str, slug: str, course_group_id: str) -> dict:
+        response = await async_client.post(
+            "/studio/courses",
+            headers=auth_header(teacher_token),
+            json={
+                "title": title,
+                "slug": slug,
+                "course_group_id": course_group_id,
+                "price_amount_cents": None,
+                "drip_enabled": False,
+                "drip_interval_days": None,
+            },
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        created_course_ids.append(str(body["id"]))
+        return body
+
+    try:
+        occupied_family = await create_course_family(
+            async_client,
+            token=teacher_token,
+            name="Occupied Family",
+        )
+        empty_family = await create_course_family(
+            async_client,
+            token=teacher_token,
+            name="Empty Family",
+        )
+
+        await _create_course(
+            title="Occupied Course",
+            slug=f"occupied-{uuid.uuid4().hex[:8]}",
+            course_group_id=str(occupied_family["id"]),
+        )
+
+        renamed = await async_client.patch(
+            f"/studio/course-families/{occupied_family['id']}",
+            headers=auth_header(teacher_token),
+            json={"name": "Renamed Family"},
+        )
+        assert renamed.status_code == 200, renamed.text
+        renamed_body = renamed.json()
+        assert renamed_body["id"] == occupied_family["id"]
+        assert renamed_body["name"] == "Renamed Family"
+        assert renamed_body["course_count"] == 1
+
+        blocked_delete = await async_client.delete(
+            f"/studio/course-families/{occupied_family['id']}",
+            headers=auth_header(teacher_token),
+        )
+        assert blocked_delete.status_code == 422, blocked_delete.text
+        assert blocked_delete.json()["detail"] == (
+            "course family must be empty before deletion"
+        )
+
+        deleted = await async_client.delete(
+            f"/studio/course-families/{empty_family['id']}",
+            headers=auth_header(teacher_token),
+        )
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json() == {"deleted": True}
+
+        listed_after = await async_client.get(
+            "/studio/course-families",
+            headers=auth_header(teacher_token),
+        )
+        assert listed_after.status_code == 200, listed_after.text
+        assert listed_after.json() == {
+            "items": [
+                {
+                    "id": occupied_family["id"],
+                    "name": "Renamed Family",
+                    "teacher_id": teacher_id,
+                    "created_at": occupied_family["created_at"],
+                    "course_count": 1,
+                }
+            ]
+        }
+    finally:
+        for course_id in reversed(created_course_ids):
+            await async_client.delete(
+                f"/studio/courses/{course_id}",
+                headers=auth_header(teacher_token),
+            )
+        await cleanup_course_families(teacher_id)
+        await cleanup_user(teacher_id)

@@ -13,6 +13,7 @@ import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/courses/presentation/learner_course_visibility.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
@@ -56,7 +57,7 @@ class _LessonPageState extends ConsumerState<LessonPage> {
 
   Future<void> _updateProgress(LessonDetailData data) async {
     final courseId = data.courseId;
-    final visibleLessons = _visibleCourseLessons(data.lessons);
+    final visibleLessons = visibleLearnerLessons(data.lessons);
     if (visibleLessons.isEmpty) return;
     final index = visibleLessons.indexWhere((l) => l.id == data.lesson.id);
     if (index < 0) return;
@@ -148,12 +149,18 @@ class _LessonContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lesson = detail.lesson;
+    final courseStateAsync = ref.watch(courseStateProvider(detail.courseId));
+    final visibility = LearnerCourseVisibility.fromState(
+      lessons: detail.lessons,
+      courseState: courseStateAsync.valueOrNull,
+      now: DateTime.now().toUtc(),
+    );
     final screenWidth = MediaQuery.of(context).size.width;
     final safeScreenWidth = screenWidth.isFinite && screenWidth > 0
         ? screenWidth
         : 1200.0;
     final contentWidth = (safeScreenWidth - 32).clamp(720.0, 1200.0).toDouble();
-    final courseLessons = _visibleCourseLessons(detail.lessons);
+    final courseLessons = visibility.lessons;
     LessonSummary? previous;
     LessonSummary? next;
     if (courseLessons.isNotEmpty) {
@@ -207,13 +214,37 @@ class _LessonContent extends ConsumerWidget {
                   onPressed: () {
                     final nxt = next;
                     if (nxt == null) return;
+                    if (courseStateAsync.isLoading ||
+                        courseStateAsync.hasError ||
+                        courseStateAsync.valueOrNull == null) {
+                      _showLessonActionError(
+                        context,
+                        'Kunde inte kontrollera nästa lektion just nu.',
+                      );
+                      return;
+                    }
+                    if (visibility.isLessonLocked(nxt)) {
+                      _showLessonActionError(
+                        context,
+                        visibility.lockedLessonMessage(nxt),
+                      );
+                      return;
+                    }
                     context.goNamed(
                       AppRoute.lesson,
                       pathParameters: {'id': nxt.id},
                     );
                   },
-                  icon: const Icon(Icons.chevron_right_rounded),
-                  label: const Text('Nästa'),
+                  icon: Icon(
+                    next != null && visibility.isLessonLocked(next)
+                        ? Icons.lock_outline_rounded
+                        : Icons.chevron_right_rounded,
+                  ),
+                  label: Text(
+                    next != null && visibility.isLessonLocked(next)
+                        ? 'Låst'
+                        : 'Nästa',
+                  ),
                 ),
               ),
             ],
@@ -291,18 +322,6 @@ class _LessonEmptyContentState extends StatelessWidget {
       ),
     );
   }
-}
-
-List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
-  final visible = lessons
-      .where(
-        (lesson) =>
-            lesson.lessonTitle.isNotEmpty &&
-            !lesson.lessonTitle.startsWith('_'),
-      )
-      .toList(growable: false);
-  visible.sort((a, b) => a.position.compareTo(b.position));
-  return visible;
 }
 
 bool _isAllowedTrailingLessonMediaType(LessonMediaItem item) {

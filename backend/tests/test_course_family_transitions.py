@@ -210,6 +210,112 @@ async def test_create_course_family_exists_without_courses() -> None:
         await _cleanup_teacher(teacher_id)
 
 
+async def test_rename_course_family_updates_canonical_name() -> None:
+    teacher_id = str(uuid4())
+
+    await _ensure_teacher(teacher_id)
+    try:
+        family = await _create_course_family(
+            teacher_id=teacher_id,
+            name="Original Family",
+        )
+
+        renamed = await courses_service.rename_course_family(
+            str(family["id"]),
+            name="Renamed Family",
+            teacher_id=teacher_id,
+        )
+
+        assert renamed is not None
+        assert str(renamed["id"]) == str(family["id"])
+        assert str(renamed["name"]) == "Renamed Family"
+        listed = await courses_service.list_course_families(teacher_id=teacher_id)
+        assert [str(item["name"]) for item in listed] == ["Renamed Family"]
+    finally:
+        await _cleanup_course_families(teacher_id)
+        await _cleanup_teacher(teacher_id)
+
+
+async def test_rename_course_family_requires_owner() -> None:
+    owner_teacher_id = str(uuid4())
+    other_teacher_id = str(uuid4())
+
+    await _ensure_teacher(owner_teacher_id)
+    await _ensure_teacher(other_teacher_id)
+    try:
+        family = await _create_course_family(
+            teacher_id=owner_teacher_id,
+            name="Owner Family",
+        )
+
+        with pytest.raises(PermissionError, match="Not course family owner"):
+            await courses_service.rename_course_family(
+                str(family["id"]),
+                name="Hijacked Family",
+                teacher_id=other_teacher_id,
+            )
+    finally:
+        await _cleanup_course_families(owner_teacher_id)
+        await _cleanup_course_families(other_teacher_id)
+        await _cleanup_teacher(owner_teacher_id)
+        await _cleanup_teacher(other_teacher_id)
+
+
+async def test_delete_course_family_requires_empty_family() -> None:
+    teacher_id = str(uuid4())
+    created_ids: list[str] = []
+
+    await _ensure_teacher(teacher_id)
+    try:
+        family = await _create_course_family(
+            teacher_id=teacher_id,
+            name="Non-empty Family",
+        )
+        family_id = str(family["id"])
+        course = await _create_course(
+            teacher_id=teacher_id,
+            course_group_id=family_id,
+            slug=f"non-empty-{uuid4().hex[:8]}",
+        )
+        created_ids.append(str(course["id"]))
+
+        with pytest.raises(ValueError, match="must be empty before deletion"):
+            await courses_service.delete_course_family(
+                family_id,
+                teacher_id=teacher_id,
+            )
+
+        listed = await courses_service.list_course_families(teacher_id=teacher_id)
+        assert [str(item["id"]) for item in listed] == [family_id]
+        assert [int(item["course_count"]) for item in listed] == [1]
+    finally:
+        await _cleanup_courses(created_ids)
+        await _cleanup_course_families(teacher_id)
+        await _cleanup_teacher(teacher_id)
+
+
+async def test_delete_course_family_removes_empty_family() -> None:
+    teacher_id = str(uuid4())
+
+    await _ensure_teacher(teacher_id)
+    try:
+        family = await _create_course_family(
+            teacher_id=teacher_id,
+            name="Disposable Family",
+        )
+
+        deleted = await courses_service.delete_course_family(
+            str(family["id"]),
+            teacher_id=teacher_id,
+        )
+
+        assert deleted is True
+        assert await courses_service.list_course_families(teacher_id=teacher_id) == []
+    finally:
+        await _cleanup_course_families(teacher_id)
+        await _cleanup_teacher(teacher_id)
+
+
 async def test_reorder_course_within_family_is_transactional() -> None:
     teacher_id = str(uuid4())
     created_ids: list[str] = []

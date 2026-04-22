@@ -251,6 +251,24 @@ class StudioRepository {
     );
   }
 
+  Future<CourseFamilyStudio> renameCourseFamily(
+    String courseFamilyId, {
+    required String name,
+  }) async {
+    final response = await _client.raw.patch<Object?>(
+      '/studio/course-families/$courseFamilyId',
+      data: <String, Object?>{'name': name},
+    );
+    return CourseFamilyStudio.fromResponse(
+      response.data,
+      label: 'Renamed studio course family',
+    );
+  }
+
+  Future<void> deleteCourseFamily(String courseFamilyId) async {
+    await _client.delete('/studio/course-families/$courseFamilyId');
+  }
+
   Future<CourseStudio> createCourse({
     required String title,
     required String slug,

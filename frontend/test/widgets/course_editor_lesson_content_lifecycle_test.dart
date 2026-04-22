@@ -971,6 +971,153 @@ void main() {
   });
 
   testWidgets(
+    'course family rename uses canonical endpoint and refreshes family state',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      var renamed = false;
+      _stubBaseStudioData(
+        repo,
+        course: _course,
+        courses: const <CourseStudio>[
+          _course,
+          _familyLeadCourse,
+          _otherFamilyCourse,
+        ],
+      );
+      when(() => repo.myCourseFamilies()).thenAnswer((_) async {
+        return <CourseFamilyStudio>[
+          _family(
+            id: 'course-group-1',
+            name: renamed ? 'Tarot Journey' : 'Tarot Foundations',
+            courseCount: 2,
+          ),
+          _family(
+            id: 'course-group-2',
+            name: 'Breathwork Flow',
+            courseCount: 1,
+          ),
+        ];
+      });
+      when(
+        () => repo.renameCourseFamily('course-group-1', name: 'Tarot Journey'),
+      ).thenAnswer((_) async {
+        renamed = true;
+        return _family(
+          id: 'course-group-1',
+          name: 'Tarot Journey',
+          courseCount: 2,
+        );
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Current Family: Tarot Foundations');
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('course_family_rename_button')),
+      );
+      await tester.pumpAndSettle();
+
+      final dialog = find.byType(AlertDialog);
+      final dialogFields = find.descendant(
+        of: dialog,
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(dialogFields.first, 'Tarot Journey');
+      await tester.tap(find.text('Spara namn'));
+      await tester.pumpAndSettle();
+      await _pumpUntilTextFound(tester, 'Current Family: Tarot Journey');
+
+      verify(
+        () => repo.renameCourseFamily('course-group-1', name: 'Tarot Journey'),
+      ).called(1);
+    },
+  );
+
+  testWidgets(
+    'course family delete is blocked for non-empty family and enabled for empty family',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      var deleted = false;
+      _stubBaseStudioData(
+        repo,
+        course: _course,
+        courses: const <CourseStudio>[
+          _course,
+          _familyLeadCourse,
+          _otherFamilyCourse,
+        ],
+      );
+      when(() => repo.myCourseFamilies()).thenAnswer((_) async {
+        return <CourseFamilyStudio>[
+          _family(
+            id: 'course-group-1',
+            name: 'Tarot Foundations',
+            courseCount: 2,
+          ),
+          _family(
+            id: 'course-group-2',
+            name: 'Breathwork Flow',
+            courseCount: 1,
+          ),
+          if (!deleted)
+            _family(
+              id: 'course-group-empty',
+              name: 'Silent Space',
+              courseCount: 0,
+            ),
+        ];
+      });
+      when(() => repo.deleteCourseFamily('course-group-empty')).thenAnswer((
+        _,
+      ) async {
+        deleted = true;
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Current Family: Tarot Foundations');
+
+      final deleteButtonFinder = find.byKey(
+        const ValueKey<String>('course_family_delete_button'),
+      );
+      expect(
+        tester.widget<OutlinedButton>(deleteButtonFinder).onPressed,
+        isNull,
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('course_family_manage_target-course-group-1'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Silent Space · 0 kurser').last);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<OutlinedButton>(deleteButtonFinder).onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(deleteButtonFinder);
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog);
+      await tester.tap(
+        find.descendant(of: dialog, matching: find.text('Ta bort')).last,
+      );
+      await tester.pumpAndSettle();
+
+      verify(() => repo.deleteCourseFamily('course-group-empty')).called(1);
+      expect(find.textContaining('Silent Space'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'course family card is topmost and never renders raw course_group_id text',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 1000));
@@ -1113,7 +1260,9 @@ void main() {
       await _pumpCourseEditor(tester, repo: repo);
       await _pumpUntilTextFound(tester, 'Course Family');
 
-      await tester.tap(find.text('Skapa kurs'));
+      final createCourseButton = find.text('Skapa kurs');
+      await tester.ensureVisible(createCourseButton);
+      await tester.tap(createCourseButton);
       await tester.pumpAndSettle();
       final dialog = find.byType(AlertDialog);
       final dialogFields = find.descendant(
@@ -1545,7 +1694,7 @@ void main() {
   });
 
   testWidgets(
-    'course schedule mode switches use only the drip-authoring endpoint',
+    'course schedule mode switches persist immediately via the drip-authoring endpoint',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1572,13 +1721,20 @@ void main() {
         payloads.add(nextPayload);
         final mode = nextPayload['mode'] as String;
         if (mode == 'custom_lesson_offsets') {
+          final customSchedule = Map<String, Object?>.from(
+            nextPayload['custom_schedule'] as Map,
+          );
+          final rows = (customSchedule['rows'] as List<Object?>)
+              .map((row) => Map<String, Object?>.from(row as Map))
+              .map(
+                (row) => CustomScheduleRow(
+                  lessonId: row['lesson_id']! as String,
+                  unlockOffsetDays: row['unlock_offset_days']! as int,
+                ),
+              )
+              .toList(growable: false);
           currentCourse = currentCourse.copyWith(
-            dripAuthoring: DripAuthoring.custom(
-              rows: const [
-                CustomScheduleRow(lessonId: 'lesson-1', unlockOffsetDays: 0),
-                CustomScheduleRow(lessonId: 'lesson-2', unlockOffsetDays: 4),
-              ],
-            ),
+            dripAuthoring: DripAuthoring.custom(rows: rows),
           );
         } else if (mode == 'legacy_uniform_drip') {
           final legacyUniform = Map<String, Object?>.from(
@@ -1608,10 +1764,17 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Anpassat schema').last);
       await tester.pumpAndSettle();
-      expect(
-        find.text('Anpassat schema ersätter fast intervall för kursen.'),
-        findsOneWidget,
-      );
+
+      expect(payloads, hasLength(1));
+      expect(payloads.first, {
+        'mode': 'custom_lesson_offsets',
+        'custom_schedule': {
+          'rows': [
+            {'lesson_id': 'lesson-1', 'unlock_offset_days': 0},
+            {'lesson_id': 'lesson-2', 'unlock_offset_days': 0},
+          ],
+        },
+      });
 
       final secondOffsetField = find.byKey(
         const ValueKey<String>('course-custom-offset-lesson-2'),
@@ -1626,6 +1789,17 @@ void main() {
       await tester.tap(scheduleSaveButton);
       await tester.pumpAndSettle();
 
+      expect(payloads, hasLength(2));
+      expect(payloads[1], {
+        'mode': 'custom_lesson_offsets',
+        'custom_schedule': {
+          'rows': [
+            {'lesson_id': 'lesson-1', 'unlock_offset_days': 0},
+            {'lesson_id': 'lesson-2', 'unlock_offset_days': 4},
+          ],
+        },
+      });
+
       final customModeDropdown = find.byKey(
         const ValueKey<String>('course-drip-mode-custom_lesson_offsets'),
       );
@@ -1634,6 +1808,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Fast intervall').last);
       await tester.pumpAndSettle();
+
+      expect(payloads, hasLength(3));
+      expect(payloads[2], {
+        'mode': 'legacy_uniform_drip',
+        'legacy_uniform': {'drip_interval_days': 7},
+      });
 
       final legacyIntervalField = find.byKey(
         const ValueKey<String>('course-legacy-interval-field'),
@@ -1645,6 +1825,12 @@ void main() {
       await tester.tap(scheduleSaveButton);
       await tester.pumpAndSettle();
 
+      expect(payloads, hasLength(4));
+      expect(payloads[3], {
+        'mode': 'legacy_uniform_drip',
+        'legacy_uniform': {'drip_interval_days': 9},
+      });
+
       final legacyModeDropdownAfterSave = find.byKey(
         const ValueKey<String>('course-drip-mode-legacy_uniform_drip'),
       );
@@ -1654,42 +1840,40 @@ void main() {
       await tester.tap(find.text('Direkt tillgång').last);
       await tester.pumpAndSettle();
       await tester.ensureVisible(scheduleSaveButton);
-      await tester.tap(scheduleSaveButton);
-      await tester.pumpAndSettle();
-
-      final noDripModeDropdown = find.byKey(
-        const ValueKey<String>('course-drip-mode-no_drip_immediate_access'),
-      );
-      await tester.ensureVisible(noDripModeDropdown);
-      await tester.tap(noDripModeDropdown);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Anpassat schema').last);
-      await tester.pumpAndSettle();
-      expect(
-        find.text(
-          'Du anger nu när varje lektion blir tillgänglig i kursens ordning.',
-        ),
-        findsOneWidget,
-      );
-
-      expect(payloads, hasLength(3));
-      expect(payloads[0], {
-        'mode': 'custom_lesson_offsets',
-        'custom_schedule': {
-          'rows': [
-            {'lesson_id': 'lesson-1', 'unlock_offset_days': 0},
-            {'lesson_id': 'lesson-2', 'unlock_offset_days': 4},
-          ],
-        },
-      });
-      expect(payloads[1], {
-        'mode': 'legacy_uniform_drip',
-        'legacy_uniform': {'drip_interval_days': 9},
-      });
-      expect(payloads[2], {'mode': 'no_drip_immediate_access'});
+      expect(payloads, hasLength(5));
+      expect(payloads[4], {'mode': 'no_drip_immediate_access'});
       verifyNever(() => repo.updateCourse('course-1', any()));
     },
   );
+
+  testWidgets('course schedule hides custom mode when no lessons exist', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(repo, lessons: const <LessonStudio>[]);
+
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilTextFound(tester, 'Lektionsschema');
+    await _pumpUntilTextFound(
+      tester,
+      'Lägg till minst en lektion för att använda anpassat schema.',
+    );
+
+    final noDripDropdown = find.byKey(
+      const ValueKey<String>('course-drip-mode-no_drip_immediate_access'),
+    );
+    await tester.ensureVisible(noDripDropdown);
+    await tester.tap(noDripDropdown);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Direkt tillgång'), findsWidgets);
+    expect(find.text('Fast intervall'), findsOneWidget);
+    expect(find.text('Anpassat schema'), findsNothing);
+    verifyNever(() => repo.updateCourseDripAuthoring(any(), any()));
+  });
 
   testWidgets('locked course schedule state disables schedule controls', (
     tester,
@@ -1797,6 +1981,7 @@ void main() {
       await tester.pumpAndSettle();
 
       verify(() => repo.updateCourseDripAuthoring('course-1', any())).called(1);
+      verify(() => repo.fetchCourseMeta('course-1')).called(2);
       verifyNever(() => repo.updateCourse('course-1', any()));
     },
   );
@@ -2064,80 +2249,78 @@ void main() {
     },
   );
 
-  testWidgets(
-    'EOF space then italic tail saves from the course editor page',
-    (tester) async {
-      final repo = _MockStudioRepository();
-      _stubBaseStudioData(
-        repo,
-        readContent: (lessonId) async => _contentRead(
-          lessonId: lessonId,
-          contentMarkdown: 'Plain',
-          etag: '"content-v1"',
-        ),
+  testWidgets('EOF space then italic tail saves from the course editor page', (
+    tester,
+  ) async {
+    final repo = _MockStudioRepository();
+    _stubBaseStudioData(
+      repo,
+      readContent: (lessonId) async => _contentRead(
+        lessonId: lessonId,
+        contentMarkdown: 'Plain',
+        etag: '"content-v1"',
+      ),
+    );
+    when(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: any(named: 'contentMarkdown'),
+        ifMatch: any(named: 'ifMatch'),
+      ),
+    ).thenAnswer((invocation) async {
+      return StudioLessonContentWriteResult(
+        lessonId: 'lesson-1',
+        contentMarkdown: invocation.namedArguments[#contentMarkdown] as String,
+        etag: '"content-v2"',
       );
-      when(
-        () => repo.updateLessonContent(
-          'lesson-1',
-          contentMarkdown: any(named: 'contentMarkdown'),
-          ifMatch: any(named: 'ifMatch'),
-        ),
-      ).thenAnswer((invocation) async {
-        return StudioLessonContentWriteResult(
-          lessonId: 'lesson-1',
-          contentMarkdown:
-              invocation.namedArguments[#contentMarkdown] as String,
-          etag: '"content-v2"',
-        );
-      });
+    });
 
-      await _pumpCourseEditor(tester, repo: repo);
-      await _pumpUntilDocumentContains(tester, 'Plain');
+    await _pumpCourseEditor(tester, repo: repo);
+    await _pumpUntilDocumentContains(tester, 'Plain');
 
-      final document = editor_test_bridge.getDocument();
-      expect(document, isNotNull);
-      editor_test_bridge.setCursor(document!.length - 1);
-      await tester.pumpAndSettle();
+    final document = editor_test_bridge.getDocument();
+    expect(document, isNotNull);
+    editor_test_bridge.setCursor(document!.length - 1);
+    await tester.pumpAndSettle();
 
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(
-          text: 'Plain \n',
-          selection: TextSelection.collapsed(offset: 6),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'Plain \n',
+        selection: TextSelection.collapsed(offset: 6),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
 
-      final italicIcon = find.byIcon(Icons.format_italic).first;
-      await tester.ensureVisible(italicIcon);
-      await tester.tap(italicIcon);
-      await tester.pumpAndSettle();
+    final italicIcon = find.byIcon(Icons.format_italic).first;
+    await tester.ensureVisible(italicIcon);
+    await tester.tap(italicIcon);
+    await tester.pumpAndSettle();
 
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(
-          text: 'Plain Tail\n',
-          selection: TextSelection.collapsed(offset: 10),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'Plain Tail\n',
+        selection: TextSelection.collapsed(offset: 10),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
 
-      final saveButton = find.text('Spara lektionsinnehåll');
-      await tester.ensureVisible(saveButton);
-      await tester.tap(saveButton);
-      await tester.pumpAndSettle();
+    final saveButton = find.text('Spara lektionsinnehåll');
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
 
-      final contentCapture = verify(
-        () => repo.updateLessonContent(
-          'lesson-1',
-          contentMarkdown: captureAny(named: 'contentMarkdown'),
-          ifMatch: '"content-v1"',
-        ),
-      )..called(1);
-      final savedMarkdown = contentCapture.captured.single as String;
-      expect(savedMarkdown, 'Plain *Tail*');
-    },
-  );
+    final contentCapture = verify(
+      () => repo.updateLessonContent(
+        'lesson-1',
+        contentMarkdown: captureAny(named: 'contentMarkdown'),
+        ifMatch: '"content-v1"',
+      ),
+    )..called(1);
+    final savedMarkdown = contentCapture.captured.single as String;
+    expect(savedMarkdown, 'Plain *Tail*');
+  });
 
   testWidgets('malformed lesson markdown is blocked before repository write', (
     tester,

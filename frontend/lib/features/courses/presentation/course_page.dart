@@ -8,6 +8,7 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/courses/presentation/learner_course_visibility.dart';
 import 'package:aveli/features/payments/presentation/paywall_prompt.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -183,20 +184,17 @@ class _CourseContent extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final courseState = courseStateAsync.valueOrNull;
-    final canAccess = courseState?.canAccess == true;
-    final currentUnlockPosition = canAccess
-        ? courseState?.enrollment?.currentUnlockPosition
-        : null;
+    final visibility = LearnerCourseVisibility.fromState(
+      course: course,
+      lessons: detail.lessons,
+      courseState: courseState,
+      now: DateTime.now().toUtc(),
+    );
+    final canAccess = visibility.canAccess;
     final canEnroll =
         !canAccess && (courseState?.enrollable == true || course.enrollable);
-    final lessons = _visibleCourseLessons(detail.lessons);
-    final unlockedLessons = lessons
-        .where(
-          (lesson) =>
-              currentUnlockPosition != null &&
-              lesson.position <= currentUnlockPosition,
-        )
-        .toList(growable: false);
+    final lessons = visibility.lessons;
+    final unlockedLessons = visibility.unlockedLessons;
     final isEnrolling = enrollState.isLoading;
     final enrollError = enrollState.whenOrNull(error: (error, _) => error);
 
@@ -285,10 +283,21 @@ class _CourseContent extends StatelessWidget {
                 const SizedBox(height: 12),
                 if (primaryCta != null)
                   SizedBox(width: double.infinity, child: primaryCta),
-                if (canAccess && currentUnlockPosition != null) ...[
+                if (visibility.isDripSummaryVisible) ...[
                   const SizedBox(height: 8),
-                  Text(
-                    'Upplåsta lektioner: $currentUnlockPosition',
+                  _CourseStatusLine(
+                    icon: Icons.schedule_rounded,
+                    text: 'Kursen sl\u00e4pps stegvis',
+                    style: t.bodySmall,
+                  ),
+                ],
+                if (visibility.showsNextLessonIndicator) ...[
+                  const SizedBox(height: 8),
+                  _CourseStatusLine(
+                    icon: visibility.firstLockedLesson == null
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.timelapse_rounded,
+                    text: visibility.nextLessonIndicatorText!,
                     style: t.bodySmall,
                   ),
                 ],
@@ -316,23 +325,40 @@ class _CourseContent extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ...lessons.map((lesson) {
-                      final isLocked =
-                          !canAccess ||
-                          currentUnlockPosition == null ||
-                          lesson.position > currentUnlockPosition;
-                      return ListTile(
-                        leading: Icon(
-                          isLocked
-                              ? Icons.lock_outline_rounded
-                              : Icons.play_circle_outline_rounded,
+                      final isLocked = visibility.isLessonLocked(lesson);
+                      return Opacity(
+                        opacity: isLocked ? 0.58 : 1,
+                        child: ListTile(
+                          leading: Icon(
+                            isLocked
+                                ? Icons.lock_outline_rounded
+                                : Icons.play_circle_outline_rounded,
+                            color: isLocked ? cs.onSurfaceVariant : cs.primary,
+                          ),
+                          title: Text(
+                            lesson.lessonTitle,
+                            style: isLocked
+                                ? t.titleMedium?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                  )
+                                : null,
+                          ),
+                          subtitle: Text(
+                            visibility.statusLabelFor(lesson),
+                            style: t.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: isLocked
+                                  ? cs.onSurfaceVariant
+                                  : cs.onSurface,
+                            ),
+                          ),
+                          onTap: () => _handleLessonTap(
+                            context,
+                            lesson,
+                            detail,
+                            visibility,
+                          ),
                         ),
-                        title: Text(lesson.lessonTitle),
-                        subtitle: isLocked
-                            ? const Text('Låst innehåll')
-                            : Text('Lektion ${lesson.position}'),
-                        enabled: !isLocked,
-                        onTap: () =>
-                            _handleLessonTap(context, lesson, detail, isLocked),
                       );
                     }),
                   ],
@@ -348,10 +374,15 @@ class _CourseContent extends StatelessWidget {
     BuildContext context,
     LessonSummary lesson,
     CourseDetailData detail,
-    bool isLocked,
+    LearnerCourseVisibility visibility,
   ) {
-    if (!isLocked) {
+    if (!visibility.isLessonLocked(lesson)) {
       onOpenLesson(lesson.id);
+      return;
+    }
+
+    if (visibility.canAccess) {
+      showSnack(context, visibility.lockedLessonMessage(lesson));
       return;
     }
 
@@ -380,14 +411,23 @@ class _CourseContent extends StatelessWidget {
   }
 }
 
-List<LessonSummary> _visibleCourseLessons(List<LessonSummary> lessons) {
-  final visible = lessons
-      .where(
-        (lesson) =>
-            lesson.lessonTitle.isNotEmpty &&
-            !lesson.lessonTitle.trim().startsWith('_'),
-      )
-      .toList(growable: false);
-  visible.sort((a, b) => a.position.compareTo(b.position));
-  return visible;
+class _CourseStatusLine extends StatelessWidget {
+  const _CourseStatusLine({required this.icon, required this.text, this.style});
+
+  final IconData icon;
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: cs.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(child: Text(text, style: style)),
+      ],
+    );
+  }
 }

@@ -1157,6 +1157,7 @@ class CourseAccessStateResponse(BaseModel):
     enrollable: bool
     purchasable: bool
     can_access: bool
+    next_unlock_at: datetime | None = None
     enrollment: CourseEnrollmentRecord | None = None
 
 
@@ -1358,6 +1359,10 @@ class StudioCourseFamilyCreate(BaseModel):
         if not normalized:
             raise ValueError("name must not be blank")
         return normalized
+
+
+class StudioCourseFamilyUpdate(StudioCourseFamilyCreate):
+    pass
 
 
 class StudioCourseUpdate(BaseModel):

@@ -269,6 +269,25 @@ def _advance_enrollment(
     return dict(row)
 
 
+def _next_unlock_at(
+    conn: psycopg.Connection,
+    *,
+    course_id: str,
+    drip_started_at: datetime,
+    current_unlock_position: int,
+) -> datetime | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT app.compute_course_next_unlock_at(%s, %s, %s)
+            """,
+            (course_id, drip_started_at, current_unlock_position),
+        )
+        row = cur.fetchone()
+    assert row is not None
+    return row[0]
+
+
 async def test_enrollment_initialization_uses_required_source_authority():
     with _baseline_v2_connection() as conn:
         _apply_baseline_v2_slots(conn)
@@ -698,6 +717,156 @@ async def test_custom_drip_initialization_unlocks_all_zero_offset_lessons():
         )
 
         assert enrollment["current_unlock_position"] == 2
+
+
+async def test_legacy_drip_next_unlock_projection_matches_worker_schedule():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        user_id = str(uuid4())
+        granted_at = datetime(2026, 1, 1, 9, 30, tzinfo=timezone.utc)
+
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="legacy-next-unlock",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=True,
+            drip_interval_days=7,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=4)
+
+        enrollment = _create_enrollment(
+            conn,
+            enrollment_id=str(uuid4()),
+            user_id=user_id,
+            course_id=course_id,
+            source="intro_enrollment",
+            granted_at=granted_at,
+        )
+
+        assert enrollment["current_unlock_position"] == 1
+        assert _next_unlock_at(
+            conn,
+            course_id=course_id,
+            drip_started_at=enrollment["drip_started_at"],
+            current_unlock_position=enrollment["current_unlock_position"],
+        ) == granted_at + timedelta(days=7)
+
+        advanced = _advance_enrollment(
+            conn,
+            enrollment_id=str(enrollment["id"]),
+            evaluated_at=granted_at + timedelta(days=8),
+        )
+
+        assert advanced["current_unlock_position"] == 2
+        assert _next_unlock_at(
+            conn,
+            course_id=course_id,
+            drip_started_at=advanced["drip_started_at"],
+            current_unlock_position=advanced["current_unlock_position"],
+        ) == granted_at + timedelta(days=14)
+
+
+async def test_custom_drip_next_unlock_projection_matches_canonical_offsets():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        user_id = str(uuid4())
+        granted_at = datetime(2026, 1, 1, 9, 30, tzinfo=timezone.utc)
+
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="custom-next-unlock",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=4)
+        _configure_custom_drip(
+            conn,
+            course_id=course_id,
+            offsets_by_position={1: 0, 2: 2, 3: 7, 4: 14},
+        )
+
+        enrollment = _create_enrollment(
+            conn,
+            enrollment_id=str(uuid4()),
+            user_id=user_id,
+            course_id=course_id,
+            source="intro_enrollment",
+            granted_at=granted_at,
+        )
+
+        assert enrollment["current_unlock_position"] == 1
+        assert _next_unlock_at(
+            conn,
+            course_id=course_id,
+            drip_started_at=enrollment["drip_started_at"],
+            current_unlock_position=enrollment["current_unlock_position"],
+        ) == granted_at + timedelta(days=2)
+
+        advanced = _advance_enrollment(
+            conn,
+            enrollment_id=str(enrollment["id"]),
+            evaluated_at=granted_at + timedelta(days=2),
+        )
+
+        assert advanced["current_unlock_position"] == 2
+        assert _next_unlock_at(
+            conn,
+            course_id=course_id,
+            drip_started_at=advanced["drip_started_at"],
+            current_unlock_position=advanced["current_unlock_position"],
+        ) == granted_at + timedelta(days=7)
+
+
+async def test_no_drip_next_unlock_projection_returns_null():
+    with _baseline_v2_connection() as conn:
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        user_id = str(uuid4())
+        granted_at = datetime(2026, 1, 1, 9, 30, tzinfo=timezone.utc)
+
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="no-drip-next-unlock",
+            group_position=0,
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=False,
+            drip_interval_days=None,
+            sellable=False,
+        )
+        _insert_lessons(conn, course_id, count=3)
+
+        enrollment = _create_enrollment(
+            conn,
+            enrollment_id=str(uuid4()),
+            user_id=user_id,
+            course_id=course_id,
+            source="intro_enrollment",
+            granted_at=granted_at,
+        )
+
+        assert enrollment["current_unlock_position"] == 3
+        assert (
+            _next_unlock_at(
+                conn,
+                course_id=course_id,
+                drip_started_at=enrollment["drip_started_at"],
+                current_unlock_position=enrollment["current_unlock_position"],
+            )
+            is None
+        )
 
 
 async def test_custom_drip_schedule_locks_after_first_enrollment():

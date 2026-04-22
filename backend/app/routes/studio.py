@@ -2002,6 +2002,46 @@ async def create_course_family(
 
 
 @course_lesson_router.patch(
+    "/course-families/{course_family_id}",
+    response_model=schemas.CourseFamily,
+)
+async def rename_course_family(
+    course_family_id: str,
+    payload: schemas.StudioCourseFamilyUpdate,
+    current: TeacherEntryUser,
+):
+    try:
+        row = await courses_service.rename_course_family(
+            course_family_id,
+            name=payload.name,
+            teacher_id=str(current["id"]),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="Course family not found")
+    return row
+
+
+@course_lesson_router.delete("/course-families/{course_family_id}")
+async def delete_course_family(course_family_id: str, current: TeacherEntryUser):
+    try:
+        deleted = await courses_service.delete_course_family(
+            course_family_id,
+            teacher_id=str(current["id"]),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Course family not found")
+    return {"deleted": True}
+
+
+@course_lesson_router.patch(
     "/courses/{course_id}",
     response_model=schemas.StudioCourseDetail,
 )

@@ -206,6 +206,43 @@ void main() {
     });
   });
 
+  test('renameCourseFamily patches canonical family rename payload', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final family = await repo.renameCourseFamily(
+      '88888888-8888-8888-8888-888888888888',
+      name: 'Renamed Family',
+    );
+
+    expect(family.id, '88888888-8888-8888-8888-888888888888');
+    expect(family.name, 'Renamed Family');
+    expect(family.courseCount, 1);
+
+    final requests = harness.adapter.requestsFor(
+      '/studio/course-families/88888888-8888-8888-8888-888888888888',
+    );
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'PATCH');
+    expect(Map<String, dynamic>.from(requests.single.data as Map), {
+      'name': 'Renamed Family',
+    });
+  });
+
+  test('deleteCourseFamily uses canonical family delete route', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    await repo.deleteCourseFamily('12121212-1212-1212-1212-121212121212');
+
+    final requests = harness.adapter.requestsFor(
+      '/studio/course-families/12121212-1212-1212-1212-121212121212',
+    );
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'DELETE');
+    expect(requests.single.data, isNull);
+  });
+
   test('myCourses reads studio drip authoring summary', () async {
     final harness = await _Harness.create();
     final repo = StudioRepository(client: harness.client);
@@ -233,10 +270,7 @@ void main() {
     expect(course.dripAuthoring.mode.apiValue, 'custom_lesson_offsets');
     expect(course.dripAuthoring.customScheduleRows, hasLength(2));
     expect(course.dripAuthoring.customScheduleRows.first.lessonId, 'lesson-1');
-    expect(
-      course.dripAuthoring.customScheduleRows.last.unlockOffsetDays,
-      3,
-    );
+    expect(course.dripAuthoring.customScheduleRows.last.unlockOffsetDays, 3);
   });
 
   test('updateCourse rejects drip authoring patch fields', () async {
@@ -276,10 +310,7 @@ void main() {
     );
 
     expect(course.dripAuthoring.mode.apiValue, 'custom_lesson_offsets');
-    expect(
-      course.dripAuthoring.customScheduleRows.last.unlockOffsetDays,
-      5,
-    );
+    expect(course.dripAuthoring.customScheduleRows.last.unlockOffsetDays, 5);
 
     final requests = harness.adapter.requestsFor(
       '/studio/courses/99999999-9999-9999-9999-999999999999/drip-authoring',
@@ -435,6 +466,25 @@ class _Harness {
             'course_count': 0,
           },
         );
+      }
+      if (options.path ==
+              '/studio/course-families/88888888-8888-8888-8888-888888888888' &&
+          options.method.toUpperCase() == 'PATCH') {
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'id': '88888888-8888-8888-8888-888888888888',
+            'name': 'Renamed Family',
+            'teacher_id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            'created_at': '2026-01-03T00:00:00Z',
+            'course_count': 1,
+          },
+        );
+      }
+      if (options.path ==
+              '/studio/course-families/12121212-1212-1212-1212-121212121212' &&
+          options.method.toUpperCase() == 'DELETE') {
+        return _jsonResponse(statusCode: 200, body: {'deleted': true});
       }
       if (options.path ==
               '/studio/courses/33333333-3333-3333-3333-333333333333/publish' &&
