@@ -29,6 +29,7 @@ abstract class RoutePath {
   static const serviceDetail = '/service/:id';
   static const tarot = '/tarot';
   static const admin = '/admin';
+  static const adminUsers = '/admin/users';
   static const adminMedia = '/admin/media-control';
   static const adminSettings = '/admin/settings';
   static const studio = '/studio';

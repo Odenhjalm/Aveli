@@ -16,6 +16,8 @@ class ApiPaths {
   static const billingCreateSubscription = '/api/billing/create-subscription';
   static const checkoutCreate = '/api/checkout/create';
   static const referralsRedeem = '/referrals/redeem';
+  static const adminSettings = '/admin/settings';
+  static const adminMediaHealth = '/admin/media/health';
 
   static const mediaPreviews = '/api/lesson-media/previews';
   static const profileAvatarInit = '/api/media/profile-avatar/init';

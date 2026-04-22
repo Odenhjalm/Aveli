@@ -8,10 +8,15 @@ class AppImages {
   static const String lessonBackgroundPath =
       'assets/images/bakgrundlektion.png';
   static const String logoPath = 'assets/images/loggo_clea.png';
+  static const String observatoriumBackgroundPath =
+      'assets/images/observatorium_bg.png';
 
   static const AssetImage _background = AssetImage(backgroundPath);
   static const AssetImage _lessonBackground = AssetImage(lessonBackgroundPath);
   static const AssetImage _logo = AssetImage(logoPath);
+  static const AssetImage _observatoriumBackground = AssetImage(
+    observatoriumBackgroundPath,
+  );
 
   /// Background is heavily used and must remain stable in CPU-only SAFE mode.
   /// In SAFE we decode at a smaller size to avoid stalls/timeouts.
@@ -36,5 +41,12 @@ class AppImages {
       return ResizeImage.resizeIfNeeded(512, null, _logo);
     }
     return _logo;
+  }
+
+  static ImageProvider<Object> get observatoriumBackground {
+    if (EffectsPolicyController.isSafe) {
+      return ResizeImage.resizeIfNeeded(960, null, _observatoriumBackground);
+    }
+    return _observatoriumBackground;
   }
 }

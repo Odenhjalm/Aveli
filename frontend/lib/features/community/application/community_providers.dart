@@ -146,6 +146,21 @@ class AdminMetricsState {
   final int loginEvents7d;
   final int activeUsers7d;
 
+  static const empty = AdminMetricsState(
+    totalUsers: 0,
+    totalTeachers: 0,
+    totalCourses: 0,
+    publishedCourses: 0,
+    paidOrdersTotal: 0,
+    paidOrders30d: 0,
+    payingCustomersTotal: 0,
+    payingCustomers30d: 0,
+    revenueTotalCents: 0,
+    revenue30dCents: 0,
+    loginEvents7d: 0,
+    activeUsers7d: 0,
+  );
+
   factory AdminMetricsState.fromJson(Map<String, dynamic>? json) {
     int parseInt(dynamic value) {
       if (value is int) return value;
@@ -242,6 +257,27 @@ class AdminSettingsState {
 
   final AdminMetricsState metrics;
   final List<TeacherPriorityEntry> priorities;
+
+  static const empty = AdminSettingsState(
+    metrics: AdminMetricsState.empty,
+    priorities: <TeacherPriorityEntry>[],
+  );
+
+  factory AdminSettingsState.fromJson(Map<String, dynamic> json) {
+    final rawPriorities = json['priorities'] as List? ?? const <dynamic>[];
+    return AdminSettingsState(
+      metrics: AdminMetricsState.fromJson(
+        json['metrics'] as Map<String, dynamic>?,
+      ),
+      priorities: rawPriorities
+          .whereType<Map>()
+          .map(
+            (item) =>
+                TeacherPriorityEntry.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList(growable: false),
+    );
+  }
 }
 
 final adminDashboardProvider = AutoDisposeFutureProvider<AdminDashboardState>((
@@ -253,23 +289,13 @@ final adminDashboardProvider = AutoDisposeFutureProvider<AdminDashboardState>((
 final adminSettingsProvider = AutoDisposeFutureProvider<AdminSettingsState>((
   ref,
 ) async {
-  return const AdminSettingsState(
-    metrics: AdminMetricsState(
-      totalUsers: 0,
-      totalTeachers: 0,
-      totalCourses: 0,
-      publishedCourses: 0,
-      paidOrdersTotal: 0,
-      paidOrders30d: 0,
-      payingCustomersTotal: 0,
-      payingCustomers30d: 0,
-      revenueTotalCents: 0,
-      revenue30dCents: 0,
-      loginEvents7d: 0,
-      activeUsers7d: 0,
-    ),
-    priorities: <TeacherPriorityEntry>[],
-  );
+  final repo = ref.watch(adminRepositoryProvider);
+  try {
+    final data = await repo.fetchSettings();
+    return AdminSettingsState.fromJson(data);
+  } catch (error, stackTrace) {
+    throw AppFailure.from(error, stackTrace);
+  }
 });
 
 class ProfileViewState {

@@ -16,6 +16,7 @@ import 'package:aveli/features/auth/presentation/new_password_page.dart';
 import 'package:aveli/features/auth/presentation/settings_page.dart';
 import 'package:aveli/features/auth/presentation/signup_page.dart';
 import 'package:aveli/features/auth/presentation/verify_email_page.dart';
+import 'package:aveli/features/admin/presentation/admin_users_page.dart';
 import 'package:aveli/features/community/presentation/admin_page.dart';
 import 'package:aveli/features/community/presentation/admin_settings_page.dart';
 import 'package:aveli/features/community/presentation/community_page.dart';
@@ -454,6 +455,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: RoutePath.admin,
         name: AppRoute.admin,
         builder: (context, state) => const AdminPage(),
+      ),
+      GoRoute(
+        path: RoutePath.adminUsers,
+        name: AppRoute.adminUsers,
+        builder: (context, state) => const AdminUsersPage(),
       ),
       GoRoute(
         path: RoutePath.adminMedia,

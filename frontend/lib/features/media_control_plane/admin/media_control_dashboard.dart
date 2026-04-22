@@ -3,9 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/features/admin/presentation/admin_shell.dart';
 import 'package:aveli/features/media_control_plane/admin/media_control_plane_providers.dart';
-import 'package:aveli/shared/widgets/app_scaffold.dart';
 
 class MediaControlDashboard extends ConsumerWidget {
   const MediaControlDashboard({super.key});
@@ -13,90 +12,98 @@ class MediaControlDashboard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final health = ref.watch(mediaControlPlaneHealthProvider);
-    return health.when(
-      loading: () => AppScaffold(
-        title: 'Media Control Plane',
-        actions: _buildActions(context, ref, isLoading: true),
-        body: const Center(child: CircularProgressIndicator()),
+    final state = health.valueOrNull;
+
+    return AdminShell(
+      activeDestination: AdminShellDestination.mediaControl,
+      title: 'Media Control',
+      subtitle:
+          'Canonical health, capabilities, and operator shortcuts for the media control plane.',
+      statusChipLabel: state == null
+          ? 'Media control sync pending'
+          : _isNominalStatus(state.status)
+          ? 'All systems nominal'
+          : 'Media control needs attention',
+      isNominal: state != null && _isNominalStatus(state.status),
+      headerTrailing: IconButton(
+        tooltip: 'Refresh media control plane',
+        onPressed: () => ref.invalidate(mediaControlPlaneHealthProvider),
+        icon: const Icon(Icons.refresh_rounded, color: Colors.white),
       ),
-      error: (error, _) => AppScaffold(
-        title: 'Media Control Plane',
-        actions: _buildActions(context, ref),
-        body: _ErrorState(
-          message: AppFailure.from(error).message,
-          onRetry: () => ref.invalidate(mediaControlPlaneHealthProvider),
-        ),
-      ),
-      data: (state) => AppScaffold(
-        title: 'Media Control Plane',
-        actions: _buildActions(context, ref),
-        body: RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(mediaControlPlaneHealthProvider);
-            await ref.read(mediaControlPlaneHealthProvider.future);
-          },
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              _HeroCard(state: state),
-              const SizedBox(height: 20),
-              _SectionTitle(
-                icon: Icons.monitor_heart_outlined,
-                title: 'Status',
-                subtitle:
-                    'Backendstatus, åtkomstnivå och kontrollpunkter för adminytan.',
+      childHandlesScrolling: true,
+      child: RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(mediaControlPlaneHealthProvider);
+          await ref.read(mediaControlPlaneHealthProvider.future);
+        },
+        child: health.when(
+          loading: () => _ScrollableBody(
+            child: const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 120),
+                child: CircularProgressIndicator(),
               ),
-              _StatusGrid(state: state),
-              const SizedBox(height: 24),
-              _SectionTitle(
-                icon: Icons.tune_outlined,
-                title: 'Kontroller',
-                subtitle:
-                    'Genvägar till ytor som styr innehåll, åtkomst och drift.',
-              ),
-              ...state.actions.map((action) => _ActionCard(action: action)),
-              const SizedBox(height: 24),
-              _SectionTitle(
-                icon: Icons.layers_outlined,
-                title: 'Aktiva lager',
-                subtitle:
-                    'Det här kontrollplanet håller ihop runtime-referenser, uppladdningar och diagnosflöden.',
-              ),
-              ...state.capabilities.map(
-                (capability) => _CapabilityCard(capability: capability),
-              ),
-              const SizedBox(height: 24),
-            ],
+            ),
+          ),
+          error: (error, _) => _ScrollableBody(
+            child: _ErrorState(
+              message: AppFailure.from(error).message,
+              onRetry: () => ref.invalidate(mediaControlPlaneHealthProvider),
+            ),
+          ),
+          data: (state) => _ScrollableBody(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _HeroCard(state: state),
+                const SizedBox(height: 20),
+                _SectionTitle(
+                  icon: Icons.monitor_heart_outlined,
+                  title: 'Status',
+                  subtitle:
+                      'Backend status, access level, and control-plane health checkpoints.',
+                ),
+                _StatusGrid(state: state),
+                const SizedBox(height: 24),
+                _SectionTitle(
+                  icon: Icons.tune_outlined,
+                  title: 'Controls',
+                  subtitle:
+                      'Shortcuts into the canonical routes that govern runtime state.',
+                ),
+                ...state.actions.map((action) => _ActionCard(action: action)),
+                const SizedBox(height: 24),
+                _SectionTitle(
+                  icon: Icons.layers_outlined,
+                  title: 'Capabilities',
+                  subtitle:
+                      'Runtime layers, upload services, and diagnostics exposed by the media control plane.',
+                ),
+                ...state.capabilities.map(
+                  (capability) => _CapabilityCard(capability: capability),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
 
-  List<Widget> _buildActions(
-    BuildContext context,
-    WidgetRef ref, {
-    bool isLoading = false,
-  }) {
-    return [
-      IconButton(
-        tooltip: 'Admin',
-        onPressed: () => context.goNamed(AppRoute.admin),
-        icon: const Icon(Icons.shield_outlined),
-      ),
-      IconButton(
-        tooltip: 'Admininställningar',
-        onPressed: () => context.goNamed(AppRoute.adminSettings),
-        icon: const Icon(Icons.tune_outlined),
-      ),
-      IconButton(
-        tooltip: 'Uppdatera',
-        onPressed: isLoading
-            ? null
-            : () => ref.invalidate(mediaControlPlaneHealthProvider),
-        icon: const Icon(Icons.refresh_rounded),
-      ),
-    ];
+class _ScrollableBody extends StatelessWidget {
+  const _ScrollableBody({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
+      children: [child],
+    );
   }
 }
 
@@ -110,8 +117,8 @@ class _HeroCard extends StatelessWidget {
     final theme = Theme.of(context);
     final statusColor = _statusColor(theme, state.status);
     final checkedAt = state.checkedAt == null
-        ? 'Ingen kontrolltid rapporterad'
-        : 'Senast kontrollerad ${_formatCheckedAt(state.checkedAt!)}';
+        ? 'No control-plane timestamp reported'
+        : 'Last checked ${_formatCheckedAt(state.checkedAt!)}';
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -162,14 +169,14 @@ class _HeroCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Adminstyrning för mediaflödet',
+                        'Admin control for the media flow',
                         style: theme.textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Den här ytan är låst till adminkonton och samlar status, genvägar och kontrollpunkter för media control plane.',
+                        'This surface is restricted to admins and aggregates status, shortcuts, and diagnostics for the media control plane.',
                         style: theme.textTheme.bodyMedium,
                       ),
                     ],
@@ -184,7 +191,7 @@ class _HeroCard extends StatelessWidget {
               children: [
                 _HeroPill(
                   icon: Icons.verified_user_outlined,
-                  label: 'Åtkomst: ${_prettyLabel(state.access)}',
+                  label: 'Access: ${_prettyLabel(state.access)}',
                 ),
                 _HeroPill(
                   icon: Icons.route_outlined,
@@ -222,25 +229,25 @@ class _StatusGrid extends StatelessWidget {
     final cards = [
       _StatusCardData(
         icon: Icons.security_outlined,
-        label: 'Åtkomst',
+        label: 'Access',
         value: _prettyLabel(state.access),
         accent: statusColor,
       ),
       _StatusCardData(
         icon: Icons.dns_outlined,
-        label: 'Kontrollplan',
+        label: 'Control plane',
         value: _prettyLabel(state.controlPlane),
         accent: Theme.of(context).colorScheme.primary,
       ),
       _StatusCardData(
         icon: Icons.widgets_outlined,
-        label: 'Aktiva lager',
+        label: 'Capabilities',
         value: '${state.capabilities.length}',
         accent: Theme.of(context).colorScheme.secondary,
       ),
       _StatusCardData(
         icon: Icons.touch_app_outlined,
-        label: 'Snabbkontroller',
+        label: 'Shortcuts',
         value: '${state.actions.length}',
         accent: Theme.of(context).colorScheme.tertiary,
       ),
@@ -345,7 +352,7 @@ class _ActionCard extends StatelessWidget {
         subtitle: Text(action.route),
         trailing: FilledButton(
           onPressed: () => context.go(action.route),
-          child: const Text('Öppna'),
+          child: const Text('Open'),
         ),
       ),
     );
@@ -482,7 +489,7 @@ class _ErrorState extends StatelessWidget {
                 const Icon(Icons.error_outline, size: 34),
                 const SizedBox(height: 12),
                 Text(
-                  'Kunde inte ladda Media Control Plane.',
+                  'Unable to load Media Control Plane.',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -494,7 +501,7 @@ class _ErrorState extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onRetry,
                   icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Försök igen'),
+                  label: const Text('Try again'),
                 ),
               ],
             ),
@@ -513,6 +520,11 @@ Color _statusColor(ThemeData theme, String status) {
     default:
       return theme.colorScheme.primary;
   }
+}
+
+bool _isNominalStatus(String status) {
+  final normalized = status.trim().toLowerCase();
+  return normalized == 'ok' || normalized == 'ready';
 }
 
 String _prettyLabel(String value) {

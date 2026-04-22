@@ -31,6 +31,7 @@ abstract class AppRoute {
   static const checkoutHostedCancel = 'checkout-hosted-cancel';
   static const tarot = 'tarot';
   static const admin = 'admin';
+  static const adminUsers = 'admin-users';
   static const adminMedia = 'admin-media';
   static const studio = 'studio';
   static const teacherHome = 'teacher-home';
