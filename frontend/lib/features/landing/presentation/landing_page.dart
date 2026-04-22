@@ -1,4 +1,5 @@
 // lib/ui/pages/landing_page.dart
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 // ignore_for_file: use_build_context_synchronously
@@ -42,7 +43,9 @@ class _LandingPageState extends ConsumerState<LandingPage>
   bool _didPrecache = false;
 
   // Data for sections
-  bool _loading = true;
+  bool _introCoursesLoading = true;
+  bool _teachersLoading = true;
+  bool _servicesLoading = true;
   List<LandingTeacher> _teachers = const <LandingTeacher>[];
   List<LandingService> _services = const <LandingService>[];
   List<CourseSummary> _introCourses = const <CourseSummary>[];
@@ -102,27 +105,63 @@ class _LandingPageState extends ConsumerState<LandingPage>
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final introFuture = ref.read(introCoursesProvider.future);
-      final servicesFuture = ref.read(recentServicesProvider.future);
-      final teachersFuture = ref.read(teachersProvider.future);
+  void _load() {
+    setState(() {
+      _introCoursesLoading = true;
+      _teachersLoading = true;
+      _servicesLoading = true;
+    });
+    unawaited(_loadIntroCourses());
+    unawaited(_loadTeachers());
+    unawaited(_loadServices());
+  }
 
-      final intros = await introFuture;
-      final services = await servicesFuture;
-      final teachers = await teachersFuture;
-      if (!mounted) return;
-      setState(() {
-        _introCourses = intros.items;
-        _services = services.items;
-        _teachers = teachers.items;
-        _loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-    }
+  Future<void> _loadIntroCourses() async {
+    List<CourseSummary>? items;
+    try {
+      final intros = await ref.read(introCoursesProvider.future);
+      items = intros.items;
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      if (items != null) {
+        _introCourses = items;
+      }
+      _introCoursesLoading = false;
+    });
+  }
+
+  Future<void> _loadTeachers() async {
+    List<LandingTeacher>? items;
+    try {
+      final teachers = await ref.read(teachersProvider.future);
+      items = teachers.items;
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      if (items != null) {
+        _teachers = items;
+      }
+      _teachersLoading = false;
+    });
+  }
+
+  Future<void> _loadServices() async {
+    List<LandingService>? items;
+    try {
+      final services = await ref.read(recentServicesProvider.future);
+      items = services.items;
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      if (items != null) {
+        _services = items;
+      }
+      _servicesLoading = false;
+    });
   }
 
   void _openIntroModal() {
@@ -171,7 +210,12 @@ class _LandingPageState extends ConsumerState<LandingPage>
                         ],
                       ),
                       const SizedBox(height: 6),
-                      if (items.isEmpty)
+                      if (_introCoursesLoading)
+                        const SizedBox(
+                          height: 96,
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (items.isEmpty)
                         const Padding(
                           padding: EdgeInsets.all(12),
                           child: Text('Inga introduktionskurser ännu.'),
@@ -424,7 +468,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                       scrollDirection: Axis.horizontal,
                       child: GlassCard(
                         padding: const EdgeInsets.all(12),
-                        child: _loading
+                        child: _teachersLoading
                             ? const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -481,7 +525,7 @@ class _LandingPageState extends ConsumerState<LandingPage>
                     ),
                     const SizedBox(height: 10),
                     GlassCard(
-                      child: _loading
+                      child: _servicesLoading
                           ? const SizedBox(
                               height: 160,
                               child: Center(child: CircularProgressIndicator()),
@@ -884,7 +928,6 @@ class _TeacherCardData extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _ServiceTileGlass extends StatelessWidget {
