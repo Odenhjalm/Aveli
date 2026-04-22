@@ -2322,6 +2322,45 @@ void main() {
     expect(savedMarkdown, 'Plain *Tail*');
   });
 
+  testWidgets(
+    'studio editor hydrates inline document tokens through the owned adapter boundary',
+    (tester) async {
+      const documentId = 'lesson-media-document-1';
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        readContent: (lessonId) async => _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: 'Intro\n\n!document($documentId)\n\nOutro',
+          etag: '"content-v1"',
+          media: const [
+            StudioLessonContentMediaItem(
+              lessonMediaId: documentId,
+              position: 1,
+              mediaType: 'document',
+              state: 'ready',
+              mediaAssetId: 'asset-$documentId',
+            ),
+          ],
+        ),
+      );
+      when(() => repo.fetchLessonMediaPlacements(any())).thenAnswer((
+        invocation,
+      ) async {
+        final ids = List<String>.from(
+          invocation.positionalArguments.single as List,
+        );
+        return [for (final id in ids) _placementDocument(id, position: 1)];
+      });
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilDocumentContains(tester, 'Intro');
+      await _pumpUntilDocumentContains(tester, 'media_$documentId');
+
+      expect(editor_test_bridge.getDocument(), isNot(contains('!document(')));
+      expect(editor_test_bridge.getDocument(), contains('media_$documentId'));
+    },
+  );
+
   testWidgets('malformed lesson markdown is blocked before repository write', (
     tester,
   ) async {

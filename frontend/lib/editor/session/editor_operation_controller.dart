@@ -4,6 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 
+import 'package:aveli/editor/normalization/quill_delta_normalizer.dart'
+    show
+        stripInlineAttributesForLiveNewlineSanitization,
+        styleHasInlineAttributesForLiveNewlineSanitization;
+
 class EditorOperationQuillController extends quill.QuillController {
   EditorOperationQuillController({
     required super.document,
@@ -41,7 +46,9 @@ class EditorOperationQuillController extends quill.QuillController {
 
     final originalCallback = onReplaceText;
     final originalToggledStyle = toggledStyle;
-    final newlineToggledStyle = _stripInlineAttributes(originalToggledStyle);
+    final newlineToggledStyle = stripInlineAttributesForLiveNewlineSanitization(
+      originalToggledStyle,
+    );
     final segments = _splitTextByNewline(data);
     onReplaceText = null;
 
@@ -162,25 +169,7 @@ class EditorOperationQuillController extends quill.QuillController {
     if (!text.contains('\n')) {
       return false;
     }
-    return _retainedInsertionStyle(toggledStyle).isNotEmpty;
-  }
-
-  quill.Style _retainedInsertionStyle(quill.Style style) {
-    return quill.Style.attr(
-      Map<String, quill.Attribute>.fromEntries(
-        style.attributes.entries.where(
-          (entry) => entry.value.scope != quill.AttributeScope.block,
-        ),
-      ),
-    );
-  }
-
-  quill.Style _stripInlineAttributes(quill.Style style) {
-    return quill.Style.attr(
-      Map<String, quill.Attribute>.fromEntries(
-        style.attributes.entries.where((entry) => !entry.value.isInline),
-      ),
-    );
+    return styleHasInlineAttributesForLiveNewlineSanitization(toggledStyle);
   }
 
   List<String> _splitTextByNewline(String text) {

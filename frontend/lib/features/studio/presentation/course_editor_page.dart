@@ -23,7 +23,6 @@ import 'package:aveli/editor/adapter/editor_to_markdown.dart'
 import 'package:aveli/editor/debug/editor_debug.dart';
 import 'package:aveli/editor/debug/editor_debug_overlay.dart';
 import 'package:aveli/editor/guardrails/lesson_markdown_integrity_guard.dart';
-import 'package:aveli/editor/normalization/quill_delta_normalizer.dart';
 import 'package:aveli/editor/adapter/markdown_to_editor.dart'
     as markdown_to_editor;
 import 'package:aveli/editor/session/editor_operation_controller.dart';
@@ -2854,17 +2853,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  String _prepareLessonMarkdownForEditing(String markdown) {
-    return markdown_to_editor.canonicalizeMarkdownForEditor(
-      markdown: markdown,
-      apiFilesPathToStudioMediaUrl: const <String, String>{},
-      lessonMediaDocumentLabelsById:
-          _lessonMediaDocumentLabelsByIdForSelectedLesson(),
-    );
-  }
-
-  quill.Document _documentFromLessonMarkdown(String markdown) {
-    return markdown_to_editor.markdownToEditorDocument(
+  markdown_to_editor.LessonMarkdownHydrationResult
+  _hydrateLessonMarkdownForEditor(String markdown) {
+    return markdown_to_editor.hydrateLessonMarkdownForEditor(
       markdown: markdown,
       apiFilesPathToStudioMediaUrl: const <String, String>{},
       lessonMediaDocumentLabelsById:
@@ -3067,16 +3058,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String _serializeLessonMarkdownFromController(
     quill.QuillController controller,
   ) {
-    final normalizedDelta = _normalizedLessonDeltaFromController(controller);
-    return editor_to_markdown.editorDeltaToCanonicalMarkdown(
-      delta: normalizedDelta,
-    );
-  }
-
-  quill_delta.Delta _normalizedLessonDeltaFromController(
-    quill.QuillController controller,
-  ) {
-    return normalizeDeltaForGuard(controller.document.toDelta());
+    return editor_to_markdown
+        .serializeEditorDeltaToCanonicalMarkdown(
+          delta: controller.document.toDelta(),
+        )
+        .markdown;
   }
 
   Set<String> _embeddedLessonMediaIdsFromController(
@@ -3250,7 +3236,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return;
     }
-    final prepared = _prepareLessonMarkdownForEditing(storedMarkdown);
+    final hydration = _hydrateLessonMarkdownForEditor(storedMarkdown);
     if (!mounted ||
         _isStaleRequest(
           requestId: requestId,
@@ -3260,10 +3246,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         )) {
       return;
     }
-    final initialHydrationIds = lesson_pipeline.extractLessonEmbeddedMediaIds(
-      prepared,
-    );
-    final document = _documentFromLessonMarkdown(prepared);
+    final prepared = hydration.editorMarkdown;
+    final initialHydrationIds = hydration.embeddedMediaIds;
+    final document = hydration.document;
 
     if (kDebugMode) {
       _traceLessonString('load.stored_markdown', storedMarkdown);
@@ -3484,18 +3469,42 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ? 'Lektion'
         : _lessonTitleCtrl.text.trim();
     final uiPlainText = _lessonContentController.document.toPlainText();
-    final normalizedDelta = _normalizedLessonDeltaFromController(
-      _lessonContentController,
-    );
-    late final String markdown;
+    final serialization = editor_to_markdown
+        .serializeEditorDeltaToCanonicalMarkdown(
+          delta: _lessonContentController.document.toDelta(),
+        );
+    final normalizedDelta = serialization.normalizedDelta;
+    final markdown = serialization.markdown;
     late final String rawMarkdown;
     late final LessonMarkdownIntegrityGuardResult integrityResult;
     try {
       integrityResult = validateLessonMarkdownIntegrity(delta: normalizedDelta);
-      markdown = integrityResult.originalMarkdown;
-      rawMarkdown = markdown;
+      rawMarkdown = integrityResult.originalMarkdown;
     } catch (error, stackTrace) {
       _showFriendlyErrorSnack('Kunde inte spara lektion', error, stackTrace);
+      return false;
+    }
+
+    if (integrityResult.ok &&
+        (integrityResult.originalMarkdown != markdown ||
+            integrityResult.canonicalMarkdown != markdown)) {
+      if (kDebugMode) {
+        debugPrint(
+          '[LessonIntegrity] save_blocked reason=adapter_boundary_mismatch',
+        );
+        _traceLessonString('save.boundary.serialization_markdown', markdown);
+        _traceLessonString(
+          'save.guard.original_markdown',
+          integrityResult.originalMarkdown,
+        );
+        _traceLessonString(
+          'save.guard.canonical_markdown',
+          integrityResult.canonicalMarkdown,
+        );
+      }
+      if (mounted && context.mounted) {
+        showSnack(context, _lessonMarkdownIntegritySaveError);
+      }
       return false;
     }
 

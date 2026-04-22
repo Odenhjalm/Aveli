@@ -84,6 +84,30 @@ final RegExp _singleUnderscorePattern = RegExp(
 
 final RegExp _excessParagraphGapPattern = RegExp(r'\n{4,}');
 
+class LessonMarkdownHydrationResult {
+  const LessonMarkdownHydrationResult({
+    required this.canonicalMarkdown,
+    required this.editorMarkdown,
+    required this.embeddedMediaIds,
+    required this.document,
+  });
+
+  final String canonicalMarkdown;
+  final String editorMarkdown;
+  final Set<String> embeddedMediaIds;
+  final quill.Document document;
+}
+
+class _PreparedLessonMarkdownForEditor {
+  const _PreparedLessonMarkdownForEditor({
+    required this.canonicalMarkdown,
+    required this.editorMarkdown,
+  });
+
+  final String canonicalMarkdown;
+  final String editorMarkdown;
+}
+
 md.Document createEditorMarkdownDocument() {
   return md.Document(
     encodeHtml: false,
@@ -206,8 +230,24 @@ String canonicalizeMarkdownForEditor({
   Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
   Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
 }) {
+  return _prepareLessonMarkdownForEditor(
+    markdown: markdown,
+    apiFilesPathToStudioMediaUrl: apiFilesPathToStudioMediaUrl,
+    lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+  ).editorMarkdown;
+}
+
+_PreparedLessonMarkdownForEditor _prepareLessonMarkdownForEditor({
+  required String markdown,
+  Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
+}) {
   if (markdown.trim().isEmpty) {
-    return markdown.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final normalized = markdown.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    return _PreparedLessonMarkdownForEditor(
+      canonicalMarkdown: normalized,
+      editorMarkdown: normalized,
+    );
   }
 
   var canonical = markdown;
@@ -220,11 +260,15 @@ String canonicalizeMarkdownForEditor({
   }
 
   canonical = canonicalizeSupportedMarkdown(canonical);
-  canonical = lesson_pipeline.rewriteLessonMarkdownDocumentLinksForEditor(
-    markdown: canonical,
-    lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+  final editorMarkdown = lesson_pipeline
+      .rewriteLessonMarkdownDocumentLinksForEditor(
+        markdown: canonical,
+        lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+      );
+  return _PreparedLessonMarkdownForEditor(
+    canonicalMarkdown: canonical,
+    editorMarkdown: editorMarkdown,
   );
-  return canonical;
 }
 
 quill_delta.Delta markdownToEditorDelta({
@@ -233,17 +277,27 @@ quill_delta.Delta markdownToEditorDelta({
   Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
   md.Document? markdownDocument,
 }) {
-  final canonical = canonicalizeMarkdownForEditor(
+  final prepared = _prepareLessonMarkdownForEditor(
     markdown: markdown,
     apiFilesPathToStudioMediaUrl: apiFilesPathToStudioMediaUrl,
     lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
   );
+  return _markdownToEditorDeltaFromPreparedMarkdown(
+    prepared.editorMarkdown,
+    markdownDocument: markdownDocument,
+  );
+}
+
+quill_delta.Delta _markdownToEditorDeltaFromPreparedMarkdown(
+  String editorMarkdown, {
+  md.Document? markdownDocument,
+}) {
   final converter = lesson_pipeline.createLessonMarkdownToDelta(
     markdownDocument ?? createEditorMarkdownDocument(),
   );
   final delta = lesson_pipeline.convertLessonMarkdownToDelta(
     converter,
-    canonical,
+    editorMarkdown,
   );
   return _applySupportedInlineHtml(delta);
 }
@@ -321,20 +375,48 @@ quill_delta.Delta _canonicalizeDeltaForQuillDocument(quill_delta.Delta delta) {
   return document.root.toDelta();
 }
 
+quill.Document _documentFromEditorDelta(quill_delta.Delta delta) {
+  if (delta.toList().isEmpty) {
+    return quill.Document();
+  }
+  return quill.Document.fromDelta(_canonicalizeDeltaForQuillDocument(delta));
+}
+
+LessonMarkdownHydrationResult hydrateLessonMarkdownForEditor({
+  required String markdown,
+  Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
+  md.Document? markdownDocument,
+}) {
+  final prepared = _prepareLessonMarkdownForEditor(
+    markdown: markdown,
+    apiFilesPathToStudioMediaUrl: apiFilesPathToStudioMediaUrl,
+    lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+  );
+  final delta = _markdownToEditorDeltaFromPreparedMarkdown(
+    prepared.editorMarkdown,
+    markdownDocument: markdownDocument,
+  );
+  return LessonMarkdownHydrationResult(
+    canonicalMarkdown: prepared.canonicalMarkdown,
+    editorMarkdown: prepared.editorMarkdown,
+    embeddedMediaIds: lesson_pipeline.extractLessonEmbeddedMediaIds(
+      prepared.canonicalMarkdown,
+    ),
+    document: _documentFromEditorDelta(delta),
+  );
+}
+
 quill.Document markdownToEditorDocument({
   required String markdown,
   Map<String, String> apiFilesPathToStudioMediaUrl = const <String, String>{},
   Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
   md.Document? markdownDocument,
 }) {
-  final delta = markdownToEditorDelta(
+  return hydrateLessonMarkdownForEditor(
     markdown: markdown,
     apiFilesPathToStudioMediaUrl: apiFilesPathToStudioMediaUrl,
     lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
     markdownDocument: markdownDocument,
-  );
-  if (delta.toList().isEmpty) {
-    return quill.Document();
-  }
-  return quill.Document.fromDelta(_canonicalizeDeltaForQuillDocument(delta));
+  ).document;
 }

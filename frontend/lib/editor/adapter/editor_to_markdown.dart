@@ -23,6 +23,16 @@ final RegExp _terminalSpaceSeparatedItalicPattern = RegExp(
 );
 const String _canonicalItalicMarkdownDelimiter = '*';
 
+class LessonMarkdownSerializationResult {
+  const LessonMarkdownSerializationResult({
+    required this.normalizedDelta,
+    required this.markdown,
+  });
+
+  final quill_delta.Delta normalizedDelta;
+  final String markdown;
+}
+
 String _stripTerminalDocumentNewline(String markdown) {
   return markdown.replaceFirst(RegExp(r'\n+$'), '');
 }
@@ -242,6 +252,16 @@ String editorDeltaToCanonicalMarkdown({
   required quill_delta.Delta delta,
   bool enforceStorageContract = true,
 }) {
+  return serializeEditorDeltaToCanonicalMarkdown(
+    delta: delta,
+    enforceStorageContract: enforceStorageContract,
+  ).markdown;
+}
+
+LessonMarkdownSerializationResult serializeEditorDeltaToCanonicalMarkdown({
+  required quill_delta.Delta delta,
+  bool enforceStorageContract = true,
+}) {
   // Canonicalize EOF structure before markdown emission so terminal inline
   // styles are attached only to text inserts, never newline sentinels.
   final eofCanonical = normalizeDeltaForGuard(delta);
@@ -257,7 +277,13 @@ String editorDeltaToCanonicalMarkdown({
   if (enforceStorageContract) {
     final markdownWithContract = lesson_pipeline
         .enforceLessonMarkdownStorageContract(markdown);
-    return _stripTerminalDocumentNewline(markdownWithContract);
+    return LessonMarkdownSerializationResult(
+      normalizedDelta: eofCanonical,
+      markdown: _stripTerminalDocumentNewline(markdownWithContract),
+    );
   }
-  return _stripTerminalDocumentNewline(markdown);
+  return LessonMarkdownSerializationResult(
+    normalizedDelta: eofCanonical,
+    markdown: _stripTerminalDocumentNewline(markdown),
+  );
 }

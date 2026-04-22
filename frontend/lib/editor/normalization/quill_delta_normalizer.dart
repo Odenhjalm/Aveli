@@ -1,8 +1,25 @@
 import 'dart:convert';
 
+import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
 
 const Set<String> _blockAttributeKeys = <String>{'header', 'list', 'indent'};
+
+bool styleHasInlineAttributesForLiveNewlineSanitization(quill.Style style) {
+  return style.attributes.values.any(
+    (attribute) => attribute.scope != quill.AttributeScope.block,
+  );
+}
+
+quill.Style stripInlineAttributesForLiveNewlineSanitization(quill.Style style) {
+  return quill.Style.attr(
+    Map<String, quill.Attribute>.fromEntries(
+      style.attributes.entries.where(
+        (entry) => entry.value.scope == quill.AttributeScope.block,
+      ),
+    ),
+  );
+}
 
 quill_delta.Delta normalizeDeltaForGuard(quill_delta.Delta source) {
   final normalizedOperations = <_NormalizedInsertOperation>[];

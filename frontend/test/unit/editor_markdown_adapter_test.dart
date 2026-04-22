@@ -301,20 +301,48 @@ void main() {
       expect(_roundtripMarkdown(markdown), markdown);
     });
 
-    test('document token hydrates to editor link text and saves back canonically', () {
-      const markdown = '!document(media-document-1)';
+    test(
+      'document token hydrates to editor link text and saves back canonically',
+      () {
+        const markdown = '!document(media-document-1)';
 
-      final document = markdown_to_editor.markdownToEditorDocument(
-        markdown: markdown,
-        lessonMediaDocumentLabelsById: const <String, String>{
-          'media-document-1': 'guide.pdf',
-        },
-      );
+        final document = markdown_to_editor.markdownToEditorDocument(
+          markdown: markdown,
+          lessonMediaDocumentLabelsById: const <String, String>{
+            'media-document-1': 'guide.pdf',
+          },
+        );
 
-      expect(document.toPlainText(), contains('guide.pdf'));
-      expect(document.toPlainText(), isNot(contains('!document(')));
-      expect(_roundtripMarkdown(markdown), markdown);
-    });
+        expect(document.toPlainText(), contains('guide.pdf'));
+        expect(document.toPlainText(), isNot(contains('!document(')));
+        expect(_roundtripMarkdown(markdown), markdown);
+      },
+    );
+
+    test(
+      'hydration result preserves canonical embedded ids while materializing editor document links',
+      () {
+        const markdown = 'Intro\n\n!document(media-document-1)\n\nOutro';
+
+        final hydration = markdown_to_editor.hydrateLessonMarkdownForEditor(
+          markdown: markdown,
+          lessonMediaDocumentLabelsById: const <String, String>{
+            'media-document-1': 'guide.pdf',
+          },
+        );
+
+        expect(hydration.canonicalMarkdown, markdown);
+        expect(
+          hydration.editorMarkdown,
+          contains(
+            lesson_pipeline.lessonMediaDocumentLinkUrl('media-document-1'),
+          ),
+        );
+        expect(hydration.embeddedMediaIds, <String>{'media-document-1'});
+        expect(hydration.document.toPlainText(), contains('guide.pdf'));
+        expect(hydration.document.toPlainText(), isNot(contains('!document(')));
+      },
+    );
 
     test(
       'supported bold markdown never appears as literal markers in editor',
@@ -379,21 +407,57 @@ void main() {
       expect(markdown, '!image(media-image-1)');
     });
 
-    test('document links with canonical lesson ids persist as canonical tokens', () {
-      final delta = quill_delta.Delta()
-        ..insert('guide.pdf', {
-          quill.Attribute.link.key: lesson_pipeline.lessonMediaDocumentLinkUrl(
-            'media-document-1',
-          ),
-        })
-        ..insert('\n');
+    test(
+      'document links with canonical lesson ids persist as canonical tokens',
+      () {
+        final delta = quill_delta.Delta()
+          ..insert('guide.pdf', {
+            quill.Attribute.link.key: lesson_pipeline
+                .lessonMediaDocumentLinkUrl('media-document-1'),
+          })
+          ..insert('\n');
 
-      final markdown = editor_to_markdown.editorDeltaToCanonicalMarkdown(
-        delta: delta,
-      );
+        final markdown = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+          delta: delta,
+        );
 
-      expect(markdown, '!document(media-document-1)');
-    });
+        expect(markdown, '!document(media-document-1)');
+      },
+    );
+
+    test(
+      'serialization result returns normalized delta for guarded studio save flow',
+      () {
+        final delta = quill_delta.Delta()
+          ..insert('Heading3')
+          ..insert('\n', {quill.Attribute.header.key: 3})
+          ..insert('Bold', {quill.Attribute.bold.key: true})
+          ..insert(' ')
+          ..insert('Italic\n', {quill.Attribute.italic.key: true});
+
+        final serialization = editor_to_markdown
+            .serializeEditorDeltaToCanonicalMarkdown(delta: delta);
+
+        expect(serialization.markdown, '### Heading3\n**Bold** *Italic*');
+        expect(serialization.normalizedDelta.toJson(), <Object?>[
+          <String, Object?>{'insert': 'Heading3'},
+          <String, Object?>{
+            'insert': '\n',
+            'attributes': <String, Object?>{'header': 3},
+          },
+          <String, Object?>{
+            'insert': 'Bold',
+            'attributes': <String, Object?>{'bold': true},
+          },
+          <String, Object?>{'insert': ' '},
+          <String, Object?>{
+            'insert': 'Italic',
+            'attributes': <String, Object?>{'italic': true},
+          },
+          <String, Object?>{'insert': '\n'},
+        ]);
+      },
+    );
 
     test('underline persists as canonical html before persistence', () {
       final delta = quill_delta.Delta()
