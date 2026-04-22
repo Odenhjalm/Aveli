@@ -20,7 +20,6 @@ void main() {
         title: 'Client draft',
         slug: 'client-draft',
         courseGroupId: '11111111-1111-1111-1111-111111111111',
-        groupPosition: 0,
         priceAmountCents: 49000,
         dripEnabled: false,
         dripIntervalDays: null,

@@ -193,13 +193,11 @@ class StudioRepository {
     required String title,
     required String slug,
     required String courseGroupId,
-    int? groupPosition,
     required bool dripEnabled,
     required int? dripIntervalDays,
     int? priceAmountCents,
     String? coverMediaId,
   }) async {
-    assert(groupPosition == null || groupPosition >= 0);
     final response = await _client.raw.post<Object?>(
       '/studio/courses',
       data: <String, Object?>{

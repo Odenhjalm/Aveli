@@ -68,6 +68,38 @@ void main() {
       expect(result.canonicalMarkdown, '**Bold *Italic***');
     });
 
+    test('valid formatted content with redundant blank lines passes', () {
+      final result = validateLessonMarkdownIntegrity(
+        delta: quill_delta.Delta()
+          ..insert('Bold', {quill.Attribute.bold.key: true})
+          ..insert(' ')
+          ..insert('Italic', {quill.Attribute.italic.key: true})
+          ..insert('\n')
+          ..insert('\n')
+          ..insert('Body')
+          ..insert('\n'),
+      );
+
+      expect(result.ok, isTrue);
+      expect(result.originalMarkdown, '**Bold** *Italic*\n\n\n\nBody');
+      expect(result.canonicalMarkdown, '**Bold** *Italic*\n\nBody');
+    });
+
+    test('valid block spacing normalization passes', () {
+      final result = validateLessonMarkdownIntegrity(
+        delta: quill_delta.Delta()
+          ..insert('Heading')
+          ..insert('\n', {quill.Attribute.header.key: 2})
+          ..insert('\n')
+          ..insert('Body')
+          ..insert('\n'),
+      );
+
+      expect(result.ok, isTrue);
+      expect(result.originalMarkdown, '## Heading\n\n\nBody');
+      expect(result.canonicalMarkdown, '## Heading\nBody');
+    });
+
     test('malformed spaced emphasis fails closed', () {
       final result = validateLessonMarkdownIntegrity(
         delta: _plainTextDelta('before ** spaced ** after'),

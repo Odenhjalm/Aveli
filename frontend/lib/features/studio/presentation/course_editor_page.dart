@@ -146,18 +146,65 @@ class _CourseCreateInput {
   const _CourseCreateInput({
     required this.title,
     required this.slug,
+    required this.courseGroupId,
     required this.priceAmountCents,
   });
 
   final String title;
   final String slug;
+  final String courseGroupId;
   final int? priceAmountCents;
 }
 
+const String _newCourseFamilySelectionValue = '__new_course_family__';
+
+class _CourseFamilySummary {
+  const _CourseFamilySummary({
+    required this.courseGroupId,
+    required this.courses,
+  });
+
+  final String courseGroupId;
+  final List<CourseStudio> courses;
+
+  CourseStudio get anchorCourse => courses.first;
+}
+
+String _compactCourseGroupId(String courseGroupId) {
+  final normalized = courseGroupId.trim();
+  if (normalized.length <= 8) {
+    return normalized;
+  }
+  return '${normalized.substring(0, 8)}...';
+}
+
+String _courseFamilyDisplayLabel(_CourseFamilySummary family) {
+  final anchorTitle = family.anchorCourse.title.trim();
+  final label = anchorTitle.isEmpty
+      ? 'Familj ${_compactCourseGroupId(family.courseGroupId)}'
+      : anchorTitle;
+  final count = family.courses.length;
+  final noun = count == 1 ? 'kurs' : 'kurser';
+  return '$label ($count $noun)';
+}
+
+Widget _dropdownValueLabel(String text) {
+  return Align(
+    alignment: AlignmentDirectional.centerStart,
+    child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+  );
+}
+
 class _CourseCreateDialog extends StatefulWidget {
-  const _CourseCreateDialog({required this.defaultSlug});
+  const _CourseCreateDialog({
+    required this.defaultSlug,
+    required this.familySummaries,
+    required this.initialCourseGroupId,
+  });
 
   final String defaultSlug;
+  final List<_CourseFamilySummary> familySummaries;
+  final String? initialCourseGroupId;
 
   @override
   State<_CourseCreateDialog> createState() => _CourseCreateDialogState();
@@ -167,7 +214,17 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
   late final TextEditingController _titleController;
   late final TextEditingController _slugController;
   late final TextEditingController _priceController;
+  late String _selectedFamilyValue;
   String? _errorText;
+
+  _CourseFamilySummary? get _selectedFamilySummary {
+    for (final family in widget.familySummaries) {
+      if (family.courseGroupId == _selectedFamilyValue) {
+        return family;
+      }
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -175,6 +232,14 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
     _titleController = TextEditingController(text: 'Ny kurs');
     _slugController = TextEditingController(text: widget.defaultSlug);
     _priceController = TextEditingController();
+    final hasInitialFamily =
+        widget.initialCourseGroupId != null &&
+        widget.familySummaries.any(
+          (family) => family.courseGroupId == widget.initialCourseGroupId,
+        );
+    _selectedFamilyValue = hasInitialFamily
+        ? widget.initialCourseGroupId!
+        : _newCourseFamilySelectionValue;
   }
 
   @override
@@ -192,6 +257,9 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
     final priceAmountCents = rawPriceText.isEmpty
         ? null
         : parseSekInputToOre(rawPriceText);
+    final courseGroupId = _selectedFamilyValue == _newCourseFamilySelectionValue
+        ? const Uuid().v4()
+        : _selectedFamilyValue;
 
     if (title.isEmpty) {
       setState(() => _errorText = 'Titel krävs.');
@@ -214,6 +282,7 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
       _CourseCreateInput(
         title: title,
         slug: slug,
+        courseGroupId: courseGroupId,
         priceAmountCents: priceAmountCents,
       ),
     );
@@ -239,6 +308,44 @@ class _CourseCreateDialogState extends State<_CourseCreateDialog> {
               controller: _slugController,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(labelText: 'Kursadress'),
+            ),
+            gap12,
+            DropdownButtonFormField<String>(
+              key: const ValueKey<String>('course_create_family_target'),
+              isExpanded: true,
+              initialValue: _selectedFamilyValue,
+              decoration: const InputDecoration(labelText: 'Kursfamilj'),
+              selectedItemBuilder: (context) => [
+                for (final family in widget.familySummaries)
+                  _dropdownValueLabel(_courseFamilyDisplayLabel(family)),
+                _dropdownValueLabel('Ny familj'),
+              ],
+              items: [
+                for (final family in widget.familySummaries)
+                  DropdownMenuItem<String>(
+                    value: family.courseGroupId,
+                    child: Text(
+                      _courseFamilyDisplayLabel(family),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                const DropdownMenuItem<String>(
+                  value: _newCourseFamilySelectionValue,
+                  child: Text('Ny familj'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _selectedFamilyValue = value);
+              },
+            ),
+            gap8,
+            Text(
+              _selectedFamilySummary == null
+                  ? 'Kursen skapar en ny familj och blir första kursen i den.'
+                  : 'Kursen placeras sist i ${_courseFamilyDisplayLabel(_selectedFamilySummary!)}.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             gap12,
             TextField(
@@ -498,6 +605,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _savingCourseMeta = false;
   bool _creatingCourse = false;
   bool _publishingCourse = false;
+  bool _updatingCourseFamily = false;
+  String? _moveCourseTargetCourseGroupId;
   String? _courseCoverPath;
   bool _updatingCourseCover = false;
   String? _coverPipelineMediaId;
@@ -1353,6 +1462,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonsLoading = false;
     _mediaLoading = false;
     _lessonsNeedingRefresh.clear();
+    _moveCourseTargetCourseGroupId = null;
     if (clearLists) {
       _lessons = <LessonStudio>[];
       _setSelectedLessonId(null);
@@ -1457,6 +1567,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _allowed = allowed;
         _courses = myCourses;
         _selectedCourseId = selected;
+        _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
+          selectedCourseId: selected,
+          courses: myCourses,
+          currentValue: null,
+        );
         _checking = false;
       });
       if (_selectedCourseId != null) {
@@ -1509,6 +1624,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           : formatSekInputFromOre(priceOre);
       if (mounted) {
         setState(() {
+          _courses = _adoptCourseById(_courses, course);
+          _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
+            selectedCourseId: courseId,
+            currentValue: _moveCourseTargetCourseGroupId,
+          );
           _courseCoverPath = resolvedCoverUrl;
           if (!_updatingCourseCover) {
             _coverPipelineError = coverError;
@@ -1986,6 +2106,107 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       merged.insert(0, course);
     }
     return merged;
+  }
+
+  List<CourseStudio> _sortCoursesWithinFamily(List<CourseStudio> courses) {
+    final sorted = [...courses];
+    sorted.sort((left, right) {
+      final positionCompare = left.groupPosition.compareTo(right.groupPosition);
+      if (positionCompare != 0) {
+        return positionCompare;
+      }
+      final titleCompare = left.title.toLowerCase().compareTo(
+        right.title.toLowerCase(),
+      );
+      if (titleCompare != 0) {
+        return titleCompare;
+      }
+      return left.id.compareTo(right.id);
+    });
+    return sorted;
+  }
+
+  List<_CourseFamilySummary> _courseFamilySummaries([
+    List<CourseStudio>? source,
+  ]) {
+    final grouped = <String, List<CourseStudio>>{};
+    final order = <String>[];
+    for (final course in source ?? _courses) {
+      final courseGroupId = course.courseGroupId.trim();
+      if (courseGroupId.isEmpty) {
+        continue;
+      }
+      final bucket = grouped.putIfAbsent(courseGroupId, () {
+        order.add(courseGroupId);
+        return <CourseStudio>[];
+      });
+      bucket.add(course);
+    }
+    return [
+      for (final courseGroupId in order)
+        _CourseFamilySummary(
+          courseGroupId: courseGroupId,
+          courses: _sortCoursesWithinFamily(grouped[courseGroupId]!),
+        ),
+    ];
+  }
+
+  _CourseFamilySummary? _selectedCourseFamilySummary([
+    List<CourseStudio>? source,
+  ]) {
+    final selectedCourse = _courseById(_selectedCourseId, source);
+    if (selectedCourse == null) {
+      return null;
+    }
+    for (final family in _courseFamilySummaries(source)) {
+      if (family.courseGroupId == selectedCourse.courseGroupId) {
+        return family;
+      }
+    }
+    return null;
+  }
+
+  String _coursePositionSummary(
+    CourseStudio course,
+    _CourseFamilySummary family,
+  ) {
+    return '${course.groupPosition + 1} av ${family.courses.length}';
+  }
+
+  String _defaultCourseFamilyMoveTargetCourseGroupId({
+    required String currentCourseGroupId,
+    List<CourseStudio>? courses,
+  }) {
+    for (final family in _courseFamilySummaries(courses)) {
+      if (family.courseGroupId != currentCourseGroupId) {
+        return family.courseGroupId;
+      }
+    }
+    return _newCourseFamilySelectionValue;
+  }
+
+  String? _courseFamilyMoveTargetForSelection({
+    required String? selectedCourseId,
+    required String? currentValue,
+    List<CourseStudio>? courses,
+  }) {
+    final selectedCourse = _courseById(selectedCourseId, courses);
+    if (selectedCourse == null) {
+      return null;
+    }
+    if (currentValue == _newCourseFamilySelectionValue) {
+      return currentValue;
+    }
+    for (final family in _courseFamilySummaries(courses)) {
+      if (family.courseGroupId == currentValue &&
+          family.courseGroupId != selectedCourse.courseGroupId) {
+        return currentValue;
+      }
+    }
+    return _defaultCourseFamilyMoveTargetCourseGroupId(
+      currentCourseGroupId: selectedCourse.courseGroupId,
+      courses: courses,
+    );
   }
 
   String? _firstCourseId(List<CourseStudio> items) {
@@ -5945,12 +6166,130 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return 'ny-kurs-$suffix';
   }
 
+  void _invalidateCourseReadProviders() {
+    ref.invalidate(myCoursesProvider);
+    ref.invalidate(studioCoursesProvider);
+    ref.invalidate(landing.popularCoursesProvider);
+    ref.invalidate(coursesProvider);
+  }
+
   Future<_CourseCreateInput?> _showCourseCreateDialog() async {
     return showDialog<_CourseCreateInput>(
       context: context,
-      builder: (_) =>
-          _CourseCreateDialog(defaultSlug: _defaultDraftCourseSlug()),
+      builder: (_) => _CourseCreateDialog(
+        defaultSlug: _defaultDraftCourseSlug(),
+        familySummaries: _courseFamilySummaries(),
+        initialCourseGroupId: _selectedCourseFamilySummary()?.courseGroupId,
+      ),
     );
+  }
+
+  Future<CourseStudio?> _refreshSelectedCourseAuthoringState({
+    required String selectedCourseId,
+    bool reloadLessons = false,
+  }) async {
+    final refreshedCourses = await _studioRepo.myCourses();
+    final canonicalCourse = _courseById(selectedCourseId, refreshedCourses);
+    if (!mounted) {
+      return canonicalCourse;
+    }
+    final effectiveSelectedCourseId =
+        canonicalCourse?.id ?? _firstCourseId(refreshedCourses);
+    final nextCourses = canonicalCourse == null
+        ? refreshedCourses
+        : _adoptCourseById(refreshedCourses, canonicalCourse);
+    setState(() {
+      _courses = nextCourses;
+      _selectedCourseId = effectiveSelectedCourseId;
+      _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
+        selectedCourseId: effectiveSelectedCourseId,
+        currentValue: _moveCourseTargetCourseGroupId,
+        courses: nextCourses,
+      );
+    });
+    _invalidateCourseReadProviders();
+    if (effectiveSelectedCourseId != null) {
+      await _loadCourseMeta();
+      if (reloadLessons) {
+        await _loadLessons(preserveSelection: false);
+      }
+    }
+    return canonicalCourse;
+  }
+
+  Future<void> _reorderSelectedCourseWithinFamily(int newPosition) async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
+    final course = _courseById(_selectedCourseId);
+    final family = _selectedCourseFamilySummary();
+    if (course == null || family == null || _updatingCourseFamily) {
+      return;
+    }
+    if (newPosition < 0 || newPosition >= family.courses.length) {
+      return;
+    }
+
+    setState(() => _updatingCourseFamily = true);
+    try {
+      final updated = await _studioRepo.reorderCourseWithinFamily(
+        course.id,
+        groupPosition: newPosition,
+      );
+      await _refreshSelectedCourseAuthoringState(selectedCourseId: updated.id);
+      if (!mounted || !context.mounted) return;
+      showSnack(context, 'Kursordningen uppdaterad.');
+    } catch (error, stackTrace) {
+      _showFriendlyErrorSnack(
+        'Kunde inte uppdatera kursordningen',
+        error,
+        stackTrace,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _updatingCourseFamily = false);
+      }
+    }
+  }
+
+  Future<void> _moveSelectedCourseToFamily() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
+    final course = _courseById(_selectedCourseId);
+    final targetSelection = _moveCourseTargetCourseGroupId;
+    if (course == null || targetSelection == null || _updatingCourseFamily) {
+      return;
+    }
+
+    final targetCourseGroupId =
+        targetSelection == _newCourseFamilySelectionValue
+        ? _uuid.v4()
+        : targetSelection;
+    if (targetCourseGroupId == course.courseGroupId) {
+      return;
+    }
+
+    setState(() => _updatingCourseFamily = true);
+    try {
+      final updated = await _studioRepo.moveCourseToFamily(
+        course.id,
+        courseGroupId: targetCourseGroupId,
+      );
+      await _refreshSelectedCourseAuthoringState(selectedCourseId: updated.id);
+      if (!mounted || !context.mounted) return;
+      showSnack(context, 'Kursfamiljen uppdaterad.');
+    } catch (error, stackTrace) {
+      _showFriendlyErrorSnack(
+        'Kunde inte flytta kursen till familjen',
+        error,
+        stackTrace,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _updatingCourseFamily = false);
+      }
+    }
   }
 
   Future<void> _promptCreateCourse() async {
@@ -5969,35 +6308,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final created = await _studioRepo.createCourse(
         title: input.title,
         slug: input.slug,
-        courseGroupId: _uuid.v4(),
-        groupPosition: 0,
+        courseGroupId: input.courseGroupId,
         priceAmountCents: input.priceAmountCents,
         dripEnabled: false,
         dripIntervalDays: null,
         coverMediaId: null,
       );
-      final refreshedCourses = await _studioRepo.myCourses();
-      final canonicalCourse =
-          _courseById(created.id, refreshedCourses) ?? created;
       if (!mounted) return;
-      setState(() {
-        _resetCourseContext(clearLists: true);
-        _courses = _adoptCourseById(refreshedCourses, canonicalCourse);
-        _selectedCourseId = canonicalCourse.id;
-        _courseTitleCtrl.text = canonicalCourse.title;
-        _courseSlugCtrl.text = canonicalCourse.slug;
-        final priceOre = canonicalCourse.priceAmountCents;
-        _coursePriceCtrl.text = priceOre == null
-            ? ''
-            : formatSekInputFromOre(priceOre);
-        _courseCoverPath = canonicalCourse.cover?.resolvedUrl;
-      });
-      ref.invalidate(myCoursesProvider);
-      ref.invalidate(studioCoursesProvider);
-      ref.invalidate(landing.popularCoursesProvider);
-      ref.invalidate(coursesProvider);
-      await _loadCourseMeta();
-      await _loadLessons(preserveSelection: false);
+      setState(() => _resetCourseContext(clearLists: true));
+      await _refreshSelectedCourseAuthoringState(
+        selectedCourseId: created.id,
+        reloadLessons: true,
+      );
       if (!mounted || !context.mounted) return;
       showSnack(context, 'Kurs skapad.');
     } catch (e, stackTrace) {
@@ -6057,10 +6379,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             .map((course) => course.id == courseId ? updated : course)
             .toList();
       });
-      ref.invalidate(myCoursesProvider);
-      ref.invalidate(studioCoursesProvider);
-      ref.invalidate(landing.popularCoursesProvider);
-      ref.invalidate(coursesProvider);
+      _invalidateCourseReadProviders();
       await _loadCourseMeta();
       if (!mounted || !context.mounted) return;
       showSnack(context, 'Kursinformation sparad.');
@@ -6108,10 +6427,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             : formatSekInputFromOre(priceOre);
         _courseCoverPath = published.cover?.resolvedUrl;
       });
-      ref.invalidate(myCoursesProvider);
-      ref.invalidate(studioCoursesProvider);
-      ref.invalidate(landing.popularCoursesProvider);
-      ref.invalidate(coursesProvider);
+      _invalidateCourseReadProviders();
       await _loadCourseMeta();
       if (!mounted || !context.mounted) return;
       showSnack(context, 'Kurs publicerad.');
@@ -6127,6 +6443,166 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     } finally {
       if (mounted) setState(() => _publishingCourse = false);
     }
+  }
+
+  Widget _buildCourseFamilyAuthoring(BuildContext context) {
+    final selectedCourse = _courseById(_selectedCourseId);
+    final selectedFamily = _selectedCourseFamilySummary();
+    if (selectedCourse == null || selectedFamily == null) {
+      return const Text('Välj en kurs för att hantera familj och ordning.');
+    }
+
+    final canMutateFamily = !_lessonPreviewMode && !_updatingCourseFamily;
+    final canMoveUp = canMutateFamily && selectedCourse.groupPosition > 0;
+    final canMoveDown =
+        canMutateFamily &&
+        selectedCourse.groupPosition < selectedFamily.courses.length - 1;
+    final moveTargetFamilies = [
+      for (final family in _courseFamilySummaries())
+        if (family.courseGroupId != selectedCourse.courseGroupId) family,
+    ];
+    final moveTargetItems = <DropdownMenuItem<String>>[
+      for (final family in moveTargetFamilies)
+        DropdownMenuItem<String>(
+          value: family.courseGroupId,
+          child: Text(
+            '${_courseFamilyDisplayLabel(family)} · placeras sist',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      const DropdownMenuItem<String>(
+        value: _newCourseFamilySelectionValue,
+        child: Text('Ny familj · kursen blir först'),
+      ),
+    ];
+    final moveTargetValue =
+        moveTargetItems.any(
+          (item) => item.value == _moveCourseTargetCourseGroupId,
+        )
+        ? _moveCourseTargetCourseGroupId
+        : (moveTargetItems.isEmpty ? null : moveTargetItems.first.value);
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Nuvarande familj: ${_courseFamilyDisplayLabel(selectedFamily)}',
+          style: theme.textTheme.bodyMedium,
+        ),
+        gap8,
+        Text(
+          'Position: ${_coursePositionSummary(selectedCourse, selectedFamily)}',
+          style: theme.textTheme.bodyMedium,
+        ),
+        gap8,
+        SelectableText(
+          'course_group_id: ${selectedFamily.courseGroupId}',
+          style: theme.textTheme.bodySmall,
+        ),
+        gap12,
+        Text('Ordning i familjen', style: theme.textTheme.labelLarge),
+        gap8,
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final course in selectedFamily.courses)
+              Chip(
+                label: Text('${course.groupPosition + 1}. ${course.title}'),
+                backgroundColor: course.id == selectedCourse.id
+                    ? theme.colorScheme.primary.withValues(alpha: 0.14)
+                    : null,
+                side: BorderSide(
+                  color: course.id == selectedCourse.id
+                      ? theme.colorScheme.primary.withValues(alpha: 0.35)
+                      : theme.colorScheme.outline.withValues(alpha: 0.2),
+                ),
+              ),
+          ],
+        ),
+        gap12,
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey<String>('course_family_move_up_button'),
+              onPressed: canMoveUp
+                  ? () => _reorderSelectedCourseWithinFamily(
+                      selectedCourse.groupPosition - 1,
+                    )
+                  : null,
+              icon: const Icon(Icons.arrow_upward),
+              label: const Text('Flytta upp'),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey<String>('course_family_move_down_button'),
+              onPressed: canMoveDown
+                  ? () => _reorderSelectedCourseWithinFamily(
+                      selectedCourse.groupPosition + 1,
+                    )
+                  : null,
+              icon: const Icon(Icons.arrow_downward),
+              label: const Text('Flytta ned'),
+            ),
+          ],
+        ),
+        gap12,
+        DropdownButtonFormField<String>(
+          key: ValueKey<String>(
+            'course_family_move_target-${moveTargetValue ?? 'none'}',
+          ),
+          isExpanded: true,
+          initialValue: moveTargetValue,
+          decoration: const InputDecoration(
+            labelText: 'Flytta till kursfamilj',
+          ),
+          selectedItemBuilder: (context) => [
+            for (final family in moveTargetFamilies)
+              _dropdownValueLabel(_courseFamilyDisplayLabel(family)),
+            _dropdownValueLabel('Ny familj'),
+          ],
+          items: moveTargetItems,
+          onChanged: canMutateFamily
+              ? (value) {
+                  if (value == null) return;
+                  setState(() => _moveCourseTargetCourseGroupId = value);
+                }
+              : null,
+        ),
+        gap8,
+        Text(
+          'Flytt använder den kanoniska move-family-surface och placerar kursen sist i vald familj.',
+          style: theme.textTheme.bodySmall,
+        ),
+        gap12,
+        FilledButton.icon(
+          key: const ValueKey<String>('course_family_move_submit_button'),
+          onPressed: !canMutateFamily || moveTargetValue == null
+              ? null
+              : () {
+                  if (_moveCourseTargetCourseGroupId != moveTargetValue) {
+                    setState(
+                      () => _moveCourseTargetCourseGroupId = moveTargetValue,
+                    );
+                  }
+                  _moveSelectedCourseToFamily();
+                },
+          icon: _updatingCourseFamily
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.drive_file_move_outline),
+          label: Text(
+            _updatingCourseFamily ? 'Flyttar...' : 'Flytta till vald familj',
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -6261,6 +6737,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   ),
                 ),
                 if (_selectedCourseId != null) ...[
+                  gap12,
+                  _SectionCard(
+                    title: 'Kursfamilj',
+                    child: _buildCourseFamilyAuthoring(context),
+                  ),
                   gap12,
                   _SectionCard(
                     title: 'Kursinformation',

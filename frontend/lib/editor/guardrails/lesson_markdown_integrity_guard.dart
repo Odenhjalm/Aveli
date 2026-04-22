@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:flutter_quill/flutter_quill.dart' as quill;
@@ -62,7 +63,9 @@ LessonMarkdownIntegrityGuardResult validateLessonMarkdownIntegrity({
     delta: delta2,
   );
 
-  final markdownStable = markdown1 == markdown3;
+  final markdownStable =
+      _canonicalizeMarkdownForGuard(markdown1) ==
+      _canonicalizeMarkdownForGuard(markdown3);
   final semanticStable =
       _deltaSemanticSignature(delta) == _deltaSemanticSignature(delta2);
 
@@ -83,6 +86,21 @@ LessonMarkdownIntegrityGuardResult validateLessonMarkdownIntegrity({
   );
 }
 
+String _canonicalizeMarkdownForGuard(String markdown) {
+  final normalized = markdown.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  final document = markdown_to_editor.markdownToEditorDocument(
+    markdown: normalized,
+  );
+  final canonical = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+    delta: document.toDelta(),
+  );
+  return canonical
+      .split('\n')
+      .map((line) => line.trimRight())
+      .join('\n')
+      .replaceFirst(RegExp(r'\n+$'), '');
+}
+
 String _deltaSemanticSignature(quill_delta.Delta delta) {
   final sanitized = editor_to_markdown.sanitizeEditorDeltaForCanonicalMarkdown(
     delta,
@@ -91,7 +109,85 @@ String _deltaSemanticSignature(quill_delta.Delta delta) {
     return '[]';
   }
   final document = quill.Document.fromDelta(sanitized);
-  return jsonEncode(document.root.toDelta().toJson());
+  final canonical = document.root.toDelta();
+  final lines = <Object?>[];
+  var segments = <Object?>[];
+
+  void pushText(String text, Map<String, Object?> inlineAttributes) {
+    if (text.isEmpty) return;
+    final segment = <String, Object?>{'text': text};
+    if (inlineAttributes.isNotEmpty) {
+      segment['attributes'] = inlineAttributes;
+    }
+    if (segments.isNotEmpty) {
+      final previous = segments.last;
+      if (previous is Map<String, Object?> &&
+          previous['text'] is String &&
+          _stableJson(previous['attributes']) ==
+              _stableJson(segment['attributes'])) {
+        previous['text'] = '${previous['text']}$text';
+        return;
+      }
+    }
+    segments.add(segment);
+  }
+
+  void pushEmbed(Object value, Map<String, Object?> inlineAttributes) {
+    final segment = <String, Object?>{'embed': _stableJsonValue(value)};
+    if (inlineAttributes.isNotEmpty) {
+      segment['attributes'] = inlineAttributes;
+    }
+    segments.add(segment);
+  }
+
+  void flushLine(Map<String, Object?> lineAttributes) {
+    if (segments.isEmpty && lineAttributes.isEmpty) {
+      return;
+    }
+    final line = <String, Object?>{
+      'segments': List<Object?>.unmodifiable(segments),
+    };
+    if (lineAttributes.isNotEmpty) {
+      line['line_attributes'] = lineAttributes;
+    }
+    lines.add(line);
+    segments = <Object?>[];
+  }
+
+  for (final operation in canonical.toList()) {
+    if (!operation.isInsert) {
+      continue;
+    }
+
+    final normalizedAttributes = _normalizeAttributes(operation.attributes);
+    final inlineAttributes = _extractInlineAttributes(normalizedAttributes);
+    final lineAttributes = _extractLineAttributes(normalizedAttributes);
+    final value = operation.value;
+
+    if (value is String) {
+      final buffer = StringBuffer();
+      for (final rune in value.runes) {
+        final character = String.fromCharCode(rune);
+        if (character == '\n') {
+          pushText(buffer.toString(), inlineAttributes);
+          buffer.clear();
+          flushLine(lineAttributes);
+          continue;
+        }
+        buffer.write(character);
+      }
+      pushText(buffer.toString(), inlineAttributes);
+      continue;
+    }
+
+    pushEmbed(value, inlineAttributes);
+  }
+
+  if (segments.isNotEmpty) {
+    flushLine(const <String, Object?>{});
+  }
+
+  return _stableJson(lines);
 }
 
 LessonMarkdownIntegrityFailureReason _resolveFailureReason({
@@ -107,3 +203,64 @@ LessonMarkdownIntegrityFailureReason _resolveFailureReason({
   }
   return LessonMarkdownIntegrityFailureReason.semanticRoundTripMismatch;
 }
+
+Map<String, Object?> _normalizeAttributes(Map<String, dynamic>? attributes) {
+  if (attributes == null || attributes.isEmpty) {
+    return const <String, Object?>{};
+  }
+
+  final normalized = SplayTreeMap<String, Object?>();
+  for (final entry in attributes.entries) {
+    final value = entry.value;
+    if (value == null || value == false) {
+      continue;
+    }
+    normalized[entry.key] = _stableJsonValue(value);
+  }
+  return Map<String, Object?>.unmodifiable(normalized);
+}
+
+Map<String, Object?> _extractInlineAttributes(Map<String, Object?> attributes) {
+  if (attributes.isEmpty) {
+    return const <String, Object?>{};
+  }
+
+  final inline = SplayTreeMap<String, Object?>();
+  for (final key in const <String>{'bold', 'italic', 'underline', 'link'}) {
+    final value = attributes[key];
+    if (value != null) {
+      inline[key] = value;
+    }
+  }
+  return Map<String, Object?>.unmodifiable(inline);
+}
+
+Map<String, Object?> _extractLineAttributes(Map<String, Object?> attributes) {
+  if (attributes.isEmpty) {
+    return const <String, Object?>{};
+  }
+
+  final line = SplayTreeMap<String, Object?>();
+  for (final key in const <String>{'header', 'list', 'indent'}) {
+    final value = attributes[key];
+    if (value != null) {
+      line[key] = value;
+    }
+  }
+  return Map<String, Object?>.unmodifiable(line);
+}
+
+Object? _stableJsonValue(Object? value) {
+  return switch (value) {
+    null => null,
+    quill.Embeddable() => _stableJsonValue(value.toJson()),
+    Map() => SplayTreeMap<String, Object?>.fromIterable(
+      value.keys.map((key) => '$key'),
+      value: (key) => _stableJsonValue(value[key]),
+    ),
+    List() => value.map<Object?>(_stableJsonValue).toList(growable: false),
+    _ => value,
+  };
+}
+
+String _stableJson(Object? value) => jsonEncode(_stableJsonValue(value));

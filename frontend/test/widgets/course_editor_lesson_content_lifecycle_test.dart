@@ -101,6 +101,45 @@ const _course = CourseStudio(
   priceAmountCents: 1200,
 );
 
+const _familyLeadCourse = CourseStudio(
+  id: 'course-2',
+  title: 'Tarot Foundations',
+  slug: 'tarot-foundations',
+  courseGroupId: 'course-group-1',
+  groupPosition: 0,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: 1200,
+);
+
+const _familyLeadCourseShifted = CourseStudio(
+  id: 'course-2',
+  title: 'Tarot Foundations',
+  slug: 'tarot-foundations',
+  courseGroupId: 'course-group-1',
+  groupPosition: 1,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: 1200,
+);
+
+const _otherFamilyCourse = CourseStudio(
+  id: 'course-3',
+  title: 'Breathwork Flow',
+  slug: 'breathwork-flow',
+  courseGroupId: 'course-group-2',
+  groupPosition: 0,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: 2100,
+);
+
 const _courseCoverUrl = 'https://cdn.test/course-cover.webp';
 const _courseWithCover = CourseStudio(
   id: 'course-1',
@@ -130,6 +169,45 @@ const _createdCourse = CourseStudio(
   coverMediaId: null,
   cover: null,
   priceAmountCents: 49000,
+);
+
+const _createdCourseInCurrentFamily = CourseStudio(
+  id: 'course-created',
+  title: 'Backendutkast',
+  slug: 'backend-draft',
+  courseGroupId: 'course-group-1',
+  groupPosition: 2,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: 49000,
+);
+
+const _reorderedCourse = CourseStudio(
+  id: 'course-1',
+  title: 'Tarot Basics',
+  slug: 'tarot-basics',
+  courseGroupId: 'course-group-1',
+  groupPosition: 0,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: 1200,
+);
+
+const _movedCourse = CourseStudio(
+  id: 'course-1',
+  title: 'Tarot Basics',
+  slug: 'tarot-basics',
+  courseGroupId: 'course-group-2',
+  groupPosition: 1,
+  dripEnabled: false,
+  dripIntervalDays: null,
+  coverMediaId: null,
+  cover: null,
+  priceAmountCents: 1200,
 );
 
 const _publishedCourse = CourseStudio(
@@ -283,15 +361,31 @@ String _renderedPreviewText(WidgetTester tester) {
 void _stubBaseStudioData(
   _MockStudioRepository repo, {
   CourseStudio course = _course,
+  List<CourseStudio>? courses,
   List<LessonStudio> lessons = const [_lesson],
   Future<StudioLessonContentRead> Function(String lessonId)? readContent,
 }) {
+  final studioCourses = List<CourseStudio>.unmodifiable(courses ?? [course]);
+  final coursesById = <String, CourseStudio>{
+    for (final item in studioCourses) item.id: item,
+  };
   when(() => repo.fetchStatus()).thenAnswer((_) async => _V2TeacherStatus());
-  when(() => repo.myCourses()).thenAnswer((_) async => [course]);
-  when(() => repo.fetchCourseMeta('course-1')).thenAnswer((_) async => course);
-  when(
-    () => repo.listCourseLessons('course-1'),
-  ).thenAnswer((_) async => lessons);
+  when(() => repo.myCourses()).thenAnswer((_) async => studioCourses);
+  when(() => repo.fetchCourseMeta(any())).thenAnswer((invocation) async {
+    final courseId = invocation.positionalArguments.first as String;
+    final matched = coursesById[courseId];
+    if (matched == null) {
+      throw StateError('Unknown course: $courseId');
+    }
+    return matched;
+  });
+  when(() => repo.listCourseLessons(any())).thenAnswer((invocation) async {
+    final courseId = invocation.positionalArguments.first as String;
+    if (courseId == course.id) {
+      return lessons;
+    }
+    return const <LessonStudio>[];
+  });
   when(
     () => repo.listLessonMedia(any()),
   ).thenAnswer((_) async => const <StudioLessonMediaItem>[]);
@@ -431,6 +525,7 @@ Future<void> _closeLessonPreview(WidgetTester tester) async {
 void main() {
   setUpAll(() {
     registerFallbackValue(<String>[]);
+    registerFallbackValue(<String, Object?>{});
   });
 
   testWidgets('course create uses canonical backend response as editor state', (
@@ -453,7 +548,6 @@ void main() {
         title: any(named: 'title'),
         slug: any(named: 'slug'),
         courseGroupId: any(named: 'courseGroupId'),
-        groupPosition: any(named: 'groupPosition'),
         priceAmountCents: any(named: 'priceAmountCents'),
         dripEnabled: any(named: 'dripEnabled'),
         dripIntervalDays: any(named: 'dripIntervalDays'),
@@ -474,9 +568,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Skapa ny kurs'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField).at(0), 'Min kurs');
-    await tester.enterText(find.byType(TextField).at(1), 'min-kurs');
-    await tester.enterText(find.byType(TextField).at(2), '490');
+    final dialog = find.byType(AlertDialog);
+    final dialogFields = find.descendant(
+      of: dialog,
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(dialogFields.at(0), 'Min kurs');
+    await tester.enterText(dialogFields.at(1), 'min-kurs');
+    await tester.enterText(dialogFields.at(2), '490');
     await tester.tap(find.text('Skapa kurs').last);
     await tester.pumpAndSettle();
     await _pumpUntilTextFound(tester, 'Backendutkast');
@@ -486,13 +585,13 @@ void main() {
         title: 'Min kurs',
         slug: 'min-kurs',
         courseGroupId: captureAny(named: 'courseGroupId'),
-        groupPosition: 0,
         priceAmountCents: 49000,
         dripEnabled: false,
         dripIntervalDays: null,
         coverMediaId: null,
       ),
-    )..called(1);
+    );
+    create.called(1);
     expect(create.captured.single as String, isNotEmpty);
     verify(() => repo.fetchCourseMeta('course-created')).called(1);
     verify(() => repo.listCourseLessons('course-created')).called(1);
@@ -511,7 +610,6 @@ void main() {
         title: any(named: 'title'),
         slug: any(named: 'slug'),
         courseGroupId: any(named: 'courseGroupId'),
-        groupPosition: any(named: 'groupPosition'),
         priceAmountCents: any(named: 'priceAmountCents'),
         dripEnabled: any(named: 'dripEnabled'),
         dripIntervalDays: any(named: 'dripIntervalDays'),
@@ -534,6 +632,287 @@ void main() {
     verifyNever(() => repo.fetchCourseMeta(any()));
     verifyNever(() => repo.listCourseLessons(any()));
   });
+
+  testWidgets(
+    'course create appends into the selected family without raw position input',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      var myCoursesCalls = 0;
+      when(
+        () => repo.fetchStatus(),
+      ).thenAnswer((_) async => _V2TeacherStatus());
+      when(() => repo.myCourses()).thenAnswer((_) async {
+        myCoursesCalls += 1;
+        return myCoursesCalls == 1
+            ? const <CourseStudio>[
+                _course,
+                _familyLeadCourse,
+                _otherFamilyCourse,
+              ]
+            : const <CourseStudio>[
+                _course,
+                _familyLeadCourse,
+                _otherFamilyCourse,
+                _createdCourseInCurrentFamily,
+              ];
+      });
+      when(
+        () => repo.createCourse(
+          title: any(named: 'title'),
+          slug: any(named: 'slug'),
+          courseGroupId: any(named: 'courseGroupId'),
+          priceAmountCents: any(named: 'priceAmountCents'),
+          dripEnabled: any(named: 'dripEnabled'),
+          dripIntervalDays: any(named: 'dripIntervalDays'),
+          coverMediaId: any(named: 'coverMediaId'),
+        ),
+      ).thenAnswer((_) async => _createdCourseInCurrentFamily);
+      when(
+        () => repo.fetchCourseMeta('course-created'),
+      ).thenAnswer((_) async => _createdCourseInCurrentFamily);
+      when(
+        () => repo.listCourseLessons('course-1'),
+      ).thenAnswer((_) async => const <LessonStudio>[_lesson]);
+      when(
+        () => repo.listCourseLessons('course-created'),
+      ).thenAnswer((_) async => const <LessonStudio>[]);
+      when(
+        () => repo.fetchCourseMeta('course-1'),
+      ).thenAnswer((_) async => _course);
+      when(() => repo.readLessonContent(any())).thenAnswer((invocation) async {
+        final lessonId = invocation.positionalArguments.first as String;
+        return _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: 'Persisted content',
+          etag: '"content-v1"',
+        );
+      });
+      when(
+        () => repo.fetchLessonMediaPlacements(any()),
+      ).thenAnswer((_) async => const <StudioLessonMediaItem>[]);
+      when(
+        () => repo.fetchLessonMediaPreviews(any()),
+      ).thenAnswer((_) async => StudioLessonMediaPreviewBatch(items: const []));
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Kursfamilj');
+
+      await tester.tap(find.text('Skapa kurs'));
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog);
+      final dialogFields = find.descendant(
+        of: dialog,
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(dialogFields.at(0), 'Min kurs');
+      await tester.enterText(dialogFields.at(1), 'min-kurs');
+      await tester.tap(find.text('Skapa kurs').last);
+      await tester.pumpAndSettle();
+      await _pumpUntilTextFound(tester, 'Backendutkast');
+
+      verify(
+        () => repo.createCourse(
+          title: 'Min kurs',
+          slug: 'min-kurs',
+          courseGroupId: 'course-group-1',
+          priceAmountCents: null,
+          dripEnabled: false,
+          dripIntervalDays: null,
+          coverMediaId: null,
+        ),
+      ).called(1);
+      verify(() => repo.fetchCourseMeta('course-created')).called(1);
+      verify(() => repo.listCourseLessons('course-created')).called(1);
+    },
+  );
+
+  testWidgets(
+    'course family reorder uses canonical endpoint and refreshes editor state',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      var reordered = false;
+      when(
+        () => repo.fetchStatus(),
+      ).thenAnswer((_) async => _V2TeacherStatus());
+      when(() => repo.myCourses()).thenAnswer((_) async {
+        return reordered
+            ? const <CourseStudio>[
+                _reorderedCourse,
+                _familyLeadCourseShifted,
+                _otherFamilyCourse,
+              ]
+            : const <CourseStudio>[
+                _course,
+                _familyLeadCourse,
+                _otherFamilyCourse,
+              ];
+      });
+      when(
+        () => repo.fetchCourseMeta('course-1'),
+      ).thenAnswer((_) async => reordered ? _reorderedCourse : _course);
+      when(
+        () => repo.listCourseLessons('course-1'),
+      ).thenAnswer((_) async => const <LessonStudio>[_lesson]);
+      when(
+        () => repo.reorderCourseWithinFamily('course-1', groupPosition: 0),
+      ).thenAnswer((_) async {
+        reordered = true;
+        return _reorderedCourse;
+      });
+      when(() => repo.readLessonContent(any())).thenAnswer((invocation) async {
+        final lessonId = invocation.positionalArguments.first as String;
+        return _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: 'Persisted content',
+          etag: '"content-v1"',
+        );
+      });
+      when(
+        () => repo.fetchLessonMediaPlacements(any()),
+      ).thenAnswer((_) async => const <StudioLessonMediaItem>[]);
+      when(
+        () => repo.fetchLessonMediaPreviews(any()),
+      ).thenAnswer((_) async => StudioLessonMediaPreviewBatch(items: const []));
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Position: 2 av 2');
+
+      final moveUpButton = find.byKey(
+        const ValueKey<String>('course_family_move_up_button'),
+      );
+      await tester.ensureVisible(moveUpButton);
+      await tester.tap(moveUpButton);
+      await tester.pumpAndSettle();
+      await _pumpUntilTextFound(tester, 'Position: 1 av 2');
+
+      verify(
+        () => repo.reorderCourseWithinFamily('course-1', groupPosition: 0),
+      ).called(1);
+      expect(find.text('1. Tarot Basics'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'course family move uses canonical endpoint and refreshes editor state',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      var moved = false;
+      when(
+        () => repo.fetchStatus(),
+      ).thenAnswer((_) async => _V2TeacherStatus());
+      when(() => repo.myCourses()).thenAnswer((_) async {
+        return moved
+            ? const <CourseStudio>[
+                _movedCourse,
+                _familyLeadCourse,
+                _otherFamilyCourse,
+              ]
+            : const <CourseStudio>[
+                _course,
+                _familyLeadCourse,
+                _otherFamilyCourse,
+              ];
+      });
+      when(
+        () => repo.fetchCourseMeta('course-1'),
+      ).thenAnswer((_) async => moved ? _movedCourse : _course);
+      when(
+        () => repo.listCourseLessons('course-1'),
+      ).thenAnswer((_) async => const <LessonStudio>[_lesson]);
+      when(
+        () => repo.moveCourseToFamily(
+          'course-1',
+          courseGroupId: 'course-group-2',
+        ),
+      ).thenAnswer((_) async {
+        moved = true;
+        return _movedCourse;
+      });
+      when(() => repo.readLessonContent(any())).thenAnswer((invocation) async {
+        final lessonId = invocation.positionalArguments.first as String;
+        return _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: 'Persisted content',
+          etag: '"content-v1"',
+        );
+      });
+      when(
+        () => repo.fetchLessonMediaPlacements(any()),
+      ).thenAnswer((_) async => const <StudioLessonMediaItem>[]);
+      when(
+        () => repo.fetchLessonMediaPreviews(any()),
+      ).thenAnswer((_) async => StudioLessonMediaPreviewBatch(items: const []));
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(
+        tester,
+        'Nuvarande familj: Tarot Foundations (2 kurser)',
+      );
+
+      final moveButton = find.byKey(
+        const ValueKey<String>('course_family_move_submit_button'),
+      );
+      await tester.ensureVisible(moveButton);
+      await tester.tap(moveButton);
+      await tester.pumpAndSettle();
+      await _pumpUntilTextFound(
+        tester,
+        'Nuvarande familj: Breathwork Flow (2 kurser)',
+      );
+
+      verify(
+        () => repo.moveCourseToFamily(
+          'course-1',
+          courseGroupId: 'course-group-2',
+        ),
+      ).called(1);
+      expect(find.text('2. Tarot Basics'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'course metadata save excludes raw family and position patch fields',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(repo);
+      when(
+        () => repo.updateCourse('course-1', any()),
+      ).thenAnswer((_) async => _course);
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilTextFound(tester, 'Spara kurs');
+
+      final saveButton = find.text('Spara kurs');
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
+
+      final updateCapture = verify(
+        () => repo.updateCourse('course-1', captureAny()),
+      );
+      updateCapture.called(1);
+      final patch = Map<String, Object?>.from(
+        updateCapture.captured.single as Map,
+      );
+      expect(patch['title'], 'Tarot Basics');
+      expect(patch['slug'], 'tarot-basics');
+      expect(patch['price_amount_cents'], 1200);
+      expect(patch.containsKey('course_group_id'), isFalse);
+      expect(patch.containsKey('group_position'), isFalse);
+    },
+  );
 
   testWidgets(
     'course publish uses canonical backend response as editor state',
@@ -639,6 +1018,64 @@ void main() {
           position: any(named: 'position'),
         ),
       ).called(1);
+    },
+  );
+
+  testWidgets(
+    'formatted lesson content with redundant blank lines still saves',
+    (tester) async {
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        readContent: (lessonId) async => _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: '## Heading\n\n**Bold** *Italic*\n\n\n\nBody',
+          etag: '"content-v1"',
+        ),
+      );
+      when(
+        () => repo.updateLessonContent(
+          'lesson-1',
+          contentMarkdown: any(named: 'contentMarkdown'),
+          ifMatch: any(named: 'ifMatch'),
+        ),
+      ).thenAnswer((invocation) async {
+        return StudioLessonContentWriteResult(
+          lessonId: 'lesson-1',
+          contentMarkdown:
+              invocation.namedArguments[#contentMarkdown] as String,
+          etag: '"content-v2"',
+        );
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilDocumentContains(tester, 'Bold Italic');
+      _insertAtDocumentEnd(' updated');
+      await tester.pump();
+
+      final saveButton = find.text('Spara lektionsinnehåll');
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
+
+      verify(
+        () => repo.updateLessonContent(
+          'lesson-1',
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          ifMatch: '"content-v1"',
+        ),
+      ).called(1);
+      verify(
+        () => repo.updateLessonStructure(
+          'lesson-1',
+          lessonTitle: any(named: 'lessonTitle'),
+          position: any(named: 'position'),
+        ),
+      ).called(1);
+      expect(
+        find.textContaining('Ogiltig formatering', findRichText: true),
+        findsNothing,
+      );
     },
   );
 
