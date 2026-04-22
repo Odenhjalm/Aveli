@@ -167,50 +167,44 @@ def test_course_editor_preview_mode_uses_persisted_read_projection_only() -> Non
         / "presentation"
         / "course_editor_page.dart"
     ).read_text(encoding="utf-8")
-    media_repo_source = (
-        REPO_ROOT
-        / "frontend"
-        / "lib"
-        / "features"
-        / "studio"
-        / "data"
-        / "studio_repository_lesson_media.dart"
-    ).read_text(encoding="utf-8")
-
     preview_toggle = _source_block(
         editor_source,
         "Future<void> _setLessonPreviewMode(bool enabled)",
     )
-    preview_reader = _source_block(
+    preview_loader = _source_block(
         editor_source,
-        "Future<_PersistedLessonPreviewSnapshot> _readPersistedLessonPreview({",
+        "Future<void> _loadPersistedLessonPreview({",
     )
-    placement_reader = _source_block(
-        media_repo_source,
-        "Future<List<StudioLessonMediaItem>> fetchLessonMediaPlacements(",
+    preview_builder_start = editor_source.index(
+        "Widget _buildLessonPreviewMode(BuildContext context)"
     )
+    preview_builder = editor_source[preview_builder_start : preview_builder_start + 5000]
 
-    assert "_readPersistedLessonPreview" in preview_toggle
+    assert "_loadPersistedLessonPreview" in preview_toggle
     for required in (
         "readLessonContent",
-        "fetchLessonMediaPlacements",
-        "fetchCourseMeta",
         "content.contentMarkdown",
-        "course.cover?.resolvedUrl",
+        "_lessonPreviewMarkdown = content.contentMarkdown",
+        "preview.source.authority=backend_read",
     ):
-        assert required in preview_reader
-    assert "/api/media-placements/$lessonMediaId" in placement_reader
+        assert required in preview_loader
+    for required in (
+        "LearnerLessonContentRenderer",
+        "markdown: previewMarkdown",
+        "lessonMedia: previewMedia",
+    ):
+        assert required in preview_builder
 
     forbidden_authority_tokens = (
-        "_lessonPreviewMarkdown",
         "_syncLessonPreviewMarkdownFromController",
         "_serializeLessonPreviewMarkdownFromController",
         "_currentLessonPreviewMarkdown",
         "editorDeltaToPassivePreviewMarkdown",
-        "previewMarkdown",
         "fetchLessonMediaPreviews",
         "/api/lesson-media/previews",
         "/api/lesson-media/$lessonId/$lessonMediaId/preview",
+        "fetchLessonMediaPlacements(",
+        "fetchCourseMeta(",
         "updateLessonContent(",
         "updateLessonStructure(",
         "uploadLessonMedia(",
@@ -222,8 +216,8 @@ def test_course_editor_preview_mode_uses_persisted_read_projection_only() -> Non
     )
     scoped_sources = {
         "_setLessonPreviewMode": preview_toggle,
-        "_readPersistedLessonPreview": preview_reader,
-        "fetchLessonMediaPlacements": placement_reader,
+        "_loadPersistedLessonPreview": preview_loader,
+        "_buildLessonPreviewMode": preview_builder,
     }
 
     offenders: list[tuple[str, str]] = []

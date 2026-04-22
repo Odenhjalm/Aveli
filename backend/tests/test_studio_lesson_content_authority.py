@@ -441,6 +441,7 @@ async def test_studio_lesson_content_saves_and_logs_subprocess_validator_failure
 async def test_studio_lesson_content_rejects_direct_api_bypass_with_malformed_markdown(
     async_client,
     monkeypatch,
+    caplog,
 ):
     teacher_token, teacher_id = await register_user(
         async_client,
@@ -488,19 +489,40 @@ async def test_studio_lesson_content_rejects_direct_api_bypass_with_malformed_ma
         )
         assert seed.status_code == 200, seed.text
 
-        bypass = await async_client.patch(
-            f"/studio/lessons/{lesson_id}/content",
-            headers={
-                **auth_header(teacher_token),
-                "If-Match": seed.headers["etag"],
-            },
-            json={
-                "content_markdown": r"This is plain, \*italic\*, and **bold**.",
-            },
-        )
+        with caplog.at_level("WARNING", logger="app.services.courses_service"):
+            bypass = await async_client.patch(
+                f"/studio/lessons/{lesson_id}/content",
+                headers={
+                    **auth_header(teacher_token),
+                    "If-Match": seed.headers["etag"],
+                },
+                json={
+                    "content_markdown": r"This is plain, \*italic\*, and **bold**.",
+                },
+            )
         assert bypass.status_code == 400, bypass.text
         assert bypass.json()["detail"] == (
             "Invalid lesson markdown. Formatting must be corrected before saving."
+        )
+
+        validation_logs = [
+            record
+            for record in caplog.records
+            if record.getMessage() == "LESSON_MARKDOWN_VALIDATION_FAILED"
+        ]
+        assert validation_logs
+        log_record = validation_logs[-1]
+        assert getattr(log_record, "failure_reason", None) == (
+            "markdownRoundTripMismatch"
+        )
+        assert getattr(log_record, "submitted_markdown", None) == (
+            r"This is plain, \*italic\*, and **bold**."
+        )
+        assert getattr(log_record, "normalized_markdown", None) == (
+            r"This is plain, \*italic\*, and **bold**."
+        )
+        assert getattr(log_record, "canonical_markdown", None) == (
+            "This is plain, *italic*, and **bold**."
         )
 
         stored = await courses_repo.get_lesson(lesson_id)

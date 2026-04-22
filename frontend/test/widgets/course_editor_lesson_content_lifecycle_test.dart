@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -2461,14 +2462,31 @@ void main() {
 
     final saveButton = find.text('Spara lektionsinnehåll');
     await tester.ensureVisible(saveButton);
-    await tester.tap(saveButton);
-    await tester.pumpAndSettle();
+    final integrityLogs = <String>[];
+    await runZoned(
+      () async {
+        await tester.tap(saveButton);
+        await tester.pumpAndSettle();
+      },
+      zoneSpecification: ZoneSpecification(
+        print: (self, parent, zone, line) {
+          if (line.contains('[LessonIntegrity]')) {
+            integrityLogs.add(line);
+          }
+          parent.print(zone, line);
+        },
+      ),
+    );
 
     expect(
       find.text(
         'Ogiltig formatering i lektionsinnehallet. Korrigera formateringen innan du sparar.',
       ),
       findsOneWidget,
+    );
+    expect(
+      integrityLogs,
+      contains('[LessonIntegrity] save_blocked reason=semanticRoundTripMismatch'),
     );
     verifyNever(
       () => repo.updateLessonContent(
@@ -2485,6 +2503,61 @@ void main() {
       ),
     );
   });
+
+  testWidgets(
+    'locked two-paragraph fixture saves through the studio path as canonical markdown',
+    (tester) async {
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(
+        repo,
+        readContent: (lessonId) async => _contentRead(
+          lessonId: lessonId,
+          contentMarkdown: 'Hello world\n\nThis is a lesson',
+          etag: '"content-v1"',
+        ),
+      );
+      when(
+        () => repo.updateLessonContent(
+          'lesson-1',
+          contentMarkdown: any(named: 'contentMarkdown'),
+          ifMatch: any(named: 'ifMatch'),
+        ),
+      ).thenAnswer((invocation) async {
+        return StudioLessonContentWriteResult(
+          lessonId: 'lesson-1',
+          contentMarkdown: invocation.namedArguments[#contentMarkdown] as String,
+          etag: '"content-v2"',
+        );
+      });
+
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilDocumentContains(tester, 'Hello world');
+      await _pumpUntilDocumentContains(tester, 'This is a lesson');
+
+      _insertAtDocumentEnd(' updated');
+      await tester.pumpAndSettle();
+
+      final saveButton = find.text('Spara lektionsinnehåll');
+      await tester.ensureVisible(saveButton);
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
+
+      final contentCapture = verify(
+        () => repo.updateLessonContent(
+          'lesson-1',
+          contentMarkdown: captureAny(named: 'contentMarkdown'),
+          ifMatch: '"content-v1"',
+        ),
+      )..called(1);
+      final savedMarkdown = contentCapture.captured.single as String;
+      expect(savedMarkdown, 'Hello world\n\nThis is a lesson updated');
+      expect(savedMarkdown, isNot(contains('\u200B')));
+      expect(
+        find.textContaining('Ogiltig formatering', findRichText: true),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets(
     'selected lesson media list is reconstructed from canonical placements',
