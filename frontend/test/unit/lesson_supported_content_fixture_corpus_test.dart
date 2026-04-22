@@ -38,7 +38,7 @@ void main() {
       },
     );
 
-    test('locks blocker fixtures for blank lines and inline documents', () {
+    test('locks formerly blocked fixtures for blank lines and inline documents', () {
       final newlineFixture = supportedCanonicalFixture(
         corpus,
         'paragraph_blank_line_two_paragraphs',
@@ -48,15 +48,13 @@ void main() {
         'document_token_inline',
       );
 
-      expect(newlineFixture['status'], 'blocked');
-      expect(newlineFixture['blocking_node'], 'CP-002');
+      expect(newlineFixture['status'], 'locked');
       expect(
         stringListField(newlineFixture, 'binding_groups'),
         contains('frontend_newline_tests'),
       );
 
-      expect(documentFixture['status'], 'blocked');
-      expect(documentFixture['blocking_node'], 'CP-003');
+      expect(documentFixture['status'], 'locked');
       expect(
         stringListField(documentFixture, 'binding_groups'),
         contains('preview_learner_parity_tests'),

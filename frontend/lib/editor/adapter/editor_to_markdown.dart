@@ -249,6 +249,9 @@ String editorDeltaToCanonicalMarkdown({
   final markdownReady = _expandUnderlineAttributesForMarkdown(sanitized);
   var markdown = _createCanonicalLessonDeltaToMarkdown().convert(markdownReady);
   markdown = _restoreSupportedInlineHtml(markdown);
+  markdown = lesson_pipeline.rewriteLessonMarkdownDocumentLinksForStorage(
+    markdown: markdown,
+  );
   markdown = _repairTerminalSpaceSeparatedItalicMarkdown(markdown);
   markdown = canonicalizeSupportedMarkdown(markdown);
   if (enforceStorageContract) {

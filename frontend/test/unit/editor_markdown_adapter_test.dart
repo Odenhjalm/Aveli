@@ -301,6 +301,21 @@ void main() {
       expect(_roundtripMarkdown(markdown), markdown);
     });
 
+    test('document token hydrates to editor link text and saves back canonically', () {
+      const markdown = '!document(media-document-1)';
+
+      final document = markdown_to_editor.markdownToEditorDocument(
+        markdown: markdown,
+        lessonMediaDocumentLabelsById: const <String, String>{
+          'media-document-1': 'guide.pdf',
+        },
+      );
+
+      expect(document.toPlainText(), contains('guide.pdf'));
+      expect(document.toPlainText(), isNot(contains('!document(')));
+      expect(_roundtripMarkdown(markdown), markdown);
+    });
+
     test(
       'supported bold markdown never appears as literal markers in editor',
       () {
@@ -362,6 +377,22 @@ void main() {
       );
 
       expect(markdown, '!image(media-image-1)');
+    });
+
+    test('document links with canonical lesson ids persist as canonical tokens', () {
+      final delta = quill_delta.Delta()
+        ..insert('guide.pdf', {
+          quill.Attribute.link.key: lesson_pipeline.lessonMediaDocumentLinkUrl(
+            'media-document-1',
+          ),
+        })
+        ..insert('\n');
+
+      final markdown = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+        delta: delta,
+      );
+
+      expect(markdown, '!document(media-document-1)');
     });
 
     test('underline persists as canonical html before persistence', () {

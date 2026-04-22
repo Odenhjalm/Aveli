@@ -280,6 +280,66 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('lesson renders locked two-paragraph fixture content', (
+    tester,
+  ) async {
+    final data = _buildLessonData(
+      media: const [],
+      contentMarkdown: 'Hello world\n\nThis is a lesson',
+    );
+
+    await _pumpLessonPage(tester, data: data);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.textContaining('Hello world', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('This is a lesson', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.text('LektionsinnehÃ¥llet kunde inte renderas.'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lesson renders inline document tokens without trailing fallback duplication', (
+    tester,
+  ) async {
+    final data = _buildLessonData(
+      media: [
+        _lessonMediaItem(
+          id: 'media-document-1',
+          mediaType: 'document',
+          state: 'ready',
+          resolvedUrl: 'https://cdn.test/lesson-document.pdf',
+        ),
+      ],
+      contentMarkdown: 'Intro\n\n!document(media-document-1)\n\nOutro',
+    );
+
+    await _pumpLessonPage(tester, data: data);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.textContaining('Intro', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Outro', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Ladda ner dokument', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.textContaining('!document(', findRichText: true), findsNothing);
+    expect(find.text('Dokument'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('lesson page blocks locked next navigation for learners', (
     tester,
   ) async {

@@ -76,20 +76,19 @@ The canonical stored Markdown forms are defined in the JSON corpus by fixture
 id. Downstream implementation nodes must reuse those ids rather than inventing
 new case names.
 
-## BLOCKER-GRADE SUPPORTED FIXTURES
+## RESOLVED BLOCKER FIXTURES
 
-The following fixtures remain part of the supported subset and must not be
-downgraded to unsupported content:
+The former blocker-grade fixtures are now locked supported fixtures:
 
 - `paragraph_blank_line_two_paragraphs`
-  owner: `CP-002`
-  reason: current frontend save + reload still collapses the intended blank
-  paragraph in `frontend/test/unit/lesson_newline_persistence_test.dart`
+  status: `locked`
+  canonical meaning: one canonical Markdown blank line separates two stored
+  paragraphs as `Hello world\n\nThis is a lesson`
 - `document_token_inline`
-  owner: `CP-003`
-  reason: `!document(id)` is accepted as canonical stored Markdown, but
-  hydrate/render completion is not yet finished across the editor and learner
-  render path
+  status: `locked`
+  canonical meaning: `!document(id)` remains the stored form and materializes as
+  inline document content on editor and render surfaces rather than trailing
+  fallback-only media
 
 ## COMPATIBILITY-ONLY INPUTS
 

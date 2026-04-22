@@ -84,7 +84,7 @@ void main() {
       );
 
       expect(result.ok, isTrue);
-      expect(result.originalMarkdown, '**Bold** *Italic*\n\n\n\nBody');
+      expect(result.originalMarkdown, '**Bold** *Italic*\n\nBody');
       expect(result.canonicalMarkdown, '**Bold** *Italic*\n\nBody');
     });
 
@@ -101,6 +101,20 @@ void main() {
       expect(result.ok, isTrue);
       expect(result.originalMarkdown, '## Heading\n\n\nBody');
       expect(result.canonicalMarkdown, '## Heading\nBody');
+    });
+
+    test('canonical two-paragraph fixture passes', () {
+      const markdown = 'Hello world\n\nThis is a lesson';
+      final result = validateLessonMarkdownIntegrity(
+        delta: markdown_to_editor
+            .markdownToEditorDocument(markdown: markdown)
+            .toDelta(),
+      );
+
+      expect(result.ok, isTrue);
+      expect(result.failureReason, isNull);
+      expect(result.originalMarkdown, markdown);
+      expect(result.canonicalMarkdown, markdown);
     });
 
     test('canonical heading3 with bold and italic at document end passes', () {

@@ -65,18 +65,16 @@ def test_backend_validator_binding_points_to_real_repo_boundaries() -> None:
     assert "backend/tests/test_lesson_markdown_validator.py" in test_paths
 
 
-def test_blocker_fixtures_remain_supported_and_owned_by_downstream_nodes() -> None:
+def test_blocker_fixtures_are_now_locked_supported_content() -> None:
     corpus = _load_corpus()
 
     newline_fixture = _fixture(corpus, "paragraph_blank_line_two_paragraphs")
     document_fixture = _fixture(corpus, "document_token_inline")
 
-    assert newline_fixture["status"] == "blocked"
-    assert newline_fixture["blocking_node"] == "CP-002"
+    assert newline_fixture["status"] == "locked"
     assert "frontend_newline_tests" in newline_fixture["binding_groups"]
     assert "backend_write_contract_tests" in newline_fixture["binding_groups"]
 
-    assert document_fixture["status"] == "blocked"
-    assert document_fixture["blocking_node"] == "CP-003"
+    assert document_fixture["status"] == "locked"
     assert "preview_learner_parity_tests" in document_fixture["binding_groups"]
     assert "backend_write_contract_tests" in document_fixture["binding_groups"]

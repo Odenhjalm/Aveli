@@ -19,3 +19,13 @@ def test_validator_rejects_malformed_emphasis_markdown():
     assert result.ok is False
     assert result.failure_reason == "markdownRoundTripMismatch"
     assert result.canonical_markdown == "This is plain, *italic*, and **bold**."
+
+
+def test_validator_accepts_canonical_two_paragraph_fixture():
+    result = lesson_markdown_validator.validate_lesson_markdown(
+        "Hello world\n\nThis is a lesson",
+    )
+
+    assert result.ok is True
+    assert result.failure_reason is None
+    assert result.canonical_markdown == "Hello world\n\nThis is a lesson"

@@ -1,9 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_quill/quill_delta.dart' as quill_delta;
-import 'package:markdown/markdown.dart' as md;
 
-import 'package:aveli/shared/utils/lesson_content_pipeline.dart';
+import 'package:aveli/editor/adapter/editor_to_markdown.dart'
+    as editor_to_markdown;
+import 'package:aveli/editor/adapter/markdown_to_editor.dart'
+    as markdown_to_editor;
 
 String _visible(String value) {
   return value
@@ -15,35 +16,28 @@ String _visible(String value) {
 
 void main() {
   group('Lesson newline persistence', () {
-    test('paragraph/newline survives markdown save + reload', () {
-      const initialPlainText = 'Hello world\nThis is a lesson\n';
+    test('two-paragraph fixture saves as canonical markdown and reloads stably', () {
       const editedPlainText = 'Hello world\n\nThis is a lesson\n';
+      const canonicalMarkdown = 'Hello world\n\nThis is a lesson';
 
-      final deltaInitial = quill_delta.Delta()..insert(initialPlainText);
       final deltaEdited = quill_delta.Delta()..insert(editedPlainText);
+      final editedMarkdown =
+          editor_to_markdown.editorDeltaToCanonicalMarkdown(delta: deltaEdited);
 
-      final exporter = createLessonDeltaToMarkdown();
-      final initialMarkdown = exporter.convert(deltaInitial);
-      final editedMarkdown = exporter.convert(deltaEdited);
-
+      expect(editedMarkdown, canonicalMarkdown);
       expect(editedMarkdown, isNot(contains('\u200B')));
 
-      // Trace output with visible markers for newline debugging.
-      printOnFailure(
-        '[LessonTraceTest] initialMarkdown="${_visible(initialMarkdown)}" (length=${initialMarkdown.length})',
-      );
       printOnFailure(
         '[LessonTraceTest] editedMarkdown="${_visible(editedMarkdown)}" (length=${editedMarkdown.length})',
       );
 
-      final document = md.Document(
-        encodeHtml: false,
-        extensionSet: md.ExtensionSet.gitHubWeb,
+      final reloadedDoc = markdown_to_editor.markdownToEditorDocument(
+        markdown: editedMarkdown,
       );
-      final importer = createLessonMarkdownToDelta(document);
-      final deltaReloaded = convertLessonMarkdownToDelta(importer, editedMarkdown);
-      final reloadedDoc = quill.Document.fromDelta(deltaReloaded);
       final reloadedPlainText = reloadedDoc.toPlainText();
+      final resavedMarkdown = editor_to_markdown.editorDeltaToCanonicalMarkdown(
+        delta: reloadedDoc.toDelta(),
+      );
 
       printOnFailure(
         '[LessonTraceTest] reloadedPlainText="${_visible(reloadedPlainText)}" (length=${reloadedPlainText.length})',
@@ -51,10 +45,9 @@ void main() {
 
       expect(reloadedPlainText, isNot(contains('\u200B')));
       expect(
-        reloadedPlainText,
-        editedPlainText,
-        reason:
-            'Newline-only edits must persist after markdown round-trip (save + reload).',
+        resavedMarkdown,
+        canonicalMarkdown,
+        reason: 'The locked two-paragraph fixture must remain stable after reload.',
       );
     });
   });

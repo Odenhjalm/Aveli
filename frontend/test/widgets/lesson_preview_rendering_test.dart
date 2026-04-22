@@ -337,6 +337,57 @@ void main() {
     },
   );
 
+  testWidgets('preview renders locked two-paragraph fixture content', (
+    tester,
+  ) async {
+    final mediaRepository = _MockMediaRepository();
+
+    await _pumpPreviewHarness(
+      tester,
+      mediaRepository: mediaRepository,
+      markdown: 'Hello world\n\nThis is a lesson',
+      lessonMedia: const <LessonMediaItem>[],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final renderedText = _renderedPreviewText(tester);
+    expect(renderedText, contains('Hello world'));
+    expect(renderedText, contains('This is a lesson'));
+    expect(find.text('LektionsinnehÃ¥llet kunde inte renderas.'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'preview renders inline document tokens without trailing fallback duplication',
+    (tester) async {
+      final mediaRepository = _MockMediaRepository();
+
+      await _pumpPreviewHarness(
+        tester,
+        mediaRepository: mediaRepository,
+        markdown: 'Intro\n\n!document(media-document-1)\n\nOutro',
+        lessonMedia: [
+          _lessonMediaItem(
+            'media-document-1',
+            'document',
+            resolvedUrl: 'https://cdn.test/preview-document.pdf',
+          ),
+        ],
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final renderedText = _renderedPreviewText(tester);
+      expect(renderedText, contains('Intro'));
+      expect(renderedText, contains('Outro'));
+      expect(renderedText, contains('Ladda ner dokument'));
+      expect(renderedText, isNot(contains('!document(')));
+      expect(find.text('Dokument'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('preview renders escaped bold markers as bold text', (
     tester,
   ) async {

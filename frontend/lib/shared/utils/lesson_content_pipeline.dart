@@ -51,6 +51,7 @@ String _lessonMediaToken({
 }) => '!$kind($lessonMediaId)';
 
 const String _lessonMediaDocumentLinkScheme = 'aveli-document';
+const String _defaultLessonMediaDocumentLabel = 'Ladda ner dokument';
 
 String lessonMediaDocumentLinkUrl(String lessonMediaId) =>
     '$_lessonMediaDocumentLinkScheme://$lessonMediaId';
@@ -69,6 +70,34 @@ String? lessonMediaIdFromDocumentLinkUrl(String? rawUrl) {
   }
 
   return null;
+}
+
+String lessonMediaDocumentLabel({
+  required String lessonMediaId,
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
+}) {
+  final explicit = lessonMediaDocumentLabelsById[lessonMediaId]?.trim();
+  if (explicit != null && explicit.isNotEmpty) {
+    return explicit;
+  }
+  return _defaultLessonMediaDocumentLabel;
+}
+
+String _escapeMarkdownLinkLabel(String raw) {
+  return raw.replaceAll(r'\', r'\\').replaceAll(']', r'\]');
+}
+
+String _documentTokenToEditorMarkdownLink({
+  required String lessonMediaId,
+  Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
+}) {
+  final label = _escapeMarkdownLinkLabel(
+    lessonMediaDocumentLabel(
+      lessonMediaId: lessonMediaId,
+      lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+    ),
+  );
+  return '[$label](${lessonMediaDocumentLinkUrl(lessonMediaId)})';
 }
 
 Never _throwCanonicalMediaWriteViolation(String raw) {
@@ -204,7 +233,38 @@ String rewriteLessonMarkdownDocumentLinksForEditor({
   required String markdown,
   Map<String, String> lessonMediaDocumentLabelsById = const <String, String>{},
 }) {
-  return markdown;
+  if (markdown.isEmpty || !_lessonDocumentTokenPattern.hasMatch(markdown)) {
+    return markdown;
+  }
+  return markdown.replaceAllMapped(_lessonDocumentTokenPattern, (match) {
+    final lessonMediaId = match.group(1);
+    if (lessonMediaId == null || lessonMediaId.isEmpty) {
+      return match.group(0) ?? '';
+    }
+    return _documentTokenToEditorMarkdownLink(
+      lessonMediaId: lessonMediaId,
+      lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+    );
+  });
+}
+
+String rewriteLessonMarkdownDocumentLinksForStorage({
+  required String markdown,
+}) {
+  if (markdown.isEmpty) return markdown;
+
+  return markdown.replaceAllMapped(_markdownLinkPattern, (match) {
+    final raw = match.group(0);
+    final source = match.group(2);
+    final lessonMediaId = lessonMediaIdFromDocumentLinkUrl(source);
+    if (lessonMediaId == null || lessonMediaId.isEmpty) {
+      return raw ?? '';
+    }
+    return _lessonMediaToken(
+      kind: 'document',
+      lessonMediaId: lessonMediaId,
+    );
+  });
 }
 
 quill_delta.Delta _replaceTokenWithEmbed(

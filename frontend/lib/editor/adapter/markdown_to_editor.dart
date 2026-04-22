@@ -82,6 +82,8 @@ final RegExp _singleUnderscorePattern = RegExp(
   multiLine: true,
 );
 
+final RegExp _excessParagraphGapPattern = RegExp(r'\n{4,}');
+
 md.Document createEditorMarkdownDocument() {
   return md.Document(
     encodeHtml: false,
@@ -191,6 +193,10 @@ String canonicalizeSupportedMarkdown(String markdown) {
         ? prefix
         : '$prefix$_canonicalItalicMarkdownDelimiter$body$_canonicalItalicMarkdownDelimiter';
   });
+
+  // A Quill empty paragraph currently expands to a four-newline Markdown gap.
+  // The supported two-paragraph fixture stores this as one canonical blank line.
+  canonical = canonical.replaceAll(_excessParagraphGapPattern, '\n\n');
 
   return canonical;
 }

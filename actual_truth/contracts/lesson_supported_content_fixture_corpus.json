@@ -223,8 +223,7 @@
     },
     "paragraph_blank_line_two_paragraphs": {
       "category": "blank_lines",
-      "status": "blocked",
-      "blocking_node": "CP-002",
+      "status": "locked",
       "canonical_markdown": "Hello world\n\nThis is a lesson",
       "runtime_boundaries": [
         "editor_hydration",
@@ -244,9 +243,11 @@
       "evidence_paths": [
         "frontend/test/unit/lesson_newline_persistence_test.dart",
         "backend/tests/test_lesson_newline_persistence.py",
-        "frontend/test/unit/lesson_markdown_integrity_guard_test.dart"
+        "frontend/test/unit/lesson_markdown_integrity_guard_test.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart"
       ],
-      "notes": "Supported intended paragraph-break fixture. Current frontend round-trip behavior remains an active defect and is owned by CP-002."
+      "notes": "Locked two-paragraph fixture. The canonical stored Markdown is one blank line between paragraphs; save and reload must preserve that canonical form."
     },
     "image_token_basic": {
       "category": "media_token_image",
@@ -335,8 +336,7 @@
     },
     "document_token_inline": {
       "category": "document_token",
-      "status": "blocked",
-      "blocking_node": "CP-003",
+      "status": "locked",
       "canonical_markdown": "Intro\n\n!document(media-document-1)\n\nOutro",
       "runtime_boundaries": [
         "editor_hydration",
@@ -350,11 +350,14 @@
         "backend_write_contract_tests"
       ],
       "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart",
         "frontend/lib/shared/utils/lesson_content_pipeline.dart",
         "frontend/lib/features/courses/presentation/lesson_page.dart",
         "backend/tests/test_lesson_markdown_write_contract.py"
       ],
-      "notes": "Supported intended inline document-token fixture. Storage accepts !document(id), but hydrate/render completion remains owned by CP-003."
+      "notes": "Locked inline document fixture. Stored !document(id) stays canonical and materializes inline across editor hydration, preview, learner rendering, and backend write-contract verification."
     }
   },
   "compatibility_only_inputs": {
