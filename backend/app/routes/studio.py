@@ -1968,6 +1968,65 @@ async def update_course(
     return _course_response(row)
 
 
+@course_lesson_router.post("/courses/{course_id}/reorder", response_model=schemas.Course)
+async def reorder_course_within_family(
+    course_id: str,
+    payload: schemas.StudioCourseFamilyReorder,
+    current: TeacherEntryUser,
+):
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
+    try:
+        row = await courses_service.reorder_course_within_family(
+            course_id,
+            group_position=payload.group_position,
+            teacher_id=str(current["id"]),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Course not found")
+    await _apply_course_read_contract(row)
+    return _course_response(row)
+
+
+@course_lesson_router.post(
+    "/courses/{course_id}/move-family",
+    response_model=schemas.Course,
+)
+async def move_course_to_family(
+    course_id: str,
+    payload: schemas.StudioCourseFamilyMove,
+    current: TeacherEntryUser,
+):
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
+    try:
+        row = await courses_service.move_course_to_family(
+            course_id,
+            course_group_id=str(payload.course_group_id),
+            teacher_id=str(current["id"]),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Course not found")
+    await _apply_course_read_contract(row)
+    return _course_response(row)
+
+
 @course_lesson_router.delete("/courses/{course_id}")
 async def delete_course(course_id: str, current: TeacherEntryUser):
     await studio_authority.get_course_for_teacher_or_404(

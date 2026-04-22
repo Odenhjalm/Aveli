@@ -471,11 +471,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _documentReadyLessonId;
   int? _documentReadyRequestId;
   bool _lessonPreviewMode = false;
+  bool _lessonPreviewLoading = false;
   bool _lessonContentDirty = false;
   bool _lessonContentSaving = false;
   String _lastSavedLessonTitle = '';
   String _lastSavedLessonMarkdown = '';
   String? _lastSavedLessonContentEtag;
+  String? _lessonPreviewMarkdown;
+  String? _lessonPreviewError;
   String? _lessonContentHydratedLessonId;
   String? _lessonContentLoadError;
   TextSelection? _lastLessonSelection;
@@ -512,6 +515,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _lessonsRequestId = 0;
   int _lessonMediaRequestId = 0;
   int _lessonContentRequestId = 0;
+  int _lessonPreviewRequestId = 0;
   int _saveCourseRequestId = 0;
   int _publishCourseRequestId = 0;
 
@@ -687,7 +691,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lastSavedLessonContentEtag = null;
     _lessonContentLoadError = errorMessage;
     _resetLessonPreviewHydrationValues(bumpRevision: bumpHydrationRevision);
+    _lessonPreviewRequestId += 1;
     _lessonPreviewMode = false;
+    _lessonPreviewLoading = false;
+    _lessonPreviewMarkdown = null;
+    _lessonPreviewError = null;
     _lessonEditorBootPhase = phase;
   }
 
@@ -1068,12 +1076,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Future<void> _setLessonPreviewMode(bool enabled) async {
     if (!enabled) {
+      _lessonPreviewRequestId += 1;
       if (!mounted) {
         _lessonPreviewMode = false;
+        _lessonPreviewLoading = false;
+        _lessonPreviewMarkdown = null;
+        _lessonPreviewError = null;
         return;
       }
       setState(() {
         _lessonPreviewMode = false;
+        _lessonPreviewLoading = false;
+        _lessonPreviewMarkdown = null;
+        _lessonPreviewError = null;
       });
       _ensureLessonEditorFocus(reason: 'preview_mode_disabled');
       return;
@@ -1129,13 +1144,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (_lessonContentFocusNode.hasFocus) {
       _lessonContentFocusNode.unfocus();
     }
+    final requestId = ++_lessonPreviewRequestId;
     if (!mounted) {
       _lessonPreviewMode = true;
+      _lessonPreviewLoading = true;
+      _lessonPreviewMarkdown = null;
+      _lessonPreviewError = null;
       return;
     }
     setState(() {
       _lessonPreviewMode = true;
+      _lessonPreviewLoading = true;
+      _lessonPreviewMarkdown = null;
+      _lessonPreviewError = null;
     });
+    await _loadPersistedLessonPreview(lessonId: lessonId, requestId: requestId);
   }
 
   bool _matchesCurrentLessonRequest({
@@ -1145,6 +1168,77 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (!mounted) return false;
     return _selectedLessonId == lessonId &&
         _lessonContentRequestId == requestId;
+  }
+
+  bool _isStaleLessonPreviewRequest({
+    required String lessonId,
+    required int requestId,
+  }) {
+    if (!mounted) return true;
+    return !_lessonPreviewMode ||
+        _selectedLessonId != lessonId ||
+        _lessonPreviewRequestId != requestId;
+  }
+
+  Future<void> _loadPersistedLessonPreview({
+    required String lessonId,
+    required int requestId,
+  }) async {
+    try {
+      final content = await _studioRepo.readLessonContent(lessonId);
+      if (content.lessonId != lessonId) {
+        throw StateError('Lektionsinnehållet hör till fel lektion.');
+      }
+      if (_isStaleLessonPreviewRequest(
+        lessonId: lessonId,
+        requestId: requestId,
+      )) {
+        return;
+      }
+
+      if (kDebugMode) {
+        var controllerMarkdown = '<serialization unavailable>';
+        try {
+          controllerMarkdown = _serializeLessonMarkdownFromController(
+            _lessonContentController,
+          );
+        } catch (_) {}
+        _traceLessonString(
+          'preview.source.persisted_markdown',
+          content.contentMarkdown,
+        );
+        _traceLessonString(
+          'preview.source.controller_markdown',
+          controllerMarkdown,
+        );
+        debugPrint(
+          '[LessonTrace] preview.source.authority=backend_read '
+          'lesson=$lessonId '
+          'differs_from_controller='
+          '${content.contentMarkdown != controllerMarkdown}',
+        );
+      }
+
+      setState(() {
+        _lessonPreviewLoading = false;
+        _lessonPreviewMarkdown = content.contentMarkdown;
+        _lessonPreviewError = null;
+      });
+    } catch (error, stackTrace) {
+      if (_isStaleLessonPreviewRequest(
+        lessonId: lessonId,
+        requestId: requestId,
+      )) {
+        return;
+      }
+      final failure = AppFailure.from(error, stackTrace);
+      setState(() {
+        _lessonPreviewLoading = false;
+        _lessonPreviewMarkdown = null;
+        _lessonPreviewError =
+            'Kunde inte läsa sparad förhandsgranskning: ${failure.message}';
+      });
+    }
   }
 
   void _startInitialLessonPreviewHydration({
@@ -3406,11 +3500,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   Widget _buildLessonPreviewMode(BuildContext context) {
     final theme = Theme.of(context);
-    final liveLessonTitle = _lessonTitleCtrl.text.trim();
+    final persistedLessonTitle = _lastSavedLessonTitle.trim();
     final fallbackLessonTitle =
         _lessonById(_selectedLessonId)?.lessonTitle.trim() ?? '';
-    final previewTitle = liveLessonTitle.isNotEmpty
-        ? liveLessonTitle
+    final previewTitle = persistedLessonTitle.isNotEmpty
+        ? persistedLessonTitle
         : fallbackLessonTitle.isNotEmpty
         ? fallbackLessonTitle
         : 'Lektion';
@@ -3420,19 +3514,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final previewMedia = _lessonMediaLessonId == _selectedLessonId
         ? _lessonMediaItemsFromStudioMedia(_lessonMedia)
         : const <LessonMediaItem>[];
-    String? previewMarkdown;
-    String? previewError;
-
-    try {
-      previewMarkdown = _serializeLessonMarkdownFromController(
-        _lessonContentController,
-      );
-    } catch (error, stackTrace) {
-      final message = AppFailure.from(error, stackTrace).message.trim();
-      previewError = message.isEmpty
-          ? 'Kunde inte rendera live preview.'
-          : 'Kunde inte rendera live preview: $message';
-    }
+    final previewMarkdown = _lessonPreviewMarkdown;
+    final previewError = _lessonPreviewError;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3480,11 +3563,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             gap12,
           ],
         Expanded(
-          child: previewMarkdown == null
+          child: _lessonPreviewLoading
+              ? const Center(child: CircularProgressIndicator())
+              : previewMarkdown == null
               ? Center(
                   child: Text(
                     previewError ??
-                        'Live preview kunde inte byggas från editorn.',
+                        'Sparad förhandsgranskning kunde inte läsas.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: previewError == null
                           ? theme.colorScheme.onSurfaceVariant

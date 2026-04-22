@@ -1074,6 +1074,10 @@ async def create_course(
     teacher_id: str | None = None,
 ) -> dict[str, Any]:
     _reject_legacy_cover_url_write(payload)
+    if "group_position" in payload:
+        raise ValueError(
+            "group_position is not accepted for course create; courses append within the family automatically"
+        )
     normalized_teacher_id = str(teacher_id or "").strip()
     if not normalized_teacher_id:
         raise ValueError("teacher_id is required")
@@ -1143,6 +1147,13 @@ async def update_course(
     teacher_id: str | None = None,
 ) -> dict[str, Any] | None:
     _reject_legacy_cover_url_write(patch)
+    forbidden_transition_fields = sorted(
+        field for field in ("course_group_id", "group_position") if field in patch
+    )
+    if forbidden_transition_fields:
+        raise ValueError(
+            "course family transitions must use the explicit reorder or move-family operations"
+        )
     existing_course = await courses_repo.get_course(course_id=course_id)
     if existing_course is None:
         return None
@@ -1175,6 +1186,64 @@ async def update_course(
     )
 
     row = await courses_repo.update_course(course_id, patch)
+    if row is None:
+        return None
+    return dict(row)
+
+
+async def reorder_course_within_family(
+    course_id: str,
+    *,
+    group_position: int,
+    teacher_id: str | None = None,
+) -> dict[str, Any] | None:
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise PermissionError("Course owner required")
+
+    existing_course = await courses_repo.get_course(course_id=course_id)
+    if existing_course is None:
+        return None
+    if not await courses_repo.is_course_owner(course_id, normalized_teacher_id):
+        raise PermissionError("Not course owner")
+
+    row = await courses_repo.update_course(
+        course_id,
+        {"group_position": int(group_position)},
+    )
+    if row is None:
+        return None
+    return dict(row)
+
+
+async def move_course_to_family(
+    course_id: str,
+    *,
+    course_group_id: str,
+    teacher_id: str | None = None,
+) -> dict[str, Any] | None:
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise PermissionError("Course owner required")
+
+    existing_course = await courses_repo.get_course(course_id=course_id)
+    if existing_course is None:
+        return None
+    if not await courses_repo.is_course_owner(course_id, normalized_teacher_id):
+        raise PermissionError("Not course owner")
+
+    target_course_group_id = str(course_group_id or "").strip()
+    if not target_course_group_id:
+        raise ValueError("course_group_id is required")
+    if target_course_group_id == str(existing_course["course_group_id"]):
+        raise ValueError(
+            "move-family requires a different course_group_id; use reorder for same-family changes"
+        )
+
+    row = await courses_repo.update_course(
+        course_id,
+        {"course_group_id": target_course_group_id},
+    )
     if row is None:
         return None
     return dict(row)

@@ -1221,7 +1221,6 @@ class StudioCourseCreate(BaseModel):
     title: str
     slug: str
     course_group_id: UUID
-    group_position: int = Field(ge=0)
     cover_media_id: UUID | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool
@@ -1243,12 +1242,22 @@ class StudioCourseUpdate(BaseModel):
 
     title: str | None = None
     slug: str | None = None
-    course_group_id: UUID | None = None
-    group_position: int | None = Field(default=None, ge=0)
     cover_media_id: UUID | None = None
     price_amount_cents: int | None = None
     drip_enabled: bool | None = None
     drip_interval_days: int | None = None
+
+
+class StudioCourseFamilyReorder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_position: int = Field(ge=0)
+
+
+class StudioCourseFamilyMove(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    course_group_id: UUID
 
 
 class StudioModuleCreate(BaseModel):

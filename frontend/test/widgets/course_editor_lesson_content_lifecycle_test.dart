@@ -710,7 +710,7 @@ void main() {
   );
 
   testWidgets(
-    'live preview renders formatted markdown and media without saved mirror UI',
+    'preview renders persisted markdown and media without saved mirror UI',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -817,7 +817,7 @@ void main() {
       expect(previewText, contains('Body text'));
       expect(previewText, contains('Ordered item'));
       expect(previewText, contains('Bullet item'));
-      expect(previewText, contains('unsaved draft'));
+      expect(previewText, isNot(contains('unsaved draft')));
       expect(
         boldStyles.any((style) => style?.fontWeight == FontWeight.bold),
         isTrue,
@@ -843,7 +843,7 @@ void main() {
         findsAtLeastNWidgets(1),
       );
 
-      verifyNever(() => repo.readLessonContent(any()));
+      verify(() => repo.readLessonContent(any())).called(1);
       verifyNever(() => repo.fetchLessonMediaPlacements(any()));
       verifyNever(() => repo.fetchCourseMeta(any()));
       verifyNever(() => repo.fetchLessonMediaPreviews(any()));
@@ -864,40 +864,44 @@ void main() {
     },
   );
 
-  testWidgets('live preview reflects the latest unsaved editor changes', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1400, 1000));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+  testWidgets(
+    'preview ignores unsaved editor changes and refetches persisted content',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final repo = _MockStudioRepository();
-    _stubBaseStudioData(repo);
+      final repo = _MockStudioRepository();
+      _stubBaseStudioData(repo);
 
-    await _pumpCourseEditor(tester, repo: repo);
-    await _pumpUntilDocumentContains(tester, 'Persisted content');
-    await tester.pumpAndSettle();
-    clearInteractions(repo);
+      await _pumpCourseEditor(tester, repo: repo);
+      await _pumpUntilDocumentContains(tester, 'Persisted content');
+      await tester.pumpAndSettle();
+      clearInteractions(repo);
 
-    _insertAtDocumentEnd(' draft one');
-    await tester.pump();
-    await _openLessonPreview(tester);
-    await _pumpUntilFinderFound(
-      tester,
-      find.textContaining('draft one', findRichText: true),
-    );
+      _insertAtDocumentEnd(' draft one');
+      await tester.pump();
+      await _openLessonPreview(tester);
+      await _pumpUntilFinderFound(
+        tester,
+        find.textContaining('Persisted content', findRichText: true),
+      );
+      expect(_renderedPreviewText(tester), isNot(contains('draft one')));
 
-    await _closeLessonPreview(tester);
-    _insertAtDocumentEnd(' draft two');
-    await tester.pump();
+      await _closeLessonPreview(tester);
+      _insertAtDocumentEnd(' draft two');
+      await tester.pump();
 
-    await _openLessonPreview(tester);
-    await _pumpUntilFinderFound(
-      tester,
-      find.textContaining('draft one draft two', findRichText: true),
-    );
-    verifyNever(() => repo.readLessonContent(any()));
-    verifyNever(() => repo.fetchLessonMediaPlacements(any()));
-  });
+      await _openLessonPreview(tester);
+      await _pumpUntilFinderFound(
+        tester,
+        find.textContaining('Persisted content', findRichText: true),
+      );
+      expect(_renderedPreviewText(tester), isNot(contains('draft one')));
+      expect(_renderedPreviewText(tester), isNot(contains('draft two')));
+      verify(() => repo.readLessonContent(any())).called(2);
+      verifyNever(() => repo.fetchLessonMediaPlacements(any()));
+    },
+  );
 
   testWidgets('failed content read keeps editor in fail-closed boot shell', (
     tester,
