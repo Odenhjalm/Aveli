@@ -119,6 +119,7 @@ def _course_cover_pipeline_asset(
     purpose: str = "course_cover",
     state: str = "ready",
     playback_format: str = "jpg",
+    course_id: str | None = COURSE_ID,
     original_object_path: str | None = None,
     playback_object_path: str | None = "__DEFAULT__",
 ) -> dict:
@@ -131,6 +132,7 @@ def _course_cover_pipeline_asset(
         "media_type": media_type,
         "purpose": purpose,
         "state": state,
+        "course_id": course_id,
         "original_object_path": original_object_path
         or f"media/source/cover/courses/{COURSE_ID}/source.png",
         "playback_object_path": exact_playback_object_path,
@@ -203,6 +205,32 @@ async def test_validate_course_cover_assignment_accepts_ready_canonical_media(
     )
 
 
+async def test_validate_course_cover_assignment_prefers_metadata_scope(
+    monkeypatch,
+):
+    async def fake_get_pipeline_asset(media_asset_id: str):
+        assert media_asset_id == MEDIA_ID
+        return _course_cover_pipeline_asset(
+            course_id=COURSE_ID,
+            original_object_path="invalid/cover/path.png",
+        )
+
+    monkeypatch.setattr(
+        courses_service.media_assets_repo,
+        "get_course_cover_pipeline_asset",
+        fake_get_pipeline_asset,
+        raising=True,
+    )
+
+    assert (
+        await courses_service._validate_course_cover_assignment(
+            course_id=COURSE_ID,
+            cover_media_id=MEDIA_ID,
+        )
+        == MEDIA_ID
+    )
+
+
 @pytest.mark.parametrize(
     ("cover_media_id", "message"),
     [
@@ -240,12 +268,14 @@ async def test_validate_course_cover_assignment_rejects_non_id_inputs(
         ),
         (
             _course_cover_pipeline_asset(
+                course_id=None,
                 original_object_path="media/source/cover/courses/wrong-course/source.png"
             ),
             "cover_media_id is not scoped to this course",
         ),
         (
             _course_cover_pipeline_asset(
+                course_id=None,
                 original_object_path="courses/course-1/covers/source.png"
             ),
             "cover_media_id is not scoped to this course",
@@ -1022,23 +1052,25 @@ async def test_studio_courses_list_response_uses_canonical_cover_shape(
 ):
     app.dependency_overrides[permissions.require_teacher] = lambda: {"id": TEACHER_ID}
 
-    async def fake_list_courses(**kwargs):
-        assert kwargs == {"teacher_id": TEACHER_ID}
-        return [{**_course(), "cover": _resolved_cover_payload()}]
-
-    async def fake_apply_course_read_contract(courses):
-        return None
+    async def fake_list_courses(*, teacher_id: str):
+        assert teacher_id == TEACHER_ID
+        return [
+            {
+                **_course(),
+                "cover": _resolved_cover_payload(),
+                "drip_authoring": {
+                    "mode": "no_drip_immediate_access",
+                    "schedule_locked": False,
+                    "lock_reason": None,
+                    "legacy_uniform": None,
+                },
+            }
+        ]
 
     monkeypatch.setattr(
         studio_routes.courses_service,
-        "list_courses",
+        "list_studio_courses",
         fake_list_courses,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        studio_routes,
-        "_apply_course_read_contract",
-        fake_apply_course_read_contract,
         raising=True,
     )
 
@@ -1064,8 +1096,19 @@ async def test_studio_course_detail_response_uses_canonical_cover_shape(
         assert teacher_id == TEACHER_ID
         return {**_course(), "cover": _resolved_cover_payload()}
 
-    async def fake_apply_course_read_contract(courses):
-        return None
+    async def fake_fetch_studio_course(course_id: str):
+        assert course_id == COURSE_ID
+        return {
+            **_course(),
+            "cover": _resolved_cover_payload(),
+            "drip_authoring": {
+                "mode": "no_drip_immediate_access",
+                "schedule_locked": False,
+                "lock_reason": None,
+                "legacy_uniform": None,
+                "custom_schedule": None,
+            },
+        }
 
     monkeypatch.setattr(
         studio_routes.studio_authority,
@@ -1074,9 +1117,9 @@ async def test_studio_course_detail_response_uses_canonical_cover_shape(
         raising=True,
     )
     monkeypatch.setattr(
-        studio_routes,
-        "_apply_course_read_contract",
-        fake_apply_course_read_contract,
+        studio_routes.courses_service,
+        "fetch_studio_course",
+        fake_fetch_studio_course,
         raising=True,
     )
 

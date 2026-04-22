@@ -363,7 +363,26 @@ async def test_canonical_upload_url_creates_asset_without_placement(monkeypatch)
     assert len(asset_calls) == 1
     assert asset_calls[0]["purpose"] == "lesson_media"
     assert asset_calls[0]["state"] == "pending_upload"
+    assert asset_calls[0]["original_filename"] == "guide.pdf"
+    assert asset_calls[0]["lesson_id"] == LESSON_ID
+    assert asset_calls[0]["course_id"] == "55555555-5555-5555-5555-555555555555"
     assert upload_calls == []
+
+
+def test_canonical_lesson_media_scope_prefers_metadata_over_path() -> None:
+    media_type, lesson_id, course_id = studio._canonical_lesson_media_asset_scope(
+        {
+            "media_type": "video",
+            "purpose": "lesson_media",
+            "lesson_id": LESSON_ID,
+            "course_id": "55555555-5555-5555-5555-555555555555",
+            "original_object_path": "legacy/incorrect/path.mp4",
+        }
+    )
+
+    assert media_type == "video"
+    assert lesson_id == LESSON_ID
+    assert course_id == "55555555-5555-5555-5555-555555555555"
 
 
 async def test_canonical_upload_completion_does_not_attach(monkeypatch):
@@ -418,6 +437,88 @@ async def test_canonical_upload_completion_does_not_attach(monkeypatch):
     assert response.asset_state == "uploaded"
     assert not hasattr(response, "lesson_media_id")
     assert completed == [MEDIA_ASSET_ID]
+
+
+async def test_course_cover_upload_url_persists_metadata_without_exposing_storage(
+    monkeypatch,
+) -> None:
+    created: dict[str, object] = {}
+    course_id = "55555555-5555-5555-5555-555555555555"
+
+    async def fake_authoring_context(*, course_id: str, current):
+        assert str(current["id"]) == TEACHER_ID
+        return course_id
+
+    async def fake_create_media_asset(**kwargs):
+        created.update(kwargs)
+        return {"id": MEDIA_ASSET_ID, "state": "pending_upload"}
+
+    monkeypatch.setattr(
+        studio,
+        "_require_canonical_course_cover_authoring_context",
+        fake_authoring_context,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.media_assets_repo,
+        "create_media_asset",
+        fake_create_media_asset,
+        raising=True,
+    )
+
+    response = await studio.canonical_issue_course_cover_upload_url(
+        course_id=studio.UUID(course_id),
+        payload=schemas.CanonicalCourseCoverUploadUrlRequest(
+            filename="cover art.png",
+            mime_type="image/png",
+            size_bytes=12,
+        ),
+        current={"id": TEACHER_ID},
+    )
+
+    assert str(response.media_asset_id) == MEDIA_ASSET_ID
+    assert response.upload_endpoint == f"/api/media-assets/{MEDIA_ASSET_ID}/upload-bytes"
+    assert _payload_keys(response.model_dump(mode="json")).isdisjoint(
+        FORBIDDEN_MEDIA_FIELDS | {"headers", "storage_bucket"}
+    )
+    assert created["purpose"] == "course_cover"
+    assert created["original_filename"] == "cover art.png"
+    assert created["course_id"] == course_id
+
+
+async def test_home_player_upload_url_persists_owner_metadata_without_exposing_storage(
+    monkeypatch,
+) -> None:
+    created: dict[str, object] = {}
+
+    async def fake_create_media_asset(**kwargs):
+        created.update(kwargs)
+        return {"id": MEDIA_ASSET_ID, "state": "pending_upload"}
+
+    monkeypatch.setattr(
+        studio.media_assets_repo,
+        "create_media_asset",
+        fake_create_media_asset,
+        raising=True,
+    )
+
+    response = await studio.canonical_issue_home_player_upload_url(
+        payload=schemas.CanonicalHomePlayerMediaUploadUrlRequest(
+            filename="focus mix.m4a",
+            mime_type="audio/mp4",
+            size_bytes=12,
+        ),
+        current={"id": TEACHER_ID},
+    )
+
+    assert str(response.media_asset_id) == MEDIA_ASSET_ID
+    assert response.upload_endpoint == f"/api/media-assets/{MEDIA_ASSET_ID}/upload-bytes"
+    assert _payload_keys(response.model_dump(mode="json")).isdisjoint(
+        FORBIDDEN_MEDIA_FIELDS | {"headers", "storage_bucket"}
+    )
+    assert created["purpose"] == "home_player_audio"
+    assert created["original_filename"] == "focus mix.m4a"
+    assert created["owner_user_id"] == TEACHER_ID
 
 
 async def test_canonical_placement_attaches_uploaded_asset_without_asset_creation(

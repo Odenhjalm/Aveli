@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
@@ -37,7 +36,7 @@ def _require_avatar_mime_type(value: str) -> str:
 
 
 def _avatar_ingest_format(*, filename: str, mime_type: str) -> str:
-    suffix = Path(filename).suffix.lower().lstrip(".")
+    suffix = media_paths.media_filename_suffix(filename).lstrip(".")
     if mime_type == "image/jpeg":
         return "jpeg"
     if mime_type == "image/png":
@@ -124,6 +123,8 @@ async def canonical_issue_profile_avatar_init(
         media_asset_id=str(uuid4()),
         media_type="image",
         purpose="profile_media",
+        original_filename=payload.filename,
+        owner_user_id=str(current["id"]),
         original_object_path=object_path,
         ingest_format=ingest_format,
         state="pending_upload",

@@ -46,6 +46,7 @@ def _profile_media_asset(
         "purpose": purpose,
         "media_type": media_type,
         "state": state,
+        "owner_user_id": scoped_user_id,
         "original_object_path": (
             f"media/source/profile-avatar/{scoped_user_id}/avatar.png"
         ),
@@ -106,6 +107,8 @@ async def test_profile_avatar_init_creates_profile_media_asset(monkeypatch) -> N
     assert created["media_type"] == "image"
     assert created["purpose"] == "profile_media"
     assert created["state"] == "pending_upload"
+    assert created["original_filename"] == "avatar.png"
+    assert created["owner_user_id"] == user_id
     assert str(created["original_object_path"]).startswith(
         f"media/source/profile-avatar/{user_id}/"
     )
@@ -122,6 +125,7 @@ async def test_existing_upload_authorization_admits_scoped_profile_media(
         media_asset_id=media_asset_id,
         state="pending_upload",
     )
+    asset["original_object_path"] = "invalid/profile/path.png"
 
     async def fake_lesson_authorization(**kwargs):
         raise HTTPException(status_code=422, detail="not lesson media")
@@ -151,6 +155,44 @@ async def test_existing_upload_authorization_admits_scoped_profile_media(
         studio._canonical_upload_storage_bucket(authorized)
         == studio.settings.media_profile_bucket
     )
+
+
+async def test_existing_upload_authorization_admits_legacy_profile_media_scope_fallback(
+    monkeypatch,
+) -> None:
+    user_id = _uuid()
+    media_asset_id = _uuid()
+    asset = _profile_media_asset(
+        user_id=user_id,
+        media_asset_id=media_asset_id,
+        state="pending_upload",
+    )
+    asset.pop("owner_user_id", None)
+
+    async def fake_lesson_authorization(**kwargs):
+        raise HTTPException(status_code=422, detail="not lesson media")
+
+    async def fake_get_media_asset(candidate_media_asset_id: str):
+        assert candidate_media_asset_id == media_asset_id
+        return asset
+
+    monkeypatch.setattr(
+        studio,
+        "_authorize_canonical_lesson_media_asset",
+        fake_lesson_authorization,
+    )
+    monkeypatch.setattr(
+        studio.media_assets_repo,
+        "get_media_asset",
+        fake_get_media_asset,
+    )
+
+    authorized = await studio._authorize_canonical_media_upload_asset(
+        media_asset_id=media_asset_id,
+        current={"id": user_id},
+    )
+
+    assert authorized == asset
 
 
 async def test_profile_avatar_upload_completion_uses_canonical_uploaded_transition(

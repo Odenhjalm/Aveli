@@ -91,6 +91,11 @@ def _replay_to_slot(slot_number: int) -> dict[str, object]:
             "e3799c21f12637d84174a638b741e9ce947e0b9b4df9800f1aa94ce3b5ab6f87",
             "aa3b2cfe71b124ae990a69c5f9541ff08841a55f65291f7558709dcc5f3eec6c",
         ),
+        (
+            27,
+            "3cfe178bba82e151dc462b9c1de0c6785ab7cfd7743abb0e43c4cd351df79b8d",
+            "a9eb67c5bcaeff49547d8e9fb065d7f6be6a8231b43b19d48c938a06521b7040",
+        ),
     ),
 )
 def test_cutover_post_state_hashes_match_clean_replay(
@@ -116,7 +121,7 @@ def test_slot_25_cutover_hash_is_stable_across_clean_replays() -> None:
     assert first == second
 
 
-def test_exact_25_slot_artifact_would_allow_24_to_25_but_current_26_artifact_blocks() -> None:
+def test_exact_25_slot_artifact_would_allow_24_to_25_but_current_final_artifact_blocks() -> None:
     lock = _load_lock()
     current_entries = baseline_v2_cutover._lock_slot_entries(lock)
     slot_24_state = {

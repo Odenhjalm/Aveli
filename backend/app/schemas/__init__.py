@@ -930,6 +930,99 @@ class Course(BaseModel):
     purchasable: bool
 
 
+StudioCourseDripMode = Literal[
+    "custom_lesson_offsets",
+    "legacy_uniform_drip",
+    "no_drip_immediate_access",
+]
+StudioCourseScheduleLockReason = Literal["first_enrollment_exists"]
+
+
+class StudioCourseDripLegacyUniform(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    drip_interval_days: int = Field(ge=1)
+
+
+class StudioCourseDripCustomScheduleRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_id: UUID
+    unlock_offset_days: int = Field(ge=0)
+
+
+class StudioCourseDripCustomSchedule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rows: List[StudioCourseDripCustomScheduleRow]
+
+
+class StudioCourseDripAuthoringSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: StudioCourseDripMode
+    schedule_locked: bool
+    lock_reason: StudioCourseScheduleLockReason | None = None
+    legacy_uniform: StudioCourseDripLegacyUniform | None = None
+
+
+class StudioCourseDripAuthoringDetail(StudioCourseDripAuthoringSummary):
+    model_config = ConfigDict(extra="forbid")
+
+    custom_schedule: StudioCourseDripCustomSchedule | None = None
+
+
+class StudioCourseSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    slug: str
+    title: str
+    teacher: CourseTeacher | None
+    course_group_id: UUID
+    group_position: int
+    cover_media_id: UUID | None = None
+    cover: CourseCoverMedia | None = None
+    price_amount_cents: int | None = None
+    required_enrollment_source: Literal["purchase", "intro_enrollment"] | None
+    enrollable: bool
+    purchasable: bool
+    drip_authoring: StudioCourseDripAuthoringSummary
+
+
+class StudioCourseDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    slug: str
+    title: str
+    teacher: CourseTeacher | None
+    course_group_id: UUID
+    group_position: int
+    cover_media_id: UUID | None = None
+    cover: CourseCoverMedia | None = None
+    price_amount_cents: int | None = None
+    required_enrollment_source: Literal["purchase", "intro_enrollment"] | None
+    enrollable: bool
+    purchasable: bool
+    drip_authoring: StudioCourseDripAuthoringDetail
+
+
+class StudioCourseListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: List[StudioCourseSummary]
+
+
+class StudioCourseScheduleLockError(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Literal["studio_course_schedule_locked"]
+    detail: str
+    course_id: UUID
+    schedule_locked: Literal[True] = True
+
+
 class CourseFamily(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1274,8 +1367,47 @@ class StudioCourseUpdate(BaseModel):
     slug: str | None = None
     cover_media_id: UUID | None = None
     price_amount_cents: int | None = None
-    drip_enabled: bool | None = None
-    drip_interval_days: int | None = None
+
+
+class StudioCourseDripAuthoringPut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: StudioCourseDripMode
+    legacy_uniform: StudioCourseDripLegacyUniform | None = None
+    custom_schedule: StudioCourseDripCustomSchedule | None = None
+
+    @model_validator(mode="after")
+    def _validate_shape(self):
+        if self.mode == "legacy_uniform_drip":
+            if self.legacy_uniform is None:
+                raise ValueError(
+                    "legacy_uniform is required when mode is legacy_uniform_drip"
+                )
+            if self.custom_schedule is not None:
+                raise ValueError(
+                    "custom_schedule must be null when mode is legacy_uniform_drip"
+                )
+            return self
+
+        if self.mode == "custom_lesson_offsets":
+            if self.custom_schedule is None:
+                raise ValueError(
+                    "custom_schedule is required when mode is custom_lesson_offsets"
+                )
+            if self.legacy_uniform is not None:
+                raise ValueError(
+                    "legacy_uniform must be null when mode is custom_lesson_offsets"
+                )
+            return self
+
+        if self.mode == "no_drip_immediate_access":
+            if self.legacy_uniform is not None or self.custom_schedule is not None:
+                raise ValueError(
+                    "legacy_uniform and custom_schedule must be null when mode is no_drip_immediate_access"
+                )
+            return self
+
+        raise ValueError("Unsupported studio course drip authoring mode")
 
 
 class StudioCourseFamilyReorder(BaseModel):

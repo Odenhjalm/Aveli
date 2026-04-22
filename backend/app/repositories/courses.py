@@ -33,6 +33,27 @@ _COURSE_COLUMNS = """
     c.cover_media_id
 """
 
+_STUDIO_COURSE_COLUMNS = f"""
+    {_COURSE_COLUMNS},
+    case
+        when exists (
+            select 1
+            from app.course_custom_drip_configs as config
+            where config.course_id = c.id
+        ) then 'custom_lesson_offsets'
+        when c.drip_enabled is true
+             and c.drip_interval_days is not null
+             and c.drip_interval_days > 0
+          then 'legacy_uniform_drip'
+        else 'no_drip_immediate_access'
+    end as drip_mode,
+    exists (
+        select 1
+        from app.course_enrollments as ce
+        where ce.course_id = c.id
+    ) as schedule_locked
+"""
+
 _PUBLIC_DISCOVERY_COLUMNS = """
     cds.id,
     cds.slug,
@@ -50,7 +71,10 @@ _PUBLIC_DISCOVERY_COLUMNS = """
 """
 
 _MEDIA_ORIGINAL_NAME_SQL = """
-    nullif(regexp_replace(ma.original_object_path, '^.*/', ''), '') as original_name
+    coalesce(
+        nullif(btrim(ma.original_filename), ''),
+        nullif(regexp_replace(ma.original_object_path, '^.*/', ''), '')
+    ) as original_name
 """
 
 
@@ -66,6 +90,14 @@ class CourseCreateDatabaseError(RuntimeError):
         self.title = title
         self.slug = slug
         self.cause = cause
+
+
+class CourseScheduleLockedError(RuntimeError):
+    def __init__(self, course_id: str) -> None:
+        super().__init__(
+            "custom drip schedule-affecting edits are locked after first enrollment"
+        )
+        self.course_id = course_id
 
 
 def _safe_course_create_log_value(value: Any, *, limit: int = 160) -> str | None:
@@ -370,8 +402,6 @@ async def _apply_course_metadata_patch(
             lambda value: str(value) if value is not None else None,
         ),
         ("price_amount_cents", "price_amount_cents = %s", lambda value: value),
-        ("drip_enabled", "drip_enabled = %s", lambda value: value),
-        ("drip_interval_days", "drip_interval_days = %s", lambda value: value),
         (
             "cover_media_id",
             "cover_media_id = %s::uuid",
@@ -436,6 +466,21 @@ async def get_course(
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_studio_course(course_id: str) -> CourseRow | None:
+    query = f"""
+        select {_STUDIO_COURSE_COLUMNS}
+        from app.courses as c
+        where c.id = %s::uuid
+        limit 1
+    """
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
             row = await cur.fetchone()
     return dict(row) if row else None
 
@@ -518,6 +563,42 @@ async def list_courses(
 
     query = f"""
         select {_COURSE_COLUMNS}
+        from app.courses as c
+        {where_sql}
+        order by c.slug asc
+        {limit_sql}
+    """
+
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def list_studio_courses(
+    *,
+    teacher_id: str | None = None,
+    limit: int | None = None,
+    search: str | None = None,
+) -> Sequence[CourseRow]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if teacher_id:
+        clauses.append("c.teacher_id = %s::uuid")
+        params.append(teacher_id)
+    if search:
+        pattern = f"%{search}%"
+        clauses.append("(c.title ilike %s or c.slug ilike %s)")
+        params.extend([pattern, pattern])
+
+    where_sql = f"where {' and '.join(clauses)}" if clauses else ""
+    limit_sql = "limit %s" if limit is not None else ""
+    if limit is not None:
+        params.append(int(limit))
+
+    query = f"""
+        select {_STUDIO_COURSE_COLUMNS}
         from app.courses as c
         {where_sql}
         order by c.slug asc
@@ -1212,6 +1293,173 @@ async def list_studio_course_lessons(course_id: str) -> Sequence[LessonRow]:
             await cur.execute(query, (course_id,))
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def list_course_custom_drip_lesson_offsets(
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> Sequence[dict[str, Any]]:
+    query = """
+        select
+            offsets.lesson_id,
+            offsets.unlock_offset_days
+        from app.course_custom_drip_lesson_offsets as offsets
+        join app.lessons as l
+          on l.id = offsets.lesson_id
+        where offsets.course_id = %s::uuid
+        order by l.position asc, l.id asc
+    """
+
+    async def _execute(active_conn: Any) -> Sequence[dict[str, Any]]:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
+
+
+async def course_schedule_is_locked(
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> bool:
+    query = """
+        select exists (
+            select 1
+            from app.course_enrollments
+            where course_id = %s::uuid
+        )
+    """
+
+    async def _execute(active_conn: Any) -> bool:
+        async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            row = await cur.fetchone()
+        return bool(row[0]) if row else False
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
+
+
+async def replace_course_drip_authoring(
+    course_id: str,
+    *,
+    mode: str,
+    legacy_drip_interval_days: int | None,
+    custom_schedule_rows: Sequence[dict[str, Any]],
+) -> CourseRow | None:
+    async with pool.connection() as conn:  # type: ignore
+        await _acquire_course_transition_lock(
+            conn,
+            scope="course",
+            key=course_id,
+        )
+        locked_row = await _get_course_transition_row(
+            conn,
+            course_id,
+            for_update=True,
+        )
+        if locked_row is None:
+            return None
+        if await course_schedule_is_locked(course_id, conn=conn):
+            await conn.rollback()
+            raise CourseScheduleLockedError(course_id)
+
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            if mode == "custom_lesson_offsets":
+                await cur.execute(
+                    """
+                    update app.courses
+                    set drip_enabled = false,
+                        drip_interval_days = null
+                    where id = %s::uuid
+                    """,
+                    (course_id,),
+                )
+                await cur.execute(
+                    """
+                    insert into app.course_custom_drip_configs (course_id)
+                    values (%s::uuid)
+                    on conflict (course_id) do nothing
+                    """,
+                    (course_id,),
+                )
+                await cur.execute(
+                    """
+                    delete from app.course_custom_drip_lesson_offsets
+                    where course_id = %s::uuid
+                    """,
+                    (course_id,),
+                )
+                for row in custom_schedule_rows:
+                    await cur.execute(
+                        """
+                        insert into app.course_custom_drip_lesson_offsets (
+                            course_id,
+                            lesson_id,
+                            unlock_offset_days
+                        )
+                        values (
+                            %s::uuid,
+                            %s::uuid,
+                            %s
+                        )
+                        """,
+                        (
+                            course_id,
+                            str(row["lesson_id"]),
+                            int(row["unlock_offset_days"]),
+                        ),
+                    )
+            elif mode == "legacy_uniform_drip":
+                await cur.execute(
+                    """
+                    delete from app.course_custom_drip_configs
+                    where course_id = %s::uuid
+                    """,
+                    (course_id,),
+                )
+                await cur.execute(
+                    """
+                    update app.courses
+                    set drip_enabled = true,
+                        drip_interval_days = %s
+                    where id = %s::uuid
+                    """,
+                    (legacy_drip_interval_days, course_id),
+                )
+            elif mode == "no_drip_immediate_access":
+                await cur.execute(
+                    """
+                    delete from app.course_custom_drip_configs
+                    where course_id = %s::uuid
+                    """,
+                    (course_id,),
+                )
+                await cur.execute(
+                    """
+                    update app.courses
+                    set drip_enabled = false,
+                        drip_interval_days = null
+                    where id = %s::uuid
+                    """,
+                    (course_id,),
+                )
+            else:
+                await conn.rollback()
+                raise ValueError("Unsupported studio course drip authoring mode")
+        await conn.commit()
+
+    return await get_studio_course(course_id)
 
 
 async def list_course_publish_lessons(course_id: str) -> Sequence[dict[str, Any]]:

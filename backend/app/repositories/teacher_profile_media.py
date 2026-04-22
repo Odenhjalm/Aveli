@@ -56,7 +56,7 @@ def profile_media_asset_belongs_to_subject(
     subject_user_id: str,
 ) -> bool:
     normalized_subject_user_id = _normalized_string(subject_user_id)
-    for owner_key in ("owner_id", "subject_user_id", "user_id"):
+    for owner_key in ("owner_user_id", "owner_id", "subject_user_id", "user_id"):
         owner_id = _normalized_string(asset.get(owner_key))
         if owner_id:
             return owner_id == normalized_subject_user_id

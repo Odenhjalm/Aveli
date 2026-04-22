@@ -6,9 +6,16 @@ from app import db, repositories
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
 from app.services import courses_service
+from ._custom_drip_test_support import ensure_custom_drip_schema
 
 
 pytestmark = pytest.mark.anyio("asyncio")
+
+
+@pytest.fixture(autouse=True)
+async def _ensure_custom_drip_schema(async_client):
+    del async_client
+    await ensure_custom_drip_schema()
 
 
 def auth_header(token: str) -> dict[str, str]:
@@ -123,6 +130,28 @@ async def read_course_family_rows(course_group_id: str) -> list[tuple[str, int]]
     return [(str(row[0]), int(row[1])) for row in rows]
 
 
+def assert_studio_drip_authoring(
+    course: dict,
+    *,
+    mode: str,
+    schedule_locked: bool = False,
+    legacy_interval: int | None = None,
+) -> None:
+    assert "drip_enabled" not in course
+    assert "drip_interval_days" not in course
+    drip_authoring = course["drip_authoring"]
+    assert drip_authoring["mode"] == mode
+    assert drip_authoring["schedule_locked"] is schedule_locked
+    expected_lock_reason = "first_enrollment_exists" if schedule_locked else None
+    assert drip_authoring["lock_reason"] == expected_lock_reason
+    if legacy_interval is None:
+        assert drip_authoring["legacy_uniform"] is None
+    else:
+        assert drip_authoring["legacy_uniform"] == {
+            "drip_interval_days": legacy_interval
+        }
+
+
 async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_client):
     teacher_email = f"teacher_{uuid.uuid4().hex[:8]}@example.com"
     student_email = f"student_{uuid.uuid4().hex[:8]}@example.com"
@@ -176,15 +205,26 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
         course_id = str(course["id"])
         assert course["slug"] == slug
         assert course["group_position"] == 0
-        assert course["drip_enabled"] is False
         assert course["cover_media_id"] is None
+        assert_studio_drip_authoring(
+            course,
+            mode="no_drip_immediate_access",
+        )
 
         teacher_courses = await async_client.get(
             "/studio/courses",
             headers=auth_header(teacher_token),
         )
         assert teacher_courses.status_code == 200, teacher_courses.text
-        assert any(str(item["id"]) == course_id for item in teacher_courses.json()["items"])
+        listed_course = next(
+            item
+            for item in teacher_courses.json()["items"]
+            if str(item["id"]) == course_id
+        )
+        assert_studio_drip_authoring(
+            listed_course,
+            mode="no_drip_immediate_access",
+        )
 
         student_patch = await async_client.patch(
             f"/studio/courses/{course_id}",
@@ -199,7 +239,12 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
             json={"title": "Intro to Aveli (Updated)"},
         )
         assert update_course.status_code == 200, update_course.text
-        assert update_course.json()["title"] == "Intro to Aveli (Updated)"
+        updated_course = update_course.json()
+        assert updated_course["title"] == "Intro to Aveli (Updated)"
+        assert_studio_drip_authoring(
+            updated_course,
+            mode="no_drip_immediate_access",
+        )
 
         cover_media_id = str(uuid.uuid4())
         await media_assets_repo.create_media_asset(
@@ -238,6 +283,10 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
         assert update_cover_body["cover"]["state"] == "ready"
         assert update_cover_body["cover"]["resolved_url"].endswith(
             f"/public-media/media/derived/cover/courses/{course_id}/{cover_media_id}.jpg"
+        )
+        assert_studio_drip_authoring(
+            update_cover_body,
+            mode="no_drip_immediate_access",
         )
 
         async with db.pool.connection() as conn:  # type: ignore[attr-defined]
@@ -563,9 +612,12 @@ async def test_studio_course_family_transition_endpoints_are_canonical(async_cli
             "cover_media_id",
             "cover",
             "price_amount_cents",
-            "drip_enabled",
-            "drip_interval_days",
+            "drip_authoring",
         }.issubset(body)
+        assert_studio_drip_authoring(
+            body,
+            mode="no_drip_immediate_access",
+        )
         return body
 
     try:
@@ -633,8 +685,13 @@ async def test_studio_course_family_transition_endpoints_are_canonical(async_cli
             json={"group_position": 0},
         )
         assert reordered.status_code == 200, reordered.text
-        assert reordered.json()["group_position"] == 0
-        assert reordered.json()["course_group_id"] == source_family_id
+        reordered_body = reordered.json()
+        assert reordered_body["group_position"] == 0
+        assert reordered_body["course_group_id"] == source_family_id
+        assert_studio_drip_authoring(
+            reordered_body,
+            mode="no_drip_immediate_access",
+        )
         assert await read_course_family_rows(source_family_id) == [
             (str(source_b["id"]), 0),
             (str(source_a["id"]), 1),
@@ -656,6 +713,10 @@ async def test_studio_course_family_transition_endpoints_are_canonical(async_cli
         moved_body = moved.json()
         assert moved_body["course_group_id"] == target_family_id
         assert moved_body["group_position"] == 1
+        assert_studio_drip_authoring(
+            moved_body,
+            mode="no_drip_immediate_access",
+        )
         assert await read_course_family_rows(source_family_id) == [
             (str(source_b["id"]), 0),
         ]

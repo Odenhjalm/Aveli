@@ -15,6 +15,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import JSONResponse
 
 from .. import models, schemas
 from ..auth import CurrentUser
@@ -71,7 +72,7 @@ _STUDIO_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
 )
 _COURSE_COVER_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
-_CANONICAL_COURSE_FIELDS = (
+_STUDIO_COURSE_COMMON_FIELDS = (
     "id",
     "slug",
     "title",
@@ -81,8 +82,6 @@ _CANONICAL_COURSE_FIELDS = (
     "cover_media_id",
     "cover",
     "price_amount_cents",
-    "drip_enabled",
-    "drip_interval_days",
     "required_enrollment_source",
     "enrollable",
     "purchasable",
@@ -165,7 +164,7 @@ def _require_studio_mime_type(value: str) -> str:
 
 
 def _studio_audio_ingest_format(*, filename: str, mime_type: str) -> str:
-    suffix = Path(filename).suffix.lower().lstrip(".")
+    suffix = upload_routes.media_paths.media_filename_suffix(filename).lstrip(".")
     if suffix not in {"mp3", "m4a", "wav"}:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -198,7 +197,7 @@ def _studio_passthrough_ingest_format(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail="Unsupported image format",
             )
-        suffix = Path(filename).suffix.lower().lstrip(".")
+        suffix = upload_routes.media_paths.media_filename_suffix(filename).lstrip(".")
         return suffix or mime_type.split("/", 1)[1].split(";", 1)[0]
     if media_type == "video":
         if not mime_type.startswith("video/"):
@@ -206,7 +205,7 @@ def _studio_passthrough_ingest_format(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail="Unsupported video format",
             )
-        suffix = Path(filename).suffix.lower().lstrip(".")
+        suffix = upload_routes.media_paths.media_filename_suffix(filename).lstrip(".")
         return suffix or mime_type.split("/", 1)[1].split(";", 1)[0]
     if media_type == "document":
         if mime_type != "application/pdf":
@@ -227,7 +226,7 @@ def _studio_course_cover_ingest_format(*, filename: str, mime_type: str) -> str:
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Unsupported cover image format",
         )
-    suffix = Path(filename).suffix.lower().lstrip(".")
+    suffix = upload_routes.media_paths.media_filename_suffix(filename).lstrip(".")
     if mime_type == "image/jpeg":
         return "jpeg"
     if mime_type == "image/png":
@@ -238,7 +237,10 @@ def _studio_course_cover_ingest_format(*, filename: str, mime_type: str) -> str:
 
 
 def _build_course_cover_source_object_path(course_id: str, filename: str) -> str:
-    safe_name = Path(filename).name.strip() or "cover"
+    safe_name = upload_routes.media_paths.normalize_media_filename(
+        filename,
+        fallback="cover",
+    ) or "cover"
     token = uuid4().hex
     path = (
         Path("media")
@@ -249,6 +251,11 @@ def _build_course_cover_source_object_path(course_id: str, filename: str) -> str
         / f"{token}_{safe_name}"
     )
     return path.as_posix()
+
+
+def _asset_metadata_text(media_asset: dict[str, Any], key: str) -> str | None:
+    value = str(media_asset.get(key) or "").strip()
+    return value or None
 
 
 def _canonical_lesson_media_asset_scope(
@@ -266,6 +273,13 @@ def _canonical_lesson_media_asset_scope(
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Unsupported media type",
+        )
+
+    metadata_lesson_id = _asset_metadata_text(media_asset, "lesson_id")
+    if metadata_lesson_id is not None:
+        return media_type, metadata_lesson_id, _asset_metadata_text(
+            media_asset,
+            "course_id",
         )
 
     object_path = str(media_asset.get("original_object_path") or "").strip().lstrip("/")
@@ -317,6 +331,10 @@ def _canonical_course_cover_asset_scope(media_asset: dict[str, Any]) -> str:
             detail="Only course cover image assets can use the course-cover pipeline",
         )
 
+    metadata_course_id = _asset_metadata_text(media_asset, "course_id")
+    if metadata_course_id is not None:
+        return metadata_course_id
+
     object_path = str(media_asset.get("original_object_path") or "").strip().lstrip("/")
     parts = Path(object_path).parts
     if len(parts) < 6 or parts[:4] != (
@@ -346,6 +364,10 @@ def _canonical_home_player_asset_scope(media_asset: dict[str, Any]) -> str:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Only home player audio assets can use the home-player pipeline",
         )
+
+    metadata_owner_user_id = _asset_metadata_text(media_asset, "owner_user_id")
+    if metadata_owner_user_id is not None:
+        return metadata_owner_user_id
 
     object_path = str(media_asset.get("original_object_path") or "").strip().lstrip("/")
     parts = Path(object_path).parts
@@ -586,26 +608,44 @@ def _recording_from_row(row: Dict[str, Any]) -> schemas.SeminarRecordingResponse
     data = _normalize_metadata(row, ("metadata",))
     return schemas.SeminarRecordingResponse(**data)
 
-
-async def _apply_course_read_contract(
-    courses: dict[str, Any] | list[dict[str, Any]] | None,
-) -> None:
-    await courses_service.attach_course_cover_read_contract(courses)
-
-
-def _canonical_course_payload(course: Dict[str, Any]) -> Dict[str, Any]:
+def _canonical_studio_course_payload(course: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(course)
-    courses_service.attach_course_access_model(normalized)
-    courses_service.attach_course_teacher_read_contract(normalized)
-    return {field: normalized.get(field) for field in _CANONICAL_COURSE_FIELDS}
+    payload = {field: normalized.get(field) for field in _STUDIO_COURSE_COMMON_FIELDS}
+    payload["drip_authoring"] = normalized.get("drip_authoring")
+    return payload
 
 
-def _course_response(course: Dict[str, Any]) -> schemas.Course:
-    return schemas.Course(**_canonical_course_payload(course))
+def _studio_course_summary_response(
+    course: Dict[str, Any],
+) -> schemas.StudioCourseSummary:
+    return schemas.StudioCourseSummary(**_canonical_studio_course_payload(course))
 
 
-def _course_list_response(rows: list[dict[str, Any]]) -> schemas.CourseListResponse:
-    return schemas.CourseListResponse(items=[_course_response(row) for row in rows])
+def _studio_course_detail_response(
+    course: Dict[str, Any],
+) -> schemas.StudioCourseDetail:
+    return schemas.StudioCourseDetail(**_canonical_studio_course_payload(course))
+
+
+def _studio_course_list_response(
+    rows: list[dict[str, Any]],
+) -> schemas.StudioCourseListResponse:
+    return schemas.StudioCourseListResponse(
+        items=[_studio_course_summary_response(row) for row in rows]
+    )
+
+
+def _studio_course_schedule_locked_response(course_id: str) -> JSONResponse:
+    payload = schemas.StudioCourseScheduleLockError(
+        code="studio_course_schedule_locked",
+        detail="Schedule-affecting edits are locked after first enrollment.",
+        course_id=UUID(course_id),
+        schedule_locked=True,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content=payload.model_dump(mode="json"),
+    )
 
 
 async def _require_studio_lesson(lesson_id: str) -> dict[str, Any]:
@@ -700,6 +740,10 @@ async def _issue_canonical_media_upload_session(
     media_type: str,
     purpose: str,
     ingest_format: str,
+    original_filename: str | None = None,
+    lesson_id: str | None = None,
+    course_id: str | None = None,
+    owner_user_id: str | None = None,
 ) -> tuple[dict[str, Any], datetime]:
     del mime_type
     try:
@@ -716,6 +760,10 @@ async def _issue_canonical_media_upload_session(
         media_asset_id=str(uuid4()),
         media_type=media_type,
         purpose=purpose,
+        original_filename=original_filename,
+        lesson_id=lesson_id,
+        course_id=course_id,
+        owner_user_id=owner_user_id,
         original_object_path=validated_object_path,
         ingest_format=ingest_format,
         state="pending_upload",
@@ -909,7 +957,7 @@ async def studio_add_certificate(
     _raise_v2_feature_disabled("Studio certificates")
 
 
-@course_lesson_router.post("/courses", response_model=schemas.Course)
+@course_lesson_router.post("/courses", response_model=schemas.StudioCourseDetail)
 async def create_course(payload: schemas.StudioCourseCreate, current: TeacherEntryUser):
     try:
         row = await courses_service.create_course(
@@ -937,8 +985,13 @@ async def create_course(payload: schemas.StudioCourseCreate, current: TeacherEnt
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=courses_service.COURSE_CREATE_INVALID_DATA_DETAIL,
         )
-    await _apply_course_read_contract(row)
-    return _course_response(row)
+    detail = await courses_service.fetch_studio_course(str(row["id"]))
+    if detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Studio course detail is unavailable",
+        )
+    return _studio_course_detail_response(detail)
 
 
 @media_pipeline_router.post(
@@ -992,6 +1045,9 @@ async def canonical_issue_lesson_media_upload_url(
         media_type=normalized_media_type,
         purpose="lesson_media",
         ingest_format=ingest_format,
+        original_filename=payload.filename,
+        lesson_id=lesson_id_str,
+        course_id=course_id,
     )
     media_asset_id = UUID(str(media_asset["id"]))
     return schemas.CanonicalLessonMediaUploadUrlResponse(
@@ -1037,6 +1093,8 @@ async def canonical_issue_course_cover_upload_url(
         media_type="image",
         purpose="course_cover",
         ingest_format=ingest_format,
+        original_filename=payload.filename,
+        course_id=course_id_str,
     )
     media_asset_id = UUID(str(media_asset["id"]))
     return schemas.CanonicalCourseCoverUploadUrlResponse(
@@ -1077,6 +1135,8 @@ async def canonical_issue_home_player_upload_url(
         media_type="audio",
         purpose="home_player_audio",
         ingest_format=ingest_format,
+        original_filename=payload.filename,
+        owner_user_id=str(current["id"]),
     )
     media_asset_id = UUID(str(media_asset["id"]))
     return schemas.CanonicalHomePlayerMediaUploadUrlResponse(
@@ -1883,21 +1943,22 @@ async def studio_reserve_recording(
     _raise_v2_feature_disabled("Studio seminars")
 
 
-@course_lesson_router.get("/courses", response_model=schemas.CourseListResponse)
+@course_lesson_router.get("/courses", response_model=schemas.StudioCourseListResponse)
 async def studio_courses(current: TeacherEntryUser):
-    rows = list(await courses_service.list_courses(teacher_id=str(current["id"])))
-    await _apply_course_read_contract(rows)
-    return _course_list_response(rows)
+    rows = list(await courses_service.list_studio_courses(teacher_id=str(current["id"])))
+    return _studio_course_list_response(rows)
 
 
-@course_lesson_router.get("/courses/{course_id}", response_model=schemas.Course)
+@course_lesson_router.get("/courses/{course_id}", response_model=schemas.StudioCourseDetail)
 async def course_meta(course_id: str, current: TeacherEntryUser):
-    row = await studio_authority.get_course_for_teacher_or_404(
+    await studio_authority.get_course_for_teacher_or_404(
         course_id,
         str(current["id"]),
     )
-    await _apply_course_read_contract(row)
-    return _course_response(row)
+    row = await courses_service.fetch_studio_course(course_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return _studio_course_detail_response(row)
 
 
 @course_lesson_router.post(
@@ -1920,7 +1981,10 @@ async def upsert_course_public_content(
     return schemas.CoursePublicContent(**public_content)
 
 
-@course_lesson_router.post("/courses/{course_id}/publish", response_model=schemas.Course)
+@course_lesson_router.post(
+    "/courses/{course_id}/publish",
+    response_model=schemas.StudioCourseDetail,
+)
 async def publish_course(course_id: str, current: TeacherEntryUser):
     try:
         row = await courses_service.publish_course(
@@ -1938,8 +2002,10 @@ async def publish_course(course_id: str, current: TeacherEntryUser):
         ) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Kursen hittades inte")
-    await _apply_course_read_contract(row)
-    return _course_response(row)
+    detail = await courses_service.fetch_studio_course(course_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return _studio_course_detail_response(detail)
 
 
 @course_lesson_router.get(
@@ -1971,7 +2037,10 @@ async def create_course_family(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@course_lesson_router.patch("/courses/{course_id}", response_model=schemas.Course)
+@course_lesson_router.patch(
+    "/courses/{course_id}",
+    response_model=schemas.StudioCourseDetail,
+)
 async def update_course(
     course_id: str,
     payload: schemas.StudioCourseUpdate,
@@ -1995,11 +2064,49 @@ async def update_course(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    await _apply_course_read_contract(row)
-    return _course_response(row)
+    detail = await courses_service.fetch_studio_course(course_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return _studio_course_detail_response(detail)
 
 
-@course_lesson_router.post("/courses/{course_id}/reorder", response_model=schemas.Course)
+@course_lesson_router.put(
+    "/courses/{course_id}/drip-authoring",
+    response_model=schemas.StudioCourseDetail,
+    responses={409: {"model": schemas.StudioCourseScheduleLockError}},
+)
+async def update_course_drip_authoring(
+    course_id: str,
+    payload: schemas.StudioCourseDripAuthoringPut,
+    current: TeacherEntryUser,
+):
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
+    try:
+        row = await courses_service.set_studio_course_drip_authoring(
+            course_id,
+            payload.model_dump(),
+            teacher_id=str(current["id"]),
+        )
+    except courses_service.StudioCourseScheduleLockedError:
+        return _studio_course_schedule_locked_response(course_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return _studio_course_detail_response(row)
+
+
+@course_lesson_router.post(
+    "/courses/{course_id}/reorder",
+    response_model=schemas.StudioCourseDetail,
+)
 async def reorder_course_within_family(
     course_id: str,
     payload: schemas.StudioCourseFamilyReorder,
@@ -2023,13 +2130,15 @@ async def reorder_course_within_family(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    await _apply_course_read_contract(row)
-    return _course_response(row)
+    detail = await courses_service.fetch_studio_course(course_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return _studio_course_detail_response(detail)
 
 
 @course_lesson_router.post(
     "/courses/{course_id}/move-family",
-    response_model=schemas.Course,
+    response_model=schemas.StudioCourseDetail,
 )
 async def move_course_to_family(
     course_id: str,
@@ -2054,8 +2163,10 @@ async def move_course_to_family(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    await _apply_course_read_contract(row)
-    return _course_response(row)
+    detail = await courses_service.fetch_studio_course(course_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return _studio_course_detail_response(detail)
 
 
 @course_lesson_router.delete("/courses/{course_id}")

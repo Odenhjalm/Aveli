@@ -83,6 +83,33 @@ def _canonical_asset(
     }
 
 
+def test_home_player_scope_prefers_metadata_over_path() -> None:
+    assert (
+        studio_routes._canonical_home_player_asset_scope(
+            {
+                "media_type": "audio",
+                "purpose": "home_player_audio",
+                "owner_user_id": "teacher-1",
+                "original_object_path": "invalid/home-player/path.wav",
+            }
+        )
+        == "teacher-1"
+    )
+
+
+def test_home_player_scope_falls_back_to_legacy_path() -> None:
+    assert (
+        studio_routes._canonical_home_player_asset_scope(
+            {
+                "media_type": "audio",
+                "purpose": "home_player_audio",
+                "original_object_path": "media/source/audio/home-player/teacher-1/demo.wav",
+            }
+        )
+        == "teacher-1"
+    )
+
+
 async def test_home_player_upload_create_uses_media_asset_identity_only(
     async_client,
     monkeypatch,

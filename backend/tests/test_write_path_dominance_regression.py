@@ -99,6 +99,7 @@ def test_canonical_write_routes_remain_mounted() -> None:
 
     assert ("POST", "/studio/courses") in route_pairs
     assert ("PATCH", "/studio/courses/{course_id}") in route_pairs
+    assert ("PUT", "/studio/courses/{course_id}/drip-authoring") in route_pairs
     assert ("POST", "/studio/courses/{course_id}/reorder") in route_pairs
     assert ("POST", "/studio/courses/{course_id}/move-family") in route_pairs
     assert ("DELETE", "/studio/courses/{course_id}") in route_pairs

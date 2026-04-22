@@ -34,6 +34,9 @@ class HomeAudioQueueEntry extends Equatable {
 class HomeAudioSessionState extends Equatable {
   const HomeAudioSessionState({
     this.queue = const <HomeAudioQueueEntry>[],
+    this.stagedQueue = const <HomeAudioQueueEntry>[],
+    this.hasStagedSnapshot = false,
+    this.replacementAllowed = true,
     this.currentIndex,
     this.playbackWanted = false,
     this.volume = 1.0,
@@ -48,6 +51,9 @@ class HomeAudioSessionState extends Equatable {
   });
 
   final List<HomeAudioQueueEntry> queue;
+  final List<HomeAudioQueueEntry> stagedQueue;
+  final bool hasStagedSnapshot;
+  final bool replacementAllowed;
   final int? currentIndex;
   final bool playbackWanted;
   final double volume;
@@ -70,8 +76,13 @@ class HomeAudioSessionState extends Equatable {
 
   bool get hasQueue => queue.isNotEmpty;
 
+  bool get canAdoptStagedQueue => replacementAllowed && hasStagedSnapshot;
+
   HomeAudioSessionState copyWith({
     List<HomeAudioQueueEntry>? queue,
+    List<HomeAudioQueueEntry>? stagedQueue,
+    bool? hasStagedSnapshot,
+    bool? replacementAllowed,
     Object? currentIndex = _sentinel,
     bool? playbackWanted,
     double? volume,
@@ -86,6 +97,9 @@ class HomeAudioSessionState extends Equatable {
   }) {
     return HomeAudioSessionState(
       queue: queue ?? this.queue,
+      stagedQueue: stagedQueue ?? this.stagedQueue,
+      hasStagedSnapshot: hasStagedSnapshot ?? this.hasStagedSnapshot,
+      replacementAllowed: replacementAllowed ?? this.replacementAllowed,
       currentIndex: currentIndex == _sentinel
           ? this.currentIndex
           : currentIndex as int?,
@@ -107,6 +121,9 @@ class HomeAudioSessionState extends Equatable {
   @override
   List<Object?> get props => [
     queue,
+    stagedQueue,
+    hasStagedSnapshot,
+    replacementAllowed,
     currentIndex,
     playbackWanted,
     volume,
@@ -152,31 +169,16 @@ class HomeAudioSessionController
   }
 
   Future<void> hydrateQueue(List<HomeAudioItem> items) async {
-    final nextEntries = _buildQueue(items);
-    if (nextEntries.isEmpty) {
-      if (!state.hasQueue) {
-        state = state.copyWith(currentIndex: null);
-      }
+    final candidate = _materializeQueue(_buildQueue(items));
+    if (state.hasQueue && !state.replacementAllowed) {
+      _stageCandidate(candidate);
       return;
     }
-    if (state.hasQueue) {
+    if (!state.replacementAllowed && !state.hasQueue) {
+      _stageCandidate(candidate);
       return;
     }
-
-    _sessionSeed += 1;
-    final queue = List<HomeAudioQueueEntry>.unmodifiable(
-      nextEntries.asMap().entries.map(
-        (entry) => HomeAudioQueueEntry(
-          index: entry.key,
-          sessionKey: 'home-audio-$_sessionSeed-${entry.key}',
-          title: entry.value.title,
-          resolvedUrl: entry.value.resolvedUrl,
-          mediaId: entry.value.mediaId,
-        ),
-      ),
-    );
-    state = state.copyWith(queue: queue, currentIndex: 0);
-    await _loadCurrentIndex();
+    await _activateQueue(candidate);
   }
 
   Future<void> selectIndex(int index) async {
@@ -256,6 +258,44 @@ class HomeAudioSessionController
     await selectIndex(index - 1);
   }
 
+  Future<void> adoptStagedQueue() async {
+    if (!state.canAdoptStagedQueue) {
+      return;
+    }
+    await _activateQueue(state.stagedQueue);
+  }
+
+  Future<void> resetSession({bool adoptStaged = true}) async {
+    final stagedQueue = state.stagedQueue;
+    final hasStagedSnapshot = state.hasStagedSnapshot;
+    await _engine?.pause();
+    if (_disposed) {
+      return;
+    }
+
+    final epoch = state.activeEpoch + 1;
+    _completionEligibleEpoch = 0;
+    state = state.copyWith(
+      queue: const <HomeAudioQueueEntry>[],
+      currentIndex: null,
+      playbackWanted: false,
+      position: Duration.zero,
+      duration: Duration.zero,
+      activeEpoch: epoch,
+      handledEndedEpoch: epoch,
+      isPlaying: false,
+      isInitializing: false,
+      errorMessage: null,
+      replacementAllowed: true,
+      stagedQueue: stagedQueue,
+      hasStagedSnapshot: hasStagedSnapshot,
+    );
+
+    if (adoptStaged) {
+      await adoptStagedQueue();
+    }
+  }
+
   Future<void> _loadCurrentIndex() async {
     final entry = state.currentEntry;
     if (entry == null) {
@@ -300,6 +340,90 @@ class HomeAudioSessionController
           ),
         )
         .toList(growable: false);
+  }
+
+  List<HomeAudioQueueEntry> _materializeQueue(List<_QueueSeed> entries) {
+    _sessionSeed += 1;
+    final seed = _sessionSeed;
+    return List<HomeAudioQueueEntry>.unmodifiable(
+      entries.asMap().entries.map(
+        (entry) => HomeAudioQueueEntry(
+          index: entry.key,
+          sessionKey: 'home-audio-$seed-${entry.key}',
+          title: entry.value.title,
+          resolvedUrl: entry.value.resolvedUrl,
+          mediaId: entry.value.mediaId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _activateQueue(List<HomeAudioQueueEntry> queue) async {
+    if (queue.isEmpty) {
+      state = state.copyWith(
+        queue: const <HomeAudioQueueEntry>[],
+        currentIndex: null,
+        stagedQueue: const <HomeAudioQueueEntry>[],
+        hasStagedSnapshot: false,
+        replacementAllowed: true,
+        position: Duration.zero,
+        duration: Duration.zero,
+        isPlaying: false,
+        isInitializing: false,
+        errorMessage: null,
+      );
+      return;
+    }
+
+    state = state.copyWith(
+      queue: queue,
+      currentIndex: 0,
+      stagedQueue: const <HomeAudioQueueEntry>[],
+      hasStagedSnapshot: false,
+      replacementAllowed: false,
+    );
+    await _loadCurrentIndex();
+  }
+
+  void _stageCandidate(List<HomeAudioQueueEntry> candidate) {
+    if (_sameQueueContent(candidate, state.queue)) {
+      if (!state.hasStagedSnapshot && state.stagedQueue.isEmpty) {
+        return;
+      }
+      state = state.copyWith(
+        stagedQueue: const <HomeAudioQueueEntry>[],
+        hasStagedSnapshot: false,
+      );
+      return;
+    }
+    if (state.hasStagedSnapshot &&
+        _sameQueueContent(candidate, state.stagedQueue)) {
+      return;
+    }
+    state = state.copyWith(stagedQueue: candidate, hasStagedSnapshot: true);
+  }
+
+  bool _sameQueueContent(
+    List<HomeAudioQueueEntry> left,
+    List<HomeAudioQueueEntry> right,
+  ) {
+    if (identical(left, right)) {
+      return true;
+    }
+    if (left.length != right.length) {
+      return false;
+    }
+    for (var index = 0; index < left.length; index += 1) {
+      final leftEntry = left[index];
+      final rightEntry = right[index];
+      if (leftEntry.index != rightEntry.index ||
+          leftEntry.title != rightEntry.title ||
+          leftEntry.resolvedUrl != rightEntry.resolvedUrl ||
+          leftEntry.mediaId != rightEntry.mediaId) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _onDurationChanged(Duration duration) {

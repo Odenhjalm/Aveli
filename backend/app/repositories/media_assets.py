@@ -9,6 +9,7 @@ from psycopg.rows import dict_row
 from ..db import pool
 from ..config import settings
 from ..services import storage_service
+from ..utils import media_paths
 
 _FAILURE_LIMIT_MAX = 100
 _ORPHAN_LIMIT_MAX = 200
@@ -27,6 +28,7 @@ _OBSERVABILITY_DEFAULTS: dict[str, Any] = {
     "storage_bucket": None,
     "course_id": None,
     "lesson_id": None,
+    "owner_user_id": None,
     "original_content_type": None,
     "original_size_bytes": None,
     "original_filename": None,
@@ -48,6 +50,10 @@ _MEDIA_ASSET_RETURNING_SQL = """
     id,
     media_type::text as media_type,
     purpose::text as purpose,
+    original_filename,
+    lesson_id::text as lesson_id,
+    course_id::text as course_id,
+    owner_user_id::text as owner_user_id,
     original_object_path,
     ingest_format,
     playback_object_path,
@@ -79,6 +85,11 @@ def _required_ready_text(value: Any, field_name: str) -> str:
     if not text:
         raise RuntimeError(f"canonical worker ready transition requires {field_name}")
     return text
+
+
+def _optional_uuid_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
 
 
 def _require_course_cover_ready_asset(
@@ -168,15 +179,17 @@ def _canonical_storage_bucket_for_access(row: dict[str, Any]) -> str | None:
     purpose = str(row.get("purpose") or "").strip().lower()
     media_type = str(row.get("media_type") or "").strip().lower()
 
-    if (
-        playback_object_path
-        and media_type == "image"
-        and purpose in {"course_cover", "profile_media"}
-    ):
+    if playback_object_path:
+        if media_type == "image" and purpose in {"course_cover", "profile_media"}:
+            return settings.media_public_bucket
+        return storage_service.canonical_source_bucket_for_media_asset(row)
+    if purpose == "profile_media":
+        return settings.media_profile_bucket
+    if purpose == "lesson_media" and media_type == "image":
         return settings.media_public_bucket
-    if playback_object_path.startswith("lessons/") or original_object_path.startswith(
-        "lessons/"
-    ):
+    if purpose in {"lesson_media", "course_cover", "home_player_audio"} or media_type == "audio":
+        return storage_service.canonical_upload_bucket_for_media_asset(row)
+    if original_object_path.startswith("lessons/"):
         return settings.media_public_bucket
     if playback_object_path or original_object_path:
         return storage_service.canonical_source_bucket_for_media_asset(row)
@@ -219,6 +232,10 @@ async def get_media_asset(media_asset_id: str) -> dict[str, Any] | None:
             id,
             media_type::text as media_type,
             purpose::text as purpose,
+            original_filename,
+            lesson_id::text as lesson_id,
+            course_id::text as course_id,
+            owner_user_id::text as owner_user_id,
             original_object_path,
             ingest_format,
             playback_object_path,
@@ -279,6 +296,10 @@ async def get_media_assets(media_asset_ids: Sequence[str]) -> dict[str, dict[str
             id,
             media_type::text as media_type,
             purpose::text as purpose,
+            original_filename,
+            lesson_id::text as lesson_id,
+            course_id::text as course_id,
+            owner_user_id::text as owner_user_id,
             original_object_path,
             ingest_format,
             playback_object_path,
@@ -302,6 +323,10 @@ async def create_media_asset(
     original_object_path: str,
     ingest_format: str,
     state: str,
+    original_filename: str | None = None,
+    lesson_id: str | None = None,
+    course_id: str | None = None,
+    owner_user_id: str | None = None,
     playback_object_path: str | None = None,
     playback_format: str | None = None,
 ) -> dict[str, Any]:
@@ -319,6 +344,10 @@ async def create_media_asset(
             id,
             media_type,
             purpose,
+            original_filename,
+            lesson_id,
+            course_id,
+            owner_user_id,
             original_object_path,
             ingest_format,
             playback_object_path,
@@ -330,6 +359,10 @@ async def create_media_asset(
             %s::app.media_type,
             %s::app.media_purpose,
             %s,
+            %s::uuid,
+            %s::uuid,
+            %s::uuid,
+            %s,
             %s,
             %s,
             %s,
@@ -339,12 +372,23 @@ async def create_media_asset(
             id,
             media_type::text as media_type,
             purpose::text as purpose,
+            original_filename,
+            lesson_id::text as lesson_id,
+            course_id::text as course_id,
+            owner_user_id::text as owner_user_id,
             original_object_path,
             ingest_format,
             playback_object_path,
             playback_format,
             state::text as state
     """
+    normalized_original_filename = media_paths.normalize_media_filename(
+        original_filename or "",
+        fallback=None,
+    )
+    normalized_lesson_id = _optional_uuid_text(lesson_id)
+    normalized_course_id = _optional_uuid_text(course_id)
+    normalized_owner_user_id = _optional_uuid_text(owner_user_id)
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
@@ -353,6 +397,10 @@ async def create_media_asset(
                     media_asset_id,
                     media_type,
                     purpose,
+                    normalized_original_filename,
+                    normalized_lesson_id,
+                    normalized_course_id,
+                    normalized_owner_user_id,
                     original_object_path,
                     ingest_format,
                     None,
@@ -400,6 +448,10 @@ async def _call_canonical_worker_transition(
             result.id as id,
             result.media_type::text as media_type,
             result.purpose::text as purpose,
+            result.original_filename as original_filename,
+            result.lesson_id::text as lesson_id,
+            result.course_id::text as course_id,
+            result.owner_user_id::text as owner_user_id,
             result.original_object_path as original_object_path,
             result.ingest_format as ingest_format,
             result.playback_object_path as playback_object_path,
@@ -598,14 +650,7 @@ async def list_media_failures(
 
     query = f"""
         select
-            id,
-            media_type::text as media_type,
-            purpose::text as purpose,
-            original_object_path,
-            ingest_format,
-            playback_object_path,
-            playback_format,
-            state::text as state
+            {_MEDIA_ASSET_RETURNING_SQL}
         from app.media_assets
         {where}
         order by id asc
@@ -671,6 +716,10 @@ async def list_orphaned_control_plane_assets(
             ma.id,
             ma.media_type::text as media_type,
             ma.purpose::text as purpose,
+            ma.original_filename,
+            ma.lesson_id::text as lesson_id,
+            ma.course_id::text as course_id,
+            ma.owner_user_id::text as owner_user_id,
             ma.original_object_path,
             ma.ingest_format,
             ma.playback_object_path,
@@ -791,6 +840,10 @@ async def fetch_and_lock_pending_media_assets(
                         result.id as id,
                         result.media_type::text as media_type,
                         result.purpose::text as purpose,
+                        result.original_filename as original_filename,
+                        result.lesson_id::text as lesson_id,
+                        result.course_id::text as course_id,
+                        result.owner_user_id::text as owner_user_id,
                         result.original_object_path as original_object_path,
                         result.ingest_format as ingest_format,
                         result.file_size as file_size,

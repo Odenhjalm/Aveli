@@ -942,6 +942,53 @@ def test_profile_media_output_path_preserves_subject_scope() -> None:
     )
 
 
+def test_metadata_backed_audio_output_path_avoids_path_scope_parsing() -> None:
+    assert (
+        worker._resolved_audio_output_path(
+            {
+                "purpose": "lesson_media",
+                "course_id": "course-1",
+                "lesson_id": "lesson-1",
+                "original_filename": "demo.wav",
+                "original_object_path": "invalid/source/path.wav",
+            },
+            ext="mp3",
+        )
+        == "media/derived/audio/courses/course-1/lessons/lesson-1/demo.mp3"
+    )
+
+
+def test_metadata_backed_profile_output_path_avoids_path_scope_parsing() -> None:
+    assert (
+        worker._resolved_profile_media_output_path(
+            {
+                "purpose": "profile_media",
+                "owner_user_id": "user-1",
+                "original_filename": "avatar.png",
+                "original_object_path": "invalid/source/path.png",
+            },
+            ext="jpg",
+        )
+        == "media/derived/profile-avatar/user-1/avatar.jpg"
+    )
+
+
+def test_metadata_backed_lesson_image_output_path_avoids_path_scope_parsing() -> None:
+    assert (
+        worker._resolved_lesson_media_output_path(
+            {
+                "purpose": "lesson_media",
+                "lesson_id": "lesson-1",
+                "original_filename": "diagram.png",
+                "original_object_path": "invalid/source/path.png",
+            },
+            media_type="image",
+            ext="jpg",
+        )
+        == "media/derived/lesson-media/image/lessons/lesson-1/images/diagram.jpg"
+    )
+
+
 @pytest.mark.anyio("asyncio")
 async def test_transcode_asset_dispatches_profile_media_image(monkeypatch) -> None:
     calls: dict[str, object] = {}

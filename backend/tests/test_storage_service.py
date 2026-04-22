@@ -1,5 +1,6 @@
 import pytest
 import httpx
+from urllib.parse import quote
 
 from app.services import storage_service as storage_module
 from app.services.storage_service import (
@@ -239,4 +240,152 @@ def test_canonical_upload_bucket_preserves_public_lesson_image_mapping():
             {"purpose": "lesson_media", "media_type": "image"}
         )
         == storage_module.settings.media_public_bucket
+    )
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "folder/space name.png",
+        "folder/question?.png",
+        "folder/hash#.png",
+        "folder/unicodé.png",
+        "folder/mix # ? /unicodé file.png",
+    ],
+)
+async def test_get_presigned_url_quotes_storage_path_segments(monkeypatch, path):
+    captured: dict[str, object] = {}
+
+    class DummyResponse:
+        status_code = 200
+
+        def json(self):
+            return {"signedURL": "/storage/v1/object/sign/lesson_media/demo?t=token"}
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            captured["url"] = url
+            return DummyResponse()
+
+    monkeypatch.setattr(storage_module.httpx, "AsyncClient", DummyAsyncClient)
+
+    service = StorageService(
+        bucket="lesson_media",
+        supabase_url="https://example.supabase.co",
+        service_role_key="service-role-key",
+    )
+
+    await service.get_presigned_url(path, ttl=120, download=False)
+
+    assert captured["url"] == (
+        "https://example.supabase.co/storage/v1/object/sign/lesson_media/"
+        f"{quote(path, safe='/')}"
+    )
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "folder/space name.png",
+        "folder/question?.png",
+        "folder/hash#.png",
+        "folder/unicodé.png",
+        "folder/mix # ? /unicodé file.png",
+    ],
+)
+async def test_create_upload_url_quotes_storage_path_segments(monkeypatch, path):
+    captured: dict[str, object] = {}
+
+    class DummyResponse:
+        status_code = 200
+
+        def json(self):
+            return {"url": "/storage/v1/object/upload/sign/lesson_media/demo?token=abc"}
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            captured["url"] = url
+            return DummyResponse()
+
+    monkeypatch.setattr(storage_module.httpx, "AsyncClient", DummyAsyncClient)
+
+    service = StorageService(
+        bucket="lesson_media",
+        supabase_url="https://example.supabase.co",
+        service_role_key="service-role-key",
+    )
+
+    await service.create_upload_url(path, content_type="image/png")
+
+    assert captured["url"] == (
+        "https://example.supabase.co/storage/v1/object/upload/sign/lesson_media/"
+        f"{quote(path, safe='/')}"
+    )
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "folder/space name.png",
+        "folder/question?.png",
+        "folder/hash#.png",
+        "folder/unicodé.png",
+        "folder/mix # ? /unicodé file.png",
+    ],
+)
+async def test_delete_object_quotes_storage_path_segments(monkeypatch, path):
+    captured: dict[str, object] = {}
+
+    class DummyResponse:
+        status_code = 200
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def delete(self, url, headers):
+            captured["url"] = url
+            return DummyResponse()
+
+    monkeypatch.setattr(storage_module.httpx, "AsyncClient", DummyAsyncClient)
+
+    service = StorageService(
+        bucket="lesson_media",
+        supabase_url="https://example.supabase.co",
+        service_role_key="service-role-key",
+    )
+
+    deleted = await service.delete_object(path)
+
+    assert deleted is True
+    assert captured["url"] == (
+        "https://example.supabase.co/storage/v1/object/lesson_media/"
+        f"{quote(path, safe='/')}"
     )

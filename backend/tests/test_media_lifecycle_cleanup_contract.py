@@ -36,7 +36,7 @@ def test_media_asset_cleanup_uses_canonical_media_asset_columns() -> None:
 
     assert "streaming_" not in source
     assert "ma.storage_bucket" not in source
-    assert "ma.course_id" not in source
+    assert "ma.course_id" in source
     assert "ma.created_at" not in source
     assert "ma.original_object_path" in source
     assert "ma.ingest_format" in source

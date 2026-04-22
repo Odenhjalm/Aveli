@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.config import settings
+from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
 from app.routes import api_media
 
@@ -400,6 +401,14 @@ async def test_get_media_asset_access_derives_profile_media_source_bucket(monkey
 
     assert media_asset is not None
     assert media_asset["storage_bucket"] == settings.media_profile_bucket
+
+
+def test_media_original_name_sql_prefers_metadata_then_basename_fallback() -> None:
+    normalized_sql = " ".join(courses_repo._MEDIA_ORIGINAL_NAME_SQL.lower().split())
+
+    assert "coalesce(" in normalized_sql
+    assert "nullif(btrim(ma.original_filename), '')" in normalized_sql
+    assert "regexp_replace(ma.original_object_path, '^.*/', '')" in normalized_sql
 
 
 def test_media_worker_queue_includes_profile_media_images():

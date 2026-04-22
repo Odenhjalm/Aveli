@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
 ALLOWED_UPLOAD_PATH_PREFIXES = (
@@ -20,11 +20,21 @@ PROTECTED_STORAGE_OBJECT_NAMES = frozenset(
 PROTECTED_STORAGE_PATH_PREFIXES = ("home-player/",)
 
 
-def _sanitize_media_filename(filename: str) -> str:
-    safe_name = Path(filename).name.strip()
-    if not safe_name:
-        safe_name = "media"
-    return safe_name
+def normalize_media_filename(
+    filename: str,
+    *,
+    fallback: str | None = "media",
+) -> str | None:
+    candidate = str(filename or "").strip().replace("\\", "/")
+    safe_name = PurePosixPath(candidate).name.strip()
+    if safe_name:
+        return safe_name
+    return fallback
+
+
+def media_filename_suffix(filename: str) -> str:
+    normalized = normalize_media_filename(filename, fallback=None) or ""
+    return Path(normalized).suffix.lower()
 
 
 def normalize_object_path(path: str) -> str:
@@ -70,7 +80,7 @@ def build_lesson_audio_source_object_path(
     lesson_id: str,
     filename: str,
 ) -> str:
-    safe_name = _sanitize_media_filename(filename)
+    safe_name = normalize_media_filename(filename) or "media"
     path = (
         Path("media")
         / "source"
@@ -88,7 +98,7 @@ def build_home_player_audio_source_object_path(
     user_id: str,
     filename: str,
 ) -> str:
-    safe_name = _sanitize_media_filename(filename)
+    safe_name = normalize_media_filename(filename) or "media"
     path = Path("media") / "source" / "audio" / "home-player" / user_id / safe_name
     return path.as_posix()
 
@@ -97,7 +107,7 @@ def build_profile_avatar_source_object_path(
     user_id: str,
     filename: str,
 ) -> str:
-    safe_name = _sanitize_media_filename(filename)
+    safe_name = normalize_media_filename(filename) or "media"
     token = uuid4().hex
     path = (
         Path("media")
@@ -116,7 +126,7 @@ def build_lesson_passthrough_object_path(
     media_kind: str,
     filename: str,
 ) -> str:
-    safe_name = _sanitize_media_filename(filename)
+    safe_name = normalize_media_filename(filename) or "media"
     token = uuid4().hex
     normalized_kind = str(media_kind or "").strip().lower()
     if normalized_kind == "image":

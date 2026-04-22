@@ -20,6 +20,7 @@ from ..config import settings
 from ..observability import log_buffer
 from ..repositories import media_assets as media_assets_repo
 from ..services import storage_service
+from ..utils import media_paths
 
 logger = logging.getLogger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -440,6 +441,117 @@ def _derive_lesson_media_output_path(
     normalized_media_type = str(media_type or "").strip().lower() or "media"
     derived = f"media/derived/lesson-media/{normalized_media_type}/{normalized}"
     return Path(derived).with_suffix(f".{ext}").as_posix()
+
+
+def _asset_text(asset: dict, key: str) -> str | None:
+    value = str(asset.get(key) or "").strip()
+    return value or None
+
+
+def _asset_output_leaf(asset: dict, *, ext: str, fallback: str = "media") -> str:
+    filename = media_paths.normalize_media_filename(
+        _asset_text(asset, "original_filename")
+        or Path(str(asset.get("original_object_path") or "")).name,
+        fallback=fallback,
+    ) or fallback
+    return Path(filename).with_suffix(f".{ext}").name
+
+
+def _resolved_audio_output_path(asset: dict, *, ext: str) -> str:
+    purpose = str(asset.get("purpose") or "").strip().lower()
+    lesson_id = _asset_text(asset, "lesson_id")
+    course_id = _asset_text(asset, "course_id")
+    owner_user_id = _asset_text(asset, "owner_user_id")
+    leaf = _asset_output_leaf(asset, ext=ext)
+
+    if purpose == "lesson_media" and lesson_id and course_id:
+        return (
+            Path("media")
+            / "derived"
+            / "audio"
+            / "courses"
+            / course_id
+            / "lessons"
+            / lesson_id
+            / leaf
+        ).as_posix()
+    if purpose == "home_player_audio" and owner_user_id:
+        return (
+            Path("media")
+            / "derived"
+            / "audio"
+            / "home-player"
+            / owner_user_id
+            / leaf
+        ).as_posix()
+    return _derive_audio_output_path(str(asset.get("original_object_path") or ""), ext)
+
+
+def _resolved_cover_output_path(asset: dict, *, ext: str) -> str:
+    course_id = _asset_text(asset, "course_id")
+    if course_id:
+        return (
+            Path("media")
+            / "derived"
+            / "cover"
+            / "courses"
+            / course_id
+            / _asset_output_leaf(asset, ext=ext, fallback="cover")
+        ).as_posix()
+    return _derive_cover_output_path(str(asset.get("original_object_path") or ""), ext)
+
+
+def _resolved_profile_media_output_path(asset: dict, *, ext: str) -> str:
+    owner_user_id = _asset_text(asset, "owner_user_id")
+    if owner_user_id:
+        return (
+            Path("media")
+            / "derived"
+            / "profile-avatar"
+            / owner_user_id
+            / _asset_output_leaf(asset, ext=ext, fallback="avatar")
+        ).as_posix()
+    return _derive_profile_media_output_path(
+        str(asset.get("original_object_path") or ""),
+        ext,
+    )
+
+
+def _resolved_lesson_media_output_path(asset: dict, *, media_type: str, ext: str) -> str:
+    lesson_id = _asset_text(asset, "lesson_id")
+    course_id = _asset_text(asset, "course_id")
+    leaf = _asset_output_leaf(asset, ext=ext)
+
+    if media_type == "image" and lesson_id:
+        return (
+            Path("media")
+            / "derived"
+            / "lesson-media"
+            / "image"
+            / "lessons"
+            / lesson_id
+            / "images"
+            / leaf
+        ).as_posix()
+    if media_type in {"video", "document"} and lesson_id and course_id:
+        folder = "documents" if media_type == "document" else media_type
+        return (
+            Path("media")
+            / "derived"
+            / "lesson-media"
+            / media_type
+            / "courses"
+            / course_id
+            / "lessons"
+            / lesson_id
+            / folder
+            / leaf
+        ).as_posix()
+    return _derive_lesson_media_output_path(
+        str(asset.get("original_object_path") or ""),
+        media_type,
+        ext,
+    )
 
 
 def _audio_source_suffix(asset: dict) -> str:
@@ -923,10 +1035,10 @@ async def _transcode_lesson_passthrough_asset(
         asset=asset,
         source_metadata=source_metadata,
     )
-    output_path = _derive_lesson_media_output_path(
-        str(source_path),
-        media_type,
-        playback_format,
+    output_path = _resolved_lesson_media_output_path(
+        asset,
+        media_type=media_type,
+        ext=playback_format,
     )
     duration: int | None = None
 
@@ -1007,7 +1119,7 @@ async def _transcode_audio_asset(
         "storage_bucket"
     ) or storage_service.canonical_source_bucket_for_media_asset(asset)
     source_storage = storage_service.get_storage_service(source_bucket)
-    output_path = _derive_audio_output_path(source_path, "mp3")
+    output_path = _resolved_audio_output_path(asset, ext="mp3")
 
     with tempfile.TemporaryDirectory(prefix="aveli_media_") as temp_dir:
         temp_root = Path(temp_dir)
@@ -1109,7 +1221,7 @@ async def _transcode_cover_asset(
         "storage_bucket"
     ) or storage_service.canonical_source_bucket_for_media_asset(asset)
     source_storage = storage_service.get_storage_service(source_bucket)
-    output_path = _derive_cover_output_path(source_path, "jpg")
+    output_path = _resolved_cover_output_path(asset, ext="jpg")
 
     with tempfile.TemporaryDirectory(prefix="aveli_cover_") as temp_dir:
         temp_root = Path(temp_dir)
@@ -1189,7 +1301,7 @@ async def _transcode_profile_media_image_asset(
         "storage_bucket"
     ) or storage_service.canonical_source_bucket_for_media_asset(asset)
     source_storage = storage_service.get_storage_service(source_bucket)
-    output_path = _derive_profile_media_output_path(source_path, "jpg")
+    output_path = _resolved_profile_media_output_path(asset, ext="jpg")
 
     with tempfile.TemporaryDirectory(prefix="aveli_profile_media_") as temp_dir:
         temp_root = Path(temp_dir)

@@ -83,6 +83,17 @@ def _normalize_content_type(value: str | None) -> str | None:
     return normalized.split(";", 1)[0].strip() or None
 
 
+def _normalize_storage_path(path: str) -> str:
+    normalized = str(path or "").strip().lstrip("/")
+    if not normalized:
+        raise StorageServiceError("storage path is required")
+    return normalized
+
+
+def _quoted_storage_path(path: str) -> str:
+    return quote(_normalize_storage_path(path), safe="/")
+
+
 def _response_size_bytes(response: httpx.Response) -> int | None:
     content_range = str(response.headers.get("content-range") or "").strip()
     if "/" in content_range:
@@ -126,16 +137,16 @@ class StorageService:
         return bool(self._supabase_url and self._service_role_key)
 
     def public_url(self, path: str) -> str:
-        if not path:
-            raise StorageServiceError("storage path is required")
-
         supabase_url = self._supabase_url
         if not supabase_url:
             raise StorageServiceError("Supabase Storage is not configured")
 
-        normalized_path = path.lstrip("/")
+        normalized_path = _normalize_storage_path(path)
         base_url = supabase_url.rstrip("/")
-        return f"{base_url}/storage/v1/object/public/{self._bucket}/{normalized_path}"
+        return (
+            f"{base_url}/storage/v1/object/public/{self._bucket}/"
+            f"{_quoted_storage_path(normalized_path)}"
+        )
 
     async def get_presigned_url(
         self,
@@ -145,21 +156,19 @@ class StorageService:
         *,
         download: bool = True,
     ) -> PresignedUrl:
-        if not path:
-            raise StorageServiceError("storage path is required")
-
         supabase_url = self._supabase_url
         service_role_key = self._service_role_key
         if not supabase_url or not service_role_key:
             raise StorageServiceError("Supabase Storage is not configured")
 
-        normalized_path = path.lstrip("/")
+        normalized_path = _normalize_storage_path(path)
         expires_in = max(60, min(int(ttl), 60 * 60 * 24))
         download_name = filename or Path(normalized_path).name or "media"
 
         base_url = supabase_url.rstrip("/")
         request_url = (
-            f"{base_url}/storage/v1/object/sign/{self._bucket}/{normalized_path}"
+            f"{base_url}/storage/v1/object/sign/{self._bucket}/"
+            f"{_quoted_storage_path(normalized_path)}"
         )
         payload: dict[str, Any] = {"expiresIn": expires_in}
 
@@ -302,19 +311,16 @@ class StorageService:
         upsert: bool = False,
         cache_seconds: int | None = None,
     ) -> PresignedUpload:
-        if not path:
-            raise StorageServiceError("storage path is required")
-
         supabase_url = self._supabase_url
         service_role_key = self._service_role_key
         if not supabase_url or not service_role_key:
             raise StorageServiceError("Supabase Storage is not configured")
 
-        normalized_path = path.lstrip("/")
+        normalized_path = _normalize_storage_path(path)
         base_url = supabase_url.rstrip("/")
         request_url = (
             f"{base_url}/storage/v1/object/upload/sign/"
-            f"{self._bucket}/{normalized_path}"
+            f"{self._bucket}/{_quoted_storage_path(normalized_path)}"
         )
         headers = {
             "apikey": service_role_key,
@@ -442,17 +448,14 @@ class StorageService:
         return upload
 
     async def delete_object(self, path: str) -> bool:
-        if not path:
-            raise StorageServiceError("storage path is required")
-
         supabase_url = self._supabase_url
         service_role_key = self._service_role_key
         if not supabase_url or not service_role_key:
             raise StorageServiceError("Supabase Storage is not configured")
 
-        normalized_path = path.lstrip("/")
+        normalized_path = _normalize_storage_path(path)
         base_url = supabase_url.rstrip("/")
-        quoted_path = quote(normalized_path, safe="/")
+        quoted_path = _quoted_storage_path(normalized_path)
         request_url = f"{base_url}/storage/v1/object/{self._bucket}/{quoted_path}"
 
         logger.info(

@@ -70,8 +70,6 @@ Course structure contains only:
 - `group_position`
 - `cover_media_id`
 - `price_amount_cents`
-- `drip_enabled`
-- `drip_interval_days`
 
 Lesson structure contains only:
 
@@ -93,11 +91,12 @@ Canonical separation rules:
 
 Drip shape boundary:
 
-- current canonical editor shapes remain legacy-uniform-drip shapes only
-- future custom-drip editor shapes may be added only as subordinate editor
-  request/response shape definitions
-- this contract must not define custom-drip timing semantics, mode resolution,
-  worker behavior, or schedule locks
+- studio/editor read and write shapes may include subordinate
+  `drip_authoring` request/response objects
+- `course_drip_schedule_contract.md` remains the only semantic owner for
+  custom-drip timing semantics, mode resolution, worker behavior, and schedule
+  locks
+- this contract defines editor-facing shape only
 
 ## 3A. COURSE COVER AUTHORING LAW
 
@@ -140,6 +139,7 @@ This law operates under the cross-domain governed media representation defined b
 
 - `POST /studio/courses`
 - `PATCH /studio/courses/{course_id}`
+- `PUT /studio/courses/{course_id}/drip-authoring`
 - `POST /studio/courses/{course_id}/reorder`
 - `POST /studio/courses/{course_id}/move-family`
 - `DELETE /studio/courses/{course_id}`
@@ -233,24 +233,7 @@ Request:
 
 Response:
 
-~~~json
-{
-  "id": "uuid",
-  "slug": "string",
-  "title": "string",
-  "course_group_id": "uuid",
-  "group_position": 0,
-  "cover_media_id": "uuid | null",
-  "cover": {
-    "media_id": "string",
-    "state": "string",
-    "resolved_url": "string | null"
-  },
-  "price_amount_cents": 123,
-  "drip_enabled": true,
-  "drip_interval_days": 7
-}
-~~~
+Same canonical studio course detail read shape as `GET /studio/courses/{course_id}`.
 
 Rules:
 
@@ -276,15 +259,13 @@ Request:
   "title": "string",
   "slug": "string",
   "price_amount_cents": 123,
-  "drip_enabled": true,
-  "drip_interval_days": 7,
   "cover_media_id": "uuid | null"
 }
 ~~~
 
 Response:
 
-Same canonical course structure response as course create.
+Same canonical studio course detail read shape as `GET /studio/courses/{course_id}`.
 
 Rules:
 
@@ -294,11 +275,172 @@ Rules:
 - `cover_media_id: null` clears the cover identity
 - omitted `cover_media_id` means no cover change
 - `cover` is a backend-authored read field, not a write authority
+- drip-authoring writes are forbidden on this endpoint
 - `course_group_id` is forbidden in this request
 - `group_position` is forbidden in this request
 - `short_description` is forbidden
 - lesson fields are forbidden
 - `content_markdown` is forbidden
+
+### 5.4A Studio Course Summary Read Shape
+
+Endpoint:
+
+`GET /studio/courses`
+
+Response:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "slug": "string",
+      "title": "string",
+      "teacher": {
+        "user_id": "uuid",
+        "display_name": "string | null"
+      },
+      "course_group_id": "uuid",
+      "group_position": 0,
+      "cover_media_id": "uuid | null",
+      "cover": {
+        "media_id": "string",
+        "state": "string",
+        "resolved_url": "string | null"
+      },
+      "price_amount_cents": 123,
+      "required_enrollment_source": "purchase | intro_enrollment | null",
+      "enrollable": true,
+      "purchasable": false,
+      "drip_authoring": {
+        "mode": "custom_lesson_offsets | legacy_uniform_drip | no_drip_immediate_access",
+        "schedule_locked": false,
+        "lock_reason": "first_enrollment_exists | null",
+        "legacy_uniform": {
+          "drip_interval_days": 7
+        }
+      }
+    }
+  ]
+}
+~~~
+
+Rules:
+
+- `drip_authoring` is a studio-only subordinate read shape
+- list payload does not own lesson ordering or lesson structure
+- list payload does not duplicate custom schedule rows
+
+### 5.4B Studio Course Detail Read Shape
+
+Endpoint:
+
+`GET /studio/courses/{course_id}`
+
+Response:
+
+~~~json
+{
+  "id": "uuid",
+  "slug": "string",
+  "title": "string",
+  "teacher": {
+    "user_id": "uuid",
+    "display_name": "string | null"
+  },
+  "course_group_id": "uuid",
+  "group_position": 0,
+  "cover_media_id": "uuid | null",
+  "cover": {
+    "media_id": "string",
+    "state": "string",
+    "resolved_url": "string | null"
+  },
+  "price_amount_cents": 123,
+  "required_enrollment_source": "purchase | intro_enrollment | null",
+  "enrollable": true,
+  "purchasable": false,
+  "drip_authoring": {
+    "mode": "custom_lesson_offsets | legacy_uniform_drip | no_drip_immediate_access",
+    "schedule_locked": false,
+    "lock_reason": "first_enrollment_exists | null",
+    "legacy_uniform": {
+      "drip_interval_days": 7
+    },
+    "custom_schedule": {
+      "rows": [
+        {
+          "lesson_id": "uuid",
+          "unlock_offset_days": 0
+        }
+      ]
+    }
+  }
+}
+~~~
+
+Rules:
+
+- `custom_schedule.rows` is a studio-only subordinate read shape
+- lesson ordering authority remains `GET /studio/courses/{course_id}/lessons`
+- detail payload must not duplicate lesson titles or positions inside
+  `custom_schedule.rows`
+
+### 5.4C Studio Course Drip Authoring Write Shape
+
+Endpoint:
+
+`PUT /studio/courses/{course_id}/drip-authoring`
+
+Request:
+
+~~~json
+{
+  "mode": "custom_lesson_offsets | legacy_uniform_drip | no_drip_immediate_access",
+  "legacy_uniform": {
+    "drip_interval_days": 7
+  },
+  "custom_schedule": {
+    "rows": [
+      {
+        "lesson_id": "uuid",
+        "unlock_offset_days": 0
+      }
+    ]
+  }
+}
+~~~
+
+Response:
+
+Same canonical studio course detail read shape as `GET /studio/courses/{course_id}`.
+
+Rules:
+
+- request owns studio drip-authoring shape only
+- request must not include course metadata fields
+- request must not include lesson titles or lesson positions
+- request/response shapes are subordinate to
+  `course_drip_schedule_contract.md`
+
+### 5.4D Studio Course Lock Error Shape
+
+Response:
+
+~~~json
+{
+  "code": "studio_course_schedule_locked",
+  "detail": "Schedule-affecting edits are locked after first enrollment.",
+  "course_id": "uuid",
+  "schedule_locked": true
+}
+~~~
+
+Rules:
+
+- this shape is returned when studio drip-authoring writes are locked
+- this shape does not redefine schedule-lock semantics
 
 ### 5.5 Course Reorder Within Family
 

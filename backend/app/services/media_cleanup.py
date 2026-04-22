@@ -86,8 +86,6 @@ def _canonical_media_asset_bucket(
     identity: str,
 ) -> str | None:
     normalized_path = _normalized_storage_key(object_path)
-    if not normalized_path:
-        return None
 
     media_type = str(asset.get("media_type") or "").strip().lower()
     purpose = str(asset.get("purpose") or "").strip().lower()
@@ -96,8 +94,12 @@ def _canonical_media_asset_bucket(
         "profile_media",
     }:
         return settings.media_public_bucket
-    if identity == "original" and purpose == "profile_media":
-        return settings.media_profile_bucket
+    if identity == "playback" and normalized_path:
+        return storage_service.canonical_source_bucket_for_media_asset(asset)
+    if identity == "original" and purpose:
+        return storage_service.canonical_upload_bucket_for_media_asset(asset)
+    if not normalized_path:
+        return None
     if normalized_path.startswith("lessons/"):
         return settings.media_public_bucket
     return settings.media_source_bucket
@@ -468,12 +470,25 @@ async def _delete_orphan_course_cover_assets_for_deleted_courses(
                   SELECT ma.id
                   FROM app.media_assets ma
                   WHERE ma.purpose = 'course_cover'
-                    AND ma.original_object_path LIKE 'media/source/cover/courses/%'
-                    AND NOT EXISTS (
-                      SELECT 1
-                      FROM app.courses existing_course
-                      WHERE ma.original_object_path LIKE
-                        ('media/source/cover/courses/' || existing_course.id::text || '/%')
+                    AND (
+                      (
+                        ma.course_id IS NOT NULL
+                        AND NOT EXISTS (
+                          SELECT 1
+                          FROM app.courses existing_course
+                          WHERE existing_course.id = ma.course_id
+                        )
+                      )
+                      OR (
+                        ma.course_id IS NULL
+                        AND ma.original_object_path LIKE 'media/source/cover/courses/%'
+                        AND NOT EXISTS (
+                          SELECT 1
+                          FROM app.courses existing_course
+                          WHERE ma.original_object_path LIKE
+                            ('media/source/cover/courses/' || existing_course.id::text || '/%')
+                        )
+                      )
                     )
                     AND NOT EXISTS (
                       SELECT 1 FROM app.lesson_media lm WHERE lm.media_asset_id = ma.id
@@ -526,8 +541,14 @@ async def prune_course_cover_assets(*, course_id: str, limit: int = 100) -> int:
                 candidates AS (
                   SELECT ma.id
                   FROM app.media_assets ma
-                  WHERE ma.original_object_path LIKE %s
-                    AND ma.purpose = 'course_cover'
+                  WHERE ma.purpose = 'course_cover'
+                    AND (
+                      ma.course_id = %s::uuid
+                      OR (
+                        ma.course_id IS NULL
+                        AND ma.original_object_path LIKE %s
+                      )
+                    )
                     AND ma.id IS DISTINCT FROM (SELECT cover_media_id FROM current)
                     AND NOT EXISTS (
                       SELECT 1 FROM app.lesson_media lm WHERE lm.media_asset_id = ma.id
@@ -597,8 +618,14 @@ async def delete_course_cover_assets_for_course(
                 WITH candidates AS (
                   SELECT ma.id
                   FROM app.media_assets ma
-                  WHERE ma.original_object_path LIKE %s
-                    AND ma.purpose = 'course_cover'
+                  WHERE ma.purpose = 'course_cover'
+                    AND (
+                      ma.course_id = %s::uuid
+                      OR (
+                        ma.course_id IS NULL
+                        AND ma.original_object_path LIKE %s
+                      )
+                    )
                     AND NOT EXISTS (
                       SELECT 1 FROM app.lesson_media lm WHERE lm.media_asset_id = ma.id
                     )
@@ -629,7 +656,7 @@ async def delete_course_cover_assets_for_course(
                 )
                 SELECT * FROM deleted
                 """,
-                (_course_cover_source_prefix(course_id) + "%", limit),
+                (course_id, _course_cover_source_prefix(course_id) + "%", limit),
             )
             deleted_rows = await cur.fetchall()
             await conn.commit()

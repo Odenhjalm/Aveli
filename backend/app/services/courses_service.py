@@ -4,8 +4,9 @@ import hashlib
 import logging
 import os
 import re
+from collections.abc import Sequence as SequenceABC
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, cast
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -63,6 +64,14 @@ _COURSE_COVER_FORBIDDEN_PUBLIC_FIELDS = frozenset(
     }
 )
 _COURSE_PROGRESSION_FORBIDDEN_PUBLIC_FIELDS = frozenset({"step"})
+_STUDIO_COURSE_DRIP_MODES = frozenset(
+    {
+        "custom_lesson_offsets",
+        "legacy_uniform_drip",
+        "no_drip_immediate_access",
+    }
+)
+_STUDIO_COURSE_LOCK_REASON = "first_enrollment_exists"
 
 
 class CourseCreationError(Exception):
@@ -73,6 +82,15 @@ class CourseCreationError(Exception):
         if status_code is not None:
             self.status_code = status_code
         self.detail = detail
+
+
+class StudioCourseScheduleLockedError(Exception):
+    def __init__(self, course_id: str) -> None:
+        super().__init__(
+            "Schedule-affecting edits are locked after first enrollment."
+        )
+        self.course_id = course_id
+        self.detail = "Schedule-affecting edits are locked after first enrollment."
 
 
 class LessonContentPreconditionRequired(Exception):
@@ -218,6 +236,79 @@ def attach_course_teacher_read_contract(
     rows = [courses] if isinstance(courses, dict) else courses
     for row in rows:
         row["teacher"] = _course_teacher_payload(row)
+
+
+def _normalized_studio_course_drip_mode(course: Mapping[str, Any]) -> str:
+    mode = str(course.get("drip_mode") or "").strip()
+    if mode not in _STUDIO_COURSE_DRIP_MODES:
+        raise ValueError("studio course drip mode is unavailable")
+    return mode
+
+
+def _studio_course_lock_reason(*, schedule_locked: bool) -> str | None:
+    if not schedule_locked:
+        return None
+    return _STUDIO_COURSE_LOCK_REASON
+
+
+def _studio_course_legacy_uniform_payload(
+    course: Mapping[str, Any],
+    *,
+    mode: str,
+) -> dict[str, Any] | None:
+    if mode != "legacy_uniform_drip":
+        return None
+    try:
+        drip_interval_days = int(course.get("drip_interval_days"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("legacy uniform drip interval is unavailable") from exc
+    if drip_interval_days <= 0:
+        raise ValueError("legacy uniform drip interval is unavailable")
+    return {"drip_interval_days": drip_interval_days}
+
+
+def _studio_course_drip_authoring_summary_payload(
+    course: Mapping[str, Any],
+) -> dict[str, Any]:
+    mode = _normalized_studio_course_drip_mode(course)
+    schedule_locked = bool(course.get("schedule_locked"))
+    return {
+        "mode": mode,
+        "schedule_locked": schedule_locked,
+        "lock_reason": _studio_course_lock_reason(schedule_locked=schedule_locked),
+        "legacy_uniform": _studio_course_legacy_uniform_payload(course, mode=mode),
+    }
+
+
+def attach_studio_course_drip_authoring_summary(
+    courses: dict[str, Any] | list[dict[str, Any]] | None,
+) -> None:
+    if courses is None:
+        return
+    rows = [courses] if isinstance(courses, dict) else courses
+    for row in rows:
+        row["drip_authoring"] = _studio_course_drip_authoring_summary_payload(row)
+
+
+def attach_studio_course_drip_authoring_detail(
+    course: dict[str, Any],
+    *,
+    custom_schedule_rows: Sequence[Mapping[str, Any]] | None = None,
+) -> None:
+    payload = _studio_course_drip_authoring_summary_payload(course)
+    mode = str(payload["mode"])
+    rows_payload = [
+        {
+            "lesson_id": row["lesson_id"],
+            "unlock_offset_days": int(row["unlock_offset_days"]),
+        }
+        for row in (custom_schedule_rows or [])
+    ]
+    if mode == "custom_lesson_offsets":
+        payload["custom_schedule"] = {"rows": rows_payload}
+    else:
+        payload["custom_schedule"] = None
+    course["drip_authoring"] = payload
 
 
 def _validate_course_drip_configuration(
@@ -456,6 +547,49 @@ async def list_courses(
     attach_course_teacher_read_contract(rows)
     await attach_course_cover_read_contract(rows)
     return rows
+
+
+async def list_studio_courses(
+    *,
+    teacher_id: str | None = None,
+    limit: int | None = None,
+    search: str | None = None,
+) -> Sequence[dict[str, Any]]:
+    rows = [
+        dict(row)
+        for row in await courses_repo.list_studio_courses(
+            teacher_id=teacher_id,
+            limit=limit,
+            search=search,
+        )
+    ]
+    attach_course_access_model(rows)
+    attach_course_teacher_read_contract(rows)
+    await attach_course_cover_read_contract(rows)
+    attach_studio_course_drip_authoring_summary(rows)
+    return rows
+
+
+async def fetch_studio_course(course_id: str) -> dict[str, Any] | None:
+    row = await courses_repo.get_studio_course(course_id)
+    if row is None:
+        return None
+
+    course = dict(row)
+    attach_course_access_model(course)
+    attach_course_teacher_read_contract(course)
+    await attach_course_cover_read_contract(course)
+
+    custom_schedule_rows: Sequence[Mapping[str, Any]] = ()
+    if _normalized_studio_course_drip_mode(course) == "custom_lesson_offsets":
+        custom_schedule_rows = await courses_repo.list_course_custom_drip_lesson_offsets(
+            course_id
+        )
+    attach_studio_course_drip_authoring_detail(
+        course,
+        custom_schedule_rows=custom_schedule_rows,
+    )
+    return course
 
 
 async def list_public_courses(
@@ -832,6 +966,22 @@ def _canonical_course_cover_derived_prefix(course_id: str) -> str:
     ).as_posix() + "/"
 
 
+def _course_cover_asset_course_scope(asset: Mapping[str, Any]) -> str | None:
+    metadata_course_id = str(asset.get("course_id") or "").strip()
+    if metadata_course_id:
+        return metadata_course_id
+
+    original_object_path = (
+        str(asset.get("original_object_path") or "").strip().lstrip("/")
+    )
+    prefix = "media/source/cover/courses/"
+    if original_object_path.startswith(prefix):
+        suffix = original_object_path[len(prefix) :]
+        course_id = suffix.split("/", 1)[0].strip()
+        return course_id or None
+    return None
+
+
 def _exact_cover_media_id(value: Any) -> str | None:
     if value is None:
         return None
@@ -857,9 +1007,6 @@ def _require_course_cover_asset_contract(
     purpose = str(asset.get("purpose") or "").strip().lower()
     state = str(asset.get("state") or "").strip().lower()
     playback_format = str(asset.get("playback_format") or "").strip().lower()
-    original_object_path = (
-        str(asset.get("original_object_path") or "").strip().lstrip("/")
-    )
     playback_object_path = (
         str(asset.get("playback_object_path") or "").strip().lstrip("/")
     )
@@ -868,9 +1015,7 @@ def _require_course_cover_asset_contract(
         raise ValueError("cover_media_id must reference image media")
     if purpose != "course_cover":
         raise ValueError("cover_media_id must reference course cover media")
-    if not original_object_path.startswith(
-        _canonical_course_cover_source_prefix(course_id)
-    ):
+    if _course_cover_asset_course_scope(asset) != course_id:
         raise ValueError("cover_media_id is not scoped to this course")
     if state != "ready":
         raise ValueError("cover_media_id must reference ready media")
@@ -1240,6 +1385,88 @@ async def create_course(
     return course
 
 
+def _reject_studio_course_drip_authoring_patch(patch: Mapping[str, Any]) -> None:
+    forbidden = sorted(
+        field
+        for field in (
+            "drip_enabled",
+            "drip_interval_days",
+            "drip_authoring",
+            "legacy_uniform",
+            "custom_schedule",
+            "mode",
+        )
+        if field in patch
+    )
+    if forbidden:
+        raise ValueError(
+            "course drip authoring must use PUT /studio/courses/{course_id}/drip-authoring"
+        )
+
+
+def _normalize_studio_custom_schedule_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_rows: list[dict[str, Any]] = []
+    for row in rows:
+        lesson_id = str(row.get("lesson_id") or "").strip()
+        if not lesson_id:
+            raise ValueError("custom_schedule.rows must include lesson_id")
+        try:
+            unlock_offset_days = int(row.get("unlock_offset_days"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "custom_schedule.rows must include integer unlock_offset_days"
+            ) from exc
+        if unlock_offset_days < 0:
+            raise ValueError("custom_schedule.rows unlock_offset_days must be >= 0")
+        normalized_rows.append(
+            {
+                "lesson_id": lesson_id,
+                "unlock_offset_days": unlock_offset_days,
+            }
+        )
+    return normalized_rows
+
+
+async def _validate_full_custom_schedule_payload(
+    *,
+    course_id: str,
+    custom_schedule_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_rows = _normalize_studio_custom_schedule_rows(custom_schedule_rows)
+    lessons = [dict(row) for row in await courses_repo.list_studio_course_lessons(course_id)]
+    lesson_ids_in_order = [str(row["id"]) for row in lessons]
+    rows_by_lesson: dict[str, dict[str, Any]] = {}
+    for row in normalized_rows:
+        lesson_id = str(row["lesson_id"])
+        if lesson_id in rows_by_lesson:
+            raise ValueError(
+                "custom_schedule.rows must reference each course lesson exactly once"
+            )
+        rows_by_lesson[lesson_id] = row
+
+    if set(rows_by_lesson) != set(lesson_ids_in_order):
+        raise ValueError(
+            "custom_schedule.rows must reference each course lesson exactly once"
+        )
+
+    ordered_rows = [rows_by_lesson[lesson_id] for lesson_id in lesson_ids_in_order]
+    if ordered_rows and ordered_rows[0]["unlock_offset_days"] != 0:
+        raise ValueError("custom_schedule.rows must start with unlock_offset_days = 0")
+
+    previous_offset_days = -1
+    for row in ordered_rows:
+        unlock_offset_days = int(row["unlock_offset_days"])
+        if unlock_offset_days < previous_offset_days:
+            raise ValueError(
+                "custom_schedule.rows unlock_offset_days must be nondecreasing by lesson order"
+            )
+        previous_offset_days = unlock_offset_days
+
+    return ordered_rows
+
+
 async def update_course(
     course_id: str,
     patch: dict[str, Any],
@@ -1265,30 +1492,91 @@ async def update_course(
 
     patch = dict(patch)
     patch.pop("teacher_id", None)
+    _reject_studio_course_drip_authoring_patch(patch)
     if "cover_media_id" in patch:
         patch["cover_media_id"] = await _validate_course_cover_assignment(
             course_id=course_id,
             cover_media_id=patch["cover_media_id"],
         )
-    drip_enabled = (
-        patch["drip_enabled"]
-        if "drip_enabled" in patch
-        else existing_course["drip_enabled"]
-    )
-    drip_interval_days = (
-        patch["drip_interval_days"]
-        if "drip_interval_days" in patch
-        else existing_course["drip_interval_days"]
-    )
-    _validate_course_drip_configuration(
-        drip_enabled=bool(drip_enabled),
-        drip_interval_days=drip_interval_days,
-    )
 
     row = await courses_repo.update_course(course_id, patch)
     if row is None:
         return None
     return dict(row)
+
+
+async def set_studio_course_drip_authoring(
+    course_id: str,
+    payload: Mapping[str, Any],
+    *,
+    teacher_id: str | None = None,
+) -> dict[str, Any] | None:
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise PermissionError("Course owner required")
+
+    existing_course = await courses_repo.get_course(course_id=course_id)
+    if existing_course is None:
+        return None
+    if not await courses_repo.is_course_owner(course_id, normalized_teacher_id):
+        raise PermissionError("Not course owner")
+
+    mode = str(payload.get("mode") or "").strip()
+    if mode not in _STUDIO_COURSE_DRIP_MODES:
+        raise ValueError("Unsupported studio course drip authoring mode")
+
+    legacy_uniform = payload.get("legacy_uniform")
+    custom_schedule = payload.get("custom_schedule")
+
+    legacy_drip_interval_days: int | None = None
+    if mode == "legacy_uniform_drip":
+        try:
+            legacy_drip_interval_days = int(
+                cast(Mapping[str, Any], legacy_uniform)["drip_interval_days"]
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "legacy_uniform.drip_interval_days is required when mode is legacy_uniform_drip"
+            ) from exc
+
+    ordered_custom_schedule_rows: list[dict[str, Any]] = []
+    if mode == "custom_lesson_offsets":
+        custom_schedule_mapping = cast(Mapping[str, Any] | None, custom_schedule)
+        raw_custom_schedule_rows = (
+            custom_schedule_mapping.get("rows") if custom_schedule_mapping else None
+        )
+        if not isinstance(raw_custom_schedule_rows, SequenceABC) or isinstance(
+            raw_custom_schedule_rows,
+            (str, bytes),
+        ):
+            raise ValueError(
+                "custom_schedule.rows is required when mode is custom_lesson_offsets"
+            )
+        custom_schedule_rows = cast(
+            Sequence[Mapping[str, Any]],
+            raw_custom_schedule_rows,
+        )
+        ordered_custom_schedule_rows = await _validate_full_custom_schedule_payload(
+            course_id=course_id,
+            custom_schedule_rows=custom_schedule_rows,
+        )
+
+    try:
+        row = await courses_repo.replace_course_drip_authoring(
+            course_id,
+            mode=mode,
+            legacy_drip_interval_days=legacy_drip_interval_days,
+            custom_schedule_rows=ordered_custom_schedule_rows,
+        )
+    except courses_repo.CourseScheduleLockedError as exc:
+        raise StudioCourseScheduleLockedError(exc.course_id) from exc
+
+    if row is None:
+        return None
+    detail = await fetch_studio_course(course_id)
+    if detail is None:
+        raise RuntimeError("studio course detail was not returned")
+    return detail
 
 
 async def list_course_families(teacher_id: str | None = None) -> list[dict[str, Any]]:
