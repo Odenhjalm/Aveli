@@ -854,6 +854,18 @@ Canonical media-reference law inside markdown:
   - `!video(<lesson_media_id>)`
   - `!document(<lesson_media_id>)`
 
+Supported-content fixture corpus law:
+
+- `lesson_supported_content_fixture_corpus.md` and
+  `lesson_supported_content_fixture_corpus.json` lock the supported
+  Markdown-canonical lesson-content fixture ids for implementation and
+  verification
+- adapter, newline, guard, validator, preview, and learner work must bind to
+  that corpus instead of inventing per-surface fixture semantics
+- blocker-grade supported fixtures for blank-line semantics and inline
+  document-token semantics remain inside the locked supported subset even when
+  downstream nodes own their completion
+
 Forbidden markdown persistence:
 
 - raw HTML media tags

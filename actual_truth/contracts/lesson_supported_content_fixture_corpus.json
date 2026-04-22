@@ -1,0 +1,557 @@
+{
+  "contract_id": "lesson_supported_content_fixture_corpus",
+  "status": "ACTIVE",
+  "canonical_storage": {
+    "table": "app.lesson_contents",
+    "field": "content_markdown"
+  },
+  "authority_contracts": [
+    "actual_truth/contracts/course_lesson_editor_contract.md",
+    "actual_truth/contracts/AVELI_COURSE_DOMAIN_SPEC.md",
+    "actual_truth/contracts/lesson_document_edge_contract.md"
+  ],
+  "runtime_boundaries": {
+    "editor_hydration": {
+      "paths": [
+        "frontend/lib/editor/adapter/markdown_to_editor.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart"
+      ]
+    },
+    "editor_save": {
+      "paths": [
+        "frontend/lib/editor/adapter/editor_to_markdown.dart",
+        "frontend/lib/editor/normalization/quill_delta_normalizer.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart"
+      ]
+    },
+    "markdown_canonicalization": {
+      "paths": [
+        "frontend/lib/editor/adapter/markdown_to_editor.dart",
+        "frontend/lib/editor/adapter/editor_to_markdown.dart",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart"
+      ]
+    },
+    "frontend_integrity_validation": {
+      "paths": [
+        "frontend/lib/editor/guardrails/lesson_markdown_integrity_guard.dart"
+      ]
+    },
+    "backend_validation": {
+      "paths": [
+        "backend/app/utils/lesson_markdown_validator.py",
+        "frontend/tool/lesson_markdown_roundtrip.dart",
+        "frontend/tool/lesson_markdown_roundtrip_harness_test.dart"
+      ]
+    },
+    "preview_render": {
+      "paths": [
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart"
+      ]
+    },
+    "learner_render": {
+      "paths": [
+        "frontend/lib/features/courses/presentation/lesson_page.dart"
+      ]
+    },
+    "backend_write_boundary": {
+      "paths": [
+        "backend/app/routes/studio.py",
+        "backend/app/services/courses_service.py",
+        "backend/app/utils/lesson_content.py",
+        "backend/app/repositories/courses.py"
+      ]
+    }
+  },
+  "supported_canonical_fixtures": {
+    "heading_h2_basic": {
+      "category": "heading",
+      "status": "locked",
+      "canonical_markdown": "## Heading",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "frontend_integrity_validation",
+        "backend_validation",
+        "preview_render",
+        "learner_render"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "frontend_guard_tests",
+        "backend_validator_tests",
+        "preview_learner_parity_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/lib/editor/adapter/markdown_to_editor.dart",
+        "frontend/lib/editor/adapter/editor_to_markdown.dart"
+      ]
+    },
+    "heading_h3_bold_italic_tail": {
+      "category": "heading_emphasis",
+      "status": "locked",
+      "canonical_markdown": "### Heading3\n**Bold** *Italic*",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "frontend_integrity_validation",
+        "backend_validation",
+        "preview_render",
+        "learner_render"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "frontend_guard_tests",
+        "backend_validator_tests",
+        "preview_learner_parity_tests",
+        "eof_italic_regression_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/lesson_markdown_integrity_guard_test.dart",
+        "frontend/test/unit/lesson_content_serialization_test.dart",
+        "frontend/test/widgets/course_editor_lesson_content_lifecycle_test.dart"
+      ],
+      "notes": "This is the locked canonical fixture for the current EOF italic regression surface."
+    },
+    "bullet_list_basic": {
+      "category": "list_bullet",
+      "status": "locked",
+      "canonical_markdown": "- First\n- Second",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "preview_render",
+        "learner_render"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "preview_learner_parity_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/test/unit/lesson_content_serialization_test.dart"
+      ]
+    },
+    "ordered_list_single_item": {
+      "category": "list_ordered",
+      "status": "locked",
+      "canonical_markdown": "1. Ordered item",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "preview_render",
+        "learner_render"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "preview_learner_parity_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/lesson_content_serialization_test.dart",
+        "frontend/lib/editor/adapter/editor_to_markdown.dart"
+      ]
+    },
+    "bold_basic": {
+      "category": "bold",
+      "status": "locked",
+      "canonical_markdown": "**Bold**",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "frontend_integrity_validation",
+        "backend_validation",
+        "preview_render",
+        "learner_render"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "frontend_guard_tests",
+        "backend_validator_tests",
+        "preview_learner_parity_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/test/unit/lesson_markdown_integrity_guard_test.dart",
+        "backend/tests/test_lesson_markdown_validator.py"
+      ]
+    },
+    "italic_basic": {
+      "category": "italic",
+      "status": "locked",
+      "canonical_markdown": "*Italic*",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "frontend_integrity_validation",
+        "backend_validation",
+        "preview_render",
+        "learner_render"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "frontend_guard_tests",
+        "backend_validator_tests",
+        "preview_learner_parity_tests",
+        "eof_italic_regression_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/test/unit/lesson_markdown_integrity_guard_test.dart",
+        "backend/tests/test_lesson_markdown_validator.py"
+      ]
+    },
+    "underline_html_basic": {
+      "category": "underline",
+      "status": "locked",
+      "canonical_markdown": "<u>Underline</u>",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "preview_render",
+        "learner_render"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "preview_learner_parity_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/test/unit/lesson_content_serialization_test.dart"
+      ]
+    },
+    "paragraph_blank_line_two_paragraphs": {
+      "category": "blank_lines",
+      "status": "blocked",
+      "blocking_node": "CP-002",
+      "canonical_markdown": "Hello world\n\nThis is a lesson",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "frontend_integrity_validation",
+        "backend_validation",
+        "preview_render",
+        "learner_render",
+        "backend_write_boundary"
+      ],
+      "binding_groups": [
+        "frontend_newline_tests",
+        "frontend_guard_tests",
+        "backend_write_contract_tests",
+        "preview_learner_parity_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/lesson_newline_persistence_test.dart",
+        "backend/tests/test_lesson_newline_persistence.py",
+        "frontend/test/unit/lesson_markdown_integrity_guard_test.dart"
+      ],
+      "notes": "Supported intended paragraph-break fixture. Current frontend round-trip behavior remains an active defect and is owned by CP-002."
+    },
+    "image_token_basic": {
+      "category": "media_token_image",
+      "status": "locked",
+      "canonical_markdown": "!image(media-image-1)",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "preview_render",
+        "learner_render",
+        "backend_write_boundary"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "preview_learner_parity_tests",
+        "backend_write_contract_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/test/unit/lesson_content_serialization_test.dart",
+        "backend/tests/test_lesson_markdown_write_contract.py"
+      ]
+    },
+    "audio_token_basic": {
+      "category": "media_token_audio",
+      "status": "locked",
+      "canonical_markdown": "!audio(media-audio-1)",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "preview_render",
+        "learner_render",
+        "backend_write_boundary"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "preview_learner_parity_tests",
+        "backend_write_contract_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/lesson_content_serialization_test.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "backend/tests/test_lesson_markdown_write_contract.py"
+      ]
+    },
+    "video_token_basic": {
+      "category": "media_token_video",
+      "status": "locked",
+      "canonical_markdown": "!video(media-video-1)",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "editor_save",
+        "preview_render",
+        "learner_render",
+        "backend_write_boundary"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "preview_learner_parity_tests",
+        "backend_write_contract_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/unit/lesson_content_serialization_test.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "backend/tests/test_lesson_markdown_write_contract.py"
+      ]
+    },
+    "media_token_mixed_render": {
+      "category": "media_token_mixed",
+      "status": "locked",
+      "canonical_markdown": "Intro\n\n!image(media-image-1)\n\n!audio(media-audio-1)\n\n!video(media-video-1)",
+      "runtime_boundaries": [
+        "preview_render",
+        "learner_render",
+        "backend_write_boundary"
+      ],
+      "binding_groups": [
+        "preview_learner_parity_tests",
+        "backend_write_contract_tests"
+      ],
+      "evidence_paths": [
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart",
+        "backend/tests/test_lesson_markdown_write_contract.py"
+      ]
+    },
+    "document_token_inline": {
+      "category": "document_token",
+      "status": "blocked",
+      "blocking_node": "CP-003",
+      "canonical_markdown": "Intro\n\n!document(media-document-1)\n\nOutro",
+      "runtime_boundaries": [
+        "editor_hydration",
+        "preview_render",
+        "learner_render",
+        "backend_write_boundary"
+      ],
+      "binding_groups": [
+        "frontend_adapter_tests",
+        "preview_learner_parity_tests",
+        "backend_write_contract_tests"
+      ],
+      "evidence_paths": [
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "backend/tests/test_lesson_markdown_write_contract.py"
+      ],
+      "notes": "Supported intended inline document-token fixture. Storage accepts !document(id), but hydrate/render completion remains owned by CP-003."
+    }
+  },
+  "compatibility_only_inputs": {
+    "escaped_italic_markers": {
+      "input_markdown": "\\*Should have been italic\\*",
+      "canonical_markdown": "*Should have been italic*",
+      "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/lib/editor/adapter/markdown_to_editor.dart"
+      ]
+    },
+    "escaped_bold_markers": {
+      "input_markdown": "\\*\\*Should have been bold\\*\\*",
+      "canonical_markdown": "**Should have been bold**",
+      "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/lib/editor/adapter/markdown_to_editor.dart"
+      ]
+    },
+    "underscore_emphasis_aliases": {
+      "input_markdown": "__text__ and _text_ and **_text_**",
+      "canonical_markdown": "**text** and *text* and ***text***",
+      "evidence_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/lib/editor/adapter/markdown_to_editor.dart"
+      ]
+    },
+    "legacy_document_link_rewrite": {
+      "input_markdown": "[document](/studio/media/media-document-1)",
+      "canonical_markdown": "!document(media-document-1)",
+      "evidence_paths": [
+        "backend/tests/test_lesson_markdown_write_contract.py",
+        "backend/app/utils/lesson_content.py"
+      ],
+      "notes": "Accepted only as a backend write-boundary compatibility input. Not part of the canonical stored fixture subset."
+    }
+  },
+  "unsupported_or_out_of_scope": {
+    "raw_html_media_tags": {
+      "shape": "<video src=\"https://cdn.test/legacy.mp4\"></video>",
+      "reason": "Forbidden canonical persistence shape for governed lesson media.",
+      "evidence_paths": [
+        "frontend/test/unit/lesson_markdown_normalization_test.dart",
+        "frontend/test/unit/lesson_content_serialization_test.dart",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart"
+      ]
+    },
+    "raw_markdown_image_urls": {
+      "shape": "![alt](https://cdn.test/legacy.png)",
+      "reason": "Raw Markdown image URLs are forbidden for canonical lesson media persistence.",
+      "evidence_paths": [
+        "frontend/test/unit/lesson_markdown_normalization_test.dart",
+        "frontend/test/unit/lesson_content_serialization_test.dart",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart"
+      ]
+    },
+    "raw_internal_media_links_as_canonical_storage": {
+      "shape": "[document](/studio/media/media-document-1)",
+      "reason": "Not a canonical stored shape. If accepted at all, it must normalize to !document(id) before persistence.",
+      "evidence_paths": [
+        "backend/tests/test_lesson_markdown_write_contract.py",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart"
+      ]
+    }
+  },
+  "binding_groups": {
+    "frontend_adapter_tests": {
+      "runtime_paths": [
+        "frontend/lib/editor/adapter/markdown_to_editor.dart",
+        "frontend/lib/editor/adapter/editor_to_markdown.dart",
+        "frontend/lib/editor/normalization/quill_delta_normalizer.dart",
+        "frontend/lib/editor/session/editor_operation_controller.dart"
+      ],
+      "test_paths": [
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/test/unit/lesson_content_serialization_test.dart"
+      ],
+      "fixture_ids": [
+        "heading_h2_basic",
+        "heading_h3_bold_italic_tail",
+        "bullet_list_basic",
+        "ordered_list_single_item",
+        "bold_basic",
+        "italic_basic",
+        "underline_html_basic",
+        "image_token_basic",
+        "audio_token_basic",
+        "video_token_basic",
+        "document_token_inline"
+      ]
+    },
+    "frontend_newline_tests": {
+      "runtime_paths": [
+        "frontend/lib/editor/adapter/markdown_to_editor.dart",
+        "frontend/lib/editor/adapter/editor_to_markdown.dart",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart"
+      ],
+      "test_paths": [
+        "frontend/test/unit/lesson_newline_persistence_test.dart"
+      ],
+      "fixture_ids": [
+        "paragraph_blank_line_two_paragraphs"
+      ]
+    },
+    "frontend_guard_tests": {
+      "runtime_paths": [
+        "frontend/lib/editor/guardrails/lesson_markdown_integrity_guard.dart",
+        "frontend/lib/editor/adapter/markdown_to_editor.dart",
+        "frontend/lib/editor/adapter/editor_to_markdown.dart"
+      ],
+      "test_paths": [
+        "frontend/test/unit/lesson_markdown_integrity_guard_test.dart"
+      ],
+      "fixture_ids": [
+        "heading_h2_basic",
+        "heading_h3_bold_italic_tail",
+        "bold_basic",
+        "italic_basic",
+        "paragraph_blank_line_two_paragraphs"
+      ]
+    },
+    "backend_validator_tests": {
+      "runtime_paths": [
+        "backend/app/utils/lesson_markdown_validator.py",
+        "frontend/tool/lesson_markdown_roundtrip.dart",
+        "frontend/tool/lesson_markdown_roundtrip_harness_test.dart"
+      ],
+      "test_paths": [
+        "backend/tests/test_lesson_markdown_validator.py"
+      ],
+      "fixture_ids": [
+        "heading_h2_basic",
+        "heading_h3_bold_italic_tail",
+        "bold_basic",
+        "italic_basic"
+      ]
+    },
+    "preview_learner_parity_tests": {
+      "runtime_paths": [
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart"
+      ],
+      "test_paths": [
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart",
+        "frontend/test/widgets/course_editor_lesson_content_lifecycle_test.dart"
+      ],
+      "fixture_ids": [
+        "heading_h2_basic",
+        "heading_h3_bold_italic_tail",
+        "bullet_list_basic",
+        "ordered_list_single_item",
+        "bold_basic",
+        "italic_basic",
+        "underline_html_basic",
+        "paragraph_blank_line_two_paragraphs",
+        "media_token_mixed_render",
+        "document_token_inline"
+      ]
+    },
+    "backend_write_contract_tests": {
+      "runtime_paths": [
+        "backend/app/routes/studio.py",
+        "backend/app/services/courses_service.py",
+        "backend/app/utils/lesson_content.py",
+        "backend/app/repositories/courses.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_lesson_markdown_write_contract.py",
+        "backend/tests/test_lesson_newline_persistence.py",
+        "backend/tests/test_studio_lesson_content_authority.py"
+      ],
+      "fixture_ids": [
+        "paragraph_blank_line_two_paragraphs",
+        "image_token_basic",
+        "audio_token_basic",
+        "video_token_basic",
+        "media_token_mixed_render",
+        "document_token_inline"
+      ]
+    },
+    "eof_italic_regression_tests": {
+      "runtime_paths": [
+        "frontend/lib/editor/session/editor_operation_controller.dart",
+        "frontend/lib/editor/normalization/quill_delta_normalizer.dart",
+        "frontend/lib/editor/adapter/editor_to_markdown.dart"
+      ],
+      "test_paths": [
+        "frontend/test/unit/lesson_content_serialization_test.dart",
+        "frontend/test/widgets/lesson_editor_quill_input_test.dart",
+        "frontend/test/widgets/course_editor_lesson_content_lifecycle_test.dart"
+      ],
+      "fixture_ids": [
+        "italic_basic",
+        "heading_h3_bold_italic_tail"
+      ]
+    }
+  }
+}

@@ -1,0 +1,379 @@
+{
+  "input": {
+    "task": "Construct deterministic implementation task tree for the Markdown-canonical course editor content pipeline",
+    "mode": "generate",
+    "scope": [
+      "Lesson and course editor content-pipeline consolidation only",
+      "Markdown stays canonical stored truth in app.lesson_contents.content_markdown",
+      "Quill Delta stays transient editor and render state only",
+      "Preview and learner remain separate verification surfaces",
+      "No schema or API migration branch is introduced by default"
+    ],
+    "retrieval_queries": [
+      "content_markdown",
+      "markdown_to_editor",
+      "editor_to_markdown",
+      "lesson_markdown_integrity_guard",
+      "lesson_markdown_validator",
+      "lesson_content_surface",
+      "readLessonContent",
+      "fetchLessonMediaPlacements",
+      "!image(",
+      "!audio(",
+      "!video(",
+      "!document(",
+      "lesson_newline_persistence",
+      "EOF italic",
+      "lesson_supported_content_fixture_corpus"
+    ],
+    "evaluation_criteria": [
+      "Studio hydration and save are explainable through one owned adapter boundary",
+      "Blank-line and inline-document semantics are explicit and contract-backed",
+      "Frontend guard and backend validator agree on the same supported-content contract",
+      "Preview and learner parity is explicitly verified",
+      "Each materialized task declares TYPE and DEPENDS_ON"
+    ]
+  },
+  "task_tree": [
+    {
+      "task_id": "CP-001",
+      "type": "OWNER",
+      "cluster": "SUPPORTED_CONTENT_CORPUS",
+      "classification": "LOCK",
+      "description": "Lock the supported-content fixture corpus for the Markdown-canonical lesson-content subset and bind it to frontend adapter, newline, guard, validator, preview, learner, and backend write-contract surfaces.",
+      "target_files": [
+        "actual_truth/contracts/course_lesson_editor_contract.md",
+        "actual_truth/contracts/lesson_supported_content_fixture_corpus.md",
+        "actual_truth/contracts/lesson_supported_content_fixture_corpus.json",
+        "frontend/test/helpers/lesson_supported_content_fixture_corpus.dart",
+        "frontend/test/unit/lesson_supported_content_fixture_corpus_test.dart",
+        "backend/tests/test_lesson_supported_content_fixture_corpus.py"
+      ],
+      "action": "lock",
+      "depends_on": []
+    },
+    {
+      "task_id": "CP-002",
+      "type": "OWNER",
+      "cluster": "BLANK_LINE_SEMANTICS",
+      "classification": "RESOLVE",
+      "description": "Resolve blank-line and paragraph semantics so Markdown save, reload, validation, preview, and learner surfaces share one explicit rule set for the locked newline fixtures.",
+      "target_files": [
+        "frontend/lib/editor/adapter/markdown_to_editor.dart",
+        "frontend/lib/editor/adapter/editor_to_markdown.dart",
+        "frontend/lib/editor/guardrails/lesson_markdown_integrity_guard.dart",
+        "backend/app/utils/lesson_markdown_validator.py",
+        "frontend/test/unit/lesson_newline_persistence_test.dart",
+        "backend/tests/test_lesson_newline_persistence.py"
+      ],
+      "action": "resolve",
+      "depends_on": [
+        "CP-001"
+      ]
+    },
+    {
+      "task_id": "CP-003",
+      "type": "OWNER",
+      "cluster": "DOCUMENT_TOKEN_SEMANTICS",
+      "classification": "RESOLVE",
+      "description": "Resolve inline document-token semantics so !document(id) is a complete supported-content case across hydration, preview, learner rendering, and backend write-contract verification.",
+      "target_files": [
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart",
+        "frontend/lib/editor/adapter/markdown_to_editor.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "backend/tests/test_lesson_markdown_write_contract.py",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart"
+      ],
+      "action": "resolve",
+      "depends_on": [
+        "CP-001"
+      ]
+    },
+    {
+      "task_id": "CP-G01",
+      "type": "GATE",
+      "cluster": "SUPPORTED_CONTENT_BLOCKER_GATE",
+      "classification": "GATE",
+      "description": "Stop downstream adapter work until blank-line and inline document-token semantics are explicit, contract-backed, and bound to the supported-content fixture corpus.",
+      "target_files": [
+        "actual_truth/contracts/lesson_supported_content_fixture_corpus.md",
+        "actual_truth/contracts/lesson_supported_content_fixture_corpus.json",
+        "frontend/test/unit/lesson_supported_content_fixture_corpus_test.dart",
+        "backend/tests/test_lesson_supported_content_fixture_corpus.py"
+      ],
+      "action": "gate",
+      "depends_on": [
+        "CP-001",
+        "CP-002",
+        "CP-003"
+      ]
+    },
+    {
+      "task_id": "CP-101",
+      "type": "OWNER",
+      "cluster": "HYDRATION_BOUNDARY",
+      "classification": "CONSOLIDATE",
+      "description": "Consolidate the Markdown-to-Delta hydration boundary so studio hydration and learner read-only document creation use the same importer semantics.",
+      "target_files": [
+        "frontend/lib/editor/adapter/markdown_to_editor.dart",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart"
+      ],
+      "action": "consolidate",
+      "depends_on": [
+        "CP-G01"
+      ]
+    },
+    {
+      "task_id": "CP-102",
+      "type": "OWNER",
+      "cluster": "SAVE_BOUNDARY",
+      "classification": "CONSOLIDATE",
+      "description": "Consolidate the Delta-to-Markdown save boundary so studio writes emit one canonical Markdown form through one owned serializer path.",
+      "target_files": [
+        "frontend/lib/editor/adapter/editor_to_markdown.dart",
+        "frontend/lib/editor/normalization/quill_delta_normalizer.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart"
+      ],
+      "action": "consolidate",
+      "depends_on": [
+        "CP-G01"
+      ]
+    },
+    {
+      "task_id": "CP-103",
+      "type": "OWNER",
+      "cluster": "EDITOR_INPUT_SANITIZATION",
+      "classification": "ALIGN",
+      "description": "Align editor input and newline sanitization so live Quill edits do not generate unstable boundary states that later repairs must reinterpret.",
+      "target_files": [
+        "frontend/lib/editor/session/editor_operation_controller.dart",
+        "frontend/lib/editor/normalization/quill_delta_normalizer.dart",
+        "frontend/test/widgets/lesson_editor_quill_input_test.dart"
+      ],
+      "action": "align",
+      "depends_on": [
+        "CP-G01"
+      ]
+    },
+    {
+      "task_id": "CP-G02",
+      "type": "GATE",
+      "cluster": "STUDIO_ADAPTER_BOUNDARY_GATE",
+      "classification": "GATE",
+      "description": "Verify that studio hydration and save now run through one owned adapter boundary rather than stacked surface-specific repair layers.",
+      "target_files": [
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/test/widgets/course_editor_lesson_content_lifecycle_test.dart",
+        "frontend/test/unit/editor_markdown_adapter_test.dart",
+        "frontend/test/unit/lesson_content_serialization_test.dart"
+      ],
+      "action": "gate",
+      "depends_on": [
+        "CP-101",
+        "CP-102",
+        "CP-103"
+      ]
+    },
+    {
+      "task_id": "CP-201",
+      "type": "OWNER",
+      "cluster": "FRONTEND_GUARD_ALIGNMENT",
+      "classification": "ALIGN",
+      "description": "Align the frontend integrity guard to the shared boundary so it verifies the supported-content contract instead of owning a second formatting semantics layer.",
+      "target_files": [
+        "frontend/lib/editor/guardrails/lesson_markdown_integrity_guard.dart",
+        "frontend/test/unit/lesson_markdown_integrity_guard_test.dart"
+      ],
+      "action": "align",
+      "depends_on": [
+        "CP-G02"
+      ]
+    },
+    {
+      "task_id": "CP-202",
+      "type": "OWNER",
+      "cluster": "BACKEND_VALIDATOR_ALIGNMENT",
+      "classification": "ALIGN",
+      "description": "Align the backend validator and roundtrip harness to the same supported-content contract enforced by the frontend boundary.",
+      "target_files": [
+        "backend/app/utils/lesson_markdown_validator.py",
+        "frontend/tool/lesson_markdown_roundtrip.dart",
+        "frontend/tool/lesson_markdown_roundtrip_harness_test.dart",
+        "backend/app/services/courses_service.py",
+        "backend/tests/test_lesson_markdown_validator.py",
+        "backend/tests/test_studio_lesson_content_authority.py"
+      ],
+      "action": "align",
+      "depends_on": [
+        "CP-G02"
+      ]
+    },
+    {
+      "task_id": "CP-G03",
+      "type": "GATE",
+      "cluster": "VALIDATION_PARITY_GATE",
+      "classification": "GATE",
+      "description": "Verify that frontend guard and backend validator produce the same pass or fail verdicts for the locked supported-content fixture corpus.",
+      "target_files": [
+        "frontend/lib/editor/guardrails/lesson_markdown_integrity_guard.dart",
+        "backend/app/utils/lesson_markdown_validator.py",
+        "frontend/test/unit/lesson_markdown_integrity_guard_test.dart",
+        "backend/tests/test_lesson_markdown_validator.py"
+      ],
+      "action": "gate",
+      "depends_on": [
+        "CP-201",
+        "CP-202"
+      ]
+    },
+    {
+      "task_id": "CP-301",
+      "type": "OWNER",
+      "cluster": "LEARNER_RENDER_COMPLETION",
+      "classification": "COMPLETE",
+      "description": "Complete learner inline-token rendering so the locked token contract, including inline documents, renders at canonical token positions without fallback-only behavior.",
+      "target_files": [
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart"
+      ],
+      "action": "complete",
+      "depends_on": [
+        "CP-G01",
+        "CP-G02"
+      ]
+    },
+    {
+      "task_id": "CP-302",
+      "type": "OWNER",
+      "cluster": "STUDIO_PREVIEW_PARITY",
+      "classification": "ALIGN",
+      "description": "Align studio preview to learner-equivalent composition while preserving persisted-content-only preview authority.",
+      "target_files": [
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/course_editor_lesson_content_lifecycle_test.dart"
+      ],
+      "action": "align",
+      "depends_on": [
+        "CP-G01",
+        "CP-G02",
+        "CP-301"
+      ]
+    },
+    {
+      "task_id": "CP-G04",
+      "type": "GATE",
+      "cluster": "RENDER_PARITY_GATE",
+      "classification": "GATE",
+      "description": "Verify preview and learner parity for the same canonical Markdown and media fixtures across headings, emphasis, blank lines, media tokens, and inline documents.",
+      "target_files": [
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart"
+      ],
+      "action": "gate",
+      "depends_on": [
+        "CP-301",
+        "CP-302"
+      ]
+    },
+    {
+      "task_id": "CP-401",
+      "type": "OWNER",
+      "cluster": "PREVIEW_AUTHORITY_DRIFT_REPAIR",
+      "classification": "REPAIR",
+      "description": "Repair the stale preview-authority regression test so it validates current persisted-preview authority without brittle helper-name coupling.",
+      "target_files": [
+        "backend/tests/test_write_path_dominance_regression.py",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart"
+      ],
+      "action": "repair",
+      "depends_on": [
+        "CP-302"
+      ]
+    },
+    {
+      "task_id": "CP-402",
+      "type": "OWNER",
+      "cluster": "BLANK_LINE_REGRESSION_SUITE",
+      "classification": "PIN",
+      "description": "Pin the blank-line persistence regression suite across adapter, backend write, preview, and learner surfaces using the locked newline fixtures.",
+      "target_files": [
+        "frontend/test/unit/lesson_newline_persistence_test.dart",
+        "backend/tests/test_lesson_newline_persistence.py",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart"
+      ],
+      "action": "pin",
+      "depends_on": [
+        "CP-G03",
+        "CP-G04"
+      ]
+    },
+    {
+      "task_id": "CP-403",
+      "type": "OWNER",
+      "cluster": "EOF_ITALIC_REGRESSION_SUITE",
+      "classification": "PIN",
+      "description": "Pin the EOF italic regression suite across raw delta, editor input, and mounted studio save flows using the locked EOF fixtures.",
+      "target_files": [
+        "frontend/test/unit/lesson_content_serialization_test.dart",
+        "frontend/test/widgets/lesson_editor_quill_input_test.dart",
+        "frontend/test/widgets/course_editor_lesson_content_lifecycle_test.dart"
+      ],
+      "action": "pin",
+      "depends_on": [
+        "CP-G02",
+        "CP-G03"
+      ]
+    },
+    {
+      "task_id": "CP-404",
+      "type": "OWNER",
+      "cluster": "OBSERVABILITY_HARDENING",
+      "classification": "HARDEN",
+      "description": "Add guard and validator observability coverage so save-boundary failures are attributable to one owned contract boundary rather than hidden semantic drift.",
+      "target_files": [
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "backend/app/services/courses_service.py",
+        "frontend/test",
+        "backend/tests"
+      ],
+      "action": "harden",
+      "depends_on": [
+        "CP-G03"
+      ]
+    },
+    {
+      "task_id": "CP-G05",
+      "type": "AGGREGATE",
+      "cluster": "FINAL_READINESS_GATE",
+      "description": "Run the final content-pipeline readiness gate to confirm blocker semantics, adapter ownership, validation parity, render parity, regression coverage, and observability all point to the same Markdown-canonical truth.",
+      "target_files": [
+        "actual_truth/DETERMINED_TASKS/course_editor_content_pipeline_consolidation_tree/task_manifest.json",
+        "actual_truth/contracts/lesson_supported_content_fixture_corpus.json",
+        "frontend/lib/editor/adapter",
+        "frontend/lib/editor/guardrails/lesson_markdown_integrity_guard.dart",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "backend/app/utils/lesson_markdown_validator.py",
+        "backend/app/services/courses_service.py",
+        "frontend/test",
+        "backend/tests"
+      ],
+      "action": "aggregate",
+      "depends_on": [
+        "CP-401",
+        "CP-402",
+        "CP-403",
+        "CP-404"
+      ]
+    }
+  ]
+}
