@@ -59,13 +59,14 @@ Offset _titlePosition(WidgetTester tester, String title) {
 
 void main() {
   testWidgets(
-    'showcase renders intro to step3 order with alphabetical titles',
+    'showcase renders canonical group_position order with alphabetical titles',
     (tester) async {
       final courses = <CourseSummary>[
         _course(id: 'step-2', title: 'Zen Flow', groupPosition: 2),
         _course(id: 'step-1-b', title: 'Breathwork', groupPosition: 1),
         _course(id: 'intro-b', title: 'Aurora', groupPosition: 0),
         _course(id: 'step-3', title: 'Tarot Mastery', groupPosition: 3),
+        _course(id: 'step-4', title: 'Celestial Practice', groupPosition: 4),
         _course(id: 'unknown', title: 'Mystery Course'),
         _course(id: 'intro-a', title: 'Alchemy Basics', groupPosition: 0),
         _course(id: 'step-1-a', title: 'Astral Travel', groupPosition: 1),
@@ -80,6 +81,7 @@ void main() {
         'Breathwork',
         'Zen Flow',
         'Tarot Mastery',
+        'Celestial Practice',
         'Mystery Course',
       ];
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import logging
 import hashlib
+import logging
+import os
 import re
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import stripe
@@ -23,6 +25,7 @@ from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
 from ..repositories import runtime_media as runtime_media_repo
 from ..utils import lesson_content as lesson_content_utils
+from ..utils import lesson_markdown_validator
 from . import lesson_playback_service
 from . import media_cleanup
 from . import studio_authority
@@ -35,6 +38,9 @@ COURSE_CREATE_SLUG_CONFLICT_DETAIL = "Kursens identifierare är redan upptagen"
 COURSE_CREATE_INVALID_DATA_DETAIL = "Kursen kunde inte skapas"
 COURSE_CREATE_TECHNICAL_DETAIL = "Ett tekniskt fel uppstod vid skapande av kurs"
 _COURSE_SLUG_UNIQUE_CONSTRAINT = "courses_slug_key"
+_INVALID_LESSON_MARKDOWN_DETAIL = (
+    "Invalid lesson markdown. Formatting must be corrected before saving."
+)
 _LESSON_MEDIA_TOKEN_PATTERN = re.compile(
     r"!(image|audio|video|document)\(([A-Za-z0-9_-]+(?:-[A-Za-z0-9_-]+)*)\)",
     re.IGNORECASE,
@@ -898,9 +904,7 @@ def _course_cover_payload_from_ready_asset(
         or playback_format != "jpg"
     ):
         return None
-    resolved_url = storage_service.get_storage_service(
-        settings.media_public_bucket
-    ).public_url(playback_object_path)
+    resolved_url = _resolve_course_cover_delivery_url(playback_object_path)
     if not str(resolved_url or "").strip():
         return None
     return {
@@ -908,6 +912,92 @@ def _course_cover_payload_from_ready_asset(
         "state": "ready",
         "resolved_url": resolved_url,
     }
+
+
+def _course_cover_local_mode_enabled() -> bool:
+    app_env = (
+        os.environ.get("APP_ENV")
+        or os.environ.get("ENVIRONMENT")
+        or os.environ.get("ENV")
+        or ""
+    ).strip().lower()
+    return (
+        app_env == "local"
+        and str(settings.mcp_mode).strip().lower() == "local"
+        and not settings.cloud_runtime
+    )
+
+
+def _course_cover_local_relative_path(storage_path: str) -> str | None:
+    normalized_path = str(storage_path or "").strip().replace("\\", "/").lstrip("/")
+    bucket = str(settings.media_public_bucket or "").strip().strip("/")
+    if not normalized_path or not bucket:
+        return None
+    relative_path = Path(normalized_path)
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        return None
+    return (Path(bucket) / relative_path).as_posix()
+
+
+def _course_cover_local_file_path(storage_path: str) -> Path | None:
+    relative_path = _course_cover_local_relative_path(storage_path)
+    if relative_path is None:
+        return None
+    media_root = Path(settings.media_root).expanduser().resolve(strict=False)
+    candidate = (media_root / relative_path).resolve(strict=False)
+    if not str(candidate).startswith(str(media_root)):
+        return None
+    return candidate
+
+
+def _local_backend_base_url() -> str | None:
+    for key in ("API_BASE_URL", "BACKEND_BASE_URL", "QA_API_BASE_URL", "QA_BASE_URL"):
+        value = str(os.environ.get(key) or "").strip().rstrip("/")
+        if value:
+            return value
+    raw_port = str(os.environ.get("PORT") or "8080").strip() or "8080"
+    try:
+        port = int(raw_port)
+    except ValueError:
+        return None
+    if port <= 0:
+        return None
+    return f"http://127.0.0.1:{port}"
+
+
+def _resolve_course_cover_delivery_url(storage_path: str) -> str | None:
+    normalized_path = str(storage_path or "").strip()
+    if not normalized_path:
+        return None
+
+    if _course_cover_local_mode_enabled():
+        local_file_path = _course_cover_local_file_path(normalized_path)
+        relative_path = _course_cover_local_relative_path(normalized_path)
+        if (
+            local_file_path is not None
+            and relative_path is not None
+            and local_file_path.is_file()
+        ):
+            base_url = _local_backend_base_url()
+            if not base_url:
+                logger.error(
+                    "COURSE_COVER_LOCAL_BASE_URL_MISSING path=%s",
+                    normalized_path,
+                )
+                return None
+            return (
+                f"{base_url}/community/meditations/audio"
+                f"?path={quote(relative_path, safe='/')}"
+            )
+
+    try:
+        resolved_url = storage_service.get_storage_service(
+            settings.media_public_bucket
+        ).public_url(normalized_path)
+    except storage_service.StorageServiceError:
+        return None
+    resolved_value = str(resolved_url or "").strip()
+    return resolved_value or None
 
 
 async def _validate_course_cover_assignment(
@@ -991,9 +1081,7 @@ async def _resolve_course_cover_runtime_media(
         )
         return None
 
-    resolved_url = storage_service.get_storage_service(
-        settings.media_public_bucket
-    ).public_url(storage_path)
+    resolved_url = _resolve_course_cover_delivery_url(storage_path)
     if not str(resolved_url or "").strip():
         logger.error(
             "COURSE_COVER_RESOLVED_URL_MISSING media_id=%s path=%s",
@@ -1685,6 +1773,39 @@ async def update_lesson_content(
         lesson_media_kinds=lesson_media_kinds,
         media_url_aliases=media_url_aliases,
     )
+    try:
+        validation = await run_in_threadpool(
+            lesson_markdown_validator.validate_lesson_markdown,
+            normalized_markdown,
+        )
+    except lesson_markdown_validator.LessonMarkdownValidationRuntimeError:
+        logger.exception(
+            "LESSON_MARKDOWN_VALIDATION_UNAVAILABLE",
+            extra={
+                "lesson_id": lesson_id,
+                "submitted_markdown": content_markdown,
+                "normalized_markdown": normalized_markdown,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Lesson markdown validation unavailable.",
+        ) from None
+    if not validation.ok:
+        logger.warning(
+            "LESSON_MARKDOWN_VALIDATION_FAILED",
+            extra={
+                "lesson_id": lesson_id,
+                "failure_reason": validation.failure_reason,
+                "submitted_markdown": content_markdown,
+                "normalized_markdown": normalized_markdown,
+                "canonical_markdown": validation.canonical_markdown,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_INVALID_LESSON_MARKDOWN_DETAIL,
+        )
     row = await courses_repo.update_lesson_content_if_current(
         lesson_id,
         normalized_markdown,

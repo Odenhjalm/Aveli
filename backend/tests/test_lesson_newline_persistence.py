@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from app import db
+from app import db, repositories
 from app.repositories import courses as courses_repo
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -32,22 +32,32 @@ async def register_teacher(async_client):
         json={
             "email": email,
             "password": password,
-            "display_name": "Teacher",
         },
     )
     assert register_resp.status_code == 201, register_resp.text
-
-    login_resp = await async_client.post(
-        "/auth/login",
-        json={"email": email, "password": password},
-    )
-    assert login_resp.status_code == 200, login_resp.text
-    tokens = login_resp.json()
-    access_token = tokens["access_token"]
+    access_token = register_resp.json()["access_token"]
 
     profile_resp = await async_client.get("/profiles/me", headers=auth_header(access_token))
     assert profile_resp.status_code == 200, profile_resp.text
     user_id = str(profile_resp.json()["user_id"])
+
+    create_profile_resp = await async_client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(access_token),
+        json={"display_name": "Teacher", "bio": None},
+    )
+    assert create_profile_resp.status_code == 200, create_profile_resp.text
+
+    complete_resp = await async_client.post(
+        "/auth/onboarding/complete",
+        headers=auth_header(access_token),
+    )
+    assert complete_resp.status_code == 200, complete_resp.text
+    await repositories.upsert_membership_record(
+        user_id,
+        status="active",
+        source="coupon",
+    )
 
     async with db.pool.connection() as conn:  # type: ignore
         async with conn.cursor() as cur:  # type: ignore[attr-defined]

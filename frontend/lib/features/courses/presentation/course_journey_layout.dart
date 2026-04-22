@@ -1,114 +1,78 @@
 import 'package:aveli/features/courses/data/courses_repository.dart';
 
-class CourseJourneySeriesRow {
-  const CourseJourneySeriesRow({
-    required this.seriesKey,
-    this.step1,
-    this.step2,
-    this.step3,
-  });
+class CourseJourneyFamily {
+  CourseJourneyFamily({
+    required this.courseGroupId,
+    required Iterable<CourseSummary> courses,
+  }) : courses = List.unmodifiable(courses);
 
-  final String seriesKey;
-  final CourseSummary? step1;
-  final CourseSummary? step2;
-  final CourseSummary? step3;
-}
+  final String courseGroupId;
+  final List<CourseSummary> courses;
 
-List<CourseJourneySeriesRow> buildCourseJourneySeriesRows(
-  Iterable<CourseSummary> courses,
-) {
-  final rows = <CourseJourneySeriesRow>[];
-  final rowIndexBySeriesKey = <String, int>{};
-
-  for (final course in courses) {
-    final groupPosition = course.groupPosition;
-    final groupId = course.courseGroupId.trim();
-    if (groupPosition == 0 || groupId.isEmpty) {
-      continue;
+  CourseSummary? get introCourse {
+    if (courses.isEmpty) {
+      return null;
     }
-
-    final existingIndex = rowIndexBySeriesKey[groupId];
-    if (existingIndex == null) {
-      rows.add(_rowWithCourse(
-        seriesKey: groupId,
-        course: course,
-        groupPosition: groupPosition,
-      ));
-      rowIndexBySeriesKey[groupId] = rows.length - 1;
-      continue;
+    final first = courses.first;
+    if (first.groupPosition != 0) {
+      return null;
     }
-
-    final existing = rows[existingIndex];
-    if (_slotForGroupPosition(existing, groupPosition) == null) {
-      rows[existingIndex] = _copyRowWithCourse(
-        row: existing,
-        course: course,
-        groupPosition: groupPosition,
-      );
-    }
+    return first;
   }
 
-  return List.unmodifiable(rows);
+  List<CourseSummary> get progressionCourses =>
+      List.unmodifiable(courses.where((course) => course.groupPosition > 0));
 }
 
-CourseJourneySeriesRow _rowWithCourse({
-  required String seriesKey,
-  required CourseSummary course,
-  required int groupPosition,
-}) {
-  return switch (groupPosition) {
-    1 => CourseJourneySeriesRow(
-      seriesKey: seriesKey,
-      step1: course,
-    ),
-    2 => CourseJourneySeriesRow(
-      seriesKey: seriesKey,
-      step2: course,
-    ),
-    3 => CourseJourneySeriesRow(
-      seriesKey: seriesKey,
-      step3: course,
-    ),
-    _ => CourseJourneySeriesRow(seriesKey: seriesKey),
-  };
-}
-
-CourseJourneySeriesRow _copyRowWithCourse({
-  required CourseJourneySeriesRow row,
-  required CourseSummary course,
-  required int groupPosition,
-}) {
-  return switch (groupPosition) {
-    1 => CourseJourneySeriesRow(
-      seriesKey: row.seriesKey,
-      step1: course,
-      step2: row.step2,
-      step3: row.step3,
-    ),
-    2 => CourseJourneySeriesRow(
-      seriesKey: row.seriesKey,
-      step1: row.step1,
-      step2: course,
-      step3: row.step3,
-    ),
-    3 => CourseJourneySeriesRow(
-      seriesKey: row.seriesKey,
-      step1: row.step1,
-      step2: row.step2,
-      step3: course,
-    ),
-    _ => row,
-  };
-}
-
-CourseSummary? _slotForGroupPosition(
-  CourseJourneySeriesRow row,
-  int groupPosition,
+List<CourseJourneyFamily> buildCourseJourneyFamilies(
+  Iterable<CourseSummary> courses,
 ) {
-  return switch (groupPosition) {
-    1 => row.step1,
-    2 => row.step2,
-    3 => row.step3,
-    _ => null,
-  };
+  final grouped = <String, List<CourseSummary>>{};
+  final groupOrder = <String>[];
+
+  for (final course in courses) {
+    final courseGroupId = course.courseGroupId.trim();
+    if (courseGroupId.isEmpty) {
+      continue;
+    }
+    final familyCourses = grouped.putIfAbsent(courseGroupId, () {
+      groupOrder.add(courseGroupId);
+      return <CourseSummary>[];
+    });
+    familyCourses.add(course);
+  }
+
+  final families = <CourseJourneyFamily>[];
+  for (final courseGroupId in groupOrder) {
+    final familyCourses = [...grouped[courseGroupId]!]
+      ..sort(_compareFamilyCourses);
+    if (!_hasCanonicalFamilyOrder(familyCourses)) {
+      continue;
+    }
+    families.add(
+      CourseJourneyFamily(courseGroupId: courseGroupId, courses: familyCourses),
+    );
+  }
+
+  return List.unmodifiable(families);
+}
+
+int _compareFamilyCourses(CourseSummary left, CourseSummary right) {
+  final positionCompare = left.groupPosition.compareTo(right.groupPosition);
+  if (positionCompare != 0) {
+    return positionCompare;
+  }
+  return left.id.compareTo(right.id);
+}
+
+bool _hasCanonicalFamilyOrder(List<CourseSummary> courses) {
+  if (courses.isEmpty) {
+    return false;
+  }
+  for (var index = 0; index < courses.length; index++) {
+    if (courses[index].groupPosition != index) {
+      return false;
+    }
+  }
+  return true;
 }

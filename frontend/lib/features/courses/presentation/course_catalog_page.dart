@@ -12,7 +12,6 @@ import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/features/courses/presentation/course_journey_layout.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/utils/app_images.dart';
-import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -27,7 +26,6 @@ class CourseCatalogPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coursesAsync = ref.watch(coursesProvider);
-    final assets = ref.watch(backendAssetResolverProvider);
     final mediaRepository = ref.watch(mediaRepositoryProvider);
 
     return AppScaffold(
@@ -40,11 +38,8 @@ class CourseCatalogPage extends ConsumerWidget {
         child: coursesAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => _ErrorState(error: error),
-          data: (courses) => _JourneyPage(
-            courses: courses,
-            assets: assets,
-            mediaRepository: mediaRepository,
-          ),
+          data: (courses) =>
+              _JourneyPage(courses: courses, mediaRepository: mediaRepository),
         ),
       ),
     );
@@ -52,14 +47,9 @@ class CourseCatalogPage extends ConsumerWidget {
 }
 
 class _JourneyPage extends ConsumerWidget {
-  const _JourneyPage({
-    required this.courses,
-    required this.assets,
-    required this.mediaRepository,
-  });
+  const _JourneyPage({required this.courses, required this.mediaRepository});
 
   final List<CourseSummary> courses;
-  final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
 
   @override
@@ -98,37 +88,25 @@ class _JourneyPage extends ConsumerWidget {
       );
     }
 
-    final introCourses = <CourseSummary>[];
-    final journeyCourses = <CourseSummary>[];
-    final position3Courses = <CourseSummary>[];
-
-    for (final course in published) {
-      switch (course.groupPosition) {
-        case 0:
-          introCourses.add(course);
-          break;
-        case 1:
-        case 2:
-          journeyCourses.add(course);
-          break;
-        case 3:
-          journeyCourses.add(course);
-          position3Courses.add(course);
-          break;
-        default:
-          journeyCourses.add(course);
-      }
-    }
-
-    final position3Ids = position3Courses
+    final introCourses = published
+        .where((course) => course.groupPosition == 0)
+        .toList(growable: false);
+    final journeyFamilies = buildCourseJourneyFamilies(published);
+    final progressionFamilies = journeyFamilies
+        .where((family) => family.progressionCourses.isNotEmpty)
+        .toList(growable: false);
+    final advancedCourseIds = published
+        .where((course) => course.groupPosition >= 3)
         .map((course) => course.id)
         .toList(growable: false);
 
-    final step3ProgressAsync = ref.watch(
-      courseProgressProvider(CourseProgressRequest(position3Ids)),
+    final advancedProgressAsync = ref.watch(
+      courseProgressProvider(CourseProgressRequest(advancedCourseIds)),
     );
-    final hasCompletedStep3 =
-        step3ProgressAsync.valueOrNull?.values.any((value) => value >= 0.999) ??
+    final hasCompletedAdvancedCourse =
+        advancedProgressAsync.valueOrNull?.values.any(
+          (value) => value >= 0.999,
+        ) ??
         false;
 
     return SingleChildScrollView(
@@ -139,17 +117,15 @@ class _JourneyPage extends ConsumerWidget {
         children: [
           _ActIntroSection(
             courses: introCourses,
-            assets: assets,
             mediaRepository: mediaRepository,
           ),
           const SizedBox(height: 22),
           _ActJourneySection(
-            rows: buildCourseJourneySeriesRows(journeyCourses),
-            assets: assets,
+            families: progressionFamilies,
             mediaRepository: mediaRepository,
           ),
           const SizedBox(height: 26),
-          _ActAveliProSection(isEnabled: hasCompletedStep3),
+          _ActAveliProSection(isEnabled: hasCompletedAdvancedCourse),
         ],
       ),
     );
@@ -215,12 +191,10 @@ String _courseCatalogErrorDetail(Object? error) {
 class _ActIntroSection extends StatelessWidget {
   const _ActIntroSection({
     required this.courses,
-    required this.assets,
     required this.mediaRepository,
   });
 
   final List<CourseSummary> courses;
-  final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
 
   @override
@@ -294,22 +268,17 @@ class _ActIntroSection extends StatelessWidget {
 
 class _ActJourneySection extends StatelessWidget {
   const _ActJourneySection({
-    required this.rows,
-    required this.assets,
+    required this.families,
     required this.mediaRepository,
   });
 
-  final List<CourseJourneySeriesRow> rows;
-  final BackendAssetResolver assets;
+  final List<CourseJourneyFamily> families;
   final MediaRepository mediaRepository;
-  static const _seriesRowGap = 16.0;
+  static const _familyRowGap = 16.0;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    const columnGap = 12.0;
-    const arrowWidth = 24.0;
-    const interColumnSpacing = (columnGap * 4) + (arrowWidth * 2);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -320,154 +289,95 @@ class _ActJourneySection extends StatelessWidget {
           fontWeight: FontWeight.w800,
         ),
         const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 980;
-            final arrowColor = theme.colorScheme.onSurface.withValues(
-              alpha: 0.55,
-            );
-            const minColumnWidth = 320.0;
-            final available = constraints.maxWidth;
-            final columnWidth = isWide
-                ? ((available - interColumnSpacing) / 3).floorToDouble()
-                : minColumnWidth;
-            final contentWidth = (columnWidth * 3) + interColumnSpacing;
-
-            final content = SizedBox(
-              width: contentWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _JourneyStepHeaderRow(
-                    columnWidth: columnWidth,
-                    arrowColor: arrowColor,
-                  ),
-                  const SizedBox(height: 12),
-                  if (rows.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12, bottom: 10),
-                      child: Text(
-                        'Fler kurser kommer snart.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: DesignTokens.bodyTextColor.withValues(
-                            alpha: 0.72,
-                          ),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    )
-                  else
-                    Column(
-                      children: [
-                        for (var index = 0; index < rows.length; index++) ...[
-                          _JourneySeriesBand(
-                            row: rows[index],
-                            assets: assets,
-                            mediaRepository: mediaRepository,
-                          ),
-                          if (index != rows.length - 1)
-                            const SizedBox(height: _seriesRowGap),
-                        ],
-                      ],
-                    ),
-                ],
+        if (families.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 10),
+            child: Text(
+              'Fler kurser kommer snart.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: DesignTokens.bodyTextColor.withValues(alpha: 0.72),
+                fontWeight: FontWeight.w600,
               ),
-            );
-
-            if (isWide) return content;
-
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: content,
-              ),
-            );
-          },
-        ),
+            ),
+          )
+        else
+          Column(
+            children: [
+              for (var index = 0; index < families.length; index++) ...[
+                _JourneyFamilyBand(
+                  family: families[index],
+                  mediaRepository: mediaRepository,
+                ),
+                if (index != families.length - 1)
+                  const SizedBox(height: _familyRowGap),
+              ],
+            ],
+          ),
       ],
     );
   }
 }
 
-class _JourneyStepHeaderRow extends StatelessWidget {
-  const _JourneyStepHeaderRow({
-    required this.columnWidth,
-    required this.arrowColor,
-  });
-
-  final double columnWidth;
-  final Color arrowColor;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget arrow() => SizedBox(
-      width: 24,
-      child: Padding(
-        padding: const EdgeInsets.only(top: 42),
-        child: Icon(Icons.arrow_forward_rounded, color: arrowColor),
-      ),
-    );
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: columnWidth,
-          child: const _JourneyStepHeaderCard(
-            label: 'Steg 1',
-            description: 'Fördjupning och grund',
-          ),
-        ),
-        const SizedBox(width: 12),
-        arrow(),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: columnWidth,
-          child: const _JourneyStepHeaderCard(
-            label: 'Steg 2',
-            description: 'Integration och praktik',
-          ),
-        ),
-        const SizedBox(width: 12),
-        arrow(),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: columnWidth,
-          child: const _JourneyStepHeaderCard(
-            label: 'Steg 3',
-            description: 'Fördjupad förståelse och mognad',
-          ),
-        ),
-      ],
-    );
+String _journeyFamilyTitle(CourseJourneyFamily family) {
+  final introTitle = family.introCourse?.title.trim();
+  if (introTitle != null && introTitle.isNotEmpty) {
+    return introTitle;
   }
+  final progressionTitle = family.progressionCourses.first.title.trim();
+  if (progressionTitle.isNotEmpty) {
+    return progressionTitle;
+  }
+  return family.courseGroupId;
 }
 
-class _JourneyStepHeaderCard extends StatelessWidget {
-  const _JourneyStepHeaderCard({
-    required this.label,
-    required this.description,
+String _journeyFamilySummary(CourseJourneyFamily family) {
+  final progressionCourses = family.progressionCourses;
+  if (progressionCourses.isEmpty) {
+    return 'Den här familjen har ännu inga fortsättningskurser.';
+  }
+  final firstPosition = progressionCourses.first.groupPosition;
+  final lastPosition = progressionCourses.last.groupPosition;
+  final positionsLabel = firstPosition == lastPosition
+      ? 'Position $firstPosition'
+      : 'Position $firstPosition-$lastPosition';
+  final introTitle = family.introCourse?.title.trim();
+  if (introTitle != null && introTitle.isNotEmpty) {
+    return '$positionsLabel efter $introTitle.';
+  }
+  return '$positionsLabel i backendens kanoniska ordning.';
+}
+
+class _JourneyFamilyBand extends StatelessWidget {
+  const _JourneyFamilyBand({
+    required this.family,
+    required this.mediaRepository,
   });
 
-  final String label;
-  final String description;
+  final CourseJourneyFamily family;
+  final MediaRepository mediaRepository;
+  static const _slotMinHeight = 292.0;
+  static const _slotWidth = 320.0;
+  static const _slotGap = 12.0;
+  static const _arrowWidth = 24.0;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final arrowColor = theme.colorScheme.onSurface.withValues(alpha: 0.55);
+    final progressionCourses = family.progressionCourses;
+
     return GlassCard(
-      opacity: 0.12,
+      key: ValueKey('journey-family-row:${family.courseGroupId}'),
+      opacity: 0.06,
       sigmaX: 10,
       sigmaY: 10,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      borderColor: Colors.white.withValues(alpha: 0.16),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      borderColor: Colors.white.withValues(alpha: 0.1),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            label,
+            _journeyFamilyTitle(family),
             style: theme.textTheme.titleMedium?.copyWith(
               color: DesignTokens.bodyTextColor,
               fontWeight: FontWeight.w800,
@@ -475,10 +385,48 @@ class _JourneyStepHeaderCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            description,
+            _journeyFamilySummary(family),
             style: theme.textTheme.bodySmall?.copyWith(
               color: DesignTokens.bodyTextColor.withValues(alpha: 0.72),
               fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (
+                  var index = 0;
+                  index < progressionCourses.length;
+                  index++
+                ) ...[
+                  SizedBox(
+                    width: _slotWidth,
+                    child: _JourneyCourseSlot(
+                      courseGroupId: family.courseGroupId,
+                      minHeight: _slotMinHeight,
+                      course: progressionCourses[index],
+                      mediaRepository: mediaRepository,
+                    ),
+                  ),
+                  if (index != progressionCourses.length - 1) ...[
+                    const SizedBox(width: _slotGap),
+                    SizedBox(
+                      width: _arrowWidth,
+                      child: Center(
+                        child: Icon(
+                          Icons.arrow_forward_rounded,
+                          color: arrowColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: _slotGap),
+                  ],
+                ],
+              ],
             ),
           ),
         ],
@@ -487,117 +435,29 @@ class _JourneyStepHeaderCard extends StatelessWidget {
   }
 }
 
-class _JourneySeriesBand extends StatelessWidget {
-  const _JourneySeriesBand({
-    required this.row,
-    required this.assets,
-    required this.mediaRepository,
-  });
-
-  final CourseJourneySeriesRow row;
-  final BackendAssetResolver assets;
-  final MediaRepository mediaRepository;
-  static const _slotMinHeight = 292.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      key: ValueKey('journey-series-row:${row.seriesKey}'),
-      opacity: 0.06,
-      sigmaX: 10,
-      sigmaY: 10,
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      borderColor: Colors.white.withValues(alpha: 0.1),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: _JourneyStepSlot(
-                seriesKey: row.seriesKey,
-                stepLabel: 'step1',
-                minHeight: _slotMinHeight,
-                course: row.step1,
-                assets: assets,
-                mediaRepository: mediaRepository,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const SizedBox(width: 24),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _JourneyStepSlot(
-                seriesKey: row.seriesKey,
-                stepLabel: 'step2',
-                minHeight: _slotMinHeight,
-                course: row.step2,
-                assets: assets,
-                mediaRepository: mediaRepository,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const SizedBox(width: 24),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _JourneyStepSlot(
-                seriesKey: row.seriesKey,
-                stepLabel: 'step3',
-                minHeight: _slotMinHeight,
-                course: row.step3,
-                assets: assets,
-                mediaRepository: mediaRepository,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _JourneyStepSlot extends StatelessWidget {
-  const _JourneyStepSlot({
-    required this.seriesKey,
-    required this.stepLabel,
+class _JourneyCourseSlot extends StatelessWidget {
+  const _JourneyCourseSlot({
+    required this.courseGroupId,
     required this.minHeight,
     required this.course,
-    required this.assets,
     required this.mediaRepository,
   });
 
-  final String seriesKey;
-  final String stepLabel;
+  final String courseGroupId;
   final double minHeight;
-  final CourseSummary? course;
-  final BackendAssetResolver assets;
+  final CourseSummary course;
   final MediaRepository mediaRepository;
 
   @override
   Widget build(BuildContext context) {
-    final slotKey = ValueKey('journey-slot:$seriesKey:$stepLabel');
-
-    if (course != null) {
-      return ConstrainedBox(
-        key: slotKey,
-        constraints: BoxConstraints(minHeight: minHeight),
-        child: _JourneyCourseCard(
-          course: course!,
-          mediaRepository: mediaRepository,
-        ),
-      );
-    }
-
     return ConstrainedBox(
-      key: slotKey,
+      key: ValueKey(
+        'journey-course-slot:$courseGroupId:position${course.groupPosition}',
+      ),
       constraints: BoxConstraints(minHeight: minHeight),
-      child: GlassCard(
-        key: ValueKey('journey-empty-slot:$seriesKey:$stepLabel'),
-        padding: EdgeInsets.zero,
-        opacity: 0.05,
-        sigmaX: 12,
-        sigmaY: 12,
-        borderColor: Colors.white.withValues(alpha: 0.14),
-        child: const SizedBox.expand(),
+      child: _JourneyCourseCard(
+        course: course,
+        mediaRepository: mediaRepository,
       ),
     );
   }
@@ -864,6 +724,16 @@ class _JourneyCourseCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      'Position ${course.groupPosition}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: DesignTokens.bodyTextColor.withValues(
+                          alpha: 0.72,
+                        ),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
