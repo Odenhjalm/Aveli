@@ -193,6 +193,75 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('document editor presents one continuous writing surface', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final document = loadLessonDocumentFixtureCorpus().document(
+      'full_capability_document',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 1000,
+            child: LessonDocumentEditor(document: document, onChanged: (_) {}),
+          ),
+        ),
+      ),
+    );
+
+    final surface = find.byKey(
+      const ValueKey('lesson_document_continuous_writing_surface'),
+    );
+
+    expect(surface, findsOneWidget);
+    expect(
+      find.descendant(of: surface, matching: find.byType(Card)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: surface, matching: find.byType(ListTile)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: surface, matching: find.text('Formatvisning')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: surface, matching: find.text('Punktlista')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: surface, matching: find.text('Numrerad lista')),
+      findsNothing,
+    );
+
+    final textFields = tester.widgetList<TextField>(
+      find.descendant(of: surface, matching: find.byType(TextField)),
+    );
+    expect(textFields, isNotEmpty);
+    for (final field in textFields) {
+      expect(field.decoration?.border, same(InputBorder.none));
+      expect(field.decoration?.enabledBorder, same(InputBorder.none));
+      expect(field.decoration?.focusedBorder, same(InputBorder.none));
+    }
+
+    expect(document.toJson()['schema_version'], lessonDocumentSchemaVersion);
+    expect(
+      document.toCanonicalJsonString(),
+      isNot(contains('content_markdown')),
+    );
+    expect(document.toCanonicalJsonString(), isNot(contains('!image(')));
+  });
+
   testWidgets('document editor edits text without markdown serialization', (
     tester,
   ) async {

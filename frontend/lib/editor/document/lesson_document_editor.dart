@@ -22,8 +22,8 @@ class LessonDocumentEditor extends StatefulWidget {
 }
 
 class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
-  final Map<String, TextEditingController> _controllers =
-      <String, TextEditingController>{};
+  final Map<String, _LessonTextEditingController> _controllers =
+      <String, _LessonTextEditingController>{};
   final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
   _EditorTarget _selectedTarget = const _EditorTarget.block(0);
 
@@ -56,17 +56,28 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       if (block case LessonParagraphBlock(:final children)) {
         final key = _EditorTarget.block(blockIndex).key;
         liveKeys.add(key);
-        _syncControllerText(key, _plainText(children));
+        _syncControllerText(key, _plainText(children), children);
       } else if (block case LessonHeadingBlock(:final children)) {
         final key = _EditorTarget.block(blockIndex).key;
         liveKeys.add(key);
-        _syncControllerText(key, _plainText(children));
+        _syncControllerText(key, _plainText(children), children);
       } else if (block case LessonListBlock(:final items)) {
         for (var itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
           final key = _EditorTarget.listItem(blockIndex, itemIndex).key;
           liveKeys.add(key);
-          _syncControllerText(key, _plainText(items[itemIndex].children));
+          _syncControllerText(
+            key,
+            _plainText(items[itemIndex].children),
+            items[itemIndex].children,
+          );
         }
+      } else if (block case LessonCtaBlock(:final label, :final targetUrl)) {
+        final labelKey = 'cta_label_$blockIndex';
+        final urlKey = 'cta_url_$blockIndex';
+        liveKeys.add(labelKey);
+        liveKeys.add(urlKey);
+        _syncControllerText(labelKey, label);
+        _syncControllerText(urlKey, targetUrl);
       }
     }
 
@@ -79,9 +90,14 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     }
   }
 
-  void _syncControllerText(String key, String text) {
+  void _syncControllerText(
+    String key,
+    String text, [
+    List<LessonTextRun> runs = const <LessonTextRun>[],
+  ]) {
     final controller = _controllers[key];
     if (controller == null) return;
+    controller.setRuns(runs);
     final focusNode = _focusNodes[key];
     if (controller.text == text || (focusNode?.hasFocus ?? false)) {
       return;
@@ -89,11 +105,17 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     controller.text = text;
   }
 
-  TextEditingController _controllerFor(String key, String text) {
-    return _controllers.putIfAbsent(
+  _LessonTextEditingController _controllerFor(
+    String key,
+    String text, [
+    List<LessonTextRun> runs = const <LessonTextRun>[],
+  ]) {
+    final controller = _controllers.putIfAbsent(
       key,
-      () => TextEditingController(text: text),
+      () => _LessonTextEditingController(text: text, runs: runs),
     );
+    controller.setRuns(runs);
+    return controller;
   }
 
   FocusNode _focusNodeFor(String key, _EditorTarget target) {
@@ -363,14 +385,21 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
           ),
           const Divider(height: 1),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: blocks.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, blockIndex) {
-                final block = blocks[blockIndex];
-                return _buildBlockEditor(context, block, blockIndex);
-              },
+            child: DecoratedBox(
+              key: const ValueKey<String>(
+                'lesson_document_continuous_writing_surface',
+              ),
+              decoration: const BoxDecoration(color: Colors.white),
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(28, 22, 28, 28),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                itemCount: blocks.length,
+                itemBuilder: (context, blockIndex) {
+                  final block = blocks[blockIndex];
+                  return _buildBlockEditor(context, block, blockIndex);
+                },
+              ),
             ),
           ),
           Padding(
@@ -387,89 +416,194 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     );
   }
 
+  TextStyle _paragraphStyle(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.textTheme.bodyLarge?.copyWith(
+          height: 1.48,
+          color: theme.colorScheme.onSurface,
+        ) ??
+        TextStyle(height: 1.48, color: theme.colorScheme.onSurface);
+  }
+
+  TextStyle _headingStyle(BuildContext context, int level) {
+    final theme = Theme.of(context);
+    final base = switch (level) {
+      1 => theme.textTheme.headlineMedium,
+      2 => theme.textTheme.headlineSmall,
+      3 => theme.textTheme.titleLarge,
+      _ => theme.textTheme.titleMedium,
+    };
+    return base?.copyWith(
+          fontWeight: FontWeight.w700,
+          height: 1.22,
+          color: theme.colorScheme.onSurface,
+        ) ??
+        TextStyle(
+          fontSize: level <= 2 ? 24 : 20,
+          fontWeight: FontWeight.w700,
+          height: 1.22,
+          color: theme.colorScheme.onSurface,
+        );
+  }
+
+  TextStyle _listMarkerStyle(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.textTheme.bodyLarge?.copyWith(
+          height: 1.48,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurfaceVariant,
+        ) ??
+        TextStyle(
+          height: 1.48,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurfaceVariant,
+        );
+  }
+
+  EdgeInsets _blockPadding(LessonBlock block, int blockIndex) {
+    final top = blockIndex == 0 ? 0.0 : 6.0;
+    final bottom = switch (block) {
+      LessonHeadingBlock() => 8.0,
+      LessonMediaBlock() || LessonCtaBlock() => 14.0,
+      _ => 4.0,
+    };
+    return EdgeInsets.only(top: top, bottom: bottom);
+  }
+
+  Widget _buildFlowingBlockPadding({
+    required LessonBlock block,
+    required int blockIndex,
+    required Widget child,
+  }) {
+    return Padding(padding: _blockPadding(block, blockIndex), child: child);
+  }
+
   Widget _buildBlockEditor(
     BuildContext context,
     LessonBlock block,
     int blockIndex,
   ) {
     if (block is LessonParagraphBlock) {
-      return _buildTextBlockEditor(
-        context,
-        target: _EditorTarget.block(blockIndex),
-        label: 'Stycke',
-        children: block.children,
-        icon: Icons.notes_outlined,
+      return _buildFlowingBlockPadding(
+        block: block,
+        blockIndex: blockIndex,
+        child: _buildTextField(
+          context,
+          target: _EditorTarget.block(blockIndex),
+          semanticsLabel: 'Stycke',
+          children: block.children,
+          textStyle: _paragraphStyle(context),
+        ),
       );
     }
     if (block is LessonHeadingBlock) {
-      return _buildTextBlockEditor(
-        context,
-        target: _EditorTarget.block(blockIndex),
-        label: 'Rubrik H${block.level}',
-        children: block.children,
-        icon: Icons.title_rounded,
+      return _buildFlowingBlockPadding(
+        block: block,
+        blockIndex: blockIndex,
+        child: _buildTextField(
+          context,
+          target: _EditorTarget.block(blockIndex),
+          semanticsLabel: 'Rubrik H${block.level}',
+          children: block.children,
+          textStyle: _headingStyle(context, block.level),
+        ),
       );
     }
     if (block is LessonListBlock) {
       final ordered = block.type == 'ordered_list';
-      return Card(
-        elevation: 0,
-        color: Colors.black.withValues(alpha: 0.03),
+      return _buildFlowingBlockPadding(
+        block: block,
+        blockIndex: blockIndex,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (
+              var itemIndex = 0;
+              itemIndex < block.items.length;
+              itemIndex += 1
+            )
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 34,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          ordered ? '${itemIndex + (block.start ?? 1)}.' : '-',
+                          textAlign: TextAlign.right,
+                          style: _listMarkerStyle(context),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildTextField(
+                        context,
+                        target: _EditorTarget.listItem(blockIndex, itemIndex),
+                        semanticsLabel: ordered
+                            ? 'Numrerad listpunkt ${itemIndex + 1}'
+                            : 'Punktlista listpunkt ${itemIndex + 1}',
+                        children: block.items[itemIndex].children,
+                        textStyle: _paragraphStyle(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    if (block is LessonMediaBlock) {
+      final theme = Theme.of(context);
+      return _buildFlowingBlockPadding(
+        block: block,
+        blockIndex: blockIndex,
         child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
+          key: ValueKey<String>('lesson_document_media_$blockIndex'),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Icon(
-                    ordered
-                        ? Icons.format_list_numbered_rounded
-                        : Icons.format_list_bulleted_rounded,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(ordered ? 'Numrerad lista' : 'Punktlista'),
-                ],
+              Icon(
+                Icons.perm_media_outlined,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 8),
-              for (
-                var itemIndex = 0;
-                itemIndex < block.items.length;
-                itemIndex += 1
-              )
-                _buildTextField(
-                  context,
-                  target: _EditorTarget.listItem(blockIndex, itemIndex),
-                  label: ordered ? '${itemIndex + 1}.' : 'Punkt',
-                  children: block.items[itemIndex].children,
-                  icon: ordered
-                      ? Icons.looks_one_outlined
-                      : Icons.circle_outlined,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Media: ${block.mediaType}\n${block.lessonMediaId}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
                 ),
+              ),
             ],
           ),
         ),
       );
     }
-    if (block is LessonMediaBlock) {
-      return ListTile(
-        key: ValueKey<String>('lesson_document_media_$blockIndex'),
-        leading: const Icon(Icons.perm_media_outlined),
-        title: Text('Media: ${block.mediaType}'),
-        subtitle: Text(block.lessonMediaId),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        tileColor: Colors.black.withValues(alpha: 0.03),
-      );
-    }
     if (block is LessonCtaBlock) {
-      return Card(
-        elevation: 0,
-        color: Colors.black.withValues(alpha: 0.03),
+      final theme = Theme.of(context);
+      return _buildFlowingBlockPadding(
+        block: block,
+        blockIndex: blockIndex,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text(
+                'CTA',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               TextField(
                 key: ValueKey<String>('lesson_document_cta_label_$blockIndex'),
                 enabled: widget.enabled,
@@ -477,7 +611,15 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                   'cta_label_$blockIndex',
                   block.label,
                 ),
-                decoration: const InputDecoration(labelText: 'CTA text'),
+                style: _paragraphStyle(context),
+                decoration: const InputDecoration(
+                  hintText: 'CTA text',
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                ),
                 onChanged: (value) => _updateCtaBlock(blockIndex, label: value),
               ),
               TextField(
@@ -487,7 +629,17 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                   'cta_url_$blockIndex',
                   block.targetUrl,
                 ),
-                decoration: const InputDecoration(labelText: 'CTA URL'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'CTA URL',
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                ),
                 onChanged: (value) =>
                     _updateCtaBlock(blockIndex, targetUrl: value),
               ),
@@ -499,62 +651,75 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     return const SizedBox.shrink();
   }
 
-  Widget _buildTextBlockEditor(
-    BuildContext context, {
-    required _EditorTarget target,
-    required String label,
-    required List<LessonTextRun> children,
-    required IconData icon,
-  }) {
-    return Card(
-      elevation: 0,
-      color: Colors.black.withValues(alpha: 0.03),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: _buildTextField(
-          context,
-          target: target,
-          label: label,
-          children: children,
-          icon: icon,
-        ),
-      ),
-    );
-  }
-
   Widget _buildTextField(
     BuildContext context, {
     required _EditorTarget target,
-    required String label,
+    required String semanticsLabel,
     required List<LessonTextRun> children,
-    required IconData icon,
+    required TextStyle textStyle,
   }) {
     final key = target.key;
-    final controller = _controllerFor(key, _plainText(children));
+    final controller = _controllerFor(key, _plainText(children), children);
     final focusNode = _focusNodeFor(key, target);
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          key: ValueKey<String>('lesson_document_editor_$key'),
-          enabled: widget.enabled,
-          controller: controller,
-          focusNode: focusNode,
-          minLines: 1,
-          maxLines: null,
-          decoration: InputDecoration(
-            labelText: label,
-            prefixIcon: Icon(icon),
-            border: const OutlineInputBorder(),
+    return Semantics(
+      label: semanticsLabel,
+      textField: true,
+      child: TextField(
+        key: ValueKey<String>('lesson_document_editor_$key'),
+        enabled: widget.enabled,
+        controller: controller,
+        focusNode: focusNode,
+        style: textStyle,
+        minLines: 1,
+        maxLines: null,
+        keyboardType: TextInputType.multiline,
+        textInputAction: TextInputAction.newline,
+        decoration: InputDecoration(
+          hintText: semanticsLabel,
+          hintStyle: textStyle.copyWith(
+            color: textStyle.color?.withValues(alpha: 0.34),
           ),
-          onTap: () => _select(target),
-          onChanged: (value) => _replaceTargetText(target, value),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          contentPadding: EdgeInsets.zero,
         ),
-        const SizedBox(height: 8),
-        Text('Formatvisning', style: theme.textTheme.labelSmall),
-        const SizedBox(height: 4),
-        _InlineRunsView(children: children),
+        onTap: () => _select(target),
+        onChanged: (value) => _replaceTargetText(target, value),
+      ),
+    );
+  }
+}
+
+class _LessonTextEditingController extends TextEditingController {
+  _LessonTextEditingController({
+    required String text,
+    List<LessonTextRun> runs = const <LessonTextRun>[],
+  }) : _runs = runs,
+       super(text: text);
+
+  List<LessonTextRun> _runs;
+
+  void setRuns(List<LessonTextRun> runs) {
+    _runs = List<LessonTextRun>.unmodifiable(runs);
+  }
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    final base = style ?? DefaultTextStyle.of(context).style;
+    if (_runs.isEmpty || _plainText(_runs) != text) {
+      return TextSpan(style: base, text: text);
+    }
+    return TextSpan(
+      style: base,
+      children: [
+        for (final run in _runs)
+          TextSpan(text: run.text, style: _styleForMarks(base, run)),
       ],
     );
   }
@@ -817,30 +982,30 @@ class _InlineRunsView extends StatelessWidget {
     }
     return null;
   }
+}
 
-  TextStyle _styleForMarks(TextStyle base, LessonTextRun run) {
-    var style = base;
-    for (final mark in run.marks) {
-      switch (mark.type) {
-        case 'bold':
-          style = style.copyWith(fontWeight: FontWeight.w700);
-          break;
-        case 'italic':
-          style = style.copyWith(fontStyle: FontStyle.italic);
-          break;
-        case 'underline':
-          style = style.copyWith(decoration: TextDecoration.underline);
-          break;
-        case 'link':
-          style = style.copyWith(
-            color: Colors.blueAccent,
-            decoration: TextDecoration.underline,
-          );
-          break;
-      }
+TextStyle _styleForMarks(TextStyle base, LessonTextRun run) {
+  var style = base;
+  for (final mark in run.marks) {
+    switch (mark.type) {
+      case 'bold':
+        style = style.copyWith(fontWeight: FontWeight.w700);
+        break;
+      case 'italic':
+        style = style.copyWith(fontStyle: FontStyle.italic);
+        break;
+      case 'underline':
+        style = style.copyWith(decoration: TextDecoration.underline);
+        break;
+      case 'link':
+        style = style.copyWith(
+          color: Colors.blueAccent,
+          decoration: TextDecoration.underline,
+        );
+        break;
     }
-    return style;
   }
+  return style;
 }
 
 class _Toolbar extends StatelessWidget {
