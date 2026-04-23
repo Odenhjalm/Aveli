@@ -15,15 +15,16 @@ The Course + Lesson Editor domain is governed by the following laws:
 
 - course structure and lesson structure are not lesson content
 - lesson content is not lesson structure
-- markdown is the canonical lesson-content format
-- backend normalization is the only content authority at the write boundary
+- `lesson_document_v1` is the canonical rebuilt-editor lesson-content format
+- backend document validation and canonical JSON serialization are the only
+  rebuilt-editor content authority at the write boundary
 
 The canonical domain flow is:
 
 ~~~text
 course structure write -> app.courses
 lesson structure write -> app.lessons
-lesson content write -> backend markdown normalization -> app.lesson_contents
+lesson content write -> backend document validation -> app.lesson_contents
 ~~~
 
 No runtime code, legacy route, or active fallback may override this contract.
@@ -43,17 +44,21 @@ Canonical authorities are:
 - lesson ordering authority: `app.lessons.position`
 - lesson structure authority: `app.lessons`
 - lesson content authority: `app.lesson_contents`
-- markdown/text content authority: `app.lesson_contents.content_markdown`
+- rebuilt-editor document content authority:
+  `app.lesson_contents.content_document`
 
 Forbidden as authority:
 
 - `StudioLesson` mixed payloads
 - editor Quill Delta
+- Markdown as rebuilt-editor content authority
+- `content_markdown` as rebuilt-editor content authority
 - frontend-normalized markdown
 - frontend preview markdown
 - frontend cover preview state
 - frontend-reconstructed cover URLs
 - raw joined studio lesson lists that include `content_markdown`
+- raw joined studio lesson lists that include `content_document`
 - legacy lesson alias `title`
 - `is_intro`
 - raw storage paths
@@ -80,13 +85,15 @@ Lesson structure contains only:
 
 Lesson content contains only:
 
-- `content_markdown`
+- `content_document`
 
 Canonical separation rules:
 
 - `app.lessons` remains structure-only
 - `app.lesson_contents` remains content-only
-- `content_markdown` must never appear on a structure-only write endpoint
+- `content_document` must never appear on a structure-only write endpoint
+- legacy `content_markdown` must never appear on a structure-only write
+  endpoint
 - `lesson_title` and `position` must never appear on a content-only write endpoint
 
 Drip shape boundary:
@@ -669,7 +676,10 @@ Response body:
 ~~~json
 {
   "lesson_id": "uuid",
-  "content_markdown": "string",
+  "content_document": {
+    "schema_version": "lesson_document_v1",
+    "blocks": []
+  },
   "media": []
 }
 ~~~
@@ -680,16 +690,19 @@ Response transport metadata:
 
 Rules:
 
-- reads existing persisted content from `app.lesson_contents.content_markdown`
+- reads existing persisted rebuilt-editor content from
+  `app.lesson_contents.content_document`
 - `lesson_id` identifies the lesson whose content was read
-- `content_markdown` is backend-authored persisted markdown
+- `content_document` is backend-authored persisted `lesson_document_v1`
+  canonical JSON
 - `media` is a read-only backend-authored list of governed media objects when applicable, otherwise an empty list
 - response must not include lesson structure fields such as `lesson_title` or `position`
 - response must not include course structure payload
 - response must not expose storage paths, signed URLs, upload URLs, frontend-resolved URLs, or raw media resolver fields
 - the `ETag` transport metadata is the canonical editor content concurrency token
 - this endpoint must not mutate lesson structure or lesson content
-- structure endpoints must not expose `content_markdown`, content media, or content concurrency tokens
+- structure endpoints must not expose `content_document`, legacy
+  `content_markdown`, content media, or content concurrency tokens
 
 ## 6. CONTENT WRITE CONTRACT
 
@@ -705,7 +718,10 @@ Request:
 
 ~~~json
 {
-  "content_markdown": "string"
+  "content_document": {
+    "schema_version": "lesson_document_v1",
+    "blocks": []
+  }
 }
 ~~~
 
@@ -718,7 +734,10 @@ Response:
 ~~~json
 {
   "lesson_id": "uuid",
-  "content_markdown": "string"
+  "content_document": {
+    "schema_version": "lesson_document_v1",
+    "blocks": []
+  }
 }
 ~~~
 
@@ -728,22 +747,26 @@ Response transport metadata:
 
 Rules:
 
-- `content_markdown` is the only request field
+- `content_document` is the only rebuilt-editor request field
 - request meaning is singular and non-branching
 - `If-Match` must contain the current backend-issued content concurrency token
 - writes without a matching `If-Match` token must fail without persistence
 - successful writes must emit a replacement `ETag`
-- backend must normalize markdown before persistence
-- persisted content is the backend-normalized result
-- response must return the backend-normalized markdown
+- backend must validate `lesson_document_v1` before persistence
+- backend must persist the backend-canonical JSON document
+- response must return the persisted backend-canonical JSON document
+- ETag calculation must use canonical document bytes
 - `lesson_title` is forbidden
 - `position` is forbidden
 - `course_id` is forbidden
+- legacy `content_markdown` is forbidden as rebuilt-editor write authority
 - no structure fields may appear
 
 Validation law:
 
 - invalid canonical media references must be rejected
+- invalid document schema versions must be rejected
+- invalid block nodes, mark nodes, list shapes, and CTA nodes must be rejected
 - raw storage-path references must be rejected
 - raw HTML media tags must be rejected
 - unresolved raw media URLs must be rejected
@@ -798,7 +821,8 @@ Validation law:
 
 Rules:
 
-- editor structure reads must not expose `content_markdown`
+- editor structure reads must not expose `content_document`
+- editor structure reads must not expose legacy `content_markdown`
 - editor structure reads must not expose content media
 - editor structure reads must not expose content concurrency tokens
 - `GET /studio/courses` must exist exactly once
@@ -834,52 +858,61 @@ A new backend mutation surface for Preview Mode is forbidden.
 
 A new backend read surface is not required for authority if existing canonical read surfaces can compose persisted lesson text, lesson media, and course cover. Any future Preview helper surface must remain read-only projection only.
 
-## 9. MARKDOWN / TEXT EDITOR LAW
+## 9. DOCUMENT EDITOR LAW
 
-Markdown law:
+Rebuilt-editor document law:
 
-- markdown is the canonical lesson-content format
-- `content_markdown` is canonical only on `app.lesson_contents`
-- backend normalization is the only write-boundary authority
+- `lesson_document_v1` is the canonical rebuilt-editor lesson-content format
+- `content_document` is canonical only on `app.lesson_contents`
+- backend document validation and canonical JSON serialization are the only
+  rebuilt-editor write-boundary authority
 - frontend normalization is convenience only and never authority
-- editor-internal rich text state is transient only
-- Quill Delta or any other editor document model must never be stored as contract truth
+- editor-internal UI state is transient only
+- Quill Delta must never be stored as contract truth
+- Markdown must never be stored as rebuilt-editor contract truth
 
-Canonical media-reference law inside markdown:
+Canonical document node law:
 
-- lesson media references must use typed lesson-media tokens only
-- canonical forms are:
-  - `!image(<lesson_media_id>)`
-  - `!audio(<lesson_media_id>)`
-  - `!video(<lesson_media_id>)`
-  - `!document(<lesson_media_id>)`
+- document root must declare `schema_version = "lesson_document_v1"`
+- document root must contain explicit `blocks`
+- paragraph boundaries are explicit block nodes, not newline-count semantics
+- headings carry explicit heading level
+- bullet and ordered lists carry explicit list-item structure
+- inline formatting uses explicit marks: `bold`, `italic`, `underline`, `link`
+- clear formatting removes marks without deleting text or collapsing blocks
+- lesson media references must use typed media nodes that reference
+  `lesson_media_id`
+- magic-link / CTA content must use explicit CTA nodes, not incidental Markdown
+  link text
 
-Supported-content fixture corpus law:
+Document fixture corpus law:
 
-- `lesson_supported_content_fixture_corpus.md` and
-  `lesson_supported_content_fixture_corpus.json` lock the supported
-  Markdown-canonical lesson-content fixture ids for implementation and
-  verification
-- adapter, newline, guard, validator, preview, and learner work must bind to
-  that corpus instead of inventing per-surface fixture semantics
-- blocker-grade supported fixtures for blank-line semantics and inline
-  document-token semantics remain inside the locked supported subset even when
-  downstream nodes own their completion
+- rebuilt-editor adapter, validator, preview, and learner work must bind to a
+  `lesson_document_v1` fixture corpus instead of inventing per-surface
+  semantics
+- the active rebuilt-editor fixture corpus artifact is
+  `actual_truth/contracts/lesson_document_fixture_corpus.json`
+- legacy Markdown fixtures may remain only as compatibility/import/export
+  evidence
 
-Forbidden markdown persistence:
+Forbidden rebuilt-editor persistence:
 
 - raw HTML media tags
-- raw markdown image URLs for governed lesson media
+- raw Markdown image URLs for governed lesson media
 - raw document links to internal media paths
 - storage-path references
 - guessed playback URLs
 - frontend-authored resolved media URLs
+- Markdown media tokens as rebuilt-editor authority
+- Quill Delta as rebuilt-editor authority
 
 Write-boundary law:
 
-- backend must normalize or reject incoming markdown
+- backend must validate or reject incoming `lesson_document_v1`
 - backend output is the persisted truth
-- content write responses must reflect backend-normalized markdown
+- content write responses must reflect backend-canonical JSON
+- backend validation must not shell out to Flutter
+- backend validation must not depend on Markdown round-trip equivalence
 
 ## 10. FORBIDDEN PATTERNS
 
@@ -887,6 +920,7 @@ The following are forbidden:
 
 - `POST /studio/lessons` as canonical truth
 - mixed `PATCH /studio/lessons/{lesson_id}` as canonical truth
+- `content_document` in any structure endpoint
 - `content_markdown` in any structure endpoint
 - content media in any structure endpoint
 - content concurrency tokens in any structure endpoint
@@ -902,6 +936,8 @@ The following are forbidden:
 - raw `app.lessons` + `app.lesson_contents` collapse as one semantic surface
 - frontend markdown normalization treated as authority
 - frontend editor state treated as authority
+- Markdown round-trip equivalence treated as rebuilt-editor authority
+- backend Flutter subprocess validation treated as rebuilt-editor authority
 - fallback aliases for lesson fields
 - raw table access used to bypass canonical surfaces
 
@@ -934,10 +970,13 @@ Editor frontend must render course covers only from backend-provided `cover.reso
 
 Frontend model separation law:
 
-- editor structure models must not contain `content_markdown`
+- editor structure models must not contain `content_document`
+- editor structure models must not contain legacy `content_markdown`
 - editor structure models must not contain content media or content concurrency tokens
-- editor content read models may contain only `lesson_id`, `content_markdown`, read-only `media`, and transport metadata `ETag`
-- editor content write models must contain only `lesson_id` and `content_markdown`
+- editor content read models may contain only `lesson_id`,
+  `content_document`, read-only `media`, and transport metadata `ETag`
+- editor content write models must contain only `lesson_id` and
+  `content_document`
 - editor content writes must carry the required `If-Match` transport metadata
 
 ## 12. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
@@ -951,8 +990,9 @@ Known drift includes:
 - duplicate `GET /studio/courses` route definitions
 - backend and frontend mixed lesson models that still combine `lesson_title`, `position`, and `content_markdown`
 - frontend tests and fixtures that still reference legacy lesson fields such as `title` and `is_intro`
-- frontend save logic that serializes markdown before the write boundary
-- backend markdown normalization utility existing without being the sole enforced mounted write-boundary authority yet
+- frontend save logic that serializes Markdown before the write boundary
+- backend Markdown normalization and Flutter round-trip validation utilities
+  existing in the current legacy content path
 
 These are drift only.
 They are not contract truth.
@@ -965,8 +1005,10 @@ This contract is complete, deterministic, and lockable.
 It is valid only if all future implementation preserves these laws:
 
 - course structure and lesson structure remain separate from lesson content
-- markdown remains the canonical lesson-content format
-- backend normalization remains the only content authority at the write boundary
+- `lesson_document_v1` remains the canonical rebuilt-editor lesson-content
+  format
+- backend document validation and canonical JSON serialization remain the only
+  rebuilt-editor content authority at the write boundary
 - legacy aliases and mixed surfaces do not survive as contract truth
 
 This contract is ready to govern deterministic task-tree construction for implementation.

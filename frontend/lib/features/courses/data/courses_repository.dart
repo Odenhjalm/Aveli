@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
@@ -17,6 +18,7 @@ const Set<String> _legacyCourseCoverFields = <String>{
 };
 
 const Set<String> _legacyCourseProgressionFields = <String>{'step'};
+const Set<String> _legacyLessonContentFields = <String>{'content_markdown'};
 
 Object? _requiredField(Object? payload, String fieldName) {
   switch (payload) {
@@ -44,6 +46,16 @@ void _rejectLegacyCourseProgressionFields(Object? payload, String context) {
     for (final field in _legacyCourseProgressionFields) {
       if (data.containsKey(field)) {
         throw StateError('Ogiltigt kursprogressionsf\u00e4lt i $context');
+      }
+    }
+  }
+}
+
+void _rejectLegacyLessonContentFields(Object? payload, String context) {
+  if (payload case final Map data) {
+    for (final field in _legacyLessonContentFields) {
+      if (data.containsKey(field)) {
+        throw StateError('Invalid lesson content field in $context');
       }
     }
   }
@@ -580,25 +592,25 @@ class LessonDetail {
   const LessonDetail({
     required this.id,
     required this.lessonTitle,
-    required this.contentMarkdown,
+    required this.contentDocument,
     required this.position,
   });
 
   final String id;
   final String lessonTitle;
-  final String? contentMarkdown;
+  final LessonDocument contentDocument;
   final int position;
 
   factory LessonDetail.fromResponse(Object? payload) {
+    _rejectLegacyLessonContentFields(payload, 'lesson');
     return LessonDetail(
       id: _requireString(_requiredField(payload, 'id'), 'id'),
       lessonTitle: _requireString(
         _requiredField(payload, 'lesson_title'),
         'lesson_title',
       ),
-      contentMarkdown: _optionalString(
-        _requiredField(payload, 'content_markdown'),
-        'content_markdown',
+      contentDocument: LessonDocument.fromJson(
+        _requiredField(payload, 'content_document'),
       ),
       position: _requireInt(_requiredField(payload, 'position'), 'position'),
     );

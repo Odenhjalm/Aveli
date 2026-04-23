@@ -52,6 +52,7 @@ __all__ = [
     "SubscriptionSessionRequest",
 ]
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -522,7 +523,9 @@ class HomePlayerCatalogTextValue(BaseModel):
 
     surface_id: str
     text_id: str
-    authority_class: Literal["contract_text", "backend_status_text", "backend_error_text"]
+    authority_class: Literal[
+        "contract_text", "backend_status_text", "backend_error_text"
+    ]
     canonical_owner: Literal["backend_text_catalog"]
     source_contract: str
     backend_namespace: str
@@ -1099,7 +1102,7 @@ class LessonContentItem(BaseModel):
     course_id: UUID
     lesson_title: str
     position: int
-    content_markdown: str | None = None
+    content_document: Dict[str, Any]
 
 
 class LearnerLessonMediaItem(BaseModel):
@@ -1439,24 +1442,6 @@ class StudioModuleUpdate(BaseModel):
     position: int | None = None
 
 
-class StudioLessonCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID | None = None
-    course_id: UUID
-    lesson_title: str
-    content_markdown: str
-    position: int
-
-
-class StudioLessonUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    lesson_title: str | None = None
-    content_markdown: str | None = None
-    position: int | None = None
-
-
 class StudioLesson(BaseModel):
     id: UUID
     course_id: UUID
@@ -1492,7 +1477,7 @@ class StudioLessonStructure(BaseModel):
 class StudioLessonContentUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    content_markdown: str
+    content_document: Dict[str, Any]
 
 
 class StudioLessonContentMediaItem(BaseModel):
@@ -1509,7 +1494,7 @@ class StudioLessonContentRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     lesson_id: UUID
-    content_markdown: str
+    content_document: Dict[str, Any]
     media: List[StudioLessonContentMediaItem] = Field(default_factory=list)
 
 
@@ -1517,7 +1502,7 @@ class StudioLessonContent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     lesson_id: UUID
-    content_markdown: str
+    content_document: Dict[str, Any]
 
 
 class StudioLessonMediaUploadUrlRequest(BaseModel):

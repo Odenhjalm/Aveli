@@ -2,13 +2,25 @@ import uuid
 
 import pytest
 
-from app import db
+from app import db, repositories
 
 pytestmark = pytest.mark.anyio("asyncio")
 
 
 def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def lesson_document(text: str) -> dict:
+    return {
+        "schema_version": "lesson_document_v1",
+        "blocks": [
+            {
+                "type": "paragraph",
+                "children": [{"text": text}],
+            }
+        ],
+    }
 
 
 def studio_course_payload(title: str, slug: str) -> dict[str, object]:
@@ -30,7 +42,6 @@ async def register_user(
         json={
             "email": email,
             "password": password,
-            "display_name": display_name,
         },
     )
     assert register_resp.status_code == 201, register_resp.text
@@ -40,6 +51,22 @@ async def register_user(
     me_resp = await client.get("/profiles/me", headers=auth_header(token))
     assert me_resp.status_code == 200, me_resp.text
     user_id = me_resp.json()["user_id"]
+    create_profile = await client.post(
+        "/auth/onboarding/create-profile",
+        headers=auth_header(token),
+        json={"display_name": display_name, "bio": None},
+    )
+    assert create_profile.status_code == 200, create_profile.text
+    complete = await client.post(
+        "/auth/onboarding/complete",
+        headers=auth_header(token),
+    )
+    assert complete.status_code == 200, complete.text
+    await repositories.upsert_membership_record(
+        user_id,
+        status="active",
+        source="coupon",
+    )
     return token, user_id
 
 
@@ -68,7 +95,7 @@ async def read_lesson_content_etag(
         headers=auth_header(token),
     )
     assert response.status_code == 200, response.text
-    assert set(response.json()) == {"lesson_id", "content_markdown", "media"}
+    assert set(response.json()) == {"lesson_id", "content_document", "media"}
     etag = response.headers.get("etag")
     assert etag
     return etag
@@ -124,10 +151,10 @@ async def test_studio_lessons_belong_directly_to_course(async_client):
                 token=teacher_token,
             ),
         },
-        json={"content_markdown": "Hello"},
+        json={"content_document": lesson_document("Hello")},
     )
     assert content.status_code == 200, content.text
-    assert content.json()["content_markdown"] == "Hello"
+    assert content.json()["content_document"] == lesson_document("Hello")
 
     resp = await async_client.get(
         f"/studio/courses/{course_id}/lessons",

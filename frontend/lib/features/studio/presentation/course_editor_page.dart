@@ -10,23 +10,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show SemanticsBinding, SemanticsHandle;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_quill/flutter_quill.dart' as quill;
-import 'package:flutter_quill/quill_delta.dart' as quill_delta;
-import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:uuid/uuid.dart';
 
-import 'package:aveli/editor/adapter/editor_to_markdown.dart'
-    as editor_to_markdown;
-import 'package:aveli/editor/debug/editor_debug.dart';
-import 'package:aveli/editor/debug/editor_debug_overlay.dart';
-import 'package:aveli/editor/guardrails/lesson_markdown_integrity_guard.dart';
-import 'package:aveli/editor/adapter/markdown_to_editor.dart'
-    as markdown_to_editor;
-import 'package:aveli/editor/session/editor_operation_controller.dart';
-import 'package:aveli/editor/session/editor_session.dart';
+import 'package:aveli/editor/document/lesson_document.dart';
+import 'package:aveli/editor/document/lesson_document_editor.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';
@@ -55,15 +45,7 @@ import 'package:aveli/shared/widgets/gradient_button.dart';
 import 'package:aveli/features/studio/widgets/cover_upload_card.dart';
 import 'package:aveli/features/studio/widgets/wav_replace_dialog.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_card.dart';
-import 'package:aveli/features/courses/presentation/lesson_page.dart'
-    show LearnerLessonContentRenderer;
-import 'package:aveli/shared/utils/lesson_content_pipeline.dart'
-    as lesson_pipeline;
 import 'package:aveli/shared/utils/lesson_media_render_telemetry.dart';
-import 'package:aveli/shared/utils/pdf_link_editor_support.dart';
-import 'package:aveli/shared/utils/quill_embed_insertion.dart';
-import 'package:aveli/features/studio/presentation/editor_test_bridge.dart'
-    as editor_test_bridge;
 import 'package:aveli/features/studio/presentation/lesson_media_preview.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview_cache.dart';
 import 'package:aveli/features/studio/presentation/lesson_media_preview_hydration.dart';
@@ -116,14 +98,6 @@ bool? safeBool(Map<dynamic, dynamic>? source, Object key) {
   return null;
 }
 
-const Map<String, String> _editorFontOptions = <String, String>{
-  'Återställ standard': 'Clear',
-  'Noto Sans (sans-serif)': 'NotoSans',
-  'Merriweather (serif)': 'Merriweather',
-  'Lora (serif)': 'Lora',
-  'Playfair Display (rubrik)': 'PlayfairDisplay',
-};
-
 enum _LessonEditorBootPhase {
   booting,
   applyingLessonDocument,
@@ -131,16 +105,16 @@ enum _LessonEditorBootPhase {
   fullyStable,
 }
 
-class _EditorSessionToken {
-  const _EditorSessionToken({
-    required this.sessionId,
+class _EditorDocumentToken {
+  const _EditorDocumentToken({
     required this.lessonId,
     required this.selectedLessonId,
+    required this.contentRequestId,
   });
 
-  final String sessionId;
   final String lessonId;
   final String selectedLessonId;
+  final int contentRequestId;
 }
 
 class _CourseCreateInput {
@@ -690,120 +664,6 @@ class _CourseFamilyRenameDialogState extends State<_CourseFamilyRenameDialog> {
   }
 }
 
-class _AudioEmbedBuilder implements quill.EmbedBuilder {
-  const _AudioEmbedBuilder({this.hydrationListenable});
-
-  final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
-  hydrationListenable;
-
-  @override
-  String get key => 'audio';
-
-  @override
-  bool get expanded => true;
-
-  @override
-  WidgetSpan buildWidgetSpan(Widget widget) => WidgetSpan(child: widget);
-
-  @override
-  String toPlainText(quill.Embed node) =>
-      quill.Embed.kObjectReplacementCharacter;
-
-  @override
-  Widget build(BuildContext context, quill.EmbedContext embedContext) {
-    final node = embedContext.node;
-    final dynamic value = node.value.data;
-    final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(value);
-    if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      return _invalidLessonMediaReferenceWidget('audio');
-    }
-    return LessonMediaPreview(
-      lessonMediaId: lessonMediaId,
-      mediaType: 'audio',
-      hydrating: false,
-      hydrationListenable: hydrationListenable,
-    );
-  }
-}
-
-class _VideoEmbedBuilder implements quill.EmbedBuilder {
-  const _VideoEmbedBuilder({this.hydrationListenable});
-
-  final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
-  hydrationListenable;
-
-  @override
-  String get key => quill.BlockEmbed.videoType;
-
-  @override
-  bool get expanded => false;
-
-  @override
-  WidgetSpan buildWidgetSpan(Widget widget) => WidgetSpan(child: widget);
-
-  @override
-  String toPlainText(quill.Embed node) =>
-      quill.Embed.kObjectReplacementCharacter;
-
-  @override
-  Widget build(BuildContext context, quill.EmbedContext embedContext) {
-    final node = embedContext.node;
-    final dynamic value = node.value.data;
-    final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(value);
-    if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      return _invalidLessonMediaReferenceWidget('video');
-    }
-    return LessonMediaPreview(
-      lessonMediaId: lessonMediaId,
-      mediaType: 'video',
-      hydrating: false,
-      hydrationListenable: hydrationListenable,
-    );
-  }
-}
-
-class _ImageEmbedBuilder implements quill.EmbedBuilder {
-  const _ImageEmbedBuilder({this.hydrationListenable});
-
-  final ValueListenable<LessonMediaPreviewHydrationSnapshot>?
-  hydrationListenable;
-
-  @override
-  String get key => quill.BlockEmbed.imageType;
-
-  @override
-  bool get expanded => false;
-
-  @override
-  WidgetSpan buildWidgetSpan(Widget widget) => WidgetSpan(child: widget);
-
-  @override
-  String toPlainText(quill.Embed node) =>
-      quill.Embed.kObjectReplacementCharacter;
-
-  @override
-  Widget build(BuildContext context, quill.EmbedContext embedContext) {
-    final dynamic value = embedContext.node.value.data;
-    final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(value);
-    if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      return _invalidLessonMediaReferenceWidget('image');
-    }
-    return LessonMediaPreview(
-      lessonMediaId: lessonMediaId,
-      mediaType: 'image',
-      hydrating: false,
-      hydrationListenable: hydrationListenable,
-    );
-  }
-}
-
-Widget _invalidLessonMediaReferenceWidget(String mediaType) {
-  return Padding(
-    padding: const EdgeInsets.all(12),
-    child: Text('Ogiltig $mediaType-referens', textAlign: TextAlign.center),
-  );
-}
-
 bool _isVideoMedia(StudioLessonMediaItem media) {
   return media.mediaType == 'video';
 }
@@ -848,8 +708,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     milliseconds: 250,
   );
   static const int _lessonEditorTestIdMaxSyncAttempts = 40;
-  static const String _lessonMarkdownIntegritySaveError =
-      'Ogiltig formatering i lektionsinnehallet. Korrigera formateringen innan du sparar.';
   bool _checking = true;
   bool _allowed = false;
   late final StudioRepository _studioRepo;
@@ -881,9 +739,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _lessonEditorTestIdSyncAttempts = 0;
   bool _lessonEditorTestIdSyncScheduled = false;
 
-  late EditorSession _editorSession;
-  late final FocusNode _lessonContentFocusNodeHandle;
-  late final ScrollController _lessonEditorScrollControllerHandle;
   final ScrollController _panelScrollController = ScrollController();
   final TextEditingController _lessonTitleCtrl = TextEditingController();
   static const Duration _lessonPreviewHydrationTimeout = Duration(seconds: 5);
@@ -897,17 +752,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _lessonContentDirty = false;
   bool _lessonContentSaving = false;
   String _lastSavedLessonTitle = '';
-  String _lastSavedLessonMarkdown = '';
+  LessonDocument _lessonDocument = LessonDocument.empty();
+  LessonDocument _lastSavedLessonDocument = LessonDocument.empty();
   String? _lastSavedLessonContentEtag;
-  String? _lessonPreviewMarkdown;
+  LessonDocument? _lessonPreviewDocument;
+  List<LessonDocumentPreviewMedia> _lessonPreviewMedia =
+      <LessonDocumentPreviewMedia>[];
   String? _lessonPreviewError;
   String? _lessonContentHydratedLessonId;
   String? _lessonContentLoadError;
-  TextSelection? _lastLessonSelection;
-  bool _lessonContentControllerInitialized = false;
-  int _lessonContentControllerGeneration = 0;
-  VoidCallback? _controllerListener;
-  StreamSubscription<quill.DocChange>? _controllerChangesSubscription;
 
   final TextEditingController _courseTitleCtrl = TextEditingController();
   final TextEditingController _courseSlugCtrl = TextEditingController();
@@ -941,7 +794,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _lastCourseCoverRenderSignature;
 
   ProviderSubscription<List<UploadJob>>? _uploadSubscription;
-  bool _lessonEditorFocusRestoreScheduled = false;
   final Set<String> _lessonsNeedingRefresh = <String>{};
   int _courseMetaRequestId = 0;
   int _lessonsRequestId = 0;
@@ -951,80 +803,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _saveCourseRequestId = 0;
   int _saveCourseDripRequestId = 0;
   int _publishCourseRequestId = 0;
-
-  quill.QuillController get _lessonContentController =>
-      _editorSession.controller;
-
-  FocusNode get _lessonContentFocusNode => _editorSession.focusNode;
-
-  ScrollController get _lessonEditorScrollController =>
-      _editorSession.scrollController;
-
-  int _controllerIdentity(quill.QuillController controller) =>
-      identityHashCode(controller);
-
-  String _editorLessonIdValue(String? lessonId) {
-    final value = lessonId;
-    if (value == null) return 'null';
-    return value.isEmpty ? 'empty' : value;
-  }
-
-  String _editorLessonId([String? lessonId]) =>
-      _editorLessonIdValue(lessonId ?? _editorSession.lessonId);
-
-  void _logEditorPageEvent({
-    required String event,
-    quill.QuillController? controller,
-    TextSelection? selection,
-    String? sessionId,
-    String? lessonId,
-    String? extraContext,
-  }) {
-    if (!kEditorDebug) return;
-    final activeController = controller ?? _lessonContentController;
-    final buffer = StringBuffer('event=$event');
-    buffer.write(' controller=${_controllerIdentity(activeController)}');
-    buffer.write(' session=${sessionId ?? _editorSession.sessionId}');
-    buffer.write(' lesson=${_editorLessonId(lessonId)}');
-    buffer.write(
-      ' selection=${formatEditorSelection(selection ?? activeController.selection)}',
-    );
-    buffer.write(' focus=${_lessonContentFocusNode.hasFocus}');
-    if (extraContext != null && extraContext.isNotEmpty) {
-      buffer.write(' $extraContext');
-    }
-    logEditor(buffer.toString());
-  }
-
-  void _warnIfSelectionInvalid(
-    TextSelection selection, {
-    quill.QuillController? controller,
-    required String source,
-  }) {
-    if (!kEditorDebug) return;
-    final activeController = controller ?? _lessonContentController;
-    final normalized = _clampEditorSelection(selection, activeController);
-    final isValid =
-        selection.baseOffset == normalized.baseOffset &&
-        selection.extentOffset == normalized.extentOffset;
-    if (isValid) return;
-    _logEditorPageEvent(
-      event: 'warning',
-      controller: activeController,
-      selection: selection,
-      extraContext:
-          'warning=selection_invalid '
-          'source=$source '
-          'normalized=${formatEditorSelection(normalized)}',
-    );
-  }
-
-  void _handleLessonContentFocusChanged() {
-    if (!kEditorDebug || !_lessonContentControllerInitialized) return;
-    _logEditorPageEvent(event: 'focus_changed');
-    if (!mounted) return;
-    setState(() {});
-  }
 
   void _showFriendlyErrorSnack(
     String prefix,
@@ -1147,12 +925,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _documentReadyRequestId = null;
     _lessonContentHydratedLessonId = null;
     _lastSavedLessonContentEtag = null;
+    _lessonDocument = LessonDocument.empty();
     _lessonContentLoadError = errorMessage;
     _resetLessonPreviewHydrationValues(bumpRevision: bumpHydrationRevision);
     _lessonPreviewRequestId += 1;
     _lessonPreviewMode = false;
     _lessonPreviewLoading = false;
-    _lessonPreviewMarkdown = null;
+    _lessonPreviewDocument = null;
+    _lessonPreviewMedia = <LessonDocumentPreviewMedia>[];
     _lessonPreviewError = null;
     _lessonEditorBootPhase = phase;
   }
@@ -1169,135 +949,29 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return completer.future;
   }
 
-  int _editorDocumentExtent([quill.QuillController? controller]) {
-    return max((controller ?? _lessonContentController).document.length - 1, 0);
-  }
-
-  _EditorSessionToken? _captureEditorToken() {
-    final lessonId = _editorSession.lessonId;
+  _EditorDocumentToken? _captureEditorToken() {
     final selectedLessonId = _selectedLessonId;
-    if (lessonId == null || selectedLessonId == null) return null;
-    return _EditorSessionToken(
-      sessionId: _editorSession.sessionId,
+    final lessonId = _documentReadyLessonId;
+    final contentRequestId = _documentReadyRequestId;
+    if (lessonId == null ||
+        selectedLessonId == null ||
+        contentRequestId == null) {
+      return null;
+    }
+    return _EditorDocumentToken(
       lessonId: lessonId,
       selectedLessonId: selectedLessonId,
+      contentRequestId: contentRequestId,
     );
   }
 
-  bool _isEditorTokenValid(_EditorSessionToken? token) {
+  bool _isEditorTokenValid(_EditorDocumentToken? token) {
     if (token == null) return false;
-    return token.sessionId == _editorSession.sessionId &&
-        token.lessonId == _editorSession.lessonId &&
-        token.selectedLessonId == _selectedLessonId;
-  }
-
-  void _handleObservedControllerChange(
-    quill.QuillController controller,
-    quill.DocChange event,
-  ) {
-    if (!identical(controller, _lessonContentController)) return;
-    if (event.source != quill.ChangeSource.local) return;
-    if (event.change.isEmpty) return;
-
-    final selection = controller.selection;
-    final normalizedSelection = _clampEditorSelection(selection, controller);
-
-    if (normalizedSelection.start >= 0 && normalizedSelection.end >= 0) {
-      _lastLessonSelection = normalizedSelection;
-    }
-    final shouldRefreshLivePreview = _lessonPreviewMode;
-    if (!_lessonContentDirty) {
-      _markLessonContentDirty(refreshPreview: shouldRefreshLivePreview);
-    } else if (shouldRefreshLivePreview && mounted) {
-      setState(() {});
-    }
-
-    if (kEditorDebug) {
-      _logEditorPageEvent(
-        event: 'document_changed',
-        controller: controller,
-        selection: selection,
-        extraContext: 'source=${event.source.name}',
-      );
-    }
-  }
-
-  int _clampEditorOffset(int offset, [quill.QuillController? controller]) {
-    return min(max(offset, 0), _editorDocumentExtent(controller));
-  }
-
-  TextSelection _clampEditorSelection(
-    TextSelection selection, [
-    quill.QuillController? controller,
-  ]) {
-    final activeController = controller ?? _lessonContentController;
-    return clampQuillSelection(activeController, selection);
-  }
-
-  void _attachControllerListener() {
-    _detachControllerListener();
-    _controllerChangesSubscription = _lessonContentController.changes.listen((
-      event,
-    ) {
-      _handleObservedControllerChange(_lessonContentController, event);
-    });
-    _controllerListener = () {
-      final selection = _lessonContentController.selection;
-      if (selection.start < 0 || selection.end < 0) return;
-      final normalized = _clampEditorSelection(selection);
-      final previousSelection = _lastLessonSelection;
-      if (previousSelection != null &&
-          previousSelection.baseOffset == normalized.baseOffset &&
-          previousSelection.extentOffset == normalized.extentOffset) {
-        return;
-      }
-      _lastLessonSelection = normalized;
-    };
-    _lessonContentController.addListener(_controllerListener!);
-  }
-
-  void _detachControllerListener() {
-    _controllerChangesSubscription?.cancel();
-    _controllerChangesSubscription = null;
-    final listener = _controllerListener;
-    if (listener != null && _lessonContentControllerInitialized) {
-      _lessonContentController.removeListener(listener);
-      _controllerListener = null;
-      return;
-    }
-    _controllerListener = null;
-  }
-
-  bool _canRequestLessonEditorFocus() {
-    return mounted &&
-        !_lessonPreviewMode &&
-        _isSelectedLessonDocumentReady() &&
-        _lessonEditorBootPhase == _LessonEditorBootPhase.fullyStable &&
-        _selectedLessonId != null;
-  }
-
-  void _ensureLessonEditorFocus({String reason = 'mutation'}) {
-    if (!_canRequestLessonEditorFocus()) return;
-    if (_lessonContentFocusNode.hasFocus ||
-        _lessonEditorFocusRestoreScheduled) {
-      return;
-    }
-    _lessonEditorFocusRestoreScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _lessonEditorFocusRestoreScheduled = false;
-      if (!_canRequestLessonEditorFocus()) return;
-      if (_lessonContentFocusNode.hasFocus ||
-          !_lessonContentFocusNode.canRequestFocus) {
-        return;
-      }
-      _logEditorPageEvent(
-        event: 'warning',
-        controller: _lessonContentController,
-        extraContext:
-            'warning=editor_not_focused action=request_focus reason=$reason',
-      );
-      _lessonContentFocusNode.requestFocus();
-    });
+    return token.lessonId == _documentReadyLessonId &&
+        token.selectedLessonId == _selectedLessonId &&
+        token.contentRequestId == _documentReadyRequestId &&
+        token.contentRequestId == _lessonContentRequestId &&
+        _lessonContentLoadError == null;
   }
 
   void _markLessonContentDirty({bool refreshPreview = false}) {
@@ -1325,197 +999,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return false;
   }
 
-  void _runEditorMutation(
-    void Function(quill.QuillController controller) mutation, {
-    bool requestFocus = false,
-    bool refreshPage = false,
-  }) {
-    if (!_requireEditModeForMutation()) {
-      return;
-    }
-    if (!_isSelectedLessonDocumentReady()) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Lektionsinnehållet är inte färdigladdat.');
-      }
-      return;
-    }
-    mutation(_lessonContentController);
-    _snapshotLessonSelection();
-    if (requestFocus) {
-      _ensureLessonEditorFocus();
-    }
-    if (refreshPage && mounted) {
-      setState(() {});
-    }
-  }
-
-  ({int start, int length}) _currentEditorReplacementRange() {
-    final selection = _clampEditorSelection(_lessonContentController.selection);
-    final start = min(selection.start, selection.end);
-    final end = max(selection.start, selection.end);
-    return (start: start, length: end - start);
-  }
-
-  void _replaceEditorTextLocally(
-    quill.QuillController controller, {
-    required int index,
-    required int length,
-    required Object data,
-    required TextSelection selection,
-  }) {
-    controller.replaceText(
-      index,
-      length,
-      data,
-      _clampEditorSelection(selection, controller),
-      ignoreFocus: false,
-      shouldNotifyListeners: true,
-    );
-  }
-
-  void _formatEditorRangeSelection(
-    quill.QuillController controller, {
-    required int start,
-    required int length,
-    required quill.Attribute attribute,
-  }) {
-    if (length <= 0) return;
-    controller.formatText(
-      start,
-      length,
-      attribute,
-      shouldNotifyListeners: true,
-    );
-  }
-
-  void _setEditorSelectionLocally(
-    quill.QuillController controller, {
-    required TextSelection selection,
-    quill.ChangeSource source = quill.ChangeSource.local,
-  }) {
-    final normalizedSelection = _clampEditorSelection(selection, controller);
-    _warnIfSelectionInvalid(
-      selection,
-      controller: controller,
-      source: 'selection_request',
-    );
-    controller.updateSelection(normalizedSelection, source);
-  }
-
-  void _handleInlineFormatToolbarPressed() {
-    _snapshotLessonSelection();
-    _ensureLessonEditorFocus(reason: 'toolbar_format');
-  }
-
-  void _insertTextViaTestBridge(String text) {
-    final replacementRange = _currentEditorReplacementRange();
-    _runEditorMutation((controller) {
-      _replaceEditorTextLocally(
-        controller,
-        index: replacementRange.start,
-        length: replacementRange.length,
-        data: text,
-        selection: TextSelection.collapsed(
-          offset: replacementRange.start + text.length,
-        ),
-      );
-    }, requestFocus: true);
-  }
-
-  void _backspaceViaTestBridge() {
-    final replacementRange = _currentEditorReplacementRange();
-    if (replacementRange.length > 0) {
-      _deleteSelectionViaTestBridge();
-      return;
-    }
-    if (replacementRange.start <= 0) return;
-
-    final deleteOffset = replacementRange.start - 1;
-    _runEditorMutation((controller) {
-      _replaceEditorTextLocally(
-        controller,
-        index: deleteOffset,
-        length: 1,
-        data: '',
-        selection: TextSelection.collapsed(offset: deleteOffset),
-      );
-    }, requestFocus: true);
-  }
-
-  void _deleteSelectionViaTestBridge() {
-    final replacementRange = _currentEditorReplacementRange();
-    if (replacementRange.length <= 0) return;
-
-    _runEditorMutation((controller) {
-      _replaceEditorTextLocally(
-        controller,
-        index: replacementRange.start,
-        length: replacementRange.length,
-        data: '',
-        selection: TextSelection.collapsed(offset: replacementRange.start),
-      );
-    }, requestFocus: true);
-  }
-
-  void _setEditorCursorViaTestBridge(int offset) {
-    _runEditorMutation(
-      (controller) {
-        _setEditorSelectionLocally(
-          controller,
-          selection: TextSelection.collapsed(
-            offset: _clampEditorOffset(offset),
-          ),
-        );
-      },
-      requestFocus: true,
-      refreshPage: true,
-    );
-  }
-
-  void _setEditorSelectionViaTestBridge(int start, int end) {
-    _runEditorMutation(
-      (controller) {
-        _setEditorSelectionLocally(
-          controller,
-          selection: TextSelection(
-            baseOffset: _clampEditorOffset(start),
-            extentOffset: _clampEditorOffset(end),
-          ),
-        );
-      },
-      requestFocus: true,
-      refreshPage: true,
-    );
-  }
-
-  int _getEditorCursorViaTestBridge() {
-    return _clampEditorOffset(_lessonContentController.selection.baseOffset);
-  }
-
-  String _getEditorDocumentViaTestBridge() {
-    return _lessonContentController.document.toPlainText();
-  }
-
-  int _getEditorSelectionStartViaTestBridge() {
-    return _clampEditorOffset(_lessonContentController.selection.start);
-  }
-
-  int _getEditorSelectionEndViaTestBridge() {
-    return _clampEditorOffset(_lessonContentController.selection.end);
-  }
-
-  int _getEditorControllerIdentityViaTestBridge() {
-    return identityHashCode(_lessonContentController);
-  }
-
-  int _getEditorControllerGenerationViaTestBridge() {
-    return _lessonContentControllerGeneration;
-  }
-
-  void _setPreviewModeViaTestBridge(bool enabled) {
-    unawaited(_setLessonPreviewMode(enabled));
-  }
-
   bool _isSelectedLessonDocumentReady() {
     final selectedLessonId = _selectedLessonId;
     final documentReadyRequestId = _documentReadyRequestId;
@@ -1538,17 +1021,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       if (!mounted) {
         _lessonPreviewMode = false;
         _lessonPreviewLoading = false;
-        _lessonPreviewMarkdown = null;
+        _lessonPreviewDocument = null;
+        _lessonPreviewMedia = <LessonDocumentPreviewMedia>[];
         _lessonPreviewError = null;
         return;
       }
       setState(() {
         _lessonPreviewMode = false;
         _lessonPreviewLoading = false;
-        _lessonPreviewMarkdown = null;
+        _lessonPreviewDocument = null;
+        _lessonPreviewMedia = <LessonDocumentPreviewMedia>[];
         _lessonPreviewError = null;
       });
-      _ensureLessonEditorFocus(reason: 'preview_mode_disabled');
       return;
     }
 
@@ -1599,21 +1083,20 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
 
-    if (_lessonContentFocusNode.hasFocus) {
-      _lessonContentFocusNode.unfocus();
-    }
     final requestId = ++_lessonPreviewRequestId;
     if (!mounted) {
       _lessonPreviewMode = true;
       _lessonPreviewLoading = true;
-      _lessonPreviewMarkdown = null;
+      _lessonPreviewDocument = null;
+      _lessonPreviewMedia = <LessonDocumentPreviewMedia>[];
       _lessonPreviewError = null;
       return;
     }
     setState(() {
       _lessonPreviewMode = true;
       _lessonPreviewLoading = true;
-      _lessonPreviewMarkdown = null;
+      _lessonPreviewDocument = null;
+      _lessonPreviewMedia = <LessonDocumentPreviewMedia>[];
       _lessonPreviewError = null;
     });
     await _loadPersistedLessonPreview(lessonId: lessonId, requestId: requestId);
@@ -1638,6 +1121,33 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _lessonPreviewRequestId != requestId;
   }
 
+  List<String> _persistedPreviewMediaIds(StudioLessonContentRead content) {
+    return _embeddedLessonMediaIdsFromDocument(
+      content.contentDocument,
+    ).toList(growable: false);
+  }
+
+  Future<List<LessonDocumentPreviewMedia>> _readPersistedPreviewMedia(
+    StudioLessonContentRead content,
+  ) async {
+    final mediaIds = _persistedPreviewMediaIds(content);
+    if (mediaIds.isEmpty) return const <LessonDocumentPreviewMedia>[];
+    final placements = await _studioRepo.fetchLessonMediaPlacements(mediaIds);
+    return placements.map(_previewMediaFromPlacement).toList(growable: false);
+  }
+
+  LessonDocumentPreviewMedia _previewMediaFromPlacement(
+    StudioLessonMediaItem media,
+  ) {
+    return LessonDocumentPreviewMedia(
+      lessonMediaId: media.lessonMediaId,
+      mediaType: media.mediaType,
+      state: media.state,
+      label: media.originalName ?? media.mediaAssetId,
+      resolvedUrl: media.media?.resolvedUrl,
+    );
+  }
+
   Future<void> _loadPersistedLessonPreview({
     required String lessonId,
     required int requestId,
@@ -1653,33 +1163,27 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       )) {
         return;
       }
+      final media = await _readPersistedPreviewMedia(content);
+      if (_isStaleLessonPreviewRequest(
+        lessonId: lessonId,
+        requestId: requestId,
+      )) {
+        return;
+      }
 
       if (kDebugMode) {
-        var controllerMarkdown = '<serialization unavailable>';
-        try {
-          controllerMarkdown = _serializeLessonMarkdownFromController(
-            _lessonContentController,
-          );
-        } catch (_) {}
-        _traceLessonString(
-          'preview.source.persisted_markdown',
-          content.contentMarkdown,
-        );
-        _traceLessonString(
-          'preview.source.controller_markdown',
-          controllerMarkdown,
-        );
+        final persistedJson = content.contentDocument.toCanonicalJsonString();
+        _traceLessonString('preview.source.persisted_document', persistedJson);
         debugPrint(
           '[LessonTrace] preview.source.authority=backend_read '
-          'lesson=$lessonId '
-          'differs_from_controller='
-          '${content.contentMarkdown != controllerMarkdown}',
+          'lesson=$lessonId persisted_only=true media_count=${media.length}',
         );
       }
 
       setState(() {
         _lessonPreviewLoading = false;
-        _lessonPreviewMarkdown = content.contentMarkdown;
+        _lessonPreviewDocument = content.contentDocument;
+        _lessonPreviewMedia = media;
         _lessonPreviewError = null;
       });
     } catch (error, stackTrace) {
@@ -1692,7 +1196,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       final failure = AppFailure.from(error, stackTrace);
       setState(() {
         _lessonPreviewLoading = false;
-        _lessonPreviewMarkdown = null;
+        _lessonPreviewDocument = null;
+        _lessonPreviewMedia = <LessonDocumentPreviewMedia>[];
         _lessonPreviewError =
             'Kunde inte läsa sparad förhandsgranskning: ${failure.message}';
       });
@@ -1823,13 +1328,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _lessonMedia = <StudioLessonMediaItem>[];
       _lessonMediaLessonId = null;
       _resetLessonEditorBootValues(phase: _LessonEditorBootPhase.booting);
-      _replaceLessonDocument(quill.Document(), resetDirty: true);
       _lessonTitleCtrl
         ..removeListener(_handleLessonTitleChanged)
         ..text = ''
         ..addListener(_handleLessonTitleChanged);
       _lastSavedLessonTitle = '';
-      _lastSavedLessonMarkdown = '';
+      _lessonDocument = LessonDocument.empty();
+      _lastSavedLessonDocument = LessonDocument.empty();
       _lessonContentDirty = false;
     }
   }
@@ -1849,15 +1354,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void initState() {
     super.initState();
     _ensureLessonEditorWebTestIdSupport();
-    _lessonContentFocusNodeHandle = FocusNode();
-    _lessonContentFocusNodeHandle.addListener(_handleLessonContentFocusChanged);
-    _lessonEditorScrollControllerHandle = ScrollController();
     _previewHydrationController = LessonMediaPreviewHydrationController(
       timeout: _lessonPreviewHydrationTimeout,
     );
     _studioRepo = widget.studioRepository ?? ref.read(studioRepositoryProvider);
     _lessonTitleCtrl.addListener(_handleLessonTitleChanged);
-    _replaceLessonDocument(quill.Document());
     _bootstrap();
     _uploadSubscription = ref.listenManual<List<UploadJob>>(
       studioUploadQueueProvider,
@@ -1876,15 +1377,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _disposeCourseCustomScheduleController(controller);
     }
     _courseCustomScheduleCtrls.clear();
-    if (_lessonContentControllerInitialized) {
-      _detachControllerListener();
-      _lessonContentController.dispose();
-    }
-    _lessonContentFocusNodeHandle.removeListener(
-      _handleLessonContentFocusChanged,
-    );
-    _lessonContentFocusNodeHandle.dispose();
-    _lessonEditorScrollControllerHandle.dispose();
     _panelScrollController.dispose();
     _lessonTitleCtrl.dispose();
     _coverPollTimer?.cancel();
@@ -1893,7 +1385,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonEditorTestIdRetryTimer?.cancel();
     _lessonEditorSemanticsHandle?.dispose();
     _previewHydrationController.dispose();
-    editor_test_bridge.unregisterAveliEditorTestBridge();
     super.dispose();
   }
 
@@ -2057,7 +1548,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _resetLessonEditorBootValues(phase: _LessonEditorBootPhase.booting);
         });
       }
-      _replaceLessonDocument(quill.Document(), resetDirty: true);
       _lessonTitleCtrl
         ..removeListener(_handleLessonTitleChanged)
         ..text = ''
@@ -2114,7 +1604,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _lessonMediaLessonId = null;
           _resetLessonEditorBootValues(phase: _LessonEditorBootPhase.booting);
         });
-        _replaceLessonDocument(quill.Document(), resetDirty: true);
         _lessonTitleCtrl
           ..removeListener(_handleLessonTitleChanged)
           ..text = ''
@@ -2159,7 +1648,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _resetLessonEditorBootValues(phase: _LessonEditorBootPhase.booting);
         });
       }
-      _replaceLessonDocument(quill.Document(), resetDirty: true);
       _lessonTitleCtrl
         ..removeListener(_handleLessonTitleChanged)
         ..text = ''
@@ -2731,94 +2219,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return merged;
   }
 
-  void _replaceLessonDocument(
-    quill.Document document, {
-    bool resetDirty = true,
-  }) {
-    final hadController = _lessonContentControllerInitialized;
-    final previousControllerIdentity = hadController
-        ? _controllerIdentity(_lessonContentController)
-        : null;
-    final previousSessionId = hadController ? _editorSession.sessionId : null;
-    final previousLessonId = hadController ? _editorSession.lessonId : null;
-    final warnOnUnexpectedReplacement =
-        hadController &&
-        previousLessonId == _selectedLessonId &&
-        _lessonEditorBootPhase == _LessonEditorBootPhase.fullyStable;
-
-    if (hadController) {
-      _detachControllerListener();
-      _lessonContentController.dispose();
-    }
-    final controller = EditorOperationQuillController(
-      document: document,
-      selection: const TextSelection.collapsed(offset: 0),
-    );
-    final sessionId = _uuid.v4();
-    _editorSession = EditorSession(
-      sessionId: sessionId,
-      lessonId: _selectedLessonId,
-      controller: controller,
-      focusNode: _lessonContentFocusNodeHandle,
-      scrollController: _lessonEditorScrollControllerHandle,
-    );
-    _lessonContentControllerInitialized = true;
-    _lessonContentControllerGeneration += 1;
-    _attachControllerListener();
-    _syncLessonEditorTestBridge();
-    _lastLessonSelection = _clampEditorSelection(
-      controller.selection,
-      controller,
-    );
-    if (warnOnUnexpectedReplacement && previousControllerIdentity != null) {
-      logEditor(
-        'event=warning '
-        'warning=controller_replaced_unexpectedly '
-        'previous_controller=$previousControllerIdentity '
-        'next_controller=${_controllerIdentity(controller)} '
-        'previous_session=${previousSessionId ?? 'null'} '
-        'next_session=$sessionId '
-        'lesson=${_editorLessonIdValue(previousLessonId)} '
-        'generation=$_lessonContentControllerGeneration',
-      );
-    }
-    _logEditorPageEvent(
-      event: 'session_started',
-      controller: controller,
-      sessionId: sessionId,
-      lessonId: _selectedLessonId,
-      selection: controller.selection,
-      extraContext: 'generation=$_lessonContentControllerGeneration',
-    );
-    if (resetDirty) {
-      _lessonContentDirty = false;
-    }
-  }
-
-  void _syncLessonEditorTestBridge() {
-    editor_test_bridge.registerAveliEditorTestBridge(
-      insertText: _insertTextViaTestBridge,
-      backspace: _backspaceViaTestBridge,
-      deleteSelection: _deleteSelectionViaTestBridge,
-      setCursor: _setEditorCursorViaTestBridge,
-      setSelection: _setEditorSelectionViaTestBridge,
-      getCursor: _getEditorCursorViaTestBridge,
-      getDocument: _getEditorDocumentViaTestBridge,
-      getSelectionStart: _getEditorSelectionStartViaTestBridge,
-      getSelectionEnd: _getEditorSelectionEndViaTestBridge,
-      getControllerIdentity: _getEditorControllerIdentityViaTestBridge,
-      getControllerGeneration: _getEditorControllerGenerationViaTestBridge,
-      setPreviewMode: _setPreviewModeViaTestBridge,
-    );
-  }
-
-  void _snapshotLessonSelection() {
-    final selection = _lessonContentController.selection;
-    if (selection.start >= 0 && selection.end >= 0) {
-      _lastLessonSelection = _clampEditorSelection(selection);
-    }
-  }
-
   void _handleLessonTitleChanged() {
     if (_lessonPreviewMode) return;
     if (!_isSelectedLessonDocumentReady()) return;
@@ -2853,47 +2253,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  markdown_to_editor.LessonMarkdownHydrationResult
-  _hydrateLessonMarkdownForEditor(String markdown) {
-    return markdown_to_editor.hydrateLessonMarkdownForEditor(
-      markdown: markdown,
-      apiFilesPathToStudioMediaUrl: const <String, String>{},
-      lessonMediaDocumentLabelsById:
-          _lessonMediaDocumentLabelsByIdForSelectedLesson(),
-    );
-  }
-
-  Map<String, String> _lessonMediaDocumentLabelsByIdForSelectedLesson() {
+  Map<String, String> _lessonMediaTypesByIdForSelectedLesson() {
     final lessonId = _selectedLessonId;
     if (lessonId == null) return const <String, String>{};
     if (_lessonMediaLessonId != lessonId) return const <String, String>{};
     if (_lessonMedia.isEmpty) return const <String, String>{};
 
-    final labels = <String, String>{};
-    for (final media in _lessonMedia) {
-      labels[media.lessonMediaId] = _fileNameFromMedia(media);
-    }
-    return labels;
-  }
-
-  LessonMediaItem _lessonMediaItemFromStudioMedia(StudioLessonMediaItem media) {
-    return LessonMediaItem(
-      id: media.lessonMediaId,
-      lessonId: media.lessonId,
-      mediaAssetId: media.mediaAssetId,
-      position: media.position,
-      mediaType: media.mediaType,
-      state: media.state,
-      media: media.media,
-    );
-  }
-
-  List<LessonMediaItem> _lessonMediaItemsFromStudioMedia(
-    Iterable<StudioLessonMediaItem> mediaItems,
-  ) {
-    return mediaItems
-        .map(_lessonMediaItemFromStudioMedia)
-        .toList(growable: false);
+    return <String, String>{
+      for (final media in _lessonMedia) media.lessonMediaId: media.mediaType,
+    };
   }
 
   bool _requiresAuthoritativeEditorReadiness(StudioLessonMediaItem media) {
@@ -3055,66 +2423,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _resetLessonPreviewHydrationValues(bumpRevision: true);
   }
 
-  String _serializeLessonMarkdownFromController(
-    quill.QuillController controller,
-  ) {
-    return editor_to_markdown
-        .serializeEditorDeltaToCanonicalMarkdown(
-          delta: controller.document.toDelta(),
-        )
-        .markdown;
-  }
-
-  Set<String> _embeddedLessonMediaIdsFromController(
-    quill.QuillController controller,
-  ) {
+  Set<String> _embeddedLessonMediaIdsFromDocument(LessonDocument document) {
     final ids = <String>{};
-    for (final operation in controller.document.toDelta().toList()) {
-      if (!operation.isInsert) {
-        continue;
-      }
-      final value = operation.value;
-      if (value is quill.Embeddable) {
-        final lessonMediaId = lesson_pipeline.lessonMediaIdFromEmbedValue(
-          value.data,
-        );
-        if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
-          ids.add(lessonMediaId);
-        }
-        continue;
-      }
-      if (value is! String) continue;
-      final attributes = operation.attributes;
-      if (attributes == null) continue;
-      final rawLink = attributes[quill.Attribute.link.key];
-      if (rawLink is! String) continue;
-      final lessonMediaId = lesson_pipeline.lessonMediaIdFromDocumentLinkUrl(
-        rawLink,
-      );
-      if (lessonMediaId != null && lessonMediaId.isNotEmpty) {
-        ids.add(lessonMediaId);
+    for (final block in document.blocks) {
+      if (block is LessonMediaBlock && block.lessonMediaId.isNotEmpty) {
+        ids.add(block.lessonMediaId);
       }
     }
-
     return ids;
   }
 
   Set<String> _currentLessonEmbeddedMediaIds() {
-    if (_lessonContentControllerInitialized) {
-      return _embeddedLessonMediaIdsFromController(_lessonContentController);
-    }
-    return lesson_pipeline.extractLessonEmbeddedMediaIds(
-      _lastSavedLessonMarkdown,
-    );
+    return _embeddedLessonMediaIdsFromDocument(_lessonDocument);
   }
 
   bool _lessonAlreadyContainsMediaId(String lessonMediaId) {
     if (lessonMediaId.isEmpty) return false;
     return _currentLessonEmbeddedMediaIds().contains(lessonMediaId);
-  }
-
-  Future<void> _launchLessonPreviewUrl(String url) async {
-    await _launchLessonEditorUrl(url);
   }
 
   String? _canonicalLessonMediaUrl(StudioLessonMediaItem media) {
@@ -3123,20 +2448,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return null;
     }
     return resolvedUrl;
-  }
-
-  Future<String?> _resolveLessonMediaDeliveryUrl(String lessonMediaId) async {
-    if (lessonMediaId.isEmpty) {
-      return null;
-    }
-
-    for (final media in _lessonMedia) {
-      if (media.lessonMediaId != lessonMediaId) {
-        continue;
-      }
-      return _canonicalLessonMediaUrl(media);
-    }
-    return null;
   }
 
   Future<String?> _resolveLessonMediaDeliveryUrlForMedia(
@@ -3152,45 +2463,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         .read(lessonMediaPreviewCacheProvider)
         .getSettledOrFetch(media.lessonMediaId);
     return preview?.visualUrl;
-  }
-
-  Future<String?> _resolveLessonEditorLaunchUrl(String rawUrl) async {
-    final lessonMediaId = lesson_pipeline.lessonMediaIdFromDocumentLinkUrl(
-      rawUrl,
-    );
-    if (lessonMediaId == null || lessonMediaId.isEmpty) {
-      final uri = Uri.tryParse(rawUrl);
-      if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-        return null;
-      }
-      if (uri.scheme != 'http' && uri.scheme != 'https') {
-        return null;
-      }
-      return uri.toString();
-    }
-
-    return _resolveLessonMediaDeliveryUrl(lessonMediaId);
-  }
-
-  Future<void> _launchLessonEditorUrl(String url) async {
-    final rawUrl = url;
-    if (rawUrl.isEmpty) return;
-
-    final resolved = await _resolveLessonEditorLaunchUrl(rawUrl);
-    if (resolved == null) {
-      if (mounted && context.mounted) {
-        showSnack(context, 'Kunde inte öppna länken.');
-      }
-      return;
-    }
-
-    final opened = await launchUrlString(
-      resolved,
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && mounted && context.mounted) {
-      showSnack(context, 'Kunde inte öppna länken.');
-    }
   }
 
   String _visibleLessonTextForLog(String value) {
@@ -3220,7 +2492,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   Future<void> _finishLessonDocumentBoot({
     required String lessonId,
     required int requestId,
-    required String storedMarkdown,
+    required LessonDocument storedDocument,
     required String storedTitle,
     required String contentEtag,
   }) async {
@@ -3236,7 +2508,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return;
     }
-    final hydration = _hydrateLessonMarkdownForEditor(storedMarkdown);
     if (!mounted ||
         _isStaleRequest(
           requestId: requestId,
@@ -3246,18 +2517,18 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         )) {
       return;
     }
-    final prepared = hydration.editorMarkdown;
-    final initialHydrationIds = hydration.embeddedMediaIds;
-    final document = hydration.document;
+    final initialHydrationIds = _embeddedLessonMediaIdsFromDocument(
+      storedDocument,
+    );
 
     if (kDebugMode) {
-      _traceLessonString('load.stored_markdown', storedMarkdown);
-      _traceLessonString('load.prepared_markdown', prepared);
-      _traceLessonString('load.document_plain_text', document.toPlainText());
+      _traceLessonString(
+        'load.stored_document',
+        storedDocument.toCanonicalJsonString(),
+      );
     }
 
     _setLessonTitleFieldValue(storedTitle);
-    _replaceLessonDocument(document);
     if (!mounted ||
         _isStaleRequest(
           requestId: requestId,
@@ -3271,7 +2542,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _documentReadyLessonId = lessonId;
       _documentReadyRequestId = requestId;
       _lessonContentHydratedLessonId = lessonId;
-      _lastSavedLessonMarkdown = storedMarkdown;
+      _lessonDocument = storedDocument;
+      _lastSavedLessonDocument = storedDocument;
       _lastSavedLessonTitle = storedTitle;
       _lastSavedLessonContentEtag = normalizedEtag;
       _lessonContentLoadError = null;
@@ -3379,7 +2651,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     await _finishLessonDocumentBoot(
       lessonId: lessonId,
       requestId: requestId,
-      storedMarkdown: content.contentMarkdown,
+      storedDocument: content.contentDocument,
       storedTitle: storedTitle,
       contentEtag: content.etag,
     );
@@ -3429,7 +2701,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     await _finishLessonDocumentBoot(
       lessonId: lessonId,
       requestId: requestId,
-      storedMarkdown: _lastSavedLessonMarkdown,
+      storedDocument: _lastSavedLessonDocument,
       storedTitle: _lastSavedLessonTitle,
       contentEtag: contentEtag,
     );
@@ -3468,93 +2740,33 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final title = _lessonTitleCtrl.text.trim().isEmpty
         ? 'Lektion'
         : _lessonTitleCtrl.text.trim();
-    final uiPlainText = _lessonContentController.document.toPlainText();
-    final serialization = editor_to_markdown
-        .serializeEditorDeltaToCanonicalMarkdown(
-          delta: _lessonContentController.document.toDelta(),
-        );
-    final normalizedDelta = serialization.normalizedDelta;
-    final markdown = serialization.markdown;
-    final lessonMediaDocumentLabelsById =
-        _lessonMediaDocumentLabelsByIdForSelectedLesson();
-    late final String rawMarkdown;
-    late final LessonMarkdownIntegrityGuardResult integrityResult;
+    late final LessonDocument contentDocument;
     try {
-      integrityResult = validateLessonMarkdownIntegrity(
-        delta: normalizedDelta,
-        lessonMediaDocumentLabelsById: lessonMediaDocumentLabelsById,
+      contentDocument = _lessonDocument.validate(
+        mediaTypesByLessonMediaId: _lessonMediaTypesByIdForSelectedLesson(),
       );
-      rawMarkdown = integrityResult.originalMarkdown;
     } catch (error, stackTrace) {
       _showFriendlyErrorSnack('Kunde inte spara lektion', error, stackTrace);
       return false;
     }
 
-    if (integrityResult.ok &&
-        (integrityResult.originalMarkdown != markdown ||
-            integrityResult.canonicalMarkdown != markdown)) {
-      if (kDebugMode) {
-        debugPrint(
-          '[LessonIntegrity] save_blocked reason=adapter_boundary_mismatch',
-        );
-        _traceLessonString('save.boundary.serialization_markdown', markdown);
-        _traceLessonString(
-          'save.guard.original_markdown',
-          integrityResult.originalMarkdown,
-        );
-        _traceLessonString(
-          'save.guard.canonical_markdown',
-          integrityResult.canonicalMarkdown,
-        );
-      }
-      if (mounted && context.mounted) {
-        showSnack(context, _lessonMarkdownIntegritySaveError);
-      }
-      return false;
-    }
-
-    if (!integrityResult.ok) {
-      if (kDebugMode) {
-        debugPrint(
-          '[LessonIntegrity] save_blocked '
-          'reason=${integrityResult.failureReason?.name ?? 'unknown'}',
-        );
-        _traceLessonString(
-          'save.guard.original_markdown',
-          integrityResult.originalMarkdown,
-        );
-        _traceLessonString(
-          'save.guard.canonical_markdown',
-          integrityResult.canonicalMarkdown,
-        );
-      }
-      if (mounted && context.mounted) {
-        showSnack(context, _lessonMarkdownIntegritySaveError);
-      }
-      return false;
-    }
+    final contentJson = contentDocument.toCanonicalJsonString();
+    final lastSavedJson = _lastSavedLessonDocument.toCanonicalJsonString();
 
     if (kDebugMode) {
       debugPrint(
         '[LessonTrace] save.trigger=${showSuccessSnack ? 'manual' : 'auto'} '
         'dirty=$_lessonContentDirty saving=$_lessonContentSaving',
       );
-      _traceLessonString('ui.plain_text', uiPlainText);
-      _traceLessonString('save.payload.content_markdown', markdown);
-      _traceLessonString('save.payload.raw_markdown', rawMarkdown);
-      _traceLessonString('state.last_saved_markdown', _lastSavedLessonMarkdown);
+      _traceLessonString('save.payload.content_document', contentJson);
+      _traceLessonString('state.last_saved_document', lastSavedJson);
       debugPrint(
         '[LessonTrace] compare.payload_vs_last_saved '
-        'equal=${markdown == _lastSavedLessonMarkdown}',
+        'equal=${contentJson == lastSavedJson}',
       );
       debugPrint(
         '[LessonEditor] saving lesson=$lessonId course=$courseId '
-        'delta_ops=${_lessonContentController.document.toDelta().length} '
-        'rawMarkdownLen=${rawMarkdown.length} normalizedLen=${markdown.length}',
-      );
-      debugPrint(
-        '[LessonEditor] payload.content_markdown (normalized) preview: '
-        '${markdown.length > 400 ? '${markdown.substring(0, 400)}…' : markdown}',
+        'contentDocumentLen=${contentJson.length}',
       );
     }
 
@@ -3562,10 +2774,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final token = _captureEditorToken();
     try {
       StudioLessonContentWriteResult? updatedContent;
-      if (markdown != _lastSavedLessonMarkdown) {
+      if (contentJson != lastSavedJson) {
         updatedContent = await _studioRepo.updateLessonContent(
           lessonId,
-          contentMarkdown: markdown,
+          contentDocument: contentDocument,
           ifMatch: contentEtag,
         );
       }
@@ -3582,7 +2794,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             .map((lesson) => lesson.id == lessonId ? updatedStructure : lesson)
             .toList();
         if (updatedContent != null) {
-          _lastSavedLessonMarkdown = updatedContent.contentMarkdown;
+          _lessonDocument = updatedContent.contentDocument;
+          _lastSavedLessonDocument = updatedContent.contentDocument;
         }
         _lastSavedLessonTitle = title;
         if (updatedContent != null) {
@@ -3646,10 +2859,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (!_requireEditModeForMutation()) {
       return;
     }
-    final controller = _lessonContentController;
-
     final labelController = TextEditingController(text: 'Boka nu');
-    final urlController = TextEditingController(text: 'aveliapp://');
+    final urlController = TextEditingController(text: '/');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -3671,7 +2882,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               controller: urlController,
               decoration: const InputDecoration(
                 labelText: 'Deeplink',
-                hintText: 'aveliapp://checkout?service_id=...',
+                hintText: 'https://example.com/boka eller /boka',
               ),
             ),
           ],
@@ -3710,30 +2921,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
 
-    final selection = controller.selection;
-    final baseOffset = selection.start;
-    final extentOffset = selection.end;
-    final length = extentOffset - baseOffset;
-
-    _runEditorMutation((controller) {
-      _replaceEditorTextLocally(
-        controller,
-        index: baseOffset,
-        length: length,
-        data: label,
-        selection: TextSelection.collapsed(offset: baseOffset + label.length),
+    setState(() {
+      _lessonDocument = _lessonDocument.insertCta(
+        _lessonDocument.blocks.length,
+        label: label,
+        targetUrl: url,
       );
-      _formatEditorRangeSelection(
-        controller,
-        start: baseOffset,
-        length: label.length,
-        attribute: quill.LinkAttribute(url),
-      );
-      _setEditorSelectionLocally(
-        controller,
-        selection: TextSelection.collapsed(offset: baseOffset + label.length),
-      );
-    }, requestFocus: true);
+    });
+    _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
   }
 
   Widget _buildLessonContentEditor(
@@ -3741,8 +2936,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     bool expandEditor = false,
     double editorHeight = 320,
   }) {
-    final controller = _lessonContentController;
-
     final hasVideo = _lessonMedia.any((media) => media.mediaType == 'video');
     final hasAudio = _lessonMedia.any((media) => media.mediaType == 'audio');
 
@@ -3769,130 +2962,23 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final canInsertLessonMedia =
         _selectedCourseId != null && _selectedLessonId != null;
 
-    final toolbarConfig = quill.QuillSimpleToolbarConfig(
-      multiRowsDisplay: false,
-      showDividers: false,
-      showFontFamily: false,
-      showFontSize: false,
-      showBoldButton: true,
-      showItalicButton: true,
-      showUnderLineButton: true,
-      showStrikeThrough: false,
-      showColorButton: false,
-      showBackgroundColorButton: false,
-      showClearFormat: true,
-      showHeaderStyle: true,
-      showListNumbers: true,
-      showListBullets: true,
-      showListCheck: false,
-      showCodeBlock: false,
-      showQuote: false,
-      showIndent: false,
-      showLink: false,
-      showUndo: true,
-      showRedo: true,
-      showSubscript: false,
-      showSuperscript: false,
-      showSmallButton: false,
-      showInlineCode: false,
-      showClipboardCopy: false,
-      showClipboardPaste: false,
-      showClipboardCut: false,
-      showSearchButton: false,
-      buttonOptions: quill.QuillSimpleToolbarButtonOptions(
-        bold: quill.QuillToolbarToggleStyleButtonOptions(
-          afterButtonPressed: _handleInlineFormatToolbarPressed,
-        ),
-        italic: quill.QuillToolbarToggleStyleButtonOptions(
-          afterButtonPressed: _handleInlineFormatToolbarPressed,
-        ),
-        fontFamily: const quill.QuillToolbarFontFamilyButtonOptions(
-          items: _editorFontOptions,
-          renderFontFamilies: true,
-          overrideTooltipByFontFamily: true,
-          defaultDisplayText: 'Typsnitt',
+    _scheduleLessonEditorTestIdSync();
+    final editorSurface = Container(
+      key: const ValueKey<String>('lesson_editor_live_surface'),
+      child: _wrapLessonEditorForWebTestIds(
+        LessonDocumentEditor(
+          key: const ValueKey<String>(_lessonEditorTestId),
+          document: _lessonDocument,
+          enabled: !_lessonPreviewMode && _isSelectedLessonDocumentReady(),
+          minHeight: 280,
+          onChanged: (document) {
+            setState(() {
+              _lessonDocument = document;
+            });
+            _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
+          },
         ),
       ),
-      customButtons: [
-        quill.QuillToolbarCustomButtonOptions(
-          icon: const Icon(Icons.picture_as_pdf_outlined),
-          tooltip: 'Ladda upp dokument (PDF)',
-          onPressed: () => _handleMediaToolbarUpload(_UploadKind.pdf),
-        ),
-        quill.QuillToolbarCustomButtonOptions(
-          icon: const Icon(Icons.auto_fix_high_rounded),
-          tooltip: 'Infoga magic-link-knapp',
-          onPressed: _insertMagicLink,
-        ),
-      ],
-    );
-
-    _scheduleLessonEditorTestIdSync();
-    final editorSurface = Stack(
-      children: [
-        Container(
-          key: const ValueKey<String>('lesson_editor_live_surface'),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.black.withValues(alpha: 0.10)),
-            color: Colors.white.withValues(alpha: 0.92),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              key: const ValueKey<String>(_lessonEditorTestId),
-              child: _wrapLessonEditorForWebTestIds(
-                KeyedSubtree(
-                  key: ValueKey<int>(_controllerIdentity(controller)),
-                  child: RepaintBoundary(
-                    child: quill.QuillEditor.basic(
-                      controller: controller,
-                      focusNode: _lessonContentFocusNode,
-                      scrollController: _lessonEditorScrollController,
-                      config: quill.QuillEditorConfig(
-                        minHeight: 280,
-                        padding: const EdgeInsets.all(16),
-                        placeholder:
-                            'Skriv eller klistra in lektionsinnehåll...',
-                        onKeyPressed: _handleLessonEditorKeyPressed,
-                        onLaunchUrl: (url) =>
-                            unawaited(_launchLessonEditorUrl(url)),
-                        embedBuilders: [
-                          ...FlutterQuillEmbeds.defaultEditorBuilders().where(
-                            (builder) =>
-                                builder.key != quill.BlockEmbed.videoType &&
-                                builder.key != quill.BlockEmbed.imageType,
-                          ),
-                          _ImageEmbedBuilder(
-                            hydrationListenable: _previewHydrationController,
-                          ),
-                          _VideoEmbedBuilder(
-                            hydrationListenable: _previewHydrationController,
-                          ),
-                          _AudioEmbedBuilder(
-                            hydrationListenable: _previewHydrationController,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (kEditorDebug)
-          Positioned(
-            top: 12,
-            right: 12,
-            child: EditorDebugOverlay(
-              sessionId: _editorSession.sessionId,
-              controllerIdentity: _controllerIdentity(controller),
-              hasFocus: _lessonContentFocusNode.hasFocus,
-              selection: controller.selection,
-            ),
-          ),
-      ],
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3909,14 +2995,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           Wrap(spacing: 8, runSpacing: 4, children: badges),
         ],
         _buildPreviewHydrationBanner(context),
-        gap12,
-        TooltipVisibility(
-          visible: false,
-          child: quill.QuillSimpleToolbar(
-            controller: controller,
-            config: toolbarConfig,
-          ),
-        ),
         gap12,
         Wrap(
           spacing: 8,
@@ -3954,6 +3032,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               ),
               icon: const Icon(Icons.picture_as_pdf_outlined),
               label: const Text('Infoga PDF'),
+            ),
+            OutlinedButton.icon(
+              key: const Key('editor_insert_cta'),
+              onPressed: canInsertLessonMedia ? _insertMagicLink : null,
+              icon: const Icon(Icons.auto_fix_high_rounded),
+              label: const Text('Infoga CTA'),
             ),
           ],
         ),
@@ -4226,10 +3310,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final previewCoverUrl = (_courseCoverPath?.trim().isNotEmpty ?? false)
         ? _courseCoverPath!.trim()
         : null;
-    final previewMedia = _lessonMediaLessonId == _selectedLessonId
-        ? _lessonMediaItemsFromStudioMedia(_lessonMedia)
-        : const <LessonMediaItem>[];
-    final previewMarkdown = _lessonPreviewMarkdown;
+    final previewDocument = _lessonPreviewDocument;
+    final previewMedia = _lessonPreviewMedia;
     final previewError = _lessonPreviewError;
 
     return Column(
@@ -4243,7 +3325,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ),
         gap6,
         Text(
-          'Skrivskyddad förhandsgranskning med samma renderingspipeline som elevvyn.',
+          'Skrivskyddad förhandsgranskning av sparad dokumentmodell.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -4280,7 +3362,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         Expanded(
           child: _lessonPreviewLoading
               ? const Center(child: CircularProgressIndicator())
-              : previewMarkdown == null
+              : previewDocument == null
               ? Center(
                   child: Text(
                     previewError ??
@@ -4295,11 +3377,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                 )
               : SingleChildScrollView(
                   padding: EdgeInsets.zero,
-                  child: LearnerLessonContentRenderer(
-                    markdown: previewMarkdown,
-                    lessonMedia: previewMedia,
-                    onLaunchUrl: (url) =>
-                        unawaited(_launchLessonPreviewUrl(url)),
+                  child: LessonDocumentPreview(
+                    document: previewDocument,
+                    media: previewMedia,
                   ),
                 ),
         ),
@@ -4955,9 +4035,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (!_requireEditModeForMutation()) {
       return;
     }
-    // Remember cursor position before we open pickers and start uploads,
-    // so auto-insert can happen where the user intended.
-    _snapshotLessonSelection();
     if (_selectedCourseId == null || _selectedLessonId == null) {
       showSnack(context, 'Välj kurs och lektion innan du laddar upp media.');
       return;
@@ -5118,8 +4195,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
     final token = _captureEditorToken();
-    _snapshotLessonSelection();
-    final selectionBeforePicker = _lastLessonSelection;
     const extensions = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
 
     Future<StudioLessonMediaItem> uploadImage(
@@ -5176,7 +4251,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         );
         final inserted = _insertImageIntoLesson(
           lessonMediaId: media.lessonMediaId,
-          targetSelection: selectionBeforePicker,
         );
         if (!inserted) {
           setState(
@@ -5262,10 +4336,22 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
-  bool _insertImageIntoLesson({
-    String? lessonMediaId,
-    TextSelection? targetSelection,
+  void _insertMediaBlockIntoDocument({
+    required String mediaType,
+    required String lessonMediaId,
   }) {
+    final nextDocument = _lessonDocument.insertMedia(
+      _lessonDocument.blocks.length,
+      mediaType: mediaType,
+      lessonMediaId: lessonMediaId,
+    );
+    setState(() {
+      _lessonDocument = nextDocument;
+    });
+    _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
+  }
+
+  bool _insertImageIntoLesson({String? lessonMediaId}) {
     if (!_requireEditModeForMutation()) {
       return false;
     }
@@ -5281,157 +4367,43 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return false;
     }
-    _runEditorMutation((controller) {
-      replaceSelectionWithBlockEmbed(
-        controller: controller,
-        embed: quill.BlockEmbed.image(
-          lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
-            lessonMediaId: lessonMediaId,
-          ),
-        ),
-        selection: targetSelection ?? controller.selection,
-      );
-    }, requestFocus: true);
+    _insertMediaBlockIntoDocument(
+      mediaType: 'image',
+      lessonMediaId: lessonMediaId,
+    );
     return true;
   }
 
-  void _insertVideoIntoLesson(
-    String embedValue, {
-    TextSelection? targetSelection,
-  }) {
+  void _insertVideoIntoLesson({required String lessonMediaId}) {
     if (!_requireEditModeForMutation()) {
       return;
     }
-    _runEditorMutation((controller) {
-      replaceSelectionWithBlockEmbed(
-        controller: controller,
-        embed: quill.BlockEmbed.video(embedValue),
-        selection: targetSelection ?? controller.selection,
-      );
-    }, requestFocus: true);
-  }
-
-  void _insertAudioIntoLesson(
-    lesson_pipeline.AudioBlockEmbed embed, {
-    TextSelection? targetSelection,
-  }) {
-    if (!_requireEditModeForMutation()) {
-      return;
-    }
-    _runEditorMutation((controller) {
-      replaceSelectionWithBlockEmbed(
-        controller: controller,
-        embed: embed,
-        selection: targetSelection ?? controller.selection,
-      );
-    }, requestFocus: true);
-  }
-
-  KeyEventResult? _handleLessonEditorKeyPressed(
-    KeyEvent event,
-    quill.Node? node,
-  ) {
-    if (event is! KeyDownEvent) return null;
-
-    final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.backspace) {
-      final handled = _removePdfLinkLineAroundSelection(forward: false);
-      return handled ? KeyEventResult.handled : null;
-    }
-    if (key == LogicalKeyboardKey.delete) {
-      final handled = _removePdfLinkLineAroundSelection(forward: true);
-      return handled ? KeyEventResult.handled : null;
-    }
-    return null;
-  }
-
-  bool _removePdfLinkLineAroundSelection({required bool forward}) {
-    final controller = _lessonContentController;
-
-    final selection = controller.selection;
-    if (!selection.isCollapsed || selection.baseOffset < 0) return false;
-
-    final plainText = controller.document.toPlainText();
-    final range = findPdfLinkDeletionRange(
-      plainText: plainText,
-      cursorOffset: selection.baseOffset,
-      forward: forward,
+    if (lessonMediaId.isEmpty) return;
+    _insertMediaBlockIntoDocument(
+      mediaType: 'video',
+      lessonMediaId: lessonMediaId,
     );
-    if (range == null || range.isCollapsed) return false;
-
-    _runEditorMutation((controller) {
-      _replaceEditorTextLocally(
-        controller,
-        index: range.start,
-        length: range.end - range.start,
-        data: '',
-        selection: TextSelection.collapsed(offset: range.start),
-      );
-      _setEditorSelectionLocally(
-        controller,
-        selection: TextSelection.collapsed(
-          offset: _clampEditorOffset(range.start),
-        ),
-      );
-    });
-    return true;
   }
 
-  void _insertDocumentLinkIntoLesson({
-    required String lessonMediaId,
-    required String fileName,
-    TextSelection? targetSelection,
-  }) {
+  void _insertAudioIntoLesson({required String lessonMediaId}) {
     if (!_requireEditModeForMutation()) {
       return;
     }
-    final controller = _lessonContentController;
-
-    final label = '📄 $fileName';
-    final selection = resolveQuillInsertionSelection(
-      controller,
-      targetSelection ?? controller.selection,
+    if (lessonMediaId.isEmpty) return;
+    _insertMediaBlockIntoDocument(
+      mediaType: 'audio',
+      lessonMediaId: lessonMediaId,
     );
+  }
 
-    final start = max(0, min(selection.start, selection.end));
-    final end = max(0, max(selection.start, selection.end));
-    final maxOffset = max(0, controller.document.length - 1);
-    final baseIndex = min(start, maxOffset);
-    final extentIndex = min(end, maxOffset);
-    final deleteLength = max(0, extentIndex - baseIndex);
-
-    _runEditorMutation((controller) {
-      _replaceEditorTextLocally(
-        controller,
-        index: baseIndex,
-        length: deleteLength,
-        data: label,
-        selection: TextSelection.collapsed(offset: baseIndex + label.length),
-      );
-      _formatEditorRangeSelection(
-        controller,
-        start: baseIndex,
-        length: label.length,
-        attribute: quill.LinkAttribute(
-          lesson_pipeline.lessonMediaDocumentLinkUrl(lessonMediaId),
-        ),
-      );
-      _replaceEditorTextLocally(
-        controller,
-        index: baseIndex + label.length,
-        length: 0,
-        data: '\n',
-        selection: TextSelection.collapsed(
-          offset: baseIndex + label.length + 1,
-        ),
-      );
-      _setEditorSelectionLocally(
-        controller,
-        selection: TextSelection.collapsed(
-          offset: baseIndex + label.length + 1,
-        ),
-      );
-    }, requestFocus: true);
+  void _insertDocumentIntoLesson({required String lessonMediaId}) {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
+    _insertMediaBlockIntoDocument(
+      mediaType: 'document',
+      lessonMediaId: lessonMediaId,
+    );
   }
 
   bool _insertMediaIntoLesson(
@@ -5476,12 +4448,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     debugPrint(
       '[CourseEditor] insert media kind=$kind lessonMediaId=$lessonMediaId',
     );
-    _snapshotLessonSelection();
     if (_isImageMedia(media) || kind == 'image') {
-      final inserted = _insertImageIntoLesson(
-        lessonMediaId: lessonMediaId,
-        targetSelection: _lastLessonSelection,
-      );
+      final inserted = _insertImageIntoLesson(lessonMediaId: lessonMediaId);
       if (!inserted) {
         return false;
       }
@@ -5496,12 +4464,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return true;
     }
     if (_isDocumentMedia(media)) {
-      final fileName = _fileNameFromMedia(media);
-      _insertDocumentLinkIntoLesson(
-        lessonMediaId: lessonMediaId,
-        fileName: fileName,
-        targetSelection: _lastLessonSelection,
-      );
+      _insertDocumentIntoLesson(lessonMediaId: lessonMediaId);
       if (mounted && context.mounted) {
         showSnack(
           context,
@@ -5513,12 +4476,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return true;
     }
     if (_isVideoMedia(media)) {
-      final videoEmbedValue = lesson_pipeline
-          .videoBlockEmbedValueFromLessonMedia(lessonMediaId: lessonMediaId);
-      _insertVideoIntoLesson(
-        videoEmbedValue,
-        targetSelection: _lastLessonSelection,
-      );
+      _insertVideoIntoLesson(lessonMediaId: lessonMediaId);
       if (mounted && context.mounted) {
         showSnack(
           context,
@@ -5529,11 +4487,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       return true;
     }
-    // Audio: inline player embed
-    final audioEmbed = lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
-      lessonMediaId: lessonMediaId,
-    );
-    _insertAudioIntoLesson(audioEmbed, targetSelection: _lastLessonSelection);
+    _insertAudioIntoLesson(lessonMediaId: lessonMediaId);
     if (mounted && context.mounted) {
       showSnack(
         context,
@@ -6443,37 +5397,29 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (fromId.isEmpty || toId.isEmpty) return false;
 
     var contentChanged = false;
-    _runEditorMutation((controller) {
-      contentChanged = replaceLessonMediaEmbedsInPlace(
-        controller: controller,
-        fromLessonMediaId: fromId,
-        toLessonMediaId: toId,
-        replacementBuilder: (embed, _) {
-          switch (embed.value.type) {
-            case lesson_pipeline.AudioBlockEmbed.embedType:
-              return lesson_pipeline.AudioBlockEmbed.fromLessonMedia(
-                lessonMediaId: toId,
-              );
-            case quill.BlockEmbed.videoType:
-              return quill.BlockEmbed.video(
-                lesson_pipeline.videoBlockEmbedValueFromLessonMedia(
-                  lessonMediaId: toId,
-                ),
-              );
-            case quill.BlockEmbed.imageType:
-              return quill.BlockEmbed.image(
-                lesson_pipeline.imageBlockEmbedValueFromLessonMedia(
-                  lessonMediaId: toId,
-                ),
-              );
-            default:
-              return null;
-          }
-        },
-      );
-    }, requestFocus: true);
+    final nextBlocks = <LessonBlock>[];
+    for (final block in _lessonDocument.blocks) {
+      if (block is LessonMediaBlock && block.lessonMediaId == fromId) {
+        nextBlocks.add(
+          LessonMediaBlock(
+            id: block.id,
+            mediaType: replacementMedia.mediaType,
+            lessonMediaId: toId,
+          ),
+        );
+        contentChanged = true;
+      } else {
+        nextBlocks.add(block);
+      }
+    }
     if (!contentChanged) return false;
 
+    setState(() {
+      _lessonDocument = LessonDocument(
+        blocks: List<LessonBlock>.unmodifiable(nextBlocks),
+      );
+    });
+    _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
     _resetLessonPreviewHydrationValues(bumpRevision: true);
     return true;
   }
@@ -7984,22 +6930,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
 
     final canManageFamily = !_lessonPreviewMode && !_updatingCourseFamily;
-    final familyChips = [
-      for (final family in availableFamilies)
-        ChoiceChip(
-          key: ValueKey<String>('course_family_chip-${family.id}'),
-          label: Text(
-            family.courseCount == 1
-                ? family.name
-                : '${family.name} · ${family.courseCount} kurser',
-          ),
-          selected: managedFamily?.id == family.id,
-          selectedColor: theme.colorScheme.primary.withValues(alpha: 0.14),
-          onSelected: canManageFamily
-              ? (_) => setState(() => _managedCourseFamilyId = family.id)
-              : null,
-        ),
-    ];
     final managedFamilyItems = <DropdownMenuItem<String>>[
       for (final family in availableFamilies)
         DropdownMenuItem<String>(

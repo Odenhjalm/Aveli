@@ -202,7 +202,10 @@ class _Harness {
           statusCode: 200,
           body: {
             'lesson_id': 'lesson-1',
-            'content_markdown': 'Persisted content',
+            'content_document': {
+              'schema_version': 'lesson_document_v1',
+              'blocks': <Object?>[],
+            },
             'media': [
               {
                 'lesson_media_id': 'lesson-media-2',

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
-from uuid import uuid4
 from typing import Any, Sequence
+from uuid import uuid4
 
 from psycopg import Error as PsycopgError
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from ..db import get_conn, pool
 
@@ -13,6 +14,9 @@ from ..db import get_conn, pool
 CourseRow = dict[str, Any]
 LessonRow = dict[str, Any]
 logger = logging.getLogger(__name__)
+_EMPTY_LESSON_DOCUMENT_SQL = (
+    """'{"schema_version":"lesson_document_v1","blocks":[]}'::jsonb"""
+)
 
 _COURSE_COLUMNS = """
     c.id,
@@ -141,7 +145,13 @@ async def _acquire_course_family_locks(
     active_conn: Any,
     course_group_ids: Sequence[str],
 ) -> None:
-    normalized_ids = sorted({str(course_group_id).strip() for course_group_id in course_group_ids if str(course_group_id).strip()})
+    normalized_ids = sorted(
+        {
+            str(course_group_id).strip()
+            for course_group_id in course_group_ids
+            if str(course_group_id).strip()
+        }
+    )
     for course_group_id in normalized_ids:
         await _acquire_course_transition_lock(
             active_conn,
@@ -883,7 +893,9 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
                         payload.get("price_amount_cents"),
                         payload["drip_enabled"],
                         payload["drip_interval_days"],
-                        str(payload["cover_media_id"]) if payload.get("cover_media_id") else None,
+                        str(payload["cover_media_id"])
+                        if payload.get("cover_media_id")
+                        else None,
                     ),
                 )
                 await cur.fetchone()
@@ -1166,7 +1178,9 @@ async def is_course_owner(course_id: str, teacher_id: str) -> bool:
             return await cur.fetchone() is not None
 
 
-async def list_course_ownership_rows(course_ids: Sequence[str]) -> Sequence[dict[str, Any]]:
+async def list_course_ownership_rows(
+    course_ids: Sequence[str],
+) -> Sequence[dict[str, Any]]:
     normalized_ids = [str(course_id or "").strip() for course_id in course_ids]
     exact_ids = [course_id for course_id in normalized_ids if course_id]
     if not exact_ids:
@@ -1274,6 +1288,7 @@ async def get_course_enrollment(
           and ce.course_id = %s
         limit 1
     """
+
     async def _execute(active_conn: Any) -> dict[str, Any] | None:
         async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (user_id, course_id))
@@ -1325,7 +1340,7 @@ async def get_lesson_content_surface_rows(
                 lcs.course_id,
                 lcs.lesson_title,
                 lcs.position,
-                lcs.content_markdown,
+                lcs.content_document,
                 lm.id as lesson_media_id,
                 lm.media_asset_id,
                 lm.position as lesson_media_position
@@ -1528,14 +1543,17 @@ async def replace_course_drip_authoring(
 
 
 async def list_course_publish_lessons(course_id: str) -> Sequence[dict[str, Any]]:
-    query = """
+    query = f"""
         select
             l.id,
             l.course_id,
             l.lesson_title,
             l.position,
-            lc.lesson_id is not null as has_content,
-            lc.content_markdown
+            lc.content_document is not null as has_content,
+            coalesce(
+                lc.content_document,
+                {_EMPTY_LESSON_DOCUMENT_SQL}
+            ) as content_document
         from app.lessons as l
         left join app.lesson_contents as lc
           on lc.lesson_id = l.id
@@ -1605,11 +1623,14 @@ async def get_lesson_structure(lesson_id: str) -> LessonRow | None:
 
 
 async def get_studio_lesson_content(lesson_id: str) -> dict[str, Any] | None:
-    query = """
+    query = f"""
         select
             l.id as lesson_id,
             l.course_id,
-            coalesce(lc.content_markdown, '') as content_markdown
+            coalesce(
+                lc.content_document,
+                {_EMPTY_LESSON_DOCUMENT_SQL}
+            ) as content_document
         from app.lessons as l
         left join app.lesson_contents as lc
           on lc.lesson_id = l.id
@@ -1620,6 +1641,70 @@ async def get_studio_lesson_content(lesson_id: str) -> dict[str, Any] | None:
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (lesson_id,))
             row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def update_lesson_document_if_current(
+    lesson_id: str,
+    content_document: dict[str, Any],
+    *,
+    expected_content_document: dict[str, Any],
+) -> dict[str, Any] | None:
+    query = f"""
+        with target_lesson as (
+            select id
+            from app.lessons
+            where id = %s::uuid
+        ),
+        current_content as (
+            select content_document, content_markdown
+            from app.lesson_contents
+            where lesson_id = %s::uuid
+        ),
+        updated_content as (
+            insert into app.lesson_contents (
+                lesson_id,
+                content_document,
+                content_markdown
+            )
+            select
+                target_lesson.id,
+                %s,
+                coalesce(
+                    (select current_content.content_markdown from current_content),
+                    ''
+                )
+            from target_lesson
+            where coalesce(
+                (select current_content.content_document from current_content),
+                {_EMPTY_LESSON_DOCUMENT_SQL}
+            ) = %s
+            on conflict (lesson_id)
+            do update set content_document = excluded.content_document
+            where coalesce(
+                app.lesson_contents.content_document,
+                {_EMPTY_LESSON_DOCUMENT_SQL}
+            ) = %s
+            returning lesson_id, content_document
+        )
+        select lesson_id, content_document
+        from updated_content
+        limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                query,
+                (
+                    lesson_id,
+                    lesson_id,
+                    Jsonb(content_document),
+                    Jsonb(expected_content_document),
+                    Jsonb(expected_content_document),
+                ),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
     return dict(row) if row else None
 
 
@@ -1888,11 +1973,7 @@ async def reorder_lesson_media(
                 (lesson_id,),
             )
             rows = await cur.fetchall()
-            existing_ids = [
-                str(row["id"])
-                for row in rows
-                if row.get("id") is not None
-            ]
+            existing_ids = [str(row["id"]) for row in rows if row.get("id") is not None]
             if set(existing_ids) != set(ordered_lesson_media_ids):
                 raise ValueError(
                     "Reorder payload must include every lesson media row exactly once"

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
@@ -20,14 +21,6 @@ String _requiredResponseString(Object? payload, String key, String label) {
     return value;
   }
   throw StateError('$label field "$key" must be a non-empty string');
-}
-
-String _requiredResponseStringValue(Object? payload, String key, String label) {
-  final value = _requireResponseField(payload, key, label);
-  if (value is String) {
-    return value;
-  }
-  throw StateError('$label field "$key" must be a string');
 }
 
 String? _nullableResponseString(Object? payload, String key, String label) {
@@ -654,6 +647,7 @@ class LessonStudio {
   }) {
     _rejectResponseFields(payload, const [
       'content_markdown',
+      'content_document',
       'media',
       'etag',
     ], label);
@@ -731,14 +725,14 @@ class StudioLessonContentMediaItem {
 class StudioLessonContentRead {
   StudioLessonContentRead({
     required this.lessonId,
-    required this.contentMarkdown,
+    required this.contentDocument,
     required List<StudioLessonContentMediaItem> media,
     required String etag,
   }) : media = List<StudioLessonContentMediaItem>.unmodifiable(media),
        etag = _requireTransportEtag(etag, 'StudioLessonContentRead');
 
   final String lessonId;
-  final String contentMarkdown;
+  final LessonDocument contentDocument;
   final List<StudioLessonContentMediaItem> media;
   final String etag;
 
@@ -752,10 +746,12 @@ class StudioLessonContentRead {
         'lesson_id',
         'StudioLessonContentRead',
       ),
-      contentMarkdown: _requiredResponseStringValue(
-        payload,
-        'content_markdown',
-        'StudioLessonContentRead',
+      contentDocument: LessonDocument.fromJson(
+        _requireResponseField(
+          payload,
+          'content_document',
+          'StudioLessonContentRead',
+        ),
       ),
       media: _requiredResponseList(
         payload,
@@ -771,12 +767,12 @@ class StudioLessonContentRead {
 class StudioLessonContentWriteResult {
   const StudioLessonContentWriteResult({
     required this.lessonId,
-    required this.contentMarkdown,
+    required this.contentDocument,
     required this.etag,
   });
 
   final String lessonId;
-  final String contentMarkdown;
+  final LessonDocument contentDocument;
   final String etag;
 
   factory StudioLessonContentWriteResult.fromResponse(
@@ -789,10 +785,12 @@ class StudioLessonContentWriteResult {
         'lesson_id',
         'StudioLessonContentWriteResult',
       ),
-      contentMarkdown: _requiredResponseStringValue(
-        payload,
-        'content_markdown',
-        'StudioLessonContentWriteResult',
+      contentDocument: LessonDocument.fromJson(
+        _requireResponseField(
+          payload,
+          'content_document',
+          'StudioLessonContentWriteResult',
+        ),
       ),
       etag: _requireTransportEtag(etag, 'StudioLessonContentWriteResult'),
     );

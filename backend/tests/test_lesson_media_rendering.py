@@ -16,6 +16,10 @@ COURSE_ID = "22222222-2222-2222-2222-222222222222"
 LESSON_ID = "33333333-3333-3333-3333-333333333333"
 LESSON_MEDIA_ID = "44444444-4444-4444-4444-444444444444"
 MEDIA_ASSET_ID = "55555555-5555-5555-5555-555555555555"
+LESSON_DOCUMENT = {
+    "schema_version": "lesson_document_v1",
+    "blocks": [{"type": "paragraph", "children": [{"text": "Lesson"}]}],
+}
 
 
 async def _allow_lesson_access(user_id: str, lesson_id: str):
@@ -63,7 +67,7 @@ async def test_lesson_detail_excludes_non_ready_media(monkeypatch):
                 "course_id": COURSE_ID,
                 "lesson_title": "Lesson",
                 "position": 1,
-                "content_markdown": "# Lesson",
+                "content_document": LESSON_DOCUMENT,
             },
             "media": [],
         }
@@ -102,7 +106,7 @@ async def test_lesson_detail_returns_ready_resolved_media(monkeypatch):
                 "course_id": COURSE_ID,
                 "lesson_title": "Lesson",
                 "position": 1,
-                "content_markdown": "# Lesson",
+                "content_document": LESSON_DOCUMENT,
             },
             "media": [
                 {
@@ -161,7 +165,7 @@ async def test_lesson_detail_rejects_malformed_protected_lesson(monkeypatch):
                 "course_id": COURSE_ID,
                 "lesson_title": None,
                 "position": 1,
-                "content_markdown": "# Lesson",
+                "content_document": LESSON_DOCUMENT,
             },
             "media": [],
         }
@@ -203,7 +207,7 @@ async def test_lesson_detail_rejects_malformed_structure_row(monkeypatch):
                 "course_id": COURSE_ID,
                 "lesson_title": "Lesson",
                 "position": 1,
-                "content_markdown": "# Lesson",
+                "content_document": LESSON_DOCUMENT,
             },
             "media": [],
         }

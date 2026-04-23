@@ -19,7 +19,6 @@ class ApiPaths {
   static const adminSettings = '/admin/settings';
   static const adminMediaHealth = '/admin/media/health';
 
-  static const mediaPreviews = '/api/lesson-media/previews';
   static const profileAvatarInit = '/api/media/profile-avatar/init';
   static const profileAvatarAttach = '/api/profile/avatar/attach';
 

@@ -1,0 +1,332 @@
+{
+  "input": {
+    "task": "Materialize deterministic task tree for the lesson editor rebuild",
+    "mode": "generate",
+    "scope": [
+      "Target truth is actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
+      "Current Quill and Markdown editor code is legacy evidence, not rebuild authority",
+      "No legacy data migration is in scope",
+      "The rebuilt editor must support formatting, headings, lists, media, CTA, persisted preview, and ETag concurrency"
+    ],
+    "contracts": [
+      "actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
+      "actual_truth/contracts/SYSTEM_LAWS.md",
+      "actual_truth/contracts/course_lesson_editor_contract.md",
+      "actual_truth/contracts/AVELI_COURSE_DOMAIN_SPEC.md",
+      "actual_truth/contracts/course_public_surface_contract.md",
+      "actual_truth/contracts/media_pipeline_contract.md",
+      "actual_truth/contracts/retrieval/retrieval_contract.md"
+    ],
+    "audits": [
+      "actual_truth/analysis/lesson_editor_rebuild_foundation/AUDIT_FOR_CONTRACT.md",
+      "actual_truth/analysis/lesson_editor_rebuild_foundation/CONTRACT_ALIGNMENT_AUDIT.md",
+      "actual_truth/analysis/lesson_editor_rebuild_foundation/CODE_DECISION_DIFF.md"
+    ]
+  },
+  "controller": {
+    "execution_mode": "full_chain",
+    "retrieval_contract": "actual_truth/contracts/retrieval/retrieval_contract.md",
+    "audit_cadence": "pre_task_and_post_task",
+    "stop_on_contract_contradiction": true,
+    "stop_on_unverified_output": true
+  },
+  "task_tree": [
+    {
+      "task_id": "LER-001",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "CONTRACT_ALIGNMENT",
+      "description": "Reconcile active contract text with the editor rebuild target by replacing Markdown-canonical editor law with lesson_document_v1 law and reclassifying Markdown fixtures as legacy compatibility.",
+      "depends_on": [],
+      "target_files": [
+        "actual_truth/contracts/course_lesson_editor_contract.md",
+        "actual_truth/contracts/AVELI_COURSE_DOMAIN_SPEC.md",
+        "actual_truth/contracts/course_public_surface_contract.md",
+        "actual_truth/contracts/lesson_supported_content_fixture_corpus.md",
+        "actual_truth/contracts/lesson_supported_content_fixture_corpus.json",
+        "backend/tests/test_lesson_supported_content_fixture_corpus.py"
+      ],
+      "retrieval_queries": [
+        "markdown canonical lesson content content_markdown course_lesson_editor_contract",
+        "AVELI_COURSE_DOMAIN_SPEC content model Markdown token system",
+        "course_public_surface_contract content_markdown learner lesson",
+        "lesson_supported_content_fixture_corpus markdown fixtures"
+      ],
+      "verification_requirement": "No active rebuilt-editor contract path declares Markdown or content_markdown as canonical editor authority."
+    },
+    {
+      "task_id": "LER-002",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "BACKEND_SUBSTRATE",
+      "description": "Materialize the document substrate and API shape for lesson_document_v1 content without adding a legacy data migration requirement.",
+      "depends_on": [
+        "LER-001"
+      ],
+      "target_files": [
+        "backend/supabase/baseline_slots",
+        "backend/app/schemas.py",
+        "backend/app/schemas",
+        "backend/app/routes/studio.py",
+        "backend/app/services/courses_service.py",
+        "backend/app/repositories/courses.py",
+        "backend/supabase/baseline_v2_slots/V2_0029_lesson_document_content.sql",
+        "backend/supabase/baseline_v2_slots.lock.json",
+        "backend/tests/test_lesson_document_content_backend_contract.py",
+        "backend/tests/test_studio_lesson_document_content_api.py",
+        "backend/tests/test_baseline_v2_cutover_lock_replay.py"
+      ],
+      "retrieval_queries": [
+        "lesson_contents content_markdown schema repository update_lesson_content",
+        "studio lesson content read ETag If-Match schemas",
+        "baseline_slots lesson_contents content_markdown"
+      ],
+      "verification_requirement": "The backend exposes content_document read/write shape with ETag and If-Match while legacy content_markdown is not new editor authority."
+    },
+    {
+      "task_id": "LER-003",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "BACKEND_VALIDATION",
+      "description": "Replace Markdown round-trip validation with backend-native lesson_document_v1 schema, reference, media, CTA, and canonical JSON validation plus ETag computation from canonical JSON bytes.",
+      "depends_on": [
+        "LER-002"
+      ],
+      "target_files": [
+        "backend/app/utils",
+        "backend/app/services/courses_service.py",
+        "backend/app/repositories/courses.py",
+        "backend/tests"
+      ],
+      "retrieval_queries": [
+        "lesson_markdown_validator flutter roundtrip harness",
+        "validate_lesson_markdown courses_service update_lesson_content",
+        "build_lesson_content_etag content_markdown",
+        "lesson_media references validation"
+      ],
+      "verification_requirement": "New editor content validation has no dependency on Flutter, Markdown round-trip comparison, or markdown_quill output."
+    },
+    {
+      "task_id": "LER-004",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "FRONTEND_DOCUMENT_MODEL",
+      "description": "Add the frontend lesson_document_v1 model, canonical serialization, selection operations, inline mark operations, block operations, clear-formatting semantics, and local validation.",
+      "depends_on": [
+        "LER-002"
+      ],
+      "target_files": [
+        "frontend/lib/editor",
+        "frontend/test/unit"
+      ],
+      "retrieval_queries": [
+        "frontend editor adapter editor_to_markdown markdown_to_editor",
+        "quill_delta_normalizer EditorOperationQuillController",
+        "lesson markdown integrity guard tests",
+        "clear format bold italic underline toolbar"
+      ],
+      "verification_requirement": "Frontend can represent and serialize every required editor feature without Markdown or Quill Delta as authority."
+    },
+    {
+      "task_id": "LER-005",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "FRONTEND_EDITOR_REPLACEMENT",
+      "description": "Replace the Course Editor authoring surface with a document-model editor UI that preserves required authoring capabilities and removes Quill from the canonical editor path.",
+      "depends_on": [
+        "LER-004"
+      ],
+      "target_files": [
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/editor",
+        "frontend/test/widgets"
+      ],
+      "retrieval_queries": [
+        "course_editor_page QuillSimpleToolbarConfig _saveLessonContent",
+        "retired Quill editor operation tests",
+        "lesson_document_editor_test"
+      ],
+      "verification_requirement": "The editor UI can edit document content and save content_document without calling serializeEditorDeltaToCanonicalMarkdown."
+    },
+    {
+      "task_id": "LER-006",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "MEDIA_CTA_ALIGNMENT",
+      "description": "Move image, audio, video, document, and magic-link/CTA authoring into first-class lesson_document_v1 operations and validators.",
+      "depends_on": [
+        "LER-005"
+      ],
+      "target_files": [
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/editor",
+        "frontend/lib/shared/utils/lesson_content_pipeline.dart",
+        "backend/app/services/courses_service.py",
+        "backend/tests",
+        "frontend/test"
+      ],
+      "retrieval_queries": [
+        "_insertMediaIntoLesson _insertMagicLink",
+        "lessonMediaId document link media token rewrite",
+        "!image !audio !video !document lesson_media_id",
+        "aveli-document link rewrite"
+      ],
+      "verification_requirement": "Media and CTA content persist as document nodes and do not depend on Markdown token or incidental link rewriting in the new path."
+    },
+    {
+      "task_id": "LER-007",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "PREVIEW_ALIGNMENT",
+      "description": "Replace Course Editor Preview Mode rendering with persisted lesson_document_v1 rendering and preserve read-only, persisted-only preview authority.",
+      "depends_on": [
+        "LER-006"
+      ],
+      "target_files": [
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/editor",
+        "frontend/test/widgets"
+      ],
+      "retrieval_queries": [
+        "Course Editor Preview Mode persisted snapshot markdown lessonMedia",
+        "Preview Mode read-only persisted-only course_editor_page",
+        "lesson preview rendering tests"
+      ],
+      "verification_requirement": "Preview renders saved content_document only and does not render unsaved draft editor state."
+    },
+    {
+      "task_id": "LER-008",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "LEARNER_RENDERER_ALIGNMENT",
+      "description": "Align learner lesson rendering to the same document renderer used by editor preview while preserving learner access and media read authority.",
+      "depends_on": [
+        "LER-007"
+      ],
+      "target_files": [
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "frontend/lib/editor",
+        "backend/app/routes",
+        "backend/app/services/courses_service.py",
+        "frontend/test/widgets",
+        "backend/tests"
+      ],
+      "retrieval_queries": [
+        "lesson_page content_markdown LessonPageRenderer markdown",
+        "course_public_surface_contract learner content_markdown",
+        "GET /courses/lessons lesson content media"
+      ],
+      "verification_requirement": "Learner rendering uses backend-authored document content and governed media without Markdown as render truth."
+    },
+    {
+      "task_id": "LER-009",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "LEGACY_REMOVAL",
+      "description": "Remove or quarantine legacy Markdown and Quill save, validation, preview, and render paths after document replacements exist.",
+      "depends_on": [
+        "LER-003",
+        "LER-008"
+      ],
+      "target_files": [
+        "frontend/lib/editor/adapter",
+        "frontend/lib/editor/guardrails",
+        "frontend/lib/editor/normalization",
+        "frontend/lib/editor/session",
+        "frontend/pubspec.yaml",
+        "backend/app/utils/lesson_markdown_validator.py",
+        "frontend/tool/lesson_markdown_roundtrip.dart",
+        "frontend/tool/lesson_markdown_roundtrip_harness_test.dart"
+      ],
+      "retrieval_queries": [
+        "serializeEditorDeltaToCanonicalMarkdown validateLessonMarkdownIntegrity",
+        "lesson_markdown_roundtrip_harness_test",
+        "flutter_quill markdown_quill markdown_widget dependencies",
+        "markdown_to_editor editor_to_markdown imports"
+      ],
+      "verification_requirement": "No new editor save, preview, learner render, or backend validation path imports legacy Markdown or Quill authority modules."
+    },
+    {
+      "task_id": "LER-010",
+      "status": "completed",
+      "type": "GATE",
+      "task_type": "TEST_ALIGNMENT",
+      "description": "Create the document fixture corpus and tests for all required editor capabilities, persisted preview, media/CTA, and ETag concurrency.",
+      "depends_on": [
+        "LER-003",
+        "LER-006",
+        "LER-008"
+      ],
+      "target_files": [
+        "actual_truth/contracts",
+        "actual_truth/contracts/lesson_document_fixture_corpus.json",
+        "actual_truth/contracts/lesson_document_fixture_corpus.md",
+        "backend/tests",
+        "frontend/test"
+      ],
+      "retrieval_queries": [
+        "lesson_supported_content_fixture_corpus",
+        "lesson_document_model_test",
+        "lesson_document_editor_test",
+        "studio_repository_lesson_content_read_test",
+        "test_lesson_document_content_backend_contract"
+      ],
+      "verification_requirement": "Tests cover bold, italic, underline, clear formatting, headings, bullet lists, ordered lists, image, audio, video, document, CTA, preview persisted-only behavior, and ETag conflicts."
+    },
+    {
+      "task_id": "LER-011",
+      "status": "completed",
+      "type": "GATE",
+      "task_type": "AUDIT_GATES",
+      "description": "Add deterministic audit gates that fail if Markdown, Quill Delta, backend Flutter validation, draft preview, or client media URL construction returns as new editor authority.",
+      "depends_on": [
+        "LER-009",
+        "LER-010"
+      ],
+      "target_files": [
+        "backend/tests",
+        "backend/tests/test_ler011_deterministic_audit_gates.py",
+        "frontend/test",
+        "tools",
+        "tools/lesson_editor_authority_audit.py",
+        "actual_truth/DETERMINED_TASKS/lesson_editor_rebuild"
+      ],
+      "retrieval_queries": [
+        "forbidden Markdown Quill Delta Flutter validator draft preview media URL construction",
+        "serializeEditorDeltaToCanonicalMarkdown validateLessonMarkdownIntegrity content_markdown",
+        "lesson_markdown_validator flutter"
+      ],
+      "verification_requirement": "Automated gates fail on forbidden legacy authority patterns in the rebuilt editor path."
+    },
+    {
+      "task_id": "LER-012",
+      "status": "completed",
+      "type": "AGGREGATE",
+      "task_type": "FINAL_GATE",
+      "description": "Run the final aggregate editor rebuild gate across contracts, backend, frontend, tests, dependencies, preview, learner rendering, media, CTA, and concurrency.",
+      "depends_on": [
+        "LER-011"
+      ],
+      "target_files": [
+        "actual_truth/contracts",
+        "actual_truth/analysis/lesson_editor_rebuild_foundation",
+        "actual_truth/DETERMINED_TASKS/lesson_editor_rebuild",
+        "backend/app",
+        "backend/tests",
+        "backend/tests/conftest.py",
+        "backend/tests/test_ler012_final_aggregate_editor_gate.py",
+        "frontend/lib",
+        "frontend/test",
+        "frontend/pubspec.yaml",
+        "actual_truth/analysis/lesson_editor_rebuild_foundation/FINAL_AGGREGATE_EDITOR_GATE_LER012.md"
+      ],
+      "retrieval_queries": [
+        "lesson_document_v1 content_document final gate",
+        "legacy markdown quill validation forbidden patterns",
+        "preview persisted only content_document ETag",
+        "media CTA document renderer learner preview"
+      ],
+      "verification_requirement": "The editor is fully document-model based, all required features pass, and no forbidden legacy authority remains in the new path."
+    }
+  ]
+}

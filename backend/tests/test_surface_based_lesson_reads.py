@@ -17,6 +17,14 @@ COURSE_ID = "22222222-2222-2222-2222-222222222222"
 LESSON_ID = "33333333-3333-3333-3333-333333333333"
 LESSON_MEDIA_ID = "44444444-4444-4444-4444-444444444444"
 MEDIA_ASSET_ID = "55555555-5555-5555-5555-555555555555"
+EMPTY_DOCUMENT = {"schema_version": "lesson_document_v1", "blocks": []}
+
+
+def _document_with_text(text: str) -> dict[str, object]:
+    return {
+        "schema_version": "lesson_document_v1",
+        "blocks": [{"type": "paragraph", "children": [{"text": text}]}],
+    }
 
 
 async def test_read_protected_lesson_content_surface_uses_surface_rows_and_runtime_media(
@@ -31,7 +39,7 @@ async def test_read_protected_lesson_content_surface_uses_surface_rows_and_runti
                 "course_id": COURSE_ID,
                 "lesson_title": "Lesson",
                 "position": 1,
-                "content_markdown": "# Surface content",
+                "content_document": _document_with_text("Surface content"),
                 "lesson_media_id": LESSON_MEDIA_ID,
                 "media_asset_id": MEDIA_ASSET_ID,
                 "lesson_media_position": 3,
@@ -80,7 +88,9 @@ async def test_read_protected_lesson_content_surface_uses_surface_rows_and_runti
     )
 
     assert result is not None
-    assert result["lesson"]["content_markdown"] == "# Surface content"
+    assert result["lesson"]["content_document"] == _document_with_text(
+        "Surface content"
+    )
     assert result["media"] == [
         {
             "id": LESSON_MEDIA_ID,
@@ -110,7 +120,7 @@ async def test_read_protected_lesson_content_surface_filters_non_ready_media(
                 "course_id": COURSE_ID,
                 "lesson_title": "Lesson",
                 "position": 1,
-                "content_markdown": "# Surface content",
+                "content_document": _document_with_text("Surface content"),
                 "lesson_media_id": LESSON_MEDIA_ID,
                 "media_asset_id": MEDIA_ASSET_ID,
                 "lesson_media_position": 3,
@@ -157,7 +167,9 @@ async def test_read_protected_lesson_content_surface_filters_non_ready_media(
     )
 
     assert result is not None
-    assert result["lesson"]["content_markdown"] == "# Surface content"
+    assert result["lesson"]["content_document"] == _document_with_text(
+        "Surface content"
+    )
     assert result["media"] == []
 
 
@@ -173,7 +185,7 @@ async def test_read_protected_lesson_content_surface_allows_missing_lesson_body(
                 "course_id": COURSE_ID,
                 "lesson_title": "Lesson",
                 "position": 1,
-                "content_markdown": None,
+                "content_document": EMPTY_DOCUMENT,
                 "lesson_media_id": None,
                 "media_asset_id": None,
                 "lesson_media_position": None,
@@ -193,7 +205,7 @@ async def test_read_protected_lesson_content_surface_allows_missing_lesson_body(
     )
 
     assert result is not None
-    assert result["lesson"]["content_markdown"] is None
+    assert result["lesson"]["content_document"] == EMPTY_DOCUMENT
     assert result["media"] == []
 
 
@@ -209,7 +221,7 @@ async def test_read_protected_lesson_content_surface_rejects_malformed_lesson_ro
                 "course_id": COURSE_ID,
                 "lesson_title": None,
                 "position": 1,
-                "content_markdown": "# Surface content",
+                "content_document": _document_with_text("Surface content"),
                 "lesson_media_id": None,
                 "media_asset_id": None,
                 "lesson_media_position": None,
@@ -242,7 +254,7 @@ async def test_lesson_detail_uses_surface_based_content_and_structure(monkeypatc
                 "course_id": COURSE_ID,
                 "lesson_title": "Lesson",
                 "position": 1,
-                "content_markdown": "# Legacy should not win",
+                "content_document": _document_with_text("Legacy should not win"),
             },
             "course": {"id": COURSE_ID},
             "enrollment": {"course_id": COURSE_ID, "user_id": USER_ID},
@@ -260,7 +272,7 @@ async def test_lesson_detail_uses_surface_based_content_and_structure(monkeypatc
                 "course_id": COURSE_ID,
                 "lesson_title": "Lesson",
                 "position": 1,
-                "content_markdown": "# Surface content",
+                "content_document": _document_with_text("Surface content"),
             },
             "media": [],
         }
@@ -319,7 +331,7 @@ async def test_lesson_detail_uses_surface_based_content_and_structure(monkeypatc
 
     response = await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
-    assert response.lesson.content_markdown == "# Surface content"
+    assert response.lesson.content_document == _document_with_text("Surface content")
     assert response.course_id == UUID(COURSE_ID)
     assert len(response.lessons) == 1
     assert response.media == []

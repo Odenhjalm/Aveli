@@ -22,6 +22,18 @@ def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def lesson_document(text: str) -> dict:
+    return {
+        "schema_version": "lesson_document_v1",
+        "blocks": [
+            {
+                "type": "paragraph",
+                "children": [{"text": text}],
+            }
+        ],
+    }
+
+
 async def register_user(client, email: str, password: str, display_name: str):
     register_resp = await client.post(
         "/auth/register",
@@ -108,7 +120,7 @@ async def read_lesson_content_etag(
         headers=auth_header(token),
     )
     assert response.status_code == 200, response.text
-    assert set(response.json()) == {"lesson_id", "content_markdown", "media"}
+    assert set(response.json()) == {"lesson_id", "content_document", "media"}
     etag = response.headers.get("etag")
     assert etag
     return etag
@@ -331,11 +343,11 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
                     token=teacher_token,
                 ),
             },
-            json={"content_markdown": "# Hello"},
+            json={"content_document": lesson_document("Hello")},
         )
         assert update_content.status_code == 200, update_content.text
         assert update_content.json()["lesson_id"] == lesson_id
-        assert update_content.json()["content_markdown"] == "# Hello"
+        assert update_content.json()["content_document"] == lesson_document("Hello")
 
         list_lessons = await async_client.get(
             f"/studio/courses/{course_id}/lessons",
@@ -484,7 +496,7 @@ async def test_studio_lesson_delete_removes_content_and_placements_only(
                     token=teacher_token,
                 ),
             },
-            json={"content_markdown": "Lesson body"},
+            json={"content_document": lesson_document("Lesson body")},
         )
         assert update_content.status_code == 200, update_content.text
 

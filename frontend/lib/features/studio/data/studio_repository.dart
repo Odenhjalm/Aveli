@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
+import 'package:aveli/editor/document/lesson_document.dart';
 
 import 'studio_models.dart';
 
@@ -403,7 +404,7 @@ class StudioRepository {
     String? createId,
     required String courseId,
     required String lessonTitle,
-    required String contentMarkdown,
+    required LessonDocument contentDocument,
     int position = 0,
   }) async {
     return _unsupportedRuntime(
@@ -461,7 +462,7 @@ class StudioRepository {
 
   Future<StudioLessonContentWriteResult> updateLessonContent(
     String id, {
-    required String contentMarkdown,
+    required LessonDocument contentDocument,
     required String ifMatch,
   }) async {
     final contentToken = ifMatch.trim();
@@ -470,7 +471,7 @@ class StudioRepository {
     }
     final response = await _client.raw.patch<Object?>(
       '/studio/lessons/$id/content',
-      data: {'content_markdown': contentMarkdown},
+      data: {'content_document': contentDocument.toJson()},
       options: Options(headers: {'If-Match': contentToken}),
     );
     return StudioLessonContentWriteResult.fromResponse(

@@ -377,7 +377,7 @@ void main() {
 
       final detail = await repo.fetchLessonDetail('lesson-1');
 
-      expect(detail.lesson.contentMarkdown, isNull);
+      expect(detail.lesson.contentDocument.blocks, isEmpty);
       expect(detail.media, isEmpty);
       expect(adapter.requestsFor('/courses/lessons/lesson-1'), hasLength(1));
     });
@@ -388,12 +388,12 @@ void main() {
           return _jsonResponse(
             statusCode: 200,
             body: _lessonPayload(
-              lesson: const {
+              lesson: {
                 'id': 'lesson-1',
                 'course_id': 'course-1',
                 'lesson_title': '',
                 'position': 1,
-                'content_markdown': '# Lesson',
+                'content_document': _lessonDocument('Lesson'),
               },
             ),
           );
@@ -502,22 +502,40 @@ Map<String, Object?> _enrollmentPayload({String source = 'purchase'}) {
 }
 
 Map<String, Object?> _lessonPayload({
-  Object? lesson = const {
-    'id': 'lesson-1',
-    'course_id': 'course-1',
-    'lesson_title': 'Lesson',
-    'position': 1,
-    'content_markdown': null,
-  },
+  Object? lesson,
   Object? media = const [],
 }) {
   return {
-    'lesson': lesson,
+    'lesson':
+        lesson ??
+        {
+          'id': 'lesson-1',
+          'course_id': 'course-1',
+          'lesson_title': 'Lesson',
+          'position': 1,
+          'content_document': _lessonDocument(),
+        },
     'course_id': 'course-1',
     'lessons': const [
       {'id': 'lesson-1', 'lesson_title': 'Lesson', 'position': 1},
     ],
     'media': media,
+  };
+}
+
+Map<String, Object?> _lessonDocument([String? text]) {
+  return {
+    'schema_version': 'lesson_document_v1',
+    'blocks': text == null
+        ? const []
+        : [
+            {
+              'type': 'paragraph',
+              'children': [
+                {'text': text},
+              ],
+            },
+          ],
   };
 }
 

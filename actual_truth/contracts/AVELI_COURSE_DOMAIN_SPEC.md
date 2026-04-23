@@ -169,9 +169,12 @@ It is not course structure and is not lesson content.
 `app.lesson_contents` owns lesson body content:
 
 - `lesson_id`: canonical lesson content owner identity.
-- `content_markdown`: canonical lesson text/content body.
+- `content_document`: canonical rebuilt-editor lesson document body.
 
-`content_markdown` is canonical only on `app.lesson_contents`.
+`content_document` is canonical only on `app.lesson_contents`.
+
+Legacy `content_markdown` may exist only as compatibility/import/export data
+until removed. It is not rebuilt-editor authority.
 
 ### Lesson Media Fields
 
@@ -273,7 +276,7 @@ app.lesson_media.media_asset_id
   -> app.media_assets.id
 
 app.lesson_media.id
-  -> lesson content media tokens by lesson_media_id
+  -> lesson document media nodes by lesson_media_id
 
 app.media_assets.id
   -> app.runtime_media.media_asset_id
@@ -288,22 +291,33 @@ app.course_enrollments.current_unlock_position
 No other course-domain relation is canonical unless another active contract
 explicitly declares it without weakening this graph.
 
-## 5. CONTENT MODEL (Markdown + token system)
+## 5. CONTENT MODEL (lesson_document_v1)
 
-Lesson text content is canonical Markdown stored only in
-`app.lesson_contents.content_markdown`.
+Rebuilt lesson text content is canonical `lesson_document_v1` JSON stored only
+in `app.lesson_contents.content_document`.
 
-Inline text is represented directly as Markdown text.
+Inline text is represented as explicit text nodes.
 
-Media-backed content is represented only by typed Markdown media tokens that
-reference `lesson_media_id`:
+Inline formatting is represented as explicit marks:
 
-- `!image(<lesson_media_id>)`
-- `!audio(<lesson_media_id>)`
-- `!video(<lesson_media_id>)`
-- `!document(<lesson_media_id>)`
+- `bold`
+- `italic`
+- `underline`
+- `link`
 
-Media tokens MUST reference `app.lesson_media.id`. They MUST NOT reference:
+Block content is represented as explicit block nodes:
+
+- `paragraph`
+- `heading`
+- `bullet_list`
+- `ordered_list`
+- `media`
+- `cta`
+
+Media-backed content is represented only by typed document media nodes that
+reference `lesson_media_id`.
+
+Media nodes MUST reference `app.lesson_media.id`. They MUST NOT reference:
 
 - `media_asset_id`
 - `runtime_media`
@@ -315,13 +329,17 @@ Media tokens MUST reference `app.lesson_media.id`. They MUST NOT reference:
 - playback URLs
 - download URLs
 
-Raw HTML media tags are forbidden in persisted lesson Markdown.
-Raw Markdown image URLs are forbidden in persisted lesson Markdown.
-Internal storage links are forbidden in persisted lesson Markdown.
-Frontend-resolved URLs are forbidden in persisted lesson Markdown.
+Raw HTML media tags are forbidden in persisted lesson documents.
+Raw Markdown image URLs are forbidden in persisted lesson documents.
+Internal storage links are forbidden in persisted lesson documents.
+Frontend-resolved URLs are forbidden in persisted lesson documents.
+Markdown media tokens are forbidden as rebuilt-editor authority.
+Quill Delta is forbidden as rebuilt-editor authority.
 
 Lesson content reads and writes MUST NOT redefine lesson structure. Lesson
-structure reads and writes MUST NOT expose or mutate `content_markdown`.
+structure reads and writes MUST NOT expose or mutate `content_document`.
+Lesson structure reads and writes MUST NOT expose or mutate legacy
+`content_markdown`.
 
 ## 6. MEDIA MODEL (identity, placement, runtime separation)
 
@@ -688,16 +706,19 @@ The following patterns are forbidden:
 - exposing `lesson_media` on a structure surface
 - returning `lesson_content_surface` data from course-detail endpoints
 - collapsing `app.lessons` and `app.lesson_contents` into one semantic surface
-- putting `content_markdown` on lesson structure write or read surfaces
+- putting `content_document` on lesson structure write or read surfaces
+- putting legacy `content_markdown` on lesson structure write or read surfaces
 - putting `lesson_title`, `position`, or `course_id` on lesson content write
   surfaces
 - treating raw joined lesson rows as canonical when they mix structure and
   content
-- storing raw HTML media tags in lesson Markdown
-- storing raw Markdown media URLs in lesson Markdown
-- storing storage paths or resolved URLs in lesson Markdown
-- using `media_asset_id` instead of `lesson_media_id` in lesson Markdown media
-  tokens
+- storing raw HTML media tags in lesson documents
+- storing raw Markdown media URLs in lesson documents
+- storing storage paths or resolved URLs in lesson documents
+- using `media_asset_id` instead of `lesson_media_id` in lesson document media
+  nodes
+- using Markdown media tokens as rebuilt-editor authority
+- using Quill Delta as rebuilt-editor authority
 - using frontend state as media, access, pricing, progression, or content
   authority
 - using `Map<String, dynamic>` or metadata blobs as runtime truth
@@ -771,6 +792,7 @@ Non-authoritative legacy structures include:
 - lesson `title` aliases
 - lesson `is_intro`
 - mixed lesson rows containing both structure and `content_markdown`
+- mixed lesson rows containing both structure and `content_document`
 - raw joined studio lesson lists that expose content on structure surfaces
 - legacy media objects
 - legacy runtime media fallback rows
@@ -790,6 +812,8 @@ is explicit, deterministic, and lossless with respect to this contract.
 Migration MUST NOT:
 
 - preserve legacy fields as parallel authority
+- make Markdown a parallel rebuilt-editor authority
+- make Quill Delta a parallel rebuilt-editor authority
 - create alternate access rules
 - create alternate media resolution rules
 - create alternate content token systems

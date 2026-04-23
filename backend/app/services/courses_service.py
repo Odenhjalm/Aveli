@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import re
 from collections.abc import Sequence as SequenceABC
 from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
@@ -25,8 +24,7 @@ from ..media_control_plane.services.media_resolver_service import (
 from ..repositories import courses as courses_repo
 from ..repositories import media_assets as media_assets_repo
 from ..repositories import runtime_media as runtime_media_repo
-from ..utils import lesson_content as lesson_content_utils
-from ..utils import lesson_markdown_validator
+from ..utils import lesson_document_validator
 from ..utils import media_paths
 from . import lesson_playback_service
 from . import media_cleanup
@@ -40,13 +38,10 @@ COURSE_CREATE_SLUG_CONFLICT_DETAIL = "Kursens identifierare är redan upptagen"
 COURSE_CREATE_INVALID_DATA_DETAIL = "Kursen kunde inte skapas"
 COURSE_CREATE_TECHNICAL_DETAIL = "Ett tekniskt fel uppstod vid skapande av kurs"
 _COURSE_SLUG_UNIQUE_CONSTRAINT = "courses_slug_key"
-_INVALID_LESSON_MARKDOWN_DETAIL = (
-    "Invalid lesson markdown. Formatting must be corrected before saving."
+_INVALID_LESSON_DOCUMENT_DETAIL = (
+    "Invalid lesson document. Content must be corrected before saving."
 )
-_LESSON_MEDIA_TOKEN_PATTERN = re.compile(
-    r"!(image|audio|video|document)\(([A-Za-z0-9_-]+(?:-[A-Za-z0-9_-]+)*)\)",
-    re.IGNORECASE,
-)
+_EMPTY_LESSON_DOCUMENT = lesson_document_validator.EMPTY_LESSON_DOCUMENT
 
 _LEARNER_MEDIA_TYPES = frozenset({"audio", "image", "video", "document"})
 _LEARNER_MEDIA_STATES = frozenset(
@@ -87,9 +82,7 @@ class CourseCreationError(Exception):
 
 class StudioCourseScheduleLockedError(Exception):
     def __init__(self, course_id: str) -> None:
-        super().__init__(
-            "Schedule-affecting edits are locked after first enrollment."
-        )
+        super().__init__("Schedule-affecting edits are locked after first enrollment.")
         self.course_id = course_id
         self.detail = "Schedule-affecting edits are locked after first enrollment."
 
@@ -167,8 +160,21 @@ def map_course_create_database_error(exc: PsycopgError) -> CourseCreationError:
     )
 
 
-def build_lesson_content_etag(lesson_id: str, content_markdown: str) -> str:
-    payload = f"{str(lesson_id).strip()}\0{content_markdown}".encode("utf-8")
+def _canonical_lesson_document(content_document: Any) -> dict[str, Any]:
+    return lesson_document_validator.canonicalize_lesson_document_json(content_document)
+
+
+def _canonical_lesson_document_bytes(content_document: Mapping[str, Any]) -> bytes:
+    return lesson_document_validator.canonical_lesson_document_bytes(content_document)
+
+
+def build_lesson_content_etag(
+    lesson_id: str,
+    content_document: Mapping[str, Any],
+) -> str:
+    payload = f"{str(lesson_id).strip()}\0".encode(
+        "utf-8"
+    ) + _canonical_lesson_document_bytes(content_document)
     digest = hashlib.sha256(payload).hexdigest()
     return f'"lesson-content:{digest}"'
 
@@ -183,7 +189,9 @@ def _if_match_contains_etag(if_match: str | None, expected_etag: str) -> bool:
 def _course_required_enrollment_source(course: Mapping[str, Any] | None) -> str | None:
     if not course:
         return None
-    required_source = str(course.get("required_enrollment_source") or "").strip().lower()
+    required_source = (
+        str(course.get("required_enrollment_source") or "").strip().lower()
+    )
     if required_source in {"purchase", "intro_enrollment"}:
         return required_source
     return None
@@ -397,14 +405,6 @@ def _course_publish_price_idempotency_key(
     )
 
 
-def _referenced_lesson_media_ids(markdown: str) -> set[str]:
-    return {
-        str(match.group(2) or "").strip()
-        for match in _LESSON_MEDIA_TOKEN_PATTERN.finditer(markdown)
-        if str(match.group(2) or "").strip()
-    }
-
-
 def _require_stripe_for_course_mapping() -> None:
     try:
         context = stripe_mode.resolve_stripe_context()
@@ -583,8 +583,8 @@ async def fetch_studio_course(course_id: str) -> dict[str, Any] | None:
 
     custom_schedule_rows: Sequence[Mapping[str, Any]] = ()
     if _normalized_studio_course_drip_mode(course) == "custom_lesson_offsets":
-        custom_schedule_rows = await courses_repo.list_course_custom_drip_lesson_offsets(
-            course_id
+        custom_schedule_rows = (
+            await courses_repo.list_course_custom_drip_lesson_offsets(course_id)
         )
     attach_studio_course_drip_authoring_detail(
         course,
@@ -700,23 +700,18 @@ def _require_lesson_surface_position(value: Any) -> int:
     return position
 
 
-def _normalize_lesson_surface_markdown(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    raise _canonical_lesson_surface_unavailable()
-
-
 def _canonical_lesson_surface_lesson(row: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        content_document = _canonical_lesson_document(row.get("content_document"))
+    except lesson_document_validator.LessonDocumentValidationError as exc:
+        raise _canonical_lesson_surface_unavailable() from exc
+
     return {
         "id": _require_lesson_surface_string(row.get("id")),
         "course_id": _require_lesson_surface_string(row.get("course_id")),
         "lesson_title": _require_lesson_surface_string(row.get("lesson_title")),
         "position": _require_lesson_surface_position(row.get("position")),
-        "content_markdown": _normalize_lesson_surface_markdown(
-            row.get("content_markdown")
-        ),
+        "content_document": content_document,
     }
 
 
@@ -830,16 +825,16 @@ async def read_studio_lesson_content(
     if not await is_course_owner(teacher_id, course_id):
         raise PermissionError("Not course owner")
 
-    content_markdown = str(row.get("content_markdown") or "")
+    content_document = _canonical_lesson_document(row.get("content_document"))
     media_rows = await list_studio_lesson_media(lesson_id)
     body = {
         "lesson_id": row["lesson_id"],
-        "content_markdown": content_markdown,
+        "content_document": content_document,
         "media": [_studio_content_media_item(item) for item in media_rows],
     }
     return {
         "body": body,
-        "etag": build_lesson_content_etag(str(row["lesson_id"]), content_markdown),
+        "etag": build_lesson_content_etag(str(row["lesson_id"]), content_document),
     }
 
 
@@ -997,15 +992,20 @@ def _course_cover_asset_has_ready_output_path(
     media_id = str(asset.get("id") or "").strip()
     if media_id:
         try:
-            if playback_object_path == media_paths.build_media_asset_playback_object_path(
-                media_id,
-                ext="jpg",
+            if (
+                playback_object_path
+                == media_paths.build_media_asset_playback_object_path(
+                    media_id,
+                    ext="jpg",
+                )
             ):
                 return True
         except ValueError:
             pass
 
-    return playback_object_path.startswith(_canonical_course_cover_derived_prefix(course_id))
+    return playback_object_path.startswith(
+        _canonical_course_cover_derived_prefix(course_id)
+    )
 
 
 def _exact_cover_media_id(value: Any) -> str | None:
@@ -1085,11 +1085,15 @@ def _course_cover_payload_from_ready_asset(
 
 def _course_cover_local_mode_enabled() -> bool:
     app_env = (
-        os.environ.get("APP_ENV")
-        or os.environ.get("ENVIRONMENT")
-        or os.environ.get("ENV")
-        or ""
-    ).strip().lower()
+        (
+            os.environ.get("APP_ENV")
+            or os.environ.get("ENVIRONMENT")
+            or os.environ.get("ENV")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     return (
         app_env == "local"
         and str(settings.mcp_mode).strip().lower() == "local"
@@ -1362,7 +1366,9 @@ async def create_course(
         if create_payload["cover_media_id"] is not None:
             create_payload.setdefault("id", str(uuid4()))
             try:
-                create_payload["cover_media_id"] = await _validate_course_cover_assignment(
+                create_payload[
+                    "cover_media_id"
+                ] = await _validate_course_cover_assignment(
                     course_id=str(create_payload["id"]),
                     cover_media_id=create_payload["cover_media_id"],
                 )
@@ -1459,7 +1465,9 @@ async def _validate_full_custom_schedule_payload(
     custom_schedule_rows: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     normalized_rows = _normalize_studio_custom_schedule_rows(custom_schedule_rows)
-    lessons = [dict(row) for row in await courses_repo.list_studio_course_lessons(course_id)]
+    lessons = [
+        dict(row) for row in await courses_repo.list_studio_course_lessons(course_id)
+    ]
     lesson_ids_in_order = [str(row["id"]) for row in lessons]
     rows_by_lesson: dict[str, dict[str, Any]] = {}
     for row in normalized_rows:
@@ -1676,7 +1684,9 @@ async def delete_course_family(
     if str(existing_family["teacher_id"]) != normalized_teacher_id:
         raise PermissionError("Not course family owner")
 
-    course_count = await courses_repo.count_courses_in_family(normalized_course_family_id)
+    course_count = await courses_repo.count_courses_in_family(
+        normalized_course_family_id
+    )
     if course_count > 0:
         raise ValueError("course family must be empty before deletion")
 
@@ -1801,21 +1811,61 @@ def _validate_publish_lesson_order(lessons: Sequence[Mapping[str, Any]]) -> None
         _publish_validation_error("Lektionernas ordning är ogiltig")
 
 
+def _lesson_document_has_publishable_content(
+    content_document: Mapping[str, Any],
+) -> bool:
+    for block in content_document.get("blocks", []):
+        if not isinstance(block, Mapping):
+            continue
+        block_type = block.get("type")
+        if block_type in {"media", "cta"}:
+            return True
+        if block_type in {"paragraph", "heading"}:
+            for child in block.get("children", []):
+                if isinstance(child, Mapping) and str(child.get("text") or "").strip():
+                    return True
+        if block_type in {"bullet_list", "ordered_list"}:
+            for item in block.get("items", []):
+                if not isinstance(item, Mapping):
+                    continue
+                for child in item.get("children", []):
+                    if (
+                        isinstance(child, Mapping)
+                        and str(child.get("text") or "").strip()
+                    ):
+                        return True
+    return False
+
+
+def _referenced_lesson_media_ids_from_document(
+    content_document: Mapping[str, Any],
+) -> set[str]:
+    referenced_ids: set[str] = set()
+    for block in content_document.get("blocks", []):
+        if not isinstance(block, Mapping):
+            continue
+        if block.get("type") != "media":
+            continue
+        lesson_media_id = str(block.get("lesson_media_id") or "").strip()
+        if lesson_media_id:
+            referenced_ids.add(lesson_media_id)
+    return referenced_ids
+
+
 async def _validate_referenced_lesson_media_ready(
     *,
-    markdown: str,
+    lesson_media_ids: set[str],
     media_rows: Sequence[Mapping[str, Any]],
 ) -> None:
-    referenced_ids = _referenced_lesson_media_ids(markdown)
-    if not referenced_ids:
+    if not lesson_media_ids:
         return
 
     rows_by_id = {
-        str(row.get("id") or "").strip(): row
+        str(row.get("lesson_media_id") or row.get("id") or "").strip(): row
         for row in media_rows
-        if str(row.get("id") or "").strip()
+        if str(row.get("lesson_media_id") or row.get("id") or "").strip()
     }
-    for lesson_media_id in referenced_ids:
+    for lesson_media_id in lesson_media_ids:
         row = rows_by_id.get(lesson_media_id)
         if row is None:
             _publish_validation_error("Lektionens mediareferenser är ogiltiga")
@@ -1859,29 +1909,21 @@ async def _derive_course_content_ready(course_id: str) -> bool:
         if lesson.get("has_content") is not True:
             _publish_validation_error("Lektion saknar innehåll")
 
-        content_markdown = str(lesson.get("content_markdown") or "")
-        if not content_markdown.strip():
-            _publish_validation_error("Lektion saknar innehåll")
-
         media_rows = list(await list_lesson_media(lesson_id))
-        lesson_media_kinds, media_url_aliases = (
-            lesson_content_utils.build_lesson_media_write_contract(media_rows)
-        )
         try:
-            normalized_markdown = (
-                lesson_content_utils.normalize_lesson_markdown_for_storage(
-                    content_markdown,
-                    lesson_media_kinds=lesson_media_kinds,
-                    media_url_aliases=media_url_aliases,
-                )
+            content_document = lesson_document_validator.validate_lesson_document(
+                lesson.get("content_document"),
+                media_rows=media_rows,
             )
-        except ValueError as exc:
+        except lesson_document_validator.LessonDocumentValidationError as exc:
             raise ValueError("Lektionens mediareferenser är ogiltiga") from exc
 
-        if normalized_markdown != content_markdown:
-            _publish_validation_error("Lektionens innehåll är inte normaliserat")
+        if not _lesson_document_has_publishable_content(content_document):
+            _publish_validation_error("Lektion saknar innehåll")
         await _validate_referenced_lesson_media_ready(
-            markdown=content_markdown,
+            lesson_media_ids=_referenced_lesson_media_ids_from_document(
+                content_document
+            ),
             media_rows=media_rows,
         )
 
@@ -2167,7 +2209,7 @@ async def update_lesson_structure(
 async def update_lesson_content(
     lesson_id: str,
     *,
-    content_markdown: str,
+    content_document: Mapping[str, Any],
     if_match: str | None,
     teacher_id: str,
 ) -> dict[str, Any] | None:
@@ -2185,72 +2227,42 @@ async def update_lesson_content(
     if not _if_match_contains_etag(if_match, current_etag):
         raise LessonContentPreconditionFailed("Lesson content is stale")
 
-    media_rows = await list_lesson_media(lesson_id)
-    lesson_media_kinds, media_url_aliases = (
-        lesson_content_utils.build_lesson_media_write_contract(media_rows)
-    )
-    normalized_markdown = lesson_content_utils.normalize_lesson_markdown_for_storage(
-        content_markdown,
-        lesson_media_kinds=lesson_media_kinds,
-        media_url_aliases=media_url_aliases,
-    )
+    media_rows = await list_studio_lesson_media(lesson_id)
     try:
-        validation = await run_in_threadpool(
-            lesson_markdown_validator.validate_lesson_markdown,
-            normalized_markdown,
+        canonical_document = lesson_document_validator.validate_lesson_document(
+            content_document,
+            media_rows=media_rows,
         )
-    except lesson_markdown_validator.LessonMarkdownValidationRuntimeError as exc:
-        logger.exception(
-            "LESSON_MARKDOWN_VALIDATION_UNAVAILABLE",
-            extra={
-                "lesson_id": lesson_id,
-                "validator_unavailable": True,
-                "validator_failure_reason": getattr(exc, "reason", "runtime_error"),
-                "validator_subprocess_error": getattr(
-                    exc,
-                    "subprocess_error",
-                    None,
-                ),
-                "validator_stderr_output": getattr(exc, "stderr_output", None),
-                "validator_stdout_output": getattr(exc, "stdout_output", None),
-                "validator_failure_detail": str(exc),
-                "submitted_markdown": content_markdown,
-                "normalized_markdown": normalized_markdown,
-            },
-        )
-        validation = None
-    if validation is not None and not validation.ok:
+    except lesson_document_validator.LessonDocumentValidationError as exc:
         logger.warning(
-            "LESSON_MARKDOWN_VALIDATION_FAILED",
+            "LESSON_DOCUMENT_VALIDATION_FAILED",
             extra={
                 "lesson_id": lesson_id,
-                "failure_reason": validation.failure_reason,
-                "submitted_markdown": content_markdown,
-                "normalized_markdown": normalized_markdown,
-                "canonical_markdown": validation.canonical_markdown,
+                "failure_detail": str(exc),
             },
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_INVALID_LESSON_MARKDOWN_DETAIL,
-        )
-    row = await courses_repo.update_lesson_content_if_current(
+            detail=_INVALID_LESSON_DOCUMENT_DETAIL,
+        ) from exc
+    row = await courses_repo.update_lesson_document_if_current(
         lesson_id,
-        normalized_markdown,
-        expected_content_markdown=str(current_body["content_markdown"]),
+        canonical_document,
+        expected_content_document=current_body["content_document"],
     )
     if row is None:
         raise LessonContentPreconditionFailed("Lesson content is stale")
 
+    persisted_document = _canonical_lesson_document(row["content_document"])
     updated_body = {
         "lesson_id": row["lesson_id"],
-        "content_markdown": row["content_markdown"],
+        "content_document": persisted_document,
     }
     return {
         "body": updated_body,
         "etag": build_lesson_content_etag(
             str(row["lesson_id"]),
-            str(row["content_markdown"]),
+            persisted_document,
         ),
     }
 
@@ -2366,7 +2378,9 @@ async def read_canonical_course_access(user_id: str, course_id: str) -> dict[str
         and str(enrollment.get("source") or "").strip().lower()
         == required_enrollment_source
     )
-    next_unlock_at = enrollment.get("next_unlock_at") if enrollment is not None else None
+    next_unlock_at = (
+        enrollment.get("next_unlock_at") if enrollment is not None else None
+    )
     return {
         "course": course,
         "enrollment": _canonical_course_enrollment_payload(enrollment),

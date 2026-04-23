@@ -18,18 +18,25 @@ LESSON_ID = "33333333-3333-3333-3333-333333333333"
 
 
 def test_lesson_content_surface_sql_is_projection_not_access_authority():
-    sql = ""
+    slots: dict[str, str] = {}
     for path in baseline_v2._slot_paths():
-        if path.name == "V2_0010_read_projections.sql":
-            sql = path.read_text(encoding="utf-8")
-            break
+        if path.name in {
+            "V2_0010_read_projections.sql",
+            "V2_0029_lesson_document_content.sql",
+        }:
+            slots[path.name] = path.read_text(encoding="utf-8")
+    sql = slots.get("V2_0010_read_projections.sql", "")
+    document_sql = slots.get("V2_0029_lesson_document_content.sql", "")
     assert sql, "Baseline V2 lock does not contain V2_0010_read_projections.sql"
+    assert document_sql, "Baseline V2 lock does not contain document content slot"
 
     assert "create view app.lesson_content_surface" in sql
-    assert "lc.content_markdown" in sql
-    assert "course_enrollments" not in sql
-    assert "request.jwt.claim.sub" not in sql
-    assert "memberships" not in sql.lower()
+    assert "content_document" in document_sql
+    assert "create view app.lesson_content_surface" in document_sql
+    for projection_sql in (sql, document_sql):
+        assert "course_enrollments" not in projection_sql
+        assert "request.jwt.claim.sub" not in projection_sql
+        assert "memberships" not in projection_sql.lower()
 
 
 async def test_read_canonical_lesson_access_does_not_allow_membership_to_substitute(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart';
@@ -12,7 +13,7 @@ import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
 LessonDetailData _buildLessonData({
   required List<LessonMediaItem> media,
-  String? contentMarkdown = '# Lektion',
+  LessonDocument contentDocument = _defaultLessonDocument,
   LessonDetail? lesson,
   List<LessonSummary>? lessons,
 }) {
@@ -21,14 +22,14 @@ LessonDetailData _buildLessonData({
       const LessonDetail(
         id: 'lesson-1',
         lessonTitle: 'Lektion',
-        contentMarkdown: '# Lektion',
+        contentDocument: _defaultLessonDocument,
         position: 1,
       );
   return LessonDetailData(
     lesson: LessonDetail(
       id: effectiveLesson.id,
       lessonTitle: effectiveLesson.lessonTitle,
-      contentMarkdown: contentMarkdown,
+      contentDocument: contentDocument,
       position: effectiveLesson.position,
     ),
     courseId: 'course-1',
@@ -38,6 +39,35 @@ LessonDetailData _buildLessonData({
           LessonSummary(id: 'lesson-1', lessonTitle: 'Lektion', position: 1),
         ],
     media: media,
+  );
+}
+
+const LessonDocument _defaultLessonDocument = LessonDocument(
+  blocks: [
+    LessonHeadingBlock(level: 2, children: [LessonTextRun('Lektion')]),
+  ],
+);
+
+LessonDocument _paragraphDocument(List<String> paragraphs) {
+  return LessonDocument(
+    blocks: [
+      for (final paragraph in paragraphs)
+        LessonParagraphBlock(children: [LessonTextRun(paragraph)]),
+    ],
+  );
+}
+
+LessonDocument _mediaDocument({
+  required String mediaType,
+  required String lessonMediaId,
+  List<String> paragraphs = const <String>[],
+}) {
+  return LessonDocument(
+    blocks: [
+      for (final paragraph in paragraphs)
+        LessonParagraphBlock(children: [LessonTextRun(paragraph)]),
+      LessonMediaBlock(mediaType: mediaType, lessonMediaId: lessonMediaId),
+    ],
   );
 }
 
@@ -86,13 +116,6 @@ LessonMediaItem _lessonMediaItem({
             state: state,
             resolvedUrl: resolvedUrl,
           ),
-  );
-}
-
-Finder _legacyInlineAudioPlayerFinder() {
-  return find.byWidgetPredicate(
-    (widget) => widget.runtimeType.toString() == 'InlineAudioPlayer',
-    description: 'InlineAudioPlayer',
   );
 }
 
@@ -153,7 +176,10 @@ void main() {
   testWidgets('lesson renders empty content state without crashing', (
     tester,
   ) async {
-    final data = _buildLessonData(media: const [], contentMarkdown: null);
+    final data = _buildLessonData(
+      media: const [],
+      contentDocument: LessonDocument.empty(),
+    );
 
     await _pumpLessonPage(tester, data: data);
     await tester.pumpAndSettle();
@@ -177,7 +203,11 @@ void main() {
   ) async {
     final data = _buildLessonData(
       media: const [],
-      contentMarkdown: 'Intro\n\n!video(media-video-missing)\n',
+      contentDocument: _mediaDocument(
+        mediaType: 'video',
+        lessonMediaId: 'media-video-missing',
+        paragraphs: const ['Intro'],
+      ),
     );
 
     await _pumpLessonPage(tester, data: data);
@@ -206,7 +236,6 @@ void main() {
       await _pumpLessonPage(tester, data: data);
       await tester.pumpAndSettle();
 
-      expect(_legacyInlineAudioPlayerFinder(), findsNothing);
       expect(_lessonAudioMediaPlayerFinder(), findsNothing);
       expect(tester.takeException(), isNull);
     },
@@ -233,7 +262,6 @@ void main() {
     expect(find.byType(LinearProgressIndicator), findsNothing);
 
     expect(_lessonAudioMediaPlayerFinder(), findsNothing);
-    expect(_legacyInlineAudioPlayerFinder(), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -257,7 +285,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('lesson renders non-embedded trailing document rows', (
+  testWidgets('lesson hides non-embedded trailing document rows', (
     tester,
   ) async {
     final data = _buildLessonData(
@@ -275,8 +303,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Dokument'), findsOneWidget);
-    expect(find.text('Ladda ner dokument'), findsOneWidget);
+    expect(find.text('Dokument'), findsNothing);
+    expect(find.text('Ladda ner dokument'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -285,7 +313,7 @@ void main() {
   ) async {
     final data = _buildLessonData(
       media: const [],
-      contentMarkdown: 'Hello world\n\nThis is a lesson',
+      contentDocument: _paragraphDocument(['Hello world', 'This is a lesson']),
     );
 
     await _pumpLessonPage(tester, data: data);
@@ -304,41 +332,43 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('lesson renders inline document tokens without trailing fallback duplication', (
-    tester,
-  ) async {
-    final data = _buildLessonData(
-      media: [
-        _lessonMediaItem(
-          id: 'media-document-1',
+  testWidgets(
+    'lesson renders inline document tokens without trailing fallback duplication',
+    (tester) async {
+      final data = _buildLessonData(
+        media: [
+          _lessonMediaItem(
+            id: 'media-document-1',
+            mediaType: 'document',
+            state: 'ready',
+            resolvedUrl: 'https://cdn.test/lesson-document.pdf',
+          ),
+        ],
+        contentDocument: _mediaDocument(
           mediaType: 'document',
-          state: 'ready',
-          resolvedUrl: 'https://cdn.test/lesson-document.pdf',
+          lessonMediaId: 'media-document-1',
+          paragraphs: const ['Intro', 'Outro'],
         ),
-      ],
-      contentMarkdown: 'Intro\n\n!document(media-document-1)\n\nOutro',
-    );
+      );
 
-    await _pumpLessonPage(tester, data: data);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+      await _pumpLessonPage(tester, data: data);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-    expect(
-      find.textContaining('Intro', findRichText: true),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Outro', findRichText: true),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Ladda ner dokument', findRichText: true),
-      findsOneWidget,
-    );
-    expect(find.textContaining('!document(', findRichText: true), findsNothing);
-    expect(find.text('Dokument'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+      expect(find.textContaining('Intro', findRichText: true), findsOneWidget);
+      expect(find.textContaining('Outro', findRichText: true), findsOneWidget);
+      expect(
+        find.textContaining('Ladda ner dokument', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('!document(', findRichText: true),
+        findsNothing,
+      );
+      expect(find.text('Dokument'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('lesson page blocks locked next navigation for learners', (
     tester,

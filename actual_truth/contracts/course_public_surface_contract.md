@@ -109,7 +109,8 @@ Rules:
 
 - `lessons` is `LessonSummary[]`
 - `lessons` may contain only `id`, `lesson_title`, and `position`
-- `content_markdown` is forbidden
+- `content_document` is forbidden
+- legacy `content_markdown` is forbidden
 - `lesson_media` is forbidden
 - access does not require enrollment
 - `cover` MUST be `null` when no contract-valid resolved course-cover object exists
@@ -137,7 +138,10 @@ Response:
     "course_id": "uuid",
     "lesson_title": "string",
     "position": 1,
-    "content_markdown": "string | null"
+    "content_document": {
+      "schema_version": "lesson_document_v1",
+      "blocks": []
+    }
   },
   "course_id": "uuid",
   "lessons": [
@@ -169,6 +173,7 @@ Rules:
 
 - this endpoint is the canonical `lesson_content_surface`
 - it may expose lesson identity, lesson structure, lesson content, and lesson media only
+- rebuilt lesson content is exposed as `content_document`
 - access requires `course_enrollments` and `lesson.position <= current_unlock_position`
 - `media` must use backend-authored media objects only
 - structure context inside this response does not authorize structure surfaces to expose content
@@ -177,7 +182,9 @@ Rules:
 
 The following are forbidden:
 
-- structure reads that expose `content_markdown`
+- structure reads that expose `content_document`
+- structure reads that expose legacy `content_markdown`
+- Markdown as rebuilt learner content truth
 
 ## 8. FRONTEND ALIGNMENT TARGET
 
@@ -190,8 +197,9 @@ Learner frontend may use only these canonical read surfaces:
 
 Frontend model separation law:
 
-- learner structure models must not contain `content_markdown`
-- learner content models may contain `content_markdown`
+- learner structure models must not contain `content_document`
+- learner structure models must not contain legacy `content_markdown`
+- learner content models may contain `content_document`
 - frontend must not infer content from lesson structure lists
 - frontend must not infer structure mutations from content responses
 - frontend must not invent lesson semantics
@@ -209,7 +217,8 @@ This contract is complete, deterministic, and lockable.
 
 It is valid only if all future implementation preserves these laws:
 
-- no structure-read surface leaks `content_markdown`
+- no structure-read surface leaks `content_document`
+- no structure-read surface leaks legacy `content_markdown`
 - legacy aliases and mixed surfaces do not survive as contract truth
 
 This contract is ready to govern deterministic task-tree construction for implementation.

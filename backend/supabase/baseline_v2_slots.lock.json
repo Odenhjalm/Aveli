@@ -88,7 +88,7 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "be4df29d0ac6c6036e933acbe1005179d8e68081923918c2b9a4a4aa6bf04711",
+    "expected_schema_hash": "61ecf976b5e8bf124685c06cbc3394d6461a1ae16e22ce25ea157cd76c30fdfb",
     "expected_counts": {
       "enums": 13,
       "tables": 37,
@@ -582,6 +582,22 @@
       "path": "backend/supabase/baseline_v2_slots/V2_0028_course_next_unlock_projection.sql",
       "sha256": "1ab301b562506cbb1d909c73f89a79065a1a8b923dc24582d7a6b78dc526bb28",
       "post_state_hash": "048bcd82cc93141413bdec1337114e35cd4254a6af8fa38e4d66baf5084f330a",
+      "post_counts": {
+        "constraints": 195,
+        "enums": 13,
+        "fks": 53,
+        "functions": 53,
+        "tables": 37,
+        "triggers": 36,
+        "views": 5
+      }
+    },
+    {
+      "slot": 29,
+      "filename": "V2_0029_lesson_document_content.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0029_lesson_document_content.sql",
+      "sha256": "0110cf23adc31535a8976ad0ced6610832c9d1fc82e3140ff30c596ed0dd94ae",
+      "post_state_hash": "2b46e1197f4228d845736eaa6561a61b5364043236a25a16855809e770e6cc64",
       "post_counts": {
         "constraints": 195,
         "enums": 13,

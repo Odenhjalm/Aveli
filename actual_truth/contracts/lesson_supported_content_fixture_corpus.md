@@ -1,9 +1,14 @@
 # LESSON SUPPORTED CONTENT FIXTURE CORPUS
 
-STATUS: ACTIVE
+STATUS: LEGACY_COMPATIBILITY_ONLY
 
-This artifact locks the currently intended supported lesson-content subset for
-the Markdown-canonical Aveli editor pipeline.
+This artifact records the legacy Markdown-compatible lesson-content subset for
+the old Aveli editor pipeline.
+
+It is not rebuilt-editor authority.
+
+The rebuilt editor authority is `lesson_document_v1` as defined by
+`lesson_editor_rebuild_manifest_contract.md`.
 
 It operates under:
 
@@ -11,8 +16,8 @@ It operates under:
 - `AVELI_COURSE_DOMAIN_SPEC.md`
 - `lesson_document_edge_contract.md`
 
-This corpus does not change canonical storage, route contracts, or backend
-write-boundary authority.
+This corpus does not change rebuilt-editor canonical storage, route contracts,
+or backend write-boundary authority.
 
 ## AUTHORITATIVE ARTIFACTS
 
@@ -21,45 +26,55 @@ write-boundary authority.
 - explanatory authority document:
   `actual_truth/contracts/lesson_supported_content_fixture_corpus.md`
 
-The JSON corpus is the execution-grade source for fixture ids, canonical
+The JSON corpus is the execution-grade source for legacy Markdown fixture ids,
 Markdown bodies, runtime-boundary bindings, and blocker ownership.
 
-## CANONICAL STORAGE AND CONSUMER SURFACES
+It must not be used as proof that Markdown remains rebuilt-editor authority.
 
-Canonical stored truth remains:
+## LEGACY STORAGE AND CONSUMER SURFACES
+
+Legacy Markdown storage was:
 
 - `app.lesson_contents.content_markdown`
 
-This corpus is locked against the active repo boundaries that currently consume
-stored lesson content:
+Rebuilt-editor stored truth is:
 
-- editor hydration:
-  `frontend/lib/editor/adapter/markdown_to_editor.dart`,
-  `frontend/lib/features/studio/presentation/course_editor_page.dart`,
-  `frontend/lib/features/courses/presentation/lesson_page.dart`
-- editor save:
-  `frontend/lib/editor/adapter/editor_to_markdown.dart`,
-  `frontend/lib/editor/normalization/quill_delta_normalizer.dart`,
-  `frontend/lib/features/studio/presentation/course_editor_page.dart`
-- frontend integrity validation:
-  `frontend/lib/editor/guardrails/lesson_markdown_integrity_guard.dart`
-- backend validation:
-  `backend/app/utils/lesson_markdown_validator.py`,
-  `frontend/tool/lesson_markdown_roundtrip.dart`,
-  `frontend/tool/lesson_markdown_roundtrip_harness_test.dart`
-- preview rendering:
-  `frontend/lib/features/studio/presentation/course_editor_page.dart`
-- learner rendering:
-  `frontend/lib/features/courses/presentation/lesson_page.dart`
-- backend write boundary:
-  `backend/app/routes/studio.py`,
-  `backend/app/services/courses_service.py`,
+- `app.lesson_contents.content_document`
+
+This corpus records the legacy Markdown shapes that still matter for
+compatibility and legacy-removal gates. It does not keep the deleted
+Quill/Markdown editor tests alive.
+
+Active rebuilt-editor bindings are now:
+
+- document model and local validation:
+  `frontend/lib/editor/document/lesson_document.dart`,
+  `frontend/test/unit/lesson_document_model_test.dart`
+- document editor and persisted preview shell:
+  `frontend/lib/editor/document/lesson_document_editor.dart`,
+  `frontend/test/widgets/lesson_document_editor_test.dart`,
+  `backend/tests/test_write_path_dominance_regression.py`
+- document save/read transport:
+  `frontend/lib/features/studio/data/studio_repository.dart`,
+  `frontend/test/unit/studio_repository_lesson_content_read_test.dart`
+- backend document validation and CAS:
+  `backend/app/utils/lesson_document_validator.py`,
+  `backend/tests/test_lesson_document_content_backend_contract.py`,
+  `backend/tests/test_studio_lesson_document_content_api.py`
+
+Rebuilt preview and learner rendering now bind to document rendering:
+
+- document preview and learner rendering:
+  `frontend/lib/features/courses/presentation/lesson_page.dart`,
+  `frontend/lib/editor/document/lesson_document_editor.dart`
+- legacy Markdown tooling and scans:
   `backend/app/utils/lesson_content.py`,
-  `backend/app/repositories/courses.py`
+  `backend/scripts/scan_markdown_integrity.py`,
+  `backend/scripts/normalize_markdown_bold_formatting.py`
 
-## SUPPORTED CANONICAL FIXTURES
+## LEGACY SUPPORTED FIXTURES
 
-The supported canonical fixture corpus currently covers:
+The legacy Markdown fixture corpus currently covers:
 
 - headings
 - lists
@@ -72,23 +87,23 @@ The supported canonical fixture corpus currently covers:
 - `!video(id)`
 - `!document(id)`
 
-The canonical stored Markdown forms are defined in the JSON corpus by fixture
-id. Downstream implementation nodes must reuse those ids rather than inventing
-new case names.
+The legacy Markdown forms are defined in the JSON corpus by fixture id.
+Downstream implementation nodes may use those ids only for compatibility,
+import/export, or legacy-removal verification.
 
 ## RESOLVED BLOCKER FIXTURES
 
-The former blocker-grade fixtures are now locked supported fixtures:
+The former blocker-grade fixtures are recorded as legacy supported fixtures:
 
 - `paragraph_blank_line_two_paragraphs`
   status: `locked`
-  canonical meaning: one canonical Markdown blank line separates two stored
+  legacy meaning: one Markdown blank line separates two stored
   paragraphs as `Hello world\n\nThis is a lesson`
 - `document_token_inline`
   status: `locked`
-  canonical meaning: `!document(id)` remains the stored form and materializes as
-  inline document content on editor and render surfaces rather than trailing
-  fallback-only media
+  legacy meaning: `!document(id)` remains the Markdown stored form and
+  materializes as inline document content on old editor and render surfaces
+  rather than trailing fallback-only media
 
 ## COMPATIBILITY-ONLY INPUTS
 
@@ -101,7 +116,7 @@ part of the canonical stored fixture set:
   the backend write boundary
 
 These inputs may remain accepted or normalized by active code, but they are not
-canonical stored fixtures.
+rebuilt-editor canonical stored fixtures.
 
 ## UNSUPPORTED / OUT-OF-SCOPE SHAPES
 
@@ -110,19 +125,29 @@ locked canonical subset:
 
 - raw HTML media tags
 - raw Markdown image URLs
-- raw internal media or storage-path document links as canonical persisted
+- raw internal media or storage-path document links as rebuilt-editor persisted
   content
 
-## BINDING RULE
+## LEGACY BINDING RULE
 
-The corpus must remain bindable from:
+The corpus may remain bindable from document-model tests, document transport
+tests, backend document-contract tests, rebuilt preview/learner document tests,
+and legacy tooling compatibility tests.
 
-- frontend adapter tests
-- frontend newline tests
-- frontend guard tests
-- backend validator tests
-- preview and learner parity tests
-- backend write-contract tests
+These old active-editor bindings are retired and must not be reintroduced as
+rebuilt-editor authority:
 
-Any downstream node that needs new supported content must first change this
-corpus and its contract evidence before implementation.
+- `frontend/test/unit/editor_markdown_adapter_test.dart`
+- `frontend/test/unit/lesson_content_serialization_test.dart`
+- `frontend/test/unit/lesson_newline_persistence_test.dart`
+- `frontend/test/unit/lesson_markdown_integrity_guard_test.dart`
+- `frontend/test/widgets/lesson_editor_quill_input_test.dart`
+- `frontend/test/widgets/course_editor_lesson_content_lifecycle_test.dart`
+- `frontend/test/unit/editor_operation_controller_test.dart`
+- `backend/tests/test_lesson_markdown_validator.py`
+- `backend/tests/test_lesson_markdown_write_contract.py`
+- `backend/tests/test_studio_lesson_content_authority.py`
+
+Any downstream node that needs new rebuilt-editor supported content must define
+or update a `lesson_document_v1` document fixture corpus instead of extending
+this Markdown corpus as authority.

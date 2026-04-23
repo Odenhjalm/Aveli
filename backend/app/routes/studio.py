@@ -2355,7 +2355,7 @@ async def update_lesson_content(
     try:
         row = await courses_service.update_lesson_content(
             lesson_id,
-            content_markdown=payload.content_markdown,
+            content_document=payload.content_document,
             if_match=request.headers.get("if-match"),
             teacher_id=str(current["id"]),
         )

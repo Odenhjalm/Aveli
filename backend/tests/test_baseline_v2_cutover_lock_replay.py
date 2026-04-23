@@ -101,6 +101,11 @@ def _replay_to_slot(slot_number: int) -> dict[str, object]:
             "048bcd82cc93141413bdec1337114e35cd4254a6af8fa38e4d66baf5084f330a",
             "be4df29d0ac6c6036e933acbe1005179d8e68081923918c2b9a4a4aa6bf04711",
         ),
+        (
+            29,
+            "2b46e1197f4228d845736eaa6561a61b5364043236a25a16855809e770e6cc64",
+            "61ecf976b5e8bf124685c06cbc3394d6461a1ae16e22ce25ea157cd76c30fdfb",
+        ),
     ),
 )
 def test_cutover_post_state_hashes_match_clean_replay(

@@ -17,6 +17,36 @@ pytestmark = pytest.mark.anyio("asyncio")
 
 COURSE_ID = "course_publish_1"
 TEACHER_ID = "teacher_publish_1"
+MEDIA_ID = "11111111-1111-1111-1111-111111111111"
+
+
+def _document_with_text(text: str) -> dict:
+    return {
+        "schema_version": "lesson_document_v1",
+        "blocks": [
+            {
+                "type": "paragraph",
+                "children": [{"text": text}],
+            }
+        ],
+    }
+
+
+def _document_with_media(
+    lesson_media_id: str = MEDIA_ID,
+    *,
+    media_type: str = "image",
+) -> dict:
+    return {
+        "schema_version": "lesson_document_v1",
+        "blocks": [
+            {
+                "type": "media",
+                "media_type": media_type,
+                "lesson_media_id": lesson_media_id,
+            }
+        ],
+    }
 
 
 def _course(**overrides):
@@ -49,7 +79,7 @@ def _lesson(**overrides):
         "lesson_title": "Lesson 1",
         "position": 1,
         "has_content": True,
-        "content_markdown": "Publiceringsklar lektion",
+        "content_document": _document_with_text("Publiceringsklar lektion"),
     }
     row.update(overrides)
     return row
@@ -247,7 +277,7 @@ async def test_publish_fails_with_invalid_lesson_order_before_stripe(monkeypatch
 async def test_publish_fails_with_missing_content_before_stripe(monkeypatch):
     await _install_publish_fakes(
         monkeypatch,
-        lessons=[_lesson(has_content=False, content_markdown=None)],
+        lessons=[_lesson(has_content=False, content_document=None)],
     )
     _install_stripe_fail_fakes(monkeypatch)
 
@@ -255,10 +285,12 @@ async def test_publish_fails_with_missing_content_before_stripe(monkeypatch):
         await courses_service.publish_course(COURSE_ID, teacher_id=TEACHER_ID)
 
 
-async def test_publish_fails_with_invalid_media_token_before_stripe(monkeypatch):
+async def test_publish_fails_with_invalid_document_media_reference_before_stripe(
+    monkeypatch,
+):
     await _install_publish_fakes(
         monkeypatch,
-        lessons=[_lesson(content_markdown="Bild !image(missing_media)")],
+        lessons=[_lesson(content_document=_document_with_media())],
     )
     _install_stripe_fail_fakes(monkeypatch)
 
@@ -269,11 +301,11 @@ async def test_publish_fails_with_invalid_media_token_before_stripe(monkeypatch)
 async def test_publish_fails_with_non_ready_referenced_media_before_stripe(monkeypatch):
     await _install_publish_fakes(
         monkeypatch,
-        lessons=[_lesson(content_markdown="Bild !image(media_1)")],
+        lessons=[_lesson(content_document=_document_with_media())],
         media_by_lesson={
             "lesson_publish_1": [
                 {
-                    "id": "media_1",
+                    "id": MEDIA_ID,
                     "lesson_id": "lesson_publish_1",
                     "media_type": "image",
                     "kind": "image",
@@ -291,11 +323,11 @@ async def test_publish_fails_with_non_ready_referenced_media_before_stripe(monke
 async def test_publish_fails_when_ready_media_is_not_runtime_resolvable(monkeypatch):
     await _install_publish_fakes(
         monkeypatch,
-        lessons=[_lesson(content_markdown="Bild !image(media_1)")],
+        lessons=[_lesson(content_document=_document_with_media())],
         media_by_lesson={
             "lesson_publish_1": [
                 {
-                    "id": "media_1",
+                    "id": MEDIA_ID,
                     "lesson_id": "lesson_publish_1",
                     "media_asset_id": "asset_1",
                     "media_type": "image",
@@ -312,10 +344,10 @@ async def test_publish_fails_when_ready_media_is_not_runtime_resolvable(monkeypa
         *,
         emit_logs: bool = True,
     ):
-        assert lesson_media_id == "media_1"
+        assert lesson_media_id == MEDIA_ID
         assert emit_logs is False
         return RuntimeMediaResolution(
-            lesson_media_id="media_1",
+            lesson_media_id=MEDIA_ID,
             lesson_id="lesson_publish_1",
             media_asset_id="asset_1",
             media_type="image",
@@ -327,7 +359,7 @@ async def test_publish_fails_when_ready_media_is_not_runtime_resolvable(monkeypa
             playback_mode=LessonMediaPlaybackMode.NONE,
             failure_reason=RuntimeMediaResolutionReason.MISSING_STORAGE_OBJECT,
             failure_detail="runtime_media playback_object_path is missing",
-            runtime_media_id="media_1",
+            runtime_media_id=MEDIA_ID,
             course_id=COURSE_ID,
         )
 

@@ -2,8 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_quill/flutter_quill.dart'
-    show FlutterQuillLocalizations;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/l10n/app_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -281,7 +279,6 @@ class AveliApp extends ConsumerWidget {
           themeMode: ThemeMode.light,
           localizationsDelegates: const [
             ...AppLocalizations.localizationsDelegates,
-            FlutterQuillLocalizations.delegate,
           ],
           supportedLocales: AppLocalizations.supportedLocales,
           localeListResolutionCallback: (locales, supported) {

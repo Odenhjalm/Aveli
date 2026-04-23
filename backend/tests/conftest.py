@@ -6,8 +6,10 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+REPO_ROOT_DIR = Path(__file__).resolve().parents[2]
+for path in (ROOT_DIR, REPO_ROOT_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 LOCAL_TEST_DATABASE_URL = os.environ.get(
     "AVELI_TEST_DATABASE_URL",
@@ -35,7 +37,9 @@ os.environ["APP_ENV"] = "local"
 os.environ["MCP_MODE"] = "local"
 os.environ["DATABASE_HOST"] = _parsed_test_db.hostname or "127.0.0.1"
 os.environ["DATABASE_PORT"] = str(_parsed_test_db.port or 5432)
-os.environ["DATABASE_NAME"] = (_parsed_test_db.path or "/aveli_local").lstrip("/") or "aveli_local"
+os.environ["DATABASE_NAME"] = (_parsed_test_db.path or "/aveli_local").lstrip(
+    "/"
+) or "aveli_local"
 os.environ["DATABASE_USER"] = _parsed_test_db.username or "postgres"
 os.environ["DATABASE_PASSWORD"] = _parsed_test_db.password or "postgres"
 os.environ["DATABASE_URL"] = LOCAL_TEST_DATABASE_URL
@@ -184,7 +188,9 @@ def _local_supabase_registration_stub(monkeypatch):
         normalized_email = email.strip().lower()
         record = users_by_email.get(normalized_email)
         if not record or record["password"] != password:
-            raise supabase_auth.SupabaseAuthInvalidCredentialsError("Invalid login credentials")
+            raise supabase_auth.SupabaseAuthInvalidCredentialsError(
+                "Invalid login credentials"
+            )
         user = {"id": record["user_id"], "email": normalized_email}
         return supabase_auth.SupabaseAuthSession(
             user_id=record["user_id"],
@@ -231,6 +237,8 @@ def _local_supabase_registration_stub(monkeypatch):
     monkeypatch.setattr(supabase_auth, "signup", fake_signup)
     monkeypatch.setattr(supabase_auth, "login_password", fake_login_password)
     monkeypatch.setattr(supabase_auth, "get_user", fake_get_user)
-    monkeypatch.setattr(supabase_auth, "update_user_password", fake_update_user_password)
+    monkeypatch.setattr(
+        supabase_auth, "update_user_password", fake_update_user_password
+    )
     monkeypatch.setattr(supabase_auth, "confirm_user_email", fake_confirm_user_email)
     yield
