@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/editor/document/lesson_document_editor.dart';
+import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
 import '../helpers/fake_home_audio_engine.dart';
@@ -41,7 +42,8 @@ void main() {
       find.text('Draft-only corpus content', findRichText: true),
       findsNothing,
     );
-    expect(find.text('Infogad media'), findsOneWidget);
+    expect(find.text('Infogad media'), findsNothing);
+    expect(find.text('Sparad media'), findsNothing);
     expect(
       find.textContaining(corpus.mediaRows.first.lessonMediaId),
       findsNothing,
@@ -51,8 +53,9 @@ void main() {
       findsNothing,
     );
     expect(find.text('Media: image'), findsNothing);
-    expect(find.textContaining('Corpus image'), findsOneWidget);
+    expect(find.textContaining('Corpus image'), findsNothing);
     expect(find.textContaining('Status: ready'), findsNothing);
+    expect(find.byType(Image), findsOneWidget);
     expect(find.text('Persisted CTA'), findsOneWidget);
     expect(savedDocument.toCanonicalJsonString(), isNot(contains('!image(')));
     expect(
@@ -133,7 +136,9 @@ void main() {
     expect(document.toCanonicalJsonString(), initialJson);
   });
 
-  testWidgets('document preview fallback hides media metadata', (tester) async {
+  testWidgets('document preview fallback renders only image media', (
+    tester,
+  ) async {
     const lessonMediaId = '99999999-9999-4999-8999-999999999999';
     const document = LessonDocument(
       blocks: [
@@ -151,6 +156,7 @@ void main() {
                 lessonMediaId: lessonMediaId,
                 mediaType: 'image',
                 state: 'ready',
+                label: 'cover-photo.webp',
                 resolvedUrl: 'https://cdn.test/image.webp',
               ),
             ],
@@ -159,8 +165,9 @@ void main() {
       ),
     );
 
-    expect(find.text('Infogad media'), findsOneWidget);
-    expect(find.text('Sparad media'), findsOneWidget);
+    expect(find.text('Infogad media'), findsNothing);
+    expect(find.text('Sparad media'), findsNothing);
+    expect(find.textContaining('cover-photo.webp'), findsNothing);
     expect(find.textContaining(lessonMediaId), findsNothing);
     expect(find.textContaining('Media: image'), findsNothing);
     expect(find.textContaining('Status: ready'), findsNothing);
@@ -205,24 +212,76 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Infogad media'), findsOneWidget);
-    expect(find.textContaining('narration.mp3'), findsOneWidget);
+    expect(find.text('Infogad media'), findsNothing);
+    expect(find.text('Sparad media'), findsNothing);
+    expect(find.textContaining('narration.mp3'), findsNothing);
+    expect(find.textContaining(lessonMediaId), findsNothing);
+    expect(find.textContaining('Media: audio'), findsNothing);
     expect(find.byType(InlineAudioPlayer), findsOneWidget);
     expect(find.byType(InlineAudioPlayerView), findsOneWidget);
     final player = tester.widget<InlineAudioPlayer>(
       find.byType(InlineAudioPlayer),
     );
     expect(player.url, audioUrl);
-    expect(player.title, 'narration.mp3');
+    expect(player.title, isNull);
     expect(player.minimalUi, isTrue);
     expect(engineFactory.createCount, 1);
     expect(engineFactory.single.loadedUrls, orderedEquals([audioUrl]));
   });
 
-  testWidgets('document preview fallback leaves document media presentation', (
+  testWidgets(
+    'document preview fallback renders video player without metadata',
+    (tester) async {
+      const lessonMediaId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+      const videoUrl = 'https://cdn.test/video.mp4';
+      const document = LessonDocument(
+        blocks: [
+          LessonMediaBlock(mediaType: 'video', lessonMediaId: lessonMediaId),
+        ],
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LessonDocumentPreview(
+              document: document,
+              media: [
+                LessonDocumentPreviewMedia(
+                  lessonMediaId: lessonMediaId,
+                  mediaType: 'video',
+                  state: 'ready',
+                  label: 'trailer.mp4',
+                  resolvedUrl: videoUrl,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Infogad media'), findsNothing);
+      expect(find.text('Sparad media'), findsNothing);
+      expect(find.textContaining('trailer.mp4'), findsNothing);
+      expect(find.textContaining(lessonMediaId), findsNothing);
+      expect(find.textContaining('Media: video'), findsNothing);
+      expect(
+        find.byWidgetPredicate((widget) {
+          return widget is AveliLessonMediaPlayer &&
+              widget.kind == 'video' &&
+              widget.mediaUrl == videoUrl &&
+              widget.title.isEmpty;
+        }),
+        findsOneWidget,
+      );
+      expect(find.byType(Image), findsNothing);
+      expect(find.byType(InlineAudioPlayer), findsNothing);
+    },
+  );
+
+  testWidgets('document preview fallback omits non-renderable media metadata', (
     tester,
   ) async {
-    const lessonMediaId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const lessonMediaId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
     const document = LessonDocument(
       blocks: [
         LessonMediaBlock(mediaType: 'document', lessonMediaId: lessonMediaId),
@@ -248,11 +307,14 @@ void main() {
       ),
     );
 
-    expect(find.text('Infogad media'), findsOneWidget);
-    expect(find.textContaining('handout.pdf'), findsOneWidget);
+    expect(find.text('Infogad media'), findsNothing);
+    expect(find.text('Sparad media'), findsNothing);
+    expect(find.textContaining('handout.pdf'), findsNothing);
     expect(find.textContaining(lessonMediaId), findsNothing);
+    expect(find.textContaining('Media: document'), findsNothing);
     expect(find.byType(Image), findsNothing);
     expect(find.byType(InlineAudioPlayer), findsNothing);
+    expect(find.byType(AveliLessonMediaPlayer), findsNothing);
   });
 
   testWidgets('document editor toolbar formats only selected text ranges', (

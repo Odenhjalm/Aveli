@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/audio/home_audio_engine.dart';
+import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
 import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
 import 'lesson_document.dart';
@@ -1094,68 +1095,31 @@ class _PreviewMediaBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolved = media;
     final typeMatches = resolved?.mediaType == block.mediaType;
-    final title = typeMatches ? 'Infogad media' : 'Media kunde inte laddas';
-    final label = resolved?.label?.trim();
     final resolvedUrl = resolved?.resolvedUrl?.trim();
-    final subtitleLines = [
-      if (label != null && label.isNotEmpty) label,
-      if (typeMatches) 'Sparad media' else 'Kontrollera media i lektionen.',
-    ];
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            leading: Icon(_iconForMediaType(block.mediaType)),
-            title: Text(title),
-            subtitle: Text(subtitleLines.join('\n')),
-          ),
-          if (typeMatches &&
-              block.mediaType == 'image' &&
-              resolvedUrl != null &&
-              resolvedUrl.isNotEmpty)
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(12),
-              ),
-              child: Image.network(
-                resolvedUrl,
-                width: double.infinity,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) =>
-                    const SizedBox.shrink(),
-              ),
-            ),
-          if (typeMatches &&
-              block.mediaType == 'audio' &&
-              resolvedUrl != null &&
-              resolvedUrl.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: InlineAudioPlayer(
-                url: resolvedUrl,
-                title: label == null || label.isEmpty ? 'Ljud' : label,
-                minimalUi: true,
-                engineFactory: audioEngineFactory,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 
-  IconData _iconForMediaType(String mediaType) {
-    return switch (mediaType) {
-      'image' => Icons.image_outlined,
-      'audio' => Icons.audiotrack_outlined,
-      'video' => Icons.movie_creation_outlined,
-      'document' => Icons.picture_as_pdf_outlined,
-      _ => Icons.perm_media_outlined,
+    if (!typeMatches || resolvedUrl == null || resolvedUrl.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return switch (block.mediaType) {
+      'image' => Image.network(
+        resolvedUrl,
+        width: double.infinity,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+      ),
+      'audio' => InlineAudioPlayer(
+        url: resolvedUrl,
+        minimalUi: true,
+        engineFactory: audioEngineFactory,
+      ),
+      'video' => AveliLessonMediaPlayer(
+        mediaUrl: resolvedUrl,
+        title: '',
+        kind: 'video',
+        preferLessonLayout: true,
+      ),
+      _ => const SizedBox.shrink(),
     };
   }
 }
