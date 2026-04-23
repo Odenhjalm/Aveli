@@ -6,7 +6,8 @@
       "Target truth is actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
       "Current Quill and Markdown editor code is legacy evidence, not rebuild authority",
       "No legacy data migration is in scope",
-      "The rebuilt editor must support formatting, headings, lists, media, CTA, persisted preview, and ETag concurrency"
+      "The rebuilt editor must support formatting, headings, lists, media, CTA, persisted preview, and ETag concurrency",
+      "The editor authoring UI must present a single continuous writing surface while mapping deterministically to lesson_document_v1 blocks and nodes"
     ],
     "contracts": [
       "actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
@@ -327,6 +328,31 @@
         "media CTA document renderer learner preview"
       ],
       "verification_requirement": "The editor is fully document-model based, all required features pass, and no forbidden legacy authority remains in the new path."
+    },
+    {
+      "task_id": "LER-013",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "FRONTEND_UX_CONTRACT_ALIGNMENT",
+      "description": "Materialize the continuous authoring surface law so the Course Editor feels like one flowing document while preserving deterministic lesson_document_v1 block/node mapping.",
+      "depends_on": [
+        "LER-012"
+      ],
+      "target_files": [
+        "actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
+        "actual_truth/contracts/course_lesson_editor_contract.md",
+        "actual_truth/DETERMINED_TASKS/lesson_editor_rebuild/LER-013_continuous_authoring_surface.md",
+        "actual_truth/analysis/lesson_editor_rebuild_foundation/CONTINUOUS_AUTHORING_SURFACE_LER013.md",
+        "frontend/lib/editor/document/lesson_document_editor.dart",
+        "frontend/test/widgets/lesson_document_editor_test.dart",
+        "backend/tests/test_ler012_final_aggregate_editor_gate.py"
+      ],
+      "retrieval_queries": [
+        "LessonDocumentEditor Card TextField Formatvisning block containers",
+        "lesson_document_v1 authoring surface continuous writing surface",
+        "Markdown Quill legacy editor pathways forbidden continuous authoring"
+      ],
+      "verification_requirement": "The editor presents a single continuous writing surface without visible per-block containers while preserving deterministic lesson_document_v1 content mapping and without reintroducing Markdown, Quill, or legacy pathways."
     }
   ]
 }

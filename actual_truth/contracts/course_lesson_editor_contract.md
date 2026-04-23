@@ -884,6 +884,10 @@ Canonical document node law:
   `lesson_media_id`
 - magic-link / CTA content must use explicit CTA nodes, not incidental Markdown
   link text
+- the authoring UI must present one continuous writing surface, not a stack of
+  visible per-block editor containers
+- continuous authoring is presentation-only; every edit must still map
+  deterministically to `lesson_document_v1` blocks and nodes
 
 Document fixture corpus law:
 

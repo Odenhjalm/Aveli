@@ -125,6 +125,33 @@ The document model MUST reject unknown node types, unknown mark types, invalid
 mark overlap, malformed list structure, invalid media references, invalid CTA
 shape, and invalid schema versions.
 
+## 4A. AUTHORING SURFACE LAW
+
+The editor authoring UI MUST present one continuous writing surface.
+
+Users must experience writing as one flowing document, not as a stack of
+separate block containers.
+
+The UI may keep deterministic internal focus targets when required for
+editing, toolbar operations, media nodes, CTA nodes, and validation, but those
+targets must remain implementation details. They must not reintroduce visible
+per-block card editors, isolated block boxes, Markdown textareas, Quill
+editors, or legacy conversion surfaces as the authoring experience.
+
+The continuous authoring surface MUST still map deterministically to
+`lesson_document_v1` blocks and nodes:
+
+- paragraph text maps to `paragraph` blocks
+- heading text maps to `heading` blocks
+- bullet-list text maps to `bullet_list` items
+- ordered-list text maps to `ordered_list` items
+- media placements map to `media` blocks with `lesson_media_id`
+- magic-link / CTA authoring maps to `cta` blocks
+
+This law changes presentation only. It does not weaken document authority,
+backend validation, persisted preview authority, learner rendering authority,
+or ETag / If-Match concurrency.
+
 ## 5. CONTENT WRITE LAW
 
 The new canonical content write surface remains content-only.

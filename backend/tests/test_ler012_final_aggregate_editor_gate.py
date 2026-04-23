@@ -194,7 +194,8 @@ def test_manifest_and_dag_chain_are_complete_before_final_completion() -> None:
     )
     tasks = {task["task_id"]: task for task in manifest["task_tree"]}  # type: ignore[index]
 
-    assert tuple(tasks) == REQUIRED_TASK_IDS
+    assert tuple(tasks)[: len(REQUIRED_TASK_IDS)] == REQUIRED_TASK_IDS
+    assert set(REQUIRED_TASK_IDS).issubset(tasks)
     for task_id in REQUIRED_TASK_IDS[:-1]:
         assert tasks[task_id]["status"] == "completed"
     assert tasks["LER-012"]["status"] in {"planned", "completed"}

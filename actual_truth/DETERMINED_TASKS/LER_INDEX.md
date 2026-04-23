@@ -14,6 +14,7 @@
 | LER-010 | `completed` | Create document fixture corpus and tests for every required capability. | [LER-003, LER-006, LER-008] |
 | LER-011 | `completed` | Add deterministic gates against legacy authority returning. | [LER-009, LER-010] |
 | LER-012 | `completed` | Run the final aggregate editor rebuild gate. | [LER-011] |
+| LER-013 | `completed` | Present the editor as one continuous writing surface while retaining document-node mapping. | [LER-012] |
 
 Canonical tree directory:
 

@@ -2,14 +2,14 @@
 
 ## STATUS
 
-LER-012_COMPLETED
+LER-013_COMPLETED
 
 `LER-001`, `LER-002`, `LER-003`, `LER-004`, `LER-005`, `LER-006`,
 `LER-007`, `LER-008`, `LER-009`, `LER-010`, `LER-011`, and `LER-012`
-are complete.
+are complete. `LER-013` is also complete as a post-final contract amendment.
 
-The deterministic lesson editor rebuild DAG is closed. There is no remaining
-successor task in this tree.
+The deterministic lesson editor rebuild DAG extension is closed. There is no
+remaining successor task in this tree.
 
 ## Topological Order
 
@@ -25,6 +25,7 @@ successor task in this tree.
 10. `LER-010`
 11. `LER-011`
 12. `LER-012`
+13. `LER-013`
 
 ## Dependency Graph
 
@@ -43,6 +44,7 @@ successor task in this tree.
 - `LER-009 -> LER-011`
 - `LER-010 -> LER-011`
 - `LER-011 -> LER-012`
+- `LER-012 -> LER-013`
 
 ## Determinism Notes
 
@@ -97,6 +99,10 @@ successor task in this tree.
   document nodes, persisted-only preview, learner document rendering, removed
   legacy authority, dependency removal, required test inventory, and broad
   backend/frontend verification.
+- `LER-013` completed because the post-final UI contract amendment now requires
+  one continuous writing surface, and `LessonDocumentEditor` renders text,
+  list, media, and CTA nodes inside that single surface while preserving
+  deterministic `lesson_document_v1` mapping.
 - Legacy removal waited until document save, render, media, CTA, preview, and
   learner paths had replacements.
 - Final gates executed only after tests and removal gates existed.
