@@ -58,14 +58,192 @@ void main() {
     );
   });
 
-  testWidgets('document editor toolbar mutates inline marks and block types', (
+  testWidgets('document preview switches glass and paper reading modes', (
+    tester,
+  ) async {
+    final document = loadLessonDocumentFixtureCorpus().document(
+      'full_capability_document',
+    );
+    final initialJson = document.toCanonicalJsonString();
+    var readingMode = LessonDocumentReadingMode.glass;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return Column(
+                children: [
+                  LessonDocumentReadingModeToggle(
+                    value: readingMode,
+                    onChanged: (mode) => setState(() => readingMode = mode),
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: LessonDocumentPreview(
+                        document: document,
+                        readingMode: readingMode,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('lesson_document_paper_reading_surface')),
+      findsNothing,
+    );
+    expect(
+      find.text('Full capability document', findRichText: true),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Paper'));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('lesson_document_paper_reading_surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Full capability document', findRichText: true),
+      findsOneWidget,
+    );
+    expect(document.toCanonicalJsonString(), initialJson);
+
+    await tester.tap(find.text('Glass'));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('lesson_document_paper_reading_surface')),
+      findsNothing,
+    );
+    expect(document.toCanonicalJsonString(), initialJson);
+  });
+
+  testWidgets('document editor toolbar formats only selected text ranges', (
     tester,
   ) async {
     var document = const LessonDocument(
       blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    const fieldKey = ValueKey('lesson_document_editor_block_0');
+    await _selectTextRange(
+      tester,
+      const ValueKey('lesson_document_editor_block_0'),
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 10,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_bold'));
+
+    var paragraph = document.blocks.single as LessonParagraphBlock;
+    expect(paragraph.children.map((run) => run.text).toList(), [
+      'Alpha ',
+      'Beta',
+      ' Gamma',
+    ]);
+    expect(paragraph.children[0].marks, isEmpty);
+    expect(paragraph.children[1].marks.map((mark) => mark.type), ['bold']);
+    expect(paragraph.children[2].marks, isEmpty);
+
+    await _selectTextRange(
+      tester,
+      fieldKey,
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 10,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_italic'));
+    await _selectTextRange(
+      tester,
+      fieldKey,
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 10,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_underline'));
+    paragraph = document.blocks.single as LessonParagraphBlock;
+    final markedTypes = paragraph.children[1].marks
+        .map((mark) => mark.type)
+        .toSet();
+    expect(markedTypes, containsAll(<String>{'bold', 'italic', 'underline'}));
+    expect(paragraph.children.first.marks, isEmpty);
+    expect(paragraph.children.last.marks, isEmpty);
+
+    await _selectTextRange(
+      tester,
+      fieldKey,
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 10,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_clear'));
+    paragraph = document.blocks.single as LessonParagraphBlock;
+    expect(paragraph.children.single.text, 'Alpha Beta Gamma');
+    expect(paragraph.children.single.marks, isEmpty);
+
+    await _selectTextRange(
+      tester,
+      fieldKey,
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 10,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+    expect(document.blocks, hasLength(3));
+    expect(document.blocks[0], isA<LessonParagraphBlock>());
+    expect(
+      (document.blocks[0] as LessonParagraphBlock).children.single.text,
+      'Alpha ',
+    );
+    expect(document.blocks[1], isA<LessonHeadingBlock>());
+    expect(
+      (document.blocks[1] as LessonHeadingBlock).children.single.text,
+      'Beta',
+    );
+    expect(document.blocks[2], isA<LessonParagraphBlock>());
+    expect(
+      (document.blocks[2] as LessonParagraphBlock).children.single.text,
+      ' Gamma',
+    );
+  });
+
+  testWidgets('document editor ignores toolbar formatting without selection', (
+    tester,
+  ) async {
+    const initial = LessonDocument(
+      blocks: [
         LessonParagraphBlock(children: [LessonTextRun('Alpha')]),
       ],
     );
+    var document = initial;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -88,41 +266,65 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('lesson_document_editor_block_0')),
     );
+    await tester.pump();
     await _tapToolbar(tester, const Key('lesson_document_toolbar_bold'));
-    expect(
-      (document.blocks.single as LessonParagraphBlock).children.single.marks
-          .map((mark) => mark.type),
-      contains('bold'),
-    );
-
-    await _tapToolbar(tester, const Key('lesson_document_toolbar_italic'));
-    await _tapToolbar(tester, const Key('lesson_document_toolbar_underline'));
-    final markedTypes = (document.blocks.single as LessonParagraphBlock)
-        .children
-        .single
-        .marks
-        .map((mark) => mark.type)
-        .toSet();
-    expect(markedTypes, containsAll(<String>{'bold', 'italic', 'underline'}));
-
-    await _tapToolbar(tester, const Key('lesson_document_toolbar_clear'));
     await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
-    expect(document.blocks.single, isA<LessonHeadingBlock>());
-    expect(
-      (document.blocks.single as LessonHeadingBlock).children.single.marks,
-      isEmpty,
+
+    expect(document.toJson(), initial.toJson());
+  });
+
+  testWidgets('document editor applies list formatting only to selection', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+      ],
     );
 
-    await _tapToolbar(tester, const Key('lesson_document_toolbar_bullet_list'));
-    expect(document.blocks.single, isA<LessonListBlock>());
-    expect(document.blocks.single.type, 'bullet_list');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
 
-    await _tapToolbar(
+    await _selectTextRange(
       tester,
-      const Key('lesson_document_toolbar_ordered_list'),
+      const ValueKey('lesson_document_editor_block_0'),
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 10,
     );
-    expect(document.blocks.single, isA<LessonListBlock>());
-    expect(document.blocks.single.type, 'ordered_list');
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_bullet_list'));
+
+    expect(document.blocks, hasLength(3));
+    expect(
+      (document.blocks[0] as LessonParagraphBlock).children.single.text,
+      'Alpha ',
+    );
+    expect(document.blocks[1], isA<LessonListBlock>());
+    expect(document.blocks[1].type, 'bullet_list');
+    expect(
+      ((document.blocks[1] as LessonListBlock).items.single.children.single)
+          .text,
+      'Beta',
+    );
+    expect(
+      (document.blocks[2] as LessonParagraphBlock).children.single.text,
+      ' Gamma',
+    );
   });
 
   testWidgets('document editor renders positive corpus authoring nodes', (
@@ -223,6 +425,17 @@ void main() {
     );
 
     expect(surface, findsOneWidget);
+    final editorShell = tester.widget<Container>(
+      find.byKey(const ValueKey('lesson_document_editor_shell')),
+    );
+    final shellDecoration = editorShell.decoration as BoxDecoration?;
+    expect(shellDecoration?.color, Colors.white);
+    final writingSurface = tester.widget<DecoratedBox>(surface);
+    final writingSurfaceDecoration = writingSurface.decoration as BoxDecoration;
+    expect(writingSurfaceDecoration.color, Colors.white);
+    expect(find.textContaining('Dokumentmodell'), findsNothing);
+    expect(find.textContaining('lesson_document_v1'), findsNothing);
+    expect(find.textContaining('Markdown/Quill'), findsNothing);
     expect(
       find.descendant(of: surface, matching: find.byType(Card)),
       findsNothing,
@@ -332,8 +545,12 @@ void main() {
       ),
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey('lesson_document_editor_block_0')),
+    await _selectTextRange(
+      tester,
+      const ValueKey('lesson_document_editor_block_0'),
+      text: 'Save me',
+      start: 0,
+      end: 4,
     );
     await _tapToolbar(tester, const Key('lesson_document_toolbar_bold'));
     await tester.tap(find.byKey(const Key('save_document_payload')));
@@ -344,16 +561,33 @@ void main() {
     final savedDocument = LessonDocument.fromJson(
       savedPayload!['content_document'],
     );
-    expect(
-      (savedDocument.blocks.single as LessonParagraphBlock)
-          .children
-          .single
-          .marks
-          .single
-          .type,
-      'bold',
-    );
+    final children =
+        (savedDocument.blocks.single as LessonParagraphBlock).children;
+    expect(children.first.text, 'Save');
+    expect(children.first.marks.single.type, 'bold');
+    expect(children.last.text, ' me');
+    expect(children.last.marks, isEmpty);
   });
+}
+
+Future<void> _selectTextRange(
+  WidgetTester tester,
+  ValueKey<String> key, {
+  required String text,
+  required int start,
+  required int end,
+}) async {
+  final finder = find.byKey(key);
+  await tester.ensureVisible(finder);
+  await tester.tap(finder);
+  await tester.pump();
+  tester.testTextInput.updateEditingValue(
+    TextEditingValue(
+      text: text,
+      selection: TextSelection(baseOffset: start, extentOffset: end),
+    ),
+  );
+  await tester.pump();
 }
 
 Future<void> _tapToolbar(WidgetTester tester, Key key) async {

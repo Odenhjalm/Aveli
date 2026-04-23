@@ -748,6 +748,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   String? _documentReadyLessonId;
   int? _documentReadyRequestId;
   bool _lessonPreviewMode = false;
+  LessonDocumentReadingMode _lessonPreviewReadingMode =
+      LessonDocumentReadingMode.glass;
   bool _lessonPreviewLoading = false;
   bool _lessonContentDirty = false;
   bool _lessonContentSaving = false;
@@ -3325,7 +3327,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ),
         gap6,
         Text(
-          'Skrivskyddad förhandsgranskning av sparad dokumentmodell.',
+          'Skrivskyddad förhandsgranskning av sparat innehåll.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -3340,6 +3342,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               label: Text('Live preview'),
             ),
           ],
+        ),
+        gap12,
+        LessonDocumentReadingModeToggle(
+          value: _lessonPreviewReadingMode,
+          onChanged: (mode) {
+            setState(() => _lessonPreviewReadingMode = mode);
+          },
         ),
         gap12,
         if (previewCoverUrl case final coverUrl?)
@@ -3380,6 +3389,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   child: LessonDocumentPreview(
                     document: previewDocument,
                     media: previewMedia,
+                    readingMode: _lessonPreviewReadingMode,
                   ),
                 ),
         ),

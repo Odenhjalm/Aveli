@@ -7,7 +7,9 @@
       "Current Quill and Markdown editor code is legacy evidence, not rebuild authority",
       "No legacy data migration is in scope",
       "The rebuilt editor must support formatting, headings, lists, media, CTA, persisted preview, and ETag concurrency",
-      "The editor authoring UI must present a single continuous writing surface while mapping deterministically to lesson_document_v1 blocks and nodes"
+      "The editor authoring UI must present a single continuous writing surface while mapping deterministically to lesson_document_v1 blocks and nodes",
+      "Formatting commands must apply to explicit selected text ranges instead of whole focused blocks",
+      "Editor and learner reading UX must provide a white authoring surface, no internal UI leakage, and local Glass/Paper reading modes without changing lesson_document_v1 or backend APIs"
     ],
     "contracts": [
       "actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
@@ -353,6 +355,57 @@
         "Markdown Quill legacy editor pathways forbidden continuous authoring"
       ],
       "verification_requirement": "The editor presents a single continuous writing surface without visible per-block containers while preserving deterministic lesson_document_v1 content mapping and without reintroducing Markdown, Quill, or legacy pathways."
+    },
+    {
+      "task_id": "LER-014",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "FRONTEND_EDITOR_SEMANTICS",
+      "description": "Make formatting operations use the active selected text range instead of implicitly applying to the entire focused block.",
+      "depends_on": [
+        "LER-013"
+      ],
+      "target_files": [
+        "actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
+        "actual_truth/contracts/course_lesson_editor_contract.md",
+        "actual_truth/DETERMINED_TASKS/lesson_editor_rebuild/LER-014_selection_based_formatting.md",
+        "actual_truth/analysis/lesson_editor_rebuild_foundation/SELECTION_BASED_FORMATTING_LER014.md",
+        "frontend/lib/editor/document/lesson_document_editor.dart",
+        "frontend/test/widgets/lesson_document_editor_test.dart"
+      ],
+      "retrieval_queries": [
+        "LessonDocumentEditor TextSelection toolbar formatting selected range",
+        "heading bold italic clear formatting selection range lesson_document_v1",
+        "Word Google Docs selection-based formatting no whole block mutation"
+      ],
+      "verification_requirement": "Bold, italic, underline, clear formatting, heading conversion, paragraph conversion, bullet-list conversion, and ordered-list conversion apply only to explicit selected text ranges, with no Markdown/Quill legacy authority."
+    },
+    {
+      "task_id": "LER-015",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "FRONTEND_READING_UX",
+      "description": "Make the editor writing surface white, remove internal model/debug UI leakage, and add local Glass/Paper reading modes for persisted preview and learner lesson rendering.",
+      "depends_on": [
+        "LER-014"
+      ],
+      "target_files": [
+        "actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
+        "actual_truth/contracts/course_lesson_editor_contract.md",
+        "actual_truth/DETERMINED_TASKS/lesson_editor_rebuild/LER-015_reading_ux_modes.md",
+        "actual_truth/analysis/lesson_editor_rebuild_foundation/READING_UX_MODES_LER015.md",
+        "frontend/lib/editor/document/lesson_document_editor.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "frontend/test/widgets/lesson_document_editor_test.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart"
+      ],
+      "retrieval_queries": [
+        "LessonDocumentEditor white writing surface internal debug text",
+        "Course Editor Preview Mode reading mode Glass Paper",
+        "learner lesson renderer Glass Paper reading mode no backend change"
+      ],
+      "verification_requirement": "Editor authoring uses a white surface, internal model/debug strings are not rendered to users, and preview plus learner reading modes switch between existing glass style and visual-only paper style without changing lesson_document_v1, backend APIs, persistence, Markdown, or Quill authority."
     }
   ]
 }

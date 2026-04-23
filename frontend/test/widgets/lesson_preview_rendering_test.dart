@@ -208,4 +208,63 @@ void main() {
     expect(find.text('Lektionsinnehållet saknas.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'learner content renderer toggles glass and paper reading modes',
+    (tester) async {
+      final corpus = loadLessonDocumentFixtureCorpus();
+      final document = corpus.document('full_capability_document');
+      final initialJson = document.toCanonicalJsonString();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: LearnerLessonContentRenderer(
+                document: document,
+                lessonMedia: _lessonMediaItemsFromCorpus(corpus),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('lesson_document_reading_mode_toggle')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('lesson_document_paper_reading_surface')),
+        findsNothing,
+      );
+      expect(
+        find.text('Full capability document', findRichText: true),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Paper'));
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('lesson_document_paper_reading_surface')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Full capability document', findRichText: true),
+        findsOneWidget,
+      );
+      expect(document.toCanonicalJsonString(), initialJson);
+
+      await tester.tap(find.text('Glass'));
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('lesson_document_paper_reading_surface')),
+        findsNothing,
+      );
+      expect(document.toCanonicalJsonString(), initialJson);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

@@ -888,6 +888,16 @@ Canonical document node law:
   visible per-block editor containers
 - continuous authoring is presentation-only; every edit must still map
   deterministically to `lesson_document_v1` blocks and nodes
+- formatting commands must apply to the current selected text range only
+- collapsed cursor focus must not format the whole block or document
+- partial structural formatting, including heading and list conversion, must
+  split selected text into deterministic `lesson_document_v1` blocks/nodes
+- user-facing editor, preview, and learner UI must not render internal model,
+  schema, Markdown/Quill authority, or debug labels
+- editor authoring must use a clean white writing surface
+- persisted preview and learner lesson rendering may offer local Glass/Paper
+  reading modes, but reading mode is presentation-only and must not be
+  serialized, persisted, or sent to backend APIs
 
 Document fixture corpus law:
 

@@ -148,9 +148,44 @@ The continuous authoring surface MUST still map deterministically to
 - media placements map to `media` blocks with `lesson_media_id`
 - magic-link / CTA authoring maps to `cta` blocks
 
+Formatting commands MUST be selection-based.
+
+Bold, italic, underline, clear-formatting, heading conversion, paragraph
+conversion, bullet-list conversion, and ordered-list conversion must apply to
+the current selected text range only.
+
+Collapsed cursor state or active-block focus MUST NOT be treated as implicit
+permission to format the entire block or document. A formatting command may
+affect an entire block only when that block's text range is explicitly
+selected.
+
+When a structural command such as heading or list conversion is applied to a
+partial selection, the editor must split the surrounding text into deterministic
+`lesson_document_v1` blocks/nodes so the selected range alone receives the new
+structure.
+
 This law changes presentation only. It does not weaken document authority,
 backend validation, persisted preview authority, learner rendering authority,
 or ETag / If-Match concurrency.
+
+## 4B. READING UX PRESENTATION LAW
+
+The rebuilt editor authoring shell MUST use a clean white writing surface.
+
+The rebuilt editor, persisted preview, and learner reading UI MUST NOT render
+internal model labels, schema labels, Markdown/Quill authority text, or debug
+strings to users.
+
+Persisted preview and learner lesson rendering MUST provide local selectable
+reading modes:
+
+- Glass mode preserves the existing translucent presentation style
+- Paper mode renders the same document content on a white surface with subtle
+  visual-only horizontal lines and high-contrast text
+
+Reading mode is presentation-only local UI state. It MUST NOT be serialized
+into `lesson_document_v1`, sent to backend APIs, used as validation authority,
+or treated as content persistence.
 
 ## 5. CONTENT WRITE LAW
 

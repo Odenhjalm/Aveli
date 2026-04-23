@@ -15,6 +15,8 @@
 | LER-011 | `completed` | Add deterministic gates against legacy authority returning. | [LER-009, LER-010] |
 | LER-012 | `completed` | Run the final aggregate editor rebuild gate. | [LER-011] |
 | LER-013 | `completed` | Present the editor as one continuous writing surface while retaining document-node mapping. | [LER-012] |
+| LER-014 | `completed` | Make formatting commands apply to explicit selected text ranges instead of whole focused blocks. | [LER-013] |
+| LER-015 | `completed` | Make authoring white, remove internal UI leakage, and add Glass/Paper reading modes. | [LER-014] |
 
 Canonical tree directory:
 

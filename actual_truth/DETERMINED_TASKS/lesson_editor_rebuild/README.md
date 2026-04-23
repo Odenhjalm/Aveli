@@ -31,9 +31,11 @@ Current execution state:
 - `LER-011`: `COMPLETED`
 - `LER-012`: `COMPLETED`
 - `LER-013`: `COMPLETED`
+- `LER-014`: `COMPLETED`
+- `LER-015`: `COMPLETED`
 
-The deterministic task tree extension is closed. No successor task remains in
-this DAG.
+The deterministic task tree extension is closed through `LER-015`. No successor
+task remains in this DAG.
 
 The controller must:
 
@@ -74,6 +76,8 @@ The controller must not use chat history as authority.
 11. `LER-011` deterministic audit gates
 12. `LER-012` final aggregate editor gate
 13. `LER-013` continuous authoring surface
+14. `LER-014` selection-based formatting
+15. `LER-015` editor and learner reading UX modes
 
 ## Coverage Map
 
@@ -85,6 +89,8 @@ The controller must not use chat history as authority.
 - ETag concurrency: `LER-002`, `LER-003`, `LER-010`
 - Legacy removal: `LER-001`, `LER-009`, `LER-011`, `LER-012`
 - Continuous writing surface: `LER-013`
+- Selection-based formatting: `LER-014`
+- White authoring surface and Glass/Paper reading modes: `LER-015`
 
 ## Stop Conditions
 

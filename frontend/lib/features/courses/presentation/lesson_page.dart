@@ -334,7 +334,7 @@ LessonDocumentPreviewMedia _previewMediaFromLessonMediaItem(
   );
 }
 
-class LearnerLessonContentRenderer extends StatelessWidget {
+class LearnerLessonContentRenderer extends StatefulWidget {
   const LearnerLessonContentRenderer({
     super.key,
     required this.document,
@@ -347,19 +347,50 @@ class LearnerLessonContentRenderer extends StatelessWidget {
   final ValueChanged<String>? onLaunchUrl;
 
   @override
+  State<LearnerLessonContentRenderer> createState() =>
+      _LearnerLessonContentRendererState();
+}
+
+class _LearnerLessonContentRendererState
+    extends State<LearnerLessonContentRenderer> {
+  LessonDocumentReadingMode _readingMode = LessonDocumentReadingMode.glass;
+
+  @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
-      opacity: 0.16,
-      sigmaX: 10,
-      sigmaY: 10,
-      borderRadius: BorderRadius.circular(22),
-      borderColor: Colors.white.withValues(alpha: 0.16),
-      child: LessonPageRenderer(
-        document: document,
-        lessonMedia: lessonMedia,
-        onLaunchUrl: onLaunchUrl,
-      ),
+    final renderer = LessonPageRenderer(
+      document: widget.document,
+      lessonMedia: widget.lessonMedia,
+      onLaunchUrl: widget.onLaunchUrl,
+      readingMode: _readingMode,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: LessonDocumentReadingModeToggle(
+            value: _readingMode,
+            onChanged: (mode) {
+              if (mode == _readingMode) return;
+              setState(() => _readingMode = mode);
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_readingMode == LessonDocumentReadingMode.glass)
+          GlassCard(
+            padding: const EdgeInsets.all(16),
+            opacity: 0.16,
+            sigmaX: 10,
+            sigmaY: 10,
+            borderRadius: BorderRadius.circular(22),
+            borderColor: Colors.white.withValues(alpha: 0.16),
+            child: renderer,
+          )
+        else
+          renderer,
+      ],
     );
   }
 }
@@ -370,11 +401,13 @@ class LessonPageRenderer extends StatelessWidget {
     required this.document,
     this.lessonMedia = const <LessonMediaItem>[],
     this.onLaunchUrl,
+    this.readingMode = LessonDocumentReadingMode.glass,
   });
 
   final LessonDocument document;
   final List<LessonMediaItem> lessonMedia;
   final ValueChanged<String>? onLaunchUrl;
+  final LessonDocumentReadingMode readingMode;
 
   @override
   Widget build(BuildContext context) {
@@ -389,6 +422,7 @@ class LessonPageRenderer extends StatelessWidget {
     return LessonDocumentPreview(
       document: document,
       media: previewMedia,
+      readingMode: readingMode,
       onLaunchUrl: onLaunchUrl ?? (url) => unawaited(_tryLaunchExternal(url)),
       mediaBuilder: (context, block, media) => _LearnerDocumentMediaBlock(
         block: block,

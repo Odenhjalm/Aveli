@@ -2,11 +2,12 @@
 
 ## STATUS
 
-LER-013_COMPLETED
+LER-015_COMPLETED
 
 `LER-001`, `LER-002`, `LER-003`, `LER-004`, `LER-005`, `LER-006`,
 `LER-007`, `LER-008`, `LER-009`, `LER-010`, `LER-011`, and `LER-012`
-are complete. `LER-013` is also complete as a post-final contract amendment.
+are complete. `LER-013`, `LER-014`, and `LER-015` are also complete as
+post-final contract amendments.
 
 The deterministic lesson editor rebuild DAG extension is closed. There is no
 remaining successor task in this tree.
@@ -26,6 +27,8 @@ remaining successor task in this tree.
 11. `LER-011`
 12. `LER-012`
 13. `LER-013`
+14. `LER-014`
+15. `LER-015`
 
 ## Dependency Graph
 
@@ -45,6 +48,8 @@ remaining successor task in this tree.
 - `LER-010 -> LER-011`
 - `LER-011 -> LER-012`
 - `LER-012 -> LER-013`
+- `LER-013 -> LER-014`
+- `LER-014 -> LER-015`
 
 ## Determinism Notes
 
@@ -103,6 +108,14 @@ remaining successor task in this tree.
   one continuous writing surface, and `LessonDocumentEditor` renders text,
   list, media, and CTA nodes inside that single surface while preserving
   deterministic `lesson_document_v1` mapping.
+- `LER-014` completed because formatting commands now use the active
+  `TextSelection` range, collapsed/no-selection formatting is a no-op, and
+  partial heading/list formatting splits the selected range into deterministic
+  `lesson_document_v1` nodes instead of mutating the whole block.
+- `LER-015` completed because the editor authoring shell is now fully white,
+  internal model/Markdown debug text is not rendered to users, and persisted
+  preview plus learner lesson reading expose local Glass/Paper reading modes
+  without changing `lesson_document_v1`, backend APIs, or persistence.
 - Legacy removal waited until document save, render, media, CTA, preview, and
   learner paths had replacements.
 - Final gates executed only after tests and removal gates existed.

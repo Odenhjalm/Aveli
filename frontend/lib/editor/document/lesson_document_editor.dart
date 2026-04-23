@@ -174,81 +174,45 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _applyInlineMark(LessonInlineMark mark) {
-    final target = _selectedTarget.normalized(widget.document);
-    if (target == null) return;
-    final children = _childrenForTarget(target);
-    final length = _plainText(children).length;
-    if (length == 0) {
-      _replaceTargetChildren(target, <LessonTextRun>[
-        LessonTextRun('', marks: <LessonInlineMark>[mark]),
-      ]);
-      return;
-    }
+    final selection = _selectedTextRange();
+    if (selection == null) return;
+    final target = selection.target;
     _emit(
       target.itemIndex == null
           ? widget.document.formatBlockInlineRange(
               target.blockIndex,
-              start: 0,
-              end: length,
+              start: selection.start,
+              end: selection.end,
               mark: mark,
             )
           : widget.document.formatListItemInlineRange(
               target.blockIndex,
               itemIndex: target.itemIndex!,
-              start: 0,
-              end: length,
+              start: selection.start,
+              end: selection.end,
               mark: mark,
             ),
     );
   }
 
   void _clearFormatting() {
-    final target = _selectedTarget.normalized(widget.document);
-    if (target == null) return;
-    final children = _childrenForTarget(target);
-    final length = _plainText(children).length;
-    if (length == 0) {
-      _replaceTargetChildren(target, const <LessonTextRun>[LessonTextRun('')]);
-      return;
-    }
+    final selection = _selectedTextRange();
+    if (selection == null) return;
+    final target = selection.target;
     _emit(
       target.itemIndex == null
           ? widget.document.clearBlockInlineFormatting(
               target.blockIndex,
-              start: 0,
-              end: length,
+              start: selection.start,
+              end: selection.end,
             )
           : widget.document.clearListItemInlineFormatting(
               target.blockIndex,
               itemIndex: target.itemIndex!,
-              start: 0,
-              end: length,
+              start: selection.start,
+              end: selection.end,
             ),
     );
-  }
-
-  void _replaceTargetChildren(
-    _EditorTarget target,
-    List<LessonTextRun> children,
-  ) {
-    final blocks = widget.document.blocks.isEmpty
-        ? <LessonBlock>[LessonParagraphBlock(children: children)]
-        : widget.document.blocks;
-    final nextBlocks = List<LessonBlock>.from(blocks);
-    final block = nextBlocks[target.blockIndex];
-    if (target.itemIndex case final itemIndex?) {
-      if (block is! LessonListBlock) return;
-      final nextItems = List<LessonListItem>.from(block.items);
-      nextItems[itemIndex] = nextItems[itemIndex].copyWith(children: children);
-      nextBlocks[target.blockIndex] = block.copyWith(items: nextItems);
-    } else if (block is LessonParagraphBlock) {
-      nextBlocks[target.blockIndex] = block.copyWith(children: children);
-    } else if (block is LessonHeadingBlock) {
-      nextBlocks[target.blockIndex] = block.copyWith(children: children);
-    } else {
-      return;
-    }
-    _emit(LessonDocument(blocks: List<LessonBlock>.unmodifiable(nextBlocks)));
   }
 
   List<LessonTextRun> _childrenForTarget(_EditorTarget target) {
@@ -267,63 +231,65 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _convertSelectedBlock(_BlockConversion conversion) {
-    final target = _selectedTarget.normalized(widget.document);
+    final selection = _selectedTextRange();
+    if (selection == null) return;
     final sourceBlocks = widget.document.blocks.isEmpty
         ? const <LessonBlock>[
             LessonParagraphBlock(children: <LessonTextRun>[LessonTextRun('')]),
           ]
         : widget.document.blocks;
-    final normalizedTarget = target ?? const _EditorTarget.block(0);
+    final normalizedTarget = selection.target;
     final block = sourceBlocks[normalizedTarget.blockIndex];
+    final split = _splitRunsByRange(
+      _childrenForTarget(normalizedTarget),
+      start: selection.start,
+      end: selection.end,
+    );
     final nextBlocks = List<LessonBlock>.from(sourceBlocks);
 
-    switch (conversion) {
-      case _BlockConversion.paragraph:
-        final replacement = block is LessonListBlock
-            ? block.items
-                  .map<LessonBlock>(
-                    (item) => LessonParagraphBlock(children: item.children),
-                  )
-                  .toList(growable: false)
-            : <LessonBlock>[
-                LessonParagraphBlock(
-                  children: _childrenForExistingTextBlock(block),
-                ),
-              ];
-        nextBlocks
-          ..removeAt(normalizedTarget.blockIndex)
-          ..insertAll(normalizedTarget.blockIndex, replacement);
-        break;
-      case _BlockConversion.heading:
-        final replacement = block is LessonListBlock
-            ? block.items
-                  .map<LessonBlock>(
-                    (item) =>
-                        LessonHeadingBlock(level: 2, children: item.children),
-                  )
-                  .toList(growable: false)
-            : <LessonBlock>[
-                LessonHeadingBlock(
-                  level: 2,
-                  children: _childrenForExistingTextBlock(block),
-                ),
-              ];
-        nextBlocks
-          ..removeAt(normalizedTarget.blockIndex)
-          ..insertAll(normalizedTarget.blockIndex, replacement);
-        break;
-      case _BlockConversion.bulletList:
-        nextBlocks[normalizedTarget.blockIndex] = LessonListBlock.bullet(
-          items: _itemsForListConversion(block),
-        );
-        break;
-      case _BlockConversion.orderedList:
-        nextBlocks[normalizedTarget.blockIndex] = LessonListBlock.ordered(
-          items: _itemsForListConversion(block),
-        );
-        break;
+    if (normalizedTarget.itemIndex case final itemIndex?) {
+      if (block is! LessonListBlock) return;
+      final replacement = _splitListItemSelectionIntoBlocks(
+        block,
+        itemIndex: itemIndex,
+        split: split,
+        conversion: conversion,
+      );
+      nextBlocks
+        ..removeAt(normalizedTarget.blockIndex)
+        ..insertAll(normalizedTarget.blockIndex, replacement);
+    } else {
+      final replacement = _splitTextBlockSelectionIntoBlocks(
+        block,
+        split: split,
+        conversion: conversion,
+      );
+      nextBlocks
+        ..removeAt(normalizedTarget.blockIndex)
+        ..insertAll(normalizedTarget.blockIndex, replacement);
     }
     _emit(LessonDocument(blocks: List<LessonBlock>.unmodifiable(nextBlocks)));
+  }
+
+  _SelectedTextRange? _selectedTextRange() {
+    final target = _selectedTarget.normalized(widget.document);
+    if (target == null) return null;
+    final children = _childrenForTarget(target);
+    final length = _plainText(children).length;
+    if (length == 0) return null;
+    final controller = _controllers[target.key];
+    final selection = controller?.selection;
+    if (selection == null || !selection.isValid || selection.isCollapsed) {
+      return null;
+    }
+    final start = selection.start.clamp(0, length).toInt();
+    final end = selection.end.clamp(0, length).toInt();
+    if (start == end) return null;
+    return _SelectedTextRange(
+      target: target,
+      start: start < end ? start : end,
+      end: end > start ? end : start,
+    );
   }
 
   void _appendParagraph() {
@@ -352,18 +318,18 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   @override
   Widget build(BuildContext context) {
     _syncControllers();
-    final theme = Theme.of(context);
     final blocks = widget.document.blocks.isEmpty
         ? const <LessonBlock>[
             LessonParagraphBlock(children: <LessonTextRun>[LessonTextRun('')]),
           ]
         : widget.document.blocks;
     return Container(
+      key: const ValueKey<String>('lesson_document_editor_shell'),
       constraints: BoxConstraints(minHeight: widget.minHeight),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black.withValues(alpha: 0.10)),
-        color: Colors.white.withValues(alpha: 0.92),
+        color: Colors.white,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -399,15 +365,6 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                   final block = blocks[blockIndex];
                   return _buildBlockEditor(context, block, blockIndex);
                 },
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Text(
-              'Dokumentmodell: lesson_document_v1. Markdown/Quill anvands inte som sparauktoritet.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -732,6 +689,64 @@ typedef LessonDocumentPreviewMediaBuilder =
       LessonDocumentPreviewMedia? media,
     );
 
+enum LessonDocumentReadingMode { glass, paper }
+
+class LessonDocumentReadingModeToggle extends StatelessWidget {
+  const LessonDocumentReadingModeToggle({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final LessonDocumentReadingMode value;
+  final ValueChanged<LessonDocumentReadingMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          'Reading mode',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        ToggleButtons(
+          key: const ValueKey<String>('lesson_document_reading_mode_toggle'),
+          borderRadius: BorderRadius.circular(999),
+          constraints: const BoxConstraints(minHeight: 36, minWidth: 82),
+          isSelected: [
+            value == LessonDocumentReadingMode.glass,
+            value == LessonDocumentReadingMode.paper,
+          ],
+          onPressed: (index) {
+            onChanged(
+              index == 0
+                  ? LessonDocumentReadingMode.glass
+                  : LessonDocumentReadingMode.paper,
+            );
+          },
+          children: const [
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Text('Glass'),
+            ),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Text('Paper'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class LessonDocumentPreview extends StatelessWidget {
   const LessonDocumentPreview({
     super.key,
@@ -739,15 +754,25 @@ class LessonDocumentPreview extends StatelessWidget {
     this.media = const <LessonDocumentPreviewMedia>[],
     this.mediaBuilder,
     this.onLaunchUrl,
+    this.readingMode = LessonDocumentReadingMode.glass,
   });
 
   final LessonDocument document;
   final List<LessonDocumentPreviewMedia> media;
   final LessonDocumentPreviewMediaBuilder? mediaBuilder;
   final ValueChanged<String>? onLaunchUrl;
+  final LessonDocumentReadingMode readingMode;
 
   @override
   Widget build(BuildContext context) {
+    final preview = _buildPreviewContent(context);
+    return switch (readingMode) {
+      LessonDocumentReadingMode.glass => preview,
+      LessonDocumentReadingMode.paper => _PaperReadingSurface(child: preview),
+    };
+  }
+
+  Widget _buildPreviewContent(BuildContext context) {
     if (document.blocks.isEmpty) {
       return const Text('Lektionsinnehall saknas.');
     }
@@ -769,6 +794,72 @@ class LessonDocumentPreview extends StatelessWidget {
       ],
     );
   }
+}
+
+class _PaperReadingSurface extends StatelessWidget {
+  const _PaperReadingSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textStyle =
+        theme.textTheme.bodyLarge?.copyWith(
+          color: const Color(0xFF151515),
+          height: 1.5,
+        ) ??
+        const TextStyle(color: Color(0xFF151515), height: 1.5);
+
+    return DecoratedBox(
+      key: const ValueKey<String>('lesson_document_paper_reading_surface'),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Stack(
+          children: [
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(painter: _PaperLinesPainter()),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+              child: DefaultTextStyle.merge(style: textStyle, child: child),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PaperLinesPainter extends CustomPainter {
+  const _PaperLinesPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0x14000000)
+      ..strokeWidth = 1;
+    for (var y = 30.0; y < size.height; y += 28.0) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PaperLinesPainter oldDelegate) => false;
 }
 
 class LessonDocumentPreviewMedia {
@@ -1121,6 +1212,18 @@ class _Toolbar extends StatelessWidget {
 
 enum _BlockConversion { paragraph, heading, bulletList, orderedList }
 
+class _SelectedTextRange {
+  const _SelectedTextRange({
+    required this.target,
+    required this.start,
+    required this.end,
+  });
+
+  final _EditorTarget target;
+  final int start;
+  final int end;
+}
+
 class _EditorTarget {
   const _EditorTarget.block(this.blockIndex) : itemIndex = null;
   const _EditorTarget.listItem(this.blockIndex, this.itemIndex);
@@ -1161,17 +1264,127 @@ class _EditorTarget {
   int get hashCode => Object.hash(blockIndex, itemIndex);
 }
 
-List<LessonTextRun> _childrenForExistingTextBlock(LessonBlock block) {
-  if (block is LessonParagraphBlock) return block.children;
-  if (block is LessonHeadingBlock) return block.children;
-  return const <LessonTextRun>[LessonTextRun('')];
+class _RunRangeSplit {
+  const _RunRangeSplit({
+    required this.before,
+    required this.selected,
+    required this.after,
+  });
+
+  final List<LessonTextRun> before;
+  final List<LessonTextRun> selected;
+  final List<LessonTextRun> after;
 }
 
-List<LessonListItem> _itemsForListConversion(LessonBlock block) {
-  if (block is LessonListBlock) return block.items;
-  return <LessonListItem>[
-    LessonListItem(children: _childrenForExistingTextBlock(block)),
+_RunRangeSplit _splitRunsByRange(
+  List<LessonTextRun> runs, {
+  required int start,
+  required int end,
+}) {
+  return _RunRangeSplit(
+    before: _sliceRuns(runs, 0, start),
+    selected: _sliceRuns(runs, start, end),
+    after: _sliceRuns(runs, end, _plainText(runs).length),
+  );
+}
+
+List<LessonTextRun> _sliceRuns(List<LessonTextRun> runs, int start, int end) {
+  if (start >= end) return const <LessonTextRun>[];
+  final output = <LessonTextRun>[];
+  var offset = 0;
+  for (final run in runs) {
+    final runStart = offset;
+    final runEnd = runStart + run.text.length;
+    offset = runEnd;
+    if (end <= runStart || start >= runEnd) {
+      continue;
+    }
+    final localStart = start <= runStart ? 0 : start - runStart;
+    final localEnd = end >= runEnd ? run.text.length : end - runStart;
+    if (localStart == localEnd) {
+      continue;
+    }
+    output.add(run.copyWith(text: run.text.substring(localStart, localEnd)));
+  }
+  return List<LessonTextRun>.unmodifiable(output);
+}
+
+bool _hasText(List<LessonTextRun> runs) {
+  return _plainText(runs).isNotEmpty;
+}
+
+List<LessonBlock> _splitTextBlockSelectionIntoBlocks(
+  LessonBlock source, {
+  required _RunRangeSplit split,
+  required _BlockConversion conversion,
+}) {
+  final blocks = <LessonBlock>[];
+  if (_hasText(split.before)) {
+    blocks.add(_textBlockLike(source, split.before));
+  }
+  blocks.add(_convertedBlock(conversion, split.selected));
+  if (_hasText(split.after)) {
+    blocks.add(_textBlockLike(source, split.after));
+  }
+  return blocks;
+}
+
+List<LessonBlock> _splitListItemSelectionIntoBlocks(
+  LessonListBlock source, {
+  required int itemIndex,
+  required _RunRangeSplit split,
+  required _BlockConversion conversion,
+}) {
+  final selectedItem = source.items[itemIndex];
+  final beforeItems = <LessonListItem>[
+    ...source.items.take(itemIndex),
+    if (_hasText(split.before)) selectedItem.copyWith(children: split.before),
   ];
+  final afterItems = <LessonListItem>[
+    if (_hasText(split.after)) selectedItem.copyWith(children: split.after),
+    ...source.items.skip(itemIndex + 1),
+  ];
+  return <LessonBlock>[
+    if (beforeItems.isNotEmpty) _listBlockLike(source, beforeItems),
+    _convertedBlock(conversion, split.selected),
+    if (afterItems.isNotEmpty) _listBlockLike(source, afterItems),
+  ];
+}
+
+LessonBlock _textBlockLike(LessonBlock source, List<LessonTextRun> children) {
+  if (source is LessonHeadingBlock) {
+    return LessonHeadingBlock(level: source.level, children: children);
+  }
+  return LessonParagraphBlock(children: children);
+}
+
+LessonListBlock _listBlockLike(
+  LessonListBlock source,
+  List<LessonListItem> items,
+) {
+  if (source.type == 'ordered_list') {
+    return LessonListBlock.ordered(start: source.start ?? 1, items: items);
+  }
+  return LessonListBlock.bullet(items: items);
+}
+
+LessonBlock _convertedBlock(
+  _BlockConversion conversion,
+  List<LessonTextRun> children,
+) {
+  return switch (conversion) {
+    _BlockConversion.paragraph => LessonParagraphBlock(children: children),
+    _BlockConversion.heading => LessonHeadingBlock(
+      level: 2,
+      children: children,
+    ),
+    _BlockConversion.bulletList => LessonListBlock.bullet(
+      items: <LessonListItem>[LessonListItem(children: children)],
+    ),
+    _BlockConversion.orderedList => LessonListBlock.ordered(
+      items: <LessonListItem>[LessonListItem(children: children)],
+    ),
+  };
 }
 
 List<LessonTextRun> _textRunsForReplacement(
