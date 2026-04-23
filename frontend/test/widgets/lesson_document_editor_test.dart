@@ -615,13 +615,27 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             height: 360,
-            child: LessonDocumentEditor(document: document, onChanged: (_) {}),
+            child: LessonDocumentEditor(
+              document: document,
+              media: const [
+                LessonDocumentPreviewMedia(
+                  lessonMediaId: '88888888-8888-4888-8888-888888888888',
+                  mediaType: 'image',
+                  state: 'ready',
+                  label: 'cover.png',
+                ),
+              ],
+              onChanged: (_) {},
+            ),
           ),
         ),
       ),
     );
 
-    expect(find.textContaining('Infogad media'), findsOneWidget);
+    expect(find.text('cover.png'), findsOneWidget);
+    expect(find.text('image'), findsOneWidget);
+    expect(find.textContaining('Infogad media'), findsNothing);
+    expect(find.textContaining('Flytta blocket'), findsNothing);
     expect(
       find.textContaining('88888888-8888-4888-8888-888888888888'),
       findsNothing,

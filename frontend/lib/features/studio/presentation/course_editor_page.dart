@@ -1152,6 +1152,19 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
+  List<LessonDocumentPreviewMedia> _editorDocumentMedia() {
+    return [
+      for (final media in _lessonMedia)
+        LessonDocumentPreviewMedia(
+          lessonMediaId: media.lessonMediaId,
+          mediaType: media.mediaType,
+          state: media.state,
+          label: _safeLessonPreviewMediaLabel(media.originalName),
+          resolvedUrl: media.media?.resolvedUrl,
+        ),
+    ];
+  }
+
   String? _safeLessonPreviewMediaLabel(String? label) {
     final normalized = label?.trim();
     if (normalized == null || normalized.isEmpty) {
@@ -2987,6 +3000,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         LessonDocumentEditor(
           key: const ValueKey<String>(_lessonEditorTestId),
           document: _lessonDocument,
+          media: _editorDocumentMedia(),
           enabled: !_lessonPreviewMode && _isSelectedLessonDocumentReady(),
           minHeight: 280,
           onChanged: (document) {
@@ -4376,14 +4390,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return index.clamp(0, document.blocks.length).toInt();
   }
 
-  int _resolvedLessonDocumentInsertionIndex() {
-    return _clampedLessonDocumentInsertionIndex(
-          _lessonDocumentInsertionIndex,
-          _lessonDocument,
-        ) ??
-        _lessonDocument.blocks.length;
-  }
-
   void _rememberLessonDocumentInsertionIndex(int index) {
     _lessonDocumentInsertionIndex = _clampedLessonDocumentInsertionIndex(
       index,
@@ -4395,7 +4401,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     required String mediaType,
     required String lessonMediaId,
   }) {
-    final insertionIndex = _resolvedLessonDocumentInsertionIndex();
+    const insertionIndex = 0;
     final nextDocument = _lessonDocument.insertMedia(
       insertionIndex,
       mediaType: mediaType,
@@ -4403,7 +4409,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
     setState(() {
       _lessonDocument = nextDocument;
-      _lessonDocumentInsertionIndex = insertionIndex + 1;
+      _lessonDocumentInsertionIndex = 1;
     });
     _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
   }

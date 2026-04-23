@@ -69,7 +69,7 @@ Completed on: `2026-04-23`
 
 - Added seeded LER-011 detection for append-only media insertion, raw media
   labels, and `mediaAssetId` label fallback.
-- Added LER-011 source gates for positioned insertion, editor move controls,
+- Added LER-011 source gates for top insertion, editor move controls,
   document move primitives, and user-facing no-leak behavior.
 - Extended LER-012 final aggregate gate so LEMB-specific behavior and LER-011
   gate functions must remain present.

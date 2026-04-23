@@ -8,6 +8,7 @@ class LessonDocumentEditor extends StatefulWidget {
     super.key,
     required this.document,
     required this.onChanged,
+    this.media = const <LessonDocumentPreviewMedia>[],
     this.onInsertionIndexChanged,
     this.enabled = true,
     this.minHeight = 280,
@@ -15,6 +16,7 @@ class LessonDocumentEditor extends StatefulWidget {
 
   final LessonDocument document;
   final ValueChanged<LessonDocument> onChanged;
+  final List<LessonDocumentPreviewMedia> media;
   final ValueChanged<int>? onInsertionIndexChanged;
   final bool enabled;
   final double minHeight;
@@ -462,6 +464,32 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     return Padding(padding: _blockPadding(block, blockIndex), child: child);
   }
 
+  LessonDocumentPreviewMedia? _mediaForBlock(LessonMediaBlock block) {
+    for (final media in widget.media) {
+      if (media.lessonMediaId == block.lessonMediaId &&
+          media.mediaType == block.mediaType) {
+        return media;
+      }
+    }
+    return null;
+  }
+
+  String _mediaFileName(LessonDocumentPreviewMedia? media) {
+    final label = media?.label?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    return 'Namnlös fil';
+  }
+
+  String _mediaTypeLabel(String mediaType) {
+    return switch (mediaType) {
+      'image' => 'image',
+      'audio' => 'audio',
+      'video' => 'video',
+      'document' => 'document',
+      _ => 'media',
+    };
+  }
+
   Widget _buildBlockEditor(
     BuildContext context,
     LessonBlock block,
@@ -543,6 +571,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     }
     if (block is LessonMediaBlock) {
       final theme = Theme.of(context);
+      final media = _mediaForBlock(block);
+      final fileName = _mediaFileName(media);
+      final mediaTypeLabel = _mediaTypeLabel(block.mediaType);
       final canMoveUp = widget.enabled && blockIndex > 0;
       final canMoveDown =
           widget.enabled && blockIndex < widget.document.blocks.length - 1;
@@ -561,12 +592,25 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'Infogad media\nFlytta blocket med pilarna.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.35,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileName,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                    Text(
+                      mediaTypeLabel,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 8),

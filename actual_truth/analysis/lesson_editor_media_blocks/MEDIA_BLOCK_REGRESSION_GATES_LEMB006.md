@@ -45,7 +45,7 @@ Updated `backend/tests/test_ler011_deterministic_audit_gates.py`:
 
 Updated `backend/tests/test_ler012_final_aggregate_editor_gate.py`:
 
-- final aggregate now requires positioned media insertion
+- final aggregate now requires top media insertion at document index `0`
 - final aggregate now rejects append-only media insertion
 - final aggregate now requires document move primitives and editor move
   delegation

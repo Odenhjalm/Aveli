@@ -459,10 +459,11 @@ def test_frontend_authoring_preview_learner_and_transport_are_document_model() -
     assert "LessonDocumentEditor(" in course_editor
     assert "LessonDocumentPreview(" in course_editor
     assert "insertMedia(" in media_insert_block
-    assert "final insertionIndex = _resolvedLessonDocumentInsertionIndex();" in media_insert_block
+    assert "const insertionIndex = 0;" in media_insert_block
     assert "insertionIndex," in media_insert_block
     assert "lessonMediaId: lessonMediaId" in media_insert_block
     assert "_lessonDocument.blocks.length," not in media_insert_block
+    assert "_resolvedLessonDocumentInsertionIndex();" not in media_insert_block
     assert "insertCta(" in cta_insert_block
     assert "targetUrl: url" in cta_insert_block
 
@@ -604,11 +605,11 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
     assert_no_findings(
         missing_token_findings(
             media_insert_block,
-            scope="final_gate.positioned_media_insert",
+            scope="final_gate.top_media_insert",
             tokens=(
-                "_resolvedLessonDocumentInsertionIndex()",
+                "const insertionIndex = 0;",
                 "insertionIndex,",
-                "_lessonDocumentInsertionIndex = insertionIndex + 1;",
+                "_lessonDocumentInsertionIndex = 1;",
             ),
         )
     )
@@ -622,8 +623,11 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
     assert_no_findings(
         forbidden_token_findings(
             media_insert_block,
-            scope="final_gate.no_append_only_media_insert",
-            tokens=("_lessonDocument.blocks.length,",),
+            scope="final_gate.no_append_or_positioned_media_insert",
+            tokens=(
+                "_lessonDocument.blocks.length,",
+                "_resolvedLessonDocumentInsertionIndex();",
+            ),
         )
     )
     assert_no_findings(
@@ -635,6 +639,7 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
                 "Media saknas: ${block.mediaType}",
                 "${block.lessonMediaId}",
                 "'Status: $state'",
+                "Infogad media\\nFlytta blocket med pilarna.",
                 "label: media.originalName ?? media.mediaAssetId",
                 "label: item.mediaAssetId",
                 "return mediaAssetId;",
@@ -646,8 +651,9 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
             document_editor + "\n" + course_editor + "\n" + learner_page,
             scope="final_gate.safe_media_user_copy",
             tokens=(
-                "Infogad media",
-                "Sparad media",
+                "_mediaFileName",
+                "_mediaTypeLabel",
+                "media: _editorDocumentMedia()",
                 "_safeLessonPreviewMediaLabel(media.originalName)",
                 "label: null",
                 "Lektionsljud",
@@ -673,7 +679,7 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
 
     for required_gate_marker in (
         "test_seeded_gate_detects_media_block_regressions",
-        "test_media_block_editor_regression_gate_is_positioned_and_document_ordered",
+        "test_media_block_editor_regression_gate_is_top_inserted_and_document_ordered",
         "test_media_block_user_facing_no_leak_regression_gate",
     ):
         assert required_gate_marker in audit_gate_tests

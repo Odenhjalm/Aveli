@@ -75,8 +75,8 @@ Completed on: `2026-04-23`
 
 ### Aggregate Verification
 
-- Media insertion is verified as active-position insertion, not unconditional
-  append.
+- Media insertion is verified as top insertion at document index `0`, not
+  append fallback or active-position insertion.
 - Media movement is verified through document-model block movement.
 - Editor, persisted preview, and learner rendering are verified against inline
   `lesson_document_v1` document order.
@@ -109,3 +109,9 @@ Completed on: `2026-04-23`
 ### Final DAG State
 
 The `lesson_editor_media_blocks` DAG slice is complete.
+
+### Post-DAG UX Amendment
+
+`actual_truth/analysis/lesson_editor_media_blocks/MEDIA_BLOCK_EDITOR_UX_REFINEMENT_20260423.md`
+supersedes the earlier active-position insertion UX invariant for newly
+inserted Course Editor media blocks.

@@ -163,6 +163,7 @@ def test_seeded_gate_detects_media_block_regressions() -> None:
           mediaType: mediaType,
           lessonMediaId: lessonMediaId,
         );
+        final legacyIndex = _resolvedLessonDocumentInsertionIndex();
       }
 
       Text('Media: ${block.mediaType}\\n${block.lessonMediaId}');
@@ -176,6 +177,7 @@ def test_seeded_gate_detects_media_block_regressions() -> None:
         scope="seeded_media_block_regressions",
         tokens=(
             "_lessonDocument.blocks.length,",
+            "_resolvedLessonDocumentInsertionIndex();",
             "Media: ${block.mediaType}",
             "${block.lessonMediaId}",
             "Media saknas: ${block.mediaType}",
@@ -186,6 +188,7 @@ def test_seeded_gate_detects_media_block_regressions() -> None:
 
     detected = {finding.token for finding in findings}
     assert "_lessonDocument.blocks.length," in detected
+    assert "_resolvedLessonDocumentInsertionIndex();" in detected
     assert "Media: ${block.mediaType}" in detected
     assert "${block.lessonMediaId}" in detected
     assert "media.originalName ?? media.mediaAssetId" in detected
@@ -411,7 +414,7 @@ def test_course_editor_preview_gate_is_persisted_read_only() -> None:
     )
 
 
-def test_media_block_editor_regression_gate_is_positioned_and_document_ordered() -> None:
+def test_media_block_editor_regression_gate_is_top_inserted_and_document_ordered() -> None:
     course_editor = read_repo_text(
         REPO_ROOT,
         "frontend/lib/features/studio/presentation/course_editor_page.dart",
@@ -435,18 +438,21 @@ def test_media_block_editor_regression_gate_is_positioned_and_document_ordered()
             insert_block,
             scope="CourseEditor._insertMediaBlockIntoDocument",
             tokens=(
-                "final insertionIndex = _resolvedLessonDocumentInsertionIndex();",
+                "const insertionIndex = 0;",
                 "_lessonDocument.insertMedia(",
                 "insertionIndex,",
-                "_lessonDocumentInsertionIndex = insertionIndex + 1;",
+                "_lessonDocumentInsertionIndex = 1;",
             ),
         )
     )
     assert_no_findings(
         forbidden_token_findings(
             insert_block,
-            scope="CourseEditor.media_insert_append_only",
-            tokens=("_lessonDocument.blocks.length,",),
+            scope="CourseEditor.media_insert_not_top",
+            tokens=(
+                "_lessonDocument.blocks.length,",
+                "_resolvedLessonDocumentInsertionIndex();",
+            ),
         )
     )
     assert_no_findings(
@@ -454,6 +460,11 @@ def test_media_block_editor_regression_gate_is_positioned_and_document_ordered()
             document_editor,
             scope="LessonDocumentEditor.position_and_move_controls",
             tokens=(
+                "media = const <LessonDocumentPreviewMedia>[]",
+                "_mediaFileName",
+                "_mediaTypeLabel",
+                "fileName,",
+                "mediaTypeLabel,",
                 "onInsertionIndexChanged",
                 "int insertionIndex(LessonDocument document)",
                 "lesson_document_media_move_up_",
@@ -504,7 +515,7 @@ def test_media_block_user_facing_no_leak_regression_gate() -> None:
         missing_token_findings(
             document_editor,
             scope="LessonDocumentEditor.safe_media_copy",
-            tokens=("Infogad media", "Sparad media"),
+            tokens=("_mediaFileName", "_mediaTypeLabel", "Namnlös fil"),
         )
     )
     assert_no_findings(
@@ -530,6 +541,7 @@ def test_media_block_user_facing_no_leak_regression_gate() -> None:
                 "Media saknas: ${block.mediaType}",
                 "block.lessonMediaId,",
                 "'Status: $state'",
+                "Infogad media\\nFlytta blocket med pilarna.",
             ),
         )
     )

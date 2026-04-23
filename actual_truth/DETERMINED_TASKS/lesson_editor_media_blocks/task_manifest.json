@@ -4,7 +4,7 @@
     "mode": "generate",
     "scope": [
       "Media blocks must render inline in lesson_document_v1 document order",
-      "Media insertion must use active editor document position instead of unconditional append",
+      "Media insertion must use document index 0 after the 2026-04-23 post-DAG UX amendment instead of active-position insertion or unconditional append",
       "Media block movement must be deterministic and preserve document identity",
       "Editor, persisted preview, and learner UI must not expose internal media identifiers or raw metadata",
       "lesson_document_v1 and backend APIs must remain unchanged unless a future contract task explicitly amends them",

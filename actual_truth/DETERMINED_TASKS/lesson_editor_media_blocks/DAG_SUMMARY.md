@@ -52,3 +52,10 @@ No task may be marked completed until its task file contains:
 - verification command evidence
 - explicit statement that `lesson_document_v1` and backend APIs were not
   modified outside the task's authority
+
+## Post-DAG Amendment
+
+On `2026-04-23`, media insertion UX was amended so newly inserted Course Editor
+media blocks are inserted at document index `0` and then moved downward by the
+user. This supersedes the earlier active-position insertion UX invariant while
+preserving document-order movement and `lesson_document_v1`.

@@ -9,7 +9,8 @@ blocks in the rebuilt lesson editor.
 
 The implementation goal is:
 
-- media blocks are inserted at the active document position
+- media blocks are inserted at document index `0` after the 2026-04-23
+  post-DAG UX amendment
 - media blocks can be moved deterministically inside document order
 - preview and learner views render media inline from `lesson_document_v1`
   document order
@@ -78,7 +79,8 @@ contract-amendment task explicitly changes active law.
 
 Stop if any task stores `media_asset_id` in `lesson_document_v1`.
 
-Stop if media insertion appends outside the active authoring position.
+Stop if new Course Editor media insertion uses append fallback or active
+cursor/selection insertion instead of document index `0`.
 
 Stop if media rendering appends a separate trailing media section.
 
@@ -87,3 +89,9 @@ Stop if editor, preview, or learner UI renders `lesson_media_id`,
 user-facing copy.
 
 Stop if Markdown, Quill, or legacy media-token pathways are reintroduced.
+
+## Post-DAG Amendment
+
+`actual_truth/analysis/lesson_editor_media_blocks/MEDIA_BLOCK_EDITOR_UX_REFINEMENT_20260423.md`
+supersedes the earlier active-position insertion UX invariant for newly
+inserted Course Editor media blocks.

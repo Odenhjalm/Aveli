@@ -12,9 +12,9 @@ Completed on: `2026-04-23`
 
 This final gate closes the `lesson_editor_media_blocks` DAG slice.
 
-The verified behavior is:
+The verified behavior after the 2026-04-23 post-DAG UX amendment is:
 
-- media blocks are inserted at the active editor document position
+- newly inserted media blocks are inserted at document index `0`
 - media blocks can move deterministically inside `lesson_document_v1.blocks`
 - image, audio, video, and document media remain block-level document nodes
 - editor, persisted preview, and learner views render media inline from document
@@ -77,5 +77,5 @@ The media-block implementation slice is closed.
 
 The DAG now has no pending `LEMB-*` tasks.
 
-Future editor work must preserve the final aggregate gate invariants unless a
-new explicit contract-amendment task changes the active truth.
+Future editor work must preserve the amended final aggregate gate invariants
+unless a new explicit contract-amendment task changes the active truth.
