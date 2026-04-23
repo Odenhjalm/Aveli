@@ -795,6 +795,92 @@ typedef LessonDocumentPreviewMediaBuilder =
       LessonDocumentPreviewMedia? media,
     );
 
+const _paperReadingTextColor = Color(0xFF151515);
+const _paperReadingLineColor = Color(0x14000000);
+const _paperReadingDefaultGlassFontSize = 14.0;
+const _paperReadingGridSpacing = 28.0;
+const _paperReadingContentPadding = EdgeInsets.fromLTRB(24, 24, 24, 24);
+const _paperReadingTextHeightBehavior = TextHeightBehavior(
+  applyHeightToFirstAscent: true,
+  applyHeightToLastDescent: true,
+);
+
+class _PaperReadingLayout {
+  const _PaperReadingLayout({
+    required this.glassFontSize,
+    required this.paperFontSize,
+    required this.gridSpacing,
+    required this.contentPadding,
+    required this.textStyle,
+    required this.strutStyle,
+  });
+
+  factory _PaperReadingLayout.resolve(BuildContext context) {
+    final theme = Theme.of(context);
+    final glassBaseStyle =
+        theme.textTheme.bodyMedium ?? DefaultTextStyle.of(context).style;
+    final glassFontSize =
+        glassBaseStyle.fontSize ?? _paperReadingDefaultGlassFontSize;
+    final paperFontSize = glassFontSize + 2;
+    final paperLineHeight = _paperReadingGridSpacing / paperFontSize;
+    final textStyle = glassBaseStyle.copyWith(
+      fontSize: paperFontSize,
+      height: paperLineHeight,
+      color: _paperReadingTextColor,
+    );
+    return _PaperReadingLayout(
+      glassFontSize: glassFontSize,
+      paperFontSize: paperFontSize,
+      gridSpacing: _paperReadingGridSpacing,
+      contentPadding: _paperReadingContentPadding,
+      textStyle: textStyle,
+      strutStyle: StrutStyle(
+        fontSize: paperFontSize,
+        height: paperLineHeight,
+        leading: 0,
+        forceStrutHeight: true,
+      ),
+    );
+  }
+
+  final double glassFontSize;
+  final double paperFontSize;
+  final double gridSpacing;
+  final EdgeInsets contentPadding;
+  final TextStyle textStyle;
+  final StrutStyle strutStyle;
+
+  double firstBaselineOffset(TextDirection textDirection) {
+    // Grid lines are painted from the same baseline metric used by the text.
+    final painter = TextPainter(
+      text: TextSpan(text: 'Ag', style: textStyle),
+      textDirection: textDirection,
+      textScaler: TextScaler.noScaling,
+      strutStyle: strutStyle,
+      textHeightBehavior: _paperReadingTextHeightBehavior,
+    )..layout();
+    return painter.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+  }
+
+  TextStyle headingStyle() => textStyle.copyWith(fontWeight: FontWeight.w700);
+
+  TextStyle markerStyle(Color color) =>
+      textStyle.copyWith(fontWeight: FontWeight.w600, color: color);
+
+  double blockGapBetween(LessonBlock current, LessonBlock next) {
+    if (_isTextBlock(current) || _isTextBlock(next)) {
+      return gridSpacing;
+    }
+    return 12;
+  }
+
+  bool _isTextBlock(LessonBlock block) {
+    return block is LessonParagraphBlock ||
+        block is LessonHeadingBlock ||
+        block is LessonListBlock;
+  }
+}
+
 enum LessonDocumentReadingMode { glass, paper }
 
 class LessonDocumentReadingModeToggle extends StatelessWidget {
@@ -873,14 +959,19 @@ class LessonDocumentPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final preview = _buildPreviewContent(context);
     return switch (readingMode) {
-      LessonDocumentReadingMode.glass => preview,
-      LessonDocumentReadingMode.paper => _PaperReadingSurface(child: preview),
+      LessonDocumentReadingMode.glass => _buildPreviewContent(context),
+      LessonDocumentReadingMode.paper => _PaperReadingSurface(
+        builder: (context, layout) =>
+            _buildPreviewContent(context, paperLayout: layout),
+      ),
     };
   }
 
-  Widget _buildPreviewContent(BuildContext context) {
+  Widget _buildPreviewContent(
+    BuildContext context, {
+    _PaperReadingLayout? paperLayout,
+  }) {
     if (document.blocks.isEmpty) {
       return const Text('Lektionsinnehall saknas.');
     }
@@ -890,15 +981,24 @@ class LessonDocumentPreview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final block in document.blocks) ...[
+        for (var index = 0; index < document.blocks.length; index += 1) ...[
           _PreviewBlock(
-            block: block,
+            block: document.blocks[index],
             mediaByLessonMediaId: mediaByLessonMediaId,
             mediaBuilder: mediaBuilder,
             onLaunchUrl: onLaunchUrl,
             audioEngineFactory: audioEngineFactory,
+            paperLayout: paperLayout,
           ),
-          const SizedBox(height: 12),
+          if (index < document.blocks.length - 1)
+            SizedBox(
+              height:
+                  paperLayout?.blockGapBetween(
+                    document.blocks[index],
+                    document.blocks[index + 1],
+                  ) ??
+                  12,
+            ),
         ],
       ],
     );
@@ -906,19 +1006,28 @@ class LessonDocumentPreview extends StatelessWidget {
 }
 
 class _PaperReadingSurface extends StatelessWidget {
-  const _PaperReadingSurface({required this.child});
+  const _PaperReadingSurface({required this.builder});
 
-  final Widget child;
+  final Widget Function(BuildContext context, _PaperReadingLayout layout)
+  builder;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textStyle =
-        theme.textTheme.bodyLarge?.copyWith(
-          color: const Color(0xFF151515),
-          height: 1.5,
-        ) ??
-        const TextStyle(color: Color(0xFF151515), height: 1.5);
+    final layout = _PaperReadingLayout.resolve(context);
+    final mediaQuery = MediaQuery.maybeOf(context);
+    final content = Padding(
+      padding: layout.contentPadding,
+      child: DefaultTextStyle.merge(
+        style: layout.textStyle,
+        child: Builder(builder: (context) => builder(context, layout)),
+      ),
+    );
+    final child = mediaQuery == null
+        ? content
+        : MediaQuery(
+            data: mediaQuery.copyWith(textScaler: TextScaler.noScaling),
+            child: content,
+          );
 
     return DecoratedBox(
       key: const ValueKey<String>('lesson_document_paper_reading_surface'),
@@ -938,15 +1047,19 @@ class _PaperReadingSurface extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         child: Stack(
           children: [
-            const Positioned.fill(
+            Positioned.fill(
               child: IgnorePointer(
-                child: CustomPaint(painter: _PaperLinesPainter()),
+                child: CustomPaint(
+                  painter: _PaperLinesPainter(
+                    firstLineY:
+                        layout.contentPadding.top +
+                        layout.firstBaselineOffset(Directionality.of(context)),
+                    gridSpacing: layout.gridSpacing,
+                  ),
+                ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-              child: DefaultTextStyle.merge(style: textStyle, child: child),
-            ),
+            child,
           ],
         ),
       ),
@@ -955,20 +1068,29 @@ class _PaperReadingSurface extends StatelessWidget {
 }
 
 class _PaperLinesPainter extends CustomPainter {
-  const _PaperLinesPainter();
+  const _PaperLinesPainter({
+    required this.firstLineY,
+    required this.gridSpacing,
+  });
+
+  final double firstLineY;
+  final double gridSpacing;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0x14000000)
+      ..color = _paperReadingLineColor
       ..strokeWidth = 1;
-    for (var y = 30.0; y < size.height; y += 28.0) {
+    for (var y = firstLineY; y < size.height; y += gridSpacing) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _PaperLinesPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _PaperLinesPainter oldDelegate) {
+    return oldDelegate.firstLineY != firstLineY ||
+        oldDelegate.gridSpacing != gridSpacing;
+  }
 }
 
 class LessonDocumentPreviewMedia {
@@ -994,6 +1116,7 @@ class _PreviewBlock extends StatelessWidget {
     required this.mediaBuilder,
     required this.onLaunchUrl,
     required this.audioEngineFactory,
+    required this.paperLayout,
   });
 
   final LessonBlock block;
@@ -1001,6 +1124,7 @@ class _PreviewBlock extends StatelessWidget {
   final LessonDocumentPreviewMediaBuilder? mediaBuilder;
   final ValueChanged<String>? onLaunchUrl;
   final HomeAudioEngineFactory? audioEngineFactory;
+  final _PaperReadingLayout? paperLayout;
 
   @override
   Widget build(BuildContext context) {
@@ -1009,17 +1133,27 @@ class _PreviewBlock extends StatelessWidget {
       return _InlineRunsView(
         children: (block as LessonParagraphBlock).children,
         onLaunchUrl: onLaunchUrl,
+        strutStyle: paperLayout?.strutStyle,
+        textHeightBehavior: paperLayout == null
+            ? null
+            : _paperReadingTextHeightBehavior,
       );
     }
     if (block is LessonHeadingBlock) {
       final heading = block as LessonHeadingBlock;
       return DefaultTextStyle.merge(
-        style: theme.textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-        ),
+        style:
+            paperLayout?.headingStyle() ??
+            theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
         child: _InlineRunsView(
           children: heading.children,
           onLaunchUrl: onLaunchUrl,
+          strutStyle: paperLayout?.strutStyle,
+          textHeightBehavior: paperLayout == null
+              ? null
+              : _paperReadingTextHeightBehavior,
         ),
       );
     }
@@ -1031,7 +1165,7 @@ class _PreviewBlock extends StatelessWidget {
         children: [
           for (var index = 0; index < list.items.length; index += 1)
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+              padding: EdgeInsets.only(bottom: paperLayout == null ? 6 : 0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1039,12 +1173,20 @@ class _PreviewBlock extends StatelessWidget {
                     width: 28,
                     child: Text(
                       ordered ? '${index + (list.start ?? 1)}.' : '-',
+                      style: paperLayout?.markerStyle(
+                        theme.colorScheme.onSurfaceVariant,
+                      ),
+                      strutStyle: paperLayout?.strutStyle,
                     ),
                   ),
                   Expanded(
                     child: _InlineRunsView(
                       children: list.items[index].children,
                       onLaunchUrl: onLaunchUrl,
+                      strutStyle: paperLayout?.strutStyle,
+                      textHeightBehavior: paperLayout == null
+                          ? null
+                          : _paperReadingTextHeightBehavior,
                     ),
                   ),
                 ],
@@ -1127,26 +1269,40 @@ class _PreviewMediaBlock extends StatelessWidget {
 }
 
 class _InlineRunsView extends StatelessWidget {
-  const _InlineRunsView({required this.children, this.onLaunchUrl});
+  const _InlineRunsView({
+    required this.children,
+    this.onLaunchUrl,
+    this.strutStyle,
+    this.textHeightBehavior,
+  });
 
   final List<LessonTextRun> children;
   final ValueChanged<String>? onLaunchUrl;
+  final StrutStyle? strutStyle;
+  final TextHeightBehavior? textHeightBehavior;
 
   @override
   Widget build(BuildContext context) {
     final defaultStyle = DefaultTextStyle.of(context).style;
+    final text = TextSpan(
+      style: defaultStyle,
+      children: [
+        for (final run in children)
+          TextSpan(
+            text: run.text,
+            style: _styleForMarks(defaultStyle, run),
+            recognizer: _recognizerForRun(run),
+          ),
+      ],
+    );
+    if (strutStyle == null && textHeightBehavior == null) {
+      return RichText(text: text);
+    }
     return RichText(
-      text: TextSpan(
-        style: defaultStyle,
-        children: [
-          for (final run in children)
-            TextSpan(
-              text: run.text,
-              style: _styleForMarks(defaultStyle, run),
-              recognizer: _recognizerForRun(run),
-            ),
-        ],
-      ),
+      text: text,
+      strutStyle: strutStyle,
+      textScaler: TextScaler.noScaling,
+      textHeightBehavior: textHeightBehavior,
     );
   }
 

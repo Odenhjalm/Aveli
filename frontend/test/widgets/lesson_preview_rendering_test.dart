@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/editor/document/lesson_document.dart';
+import 'package:aveli/editor/document/lesson_document_editor.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart';
 import 'package:aveli/shared/media/AveliLessonImage.dart';
@@ -65,6 +66,20 @@ List<TextStyle?> _textStylesForText(WidgetTester tester, String target) {
     for (final segment in _rendererStyledTextSegments(tester))
       if (segment.text.contains(target)) segment.style,
   ];
+}
+
+double _baselineY(WidgetTester tester, String text) {
+  final finder = find.text(text, findRichText: true).first;
+  final renderParagraph = tester.renderObject(finder) as dynamic;
+  final top = tester.getTopLeft(finder).dy;
+  return top +
+      ((renderParagraph.computeDistanceToActualBaseline(TextBaseline.alphabetic)
+              as double?) ??
+          0);
+}
+
+RichText _richTextFor(WidgetTester tester, String text) {
+  return tester.widget<RichText>(find.text(text, findRichText: true).first);
 }
 
 List<LessonMediaItem> _lessonMediaItemsFromCorpus(
@@ -277,6 +292,74 @@ void main() {
       );
       expect(document.toCanonicalJsonString(), initialJson);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'lesson paper rendering matches preview paper typography exactly',
+    (tester) async {
+      const document = LessonDocument(
+        blocks: [
+          LessonParagraphBlock(
+            children: [LessonTextRun('Shared paper paragraph')],
+          ),
+          LessonParagraphBlock(
+            children: [LessonTextRun('Shared paper follow-up')],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LessonDocumentPreview(
+              document: document,
+              readingMode: LessonDocumentReadingMode.paper,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final previewRichText = _richTextFor(tester, 'Shared paper paragraph');
+      final previewStrut = previewRichText.strutStyle;
+      final previewBaselineDelta =
+          _baselineY(tester, 'Shared paper follow-up') -
+          _baselineY(tester, 'Shared paper paragraph');
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LessonPageRenderer(
+              document: document,
+              readingMode: LessonDocumentReadingMode.paper,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final lessonRichText = _richTextFor(tester, 'Shared paper paragraph');
+      final lessonStrut = lessonRichText.strutStyle;
+      expect(
+        lessonRichText.text.style?.fontSize,
+        closeTo(previewRichText.text.style?.fontSize ?? 0, 0.001),
+      );
+      expect(
+        lessonRichText.text.style?.height,
+        closeTo(previewRichText.text.style?.height ?? 0, 0.001),
+      );
+      expect(
+        lessonStrut?.fontSize,
+        closeTo(previewStrut?.fontSize ?? 0, 0.001),
+      );
+      expect(lessonStrut?.height, closeTo(previewStrut?.height ?? 0, 0.001));
+      expect(lessonStrut?.forceStrutHeight, isTrue);
+      expect(
+        _baselineY(tester, 'Shared paper follow-up') -
+            _baselineY(tester, 'Shared paper paragraph'),
+        closeTo(previewBaselineDelta, 0.01),
+      );
     },
   );
 }

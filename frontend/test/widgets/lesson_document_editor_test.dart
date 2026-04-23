@@ -9,6 +9,23 @@ import 'package:aveli/shared/widgets/inline_audio_player.dart';
 import '../helpers/fake_home_audio_engine.dart';
 import '../helpers/lesson_document_fixture_corpus.dart';
 
+double _renderedFontSize(WidgetTester tester, String text) {
+  final richText = tester.widget<RichText>(
+    find.text(text, findRichText: true).first,
+  );
+  return richText.text.style?.fontSize ?? 0;
+}
+
+double _baselineY(WidgetTester tester, String text) {
+  final finder = find.text(text, findRichText: true).first;
+  final renderParagraph = tester.renderObject(finder) as dynamic;
+  final top = tester.getTopLeft(finder).dy;
+  return top +
+      ((renderParagraph.computeDistanceToActualBaseline(TextBaseline.alphabetic)
+              as double?) ??
+          0);
+}
+
 void main() {
   testWidgets('persisted document preview renders saved media without draft', (
     tester,
@@ -135,6 +152,113 @@ void main() {
     );
     expect(document.toCanonicalJsonString(), initialJson);
   });
+
+  testWidgets(
+    'paper preview locks font size, paragraph spacing, and line height to the grid',
+    (tester) async {
+      const document = LessonDocument(
+        blocks: [
+          LessonParagraphBlock(
+            children: [LessonTextRun('First locked paragraph')],
+          ),
+          LessonParagraphBlock(
+            children: [LessonTextRun('Second locked paragraph')],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: LessonDocumentPreview(document: document)),
+        ),
+      );
+      final glassFontSize = _renderedFontSize(tester, 'First locked paragraph');
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LessonDocumentPreview(
+              document: document,
+              readingMode: LessonDocumentReadingMode.paper,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final paperRichText = tester.widget<RichText>(
+        find.text('First locked paragraph', findRichText: true).first,
+      );
+      final strutStyle = paperRichText.strutStyle;
+      expect(
+        paperRichText.text.style?.fontSize,
+        closeTo(glassFontSize + 2, 0.001),
+      );
+      expect(strutStyle?.forceStrutHeight, isTrue);
+      expect(
+        (strutStyle?.fontSize ?? 0) * (strutStyle?.height ?? 0),
+        closeTo(28, 0.001),
+      );
+      expect(
+        _baselineY(tester, 'Second locked paragraph') -
+            _baselineY(tester, 'First locked paragraph'),
+        closeTo(56, 0.01),
+      );
+    },
+  );
+
+  testWidgets(
+    'paper preview keeps mixed inline formatting on full-line increments',
+    (tester) async {
+      const document = LessonDocument(
+        blocks: [
+          LessonParagraphBlock(
+            children: [
+              LessonTextRun('Bold', marks: [LessonInlineMark.bold]),
+              LessonTextRun(' italic', marks: [LessonInlineMark.italic]),
+              LessonTextRun(
+                ' linked',
+                marks: [LessonLinkMark('https://example.com')],
+              ),
+              LessonTextRun(
+                ' underlined text that wraps onto another line in paper mode.',
+                marks: [LessonInlineMark.underline],
+              ),
+            ],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 220,
+              child: LessonDocumentPreview(
+                document: document,
+                readingMode: LessonDocumentReadingMode.paper,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final richText = tester.widget<RichText>(
+        find.textContaining('Bold', findRichText: true).first,
+      );
+      final box = tester.renderObject<RenderBox>(
+        find.textContaining('Bold', findRichText: true).first,
+      );
+      final lineHeight =
+          (richText.strutStyle?.fontSize ?? 0) *
+          (richText.strutStyle?.height ?? 0);
+      final lines = box.size.height / lineHeight;
+
+      expect(richText.strutStyle?.forceStrutHeight, isTrue);
+      expect(lines, closeTo(lines.roundToDouble(), 0.01));
+    },
+  );
 
   testWidgets('document preview fallback renders only image media', (
     tester,
@@ -1400,13 +1524,11 @@ List<_TextSegment> _editorTextSegments(
 ) {
   final finder = find.byKey(key);
   final field = tester.widget<TextField>(finder);
-  final text =
-      field.controller!.buildTextSpan(
-            context: tester.element(finder),
-            style: field.style,
-            withComposing: false,
-          )
-          as TextSpan;
+  final text = field.controller!.buildTextSpan(
+    context: tester.element(finder),
+    style: field.style,
+    withComposing: false,
+  );
   return _flattenTextSpan(text);
 }
 
