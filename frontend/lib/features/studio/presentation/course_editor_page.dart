@@ -5437,6 +5437,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     final lessonId = _selectedLessonId;
     if (lessonId == null) return;
+    if (_lessonAlreadyContainsMediaId(id)) {
+      if (mounted && context.mounted) {
+        showSnack(
+          context,
+          'Ta bort media från lektionsinnehållet innan du tar bort filen.',
+        );
+      }
+      return;
+    }
     try {
       await _studioRepo.deleteLessonMedia(lessonId, id);
       await _loadLessonMedia();
@@ -7792,6 +7801,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                           statusKey,
                                         );
                                         final mediaId = media.lessonMediaId;
+                                        final mediaIsEmbedded =
+                                            _lessonAlreadyContainsMediaId(
+                                              mediaId,
+                                            );
                                         final canPreview =
                                             _canPreviewLessonMedia(
                                               media: media,
@@ -7988,7 +8001,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                                         Icons.delete_outline,
                                                       ),
                                                       onPressed:
-                                                          _lessonPreviewMode
+                                                          _lessonPreviewMode ||
+                                                              mediaIsEmbedded
                                                           ? null
                                                           : () => _deleteMedia(
                                                               mediaId,

@@ -812,6 +812,9 @@ async def test_canonical_placement_delete_removes_only_target_link(
     monkeypatch,
 ):
     delete_calls: list[tuple[str, str]] = []
+    media_asset_delete_calls: list[
+        tuple[tuple[object, ...], dict[str, object]]
+    ] = []
     lifecycle_calls: list[dict[str, object]] = []
 
     async def fake_get_lesson_media_by_id_for_studio(lesson_media_id: str):
@@ -843,7 +846,18 @@ async def test_canonical_placement_delete_removes_only_target_link(
         lifecycle_calls.append(dict(kwargs))
         return 1
 
+    async def fake_lesson_content_references_lesson_media(
+        lesson_id: str,
+        lesson_media_id: str,
+        teacher_id: str,
+    ) -> bool:
+        assert lesson_id == LESSON_ID
+        assert lesson_media_id == LESSON_MEDIA_ID
+        assert teacher_id == TEACHER_ID
+        return False
+
     async def fail_delete_media_asset(*args, **kwargs):
+        media_asset_delete_calls.append((args, dict(kwargs)))
         raise AssertionError("placement delete must not delete media_assets")
 
     monkeypatch.setattr(
@@ -871,6 +885,12 @@ async def test_canonical_placement_delete_removes_only_target_link(
         raising=True,
     )
     monkeypatch.setattr(
+        studio.courses_service,
+        "lesson_content_references_lesson_media",
+        fake_lesson_content_references_lesson_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
         studio.media_assets_repo,
         "delete_media_asset",
         fail_delete_media_asset,
@@ -884,6 +904,7 @@ async def test_canonical_placement_delete_removes_only_target_link(
 
     assert response == {"deleted": True}
     assert delete_calls == [(LESSON_ID, LESSON_MEDIA_ID)]
+    assert media_asset_delete_calls == []
     assert lifecycle_calls == [
         {
             "media_asset_ids": [MEDIA_ASSET_ID],
@@ -892,3 +913,86 @@ async def test_canonical_placement_delete_removes_only_target_link(
             "subject_id": LESSON_MEDIA_ID,
         }
     ]
+
+
+async def test_canonical_placement_delete_rejects_referenced_lesson_content(
+    monkeypatch,
+):
+    delete_calls: list[tuple[str, str]] = []
+    lifecycle_calls: list[dict[str, object]] = []
+
+    async def fake_get_lesson_media_by_id_for_studio(lesson_media_id: str):
+        assert lesson_media_id == LESSON_MEDIA_ID
+        return {
+            "lesson_media_id": LESSON_MEDIA_ID,
+            "lesson_id": LESSON_ID,
+            "media_asset_id": MEDIA_ASSET_ID,
+            "position": 1,
+            "media_type": "document",
+            "state": "ready",
+        }
+
+    async def fake_authoring_context(*, lesson_id: str, current):
+        assert lesson_id == LESSON_ID
+        assert str(current["id"]) == TEACHER_ID
+        return "55555555-5555-5555-5555-555555555555"
+
+    async def fake_lesson_content_references_lesson_media(
+        lesson_id: str,
+        lesson_media_id: str,
+        teacher_id: str,
+    ) -> bool:
+        assert lesson_id == LESSON_ID
+        assert lesson_media_id == LESSON_MEDIA_ID
+        assert teacher_id == TEACHER_ID
+        return True
+
+    async def fake_delete_lesson_media(lesson_id: str, lesson_media_id: str):
+        delete_calls.append((lesson_id, lesson_media_id))
+        raise AssertionError("referenced placement must not be deleted")
+
+    async def fake_lifecycle_request(**kwargs):
+        lifecycle_calls.append(dict(kwargs))
+        raise AssertionError("referenced placement must not request cleanup")
+
+    monkeypatch.setattr(
+        studio.courses_repo,
+        "get_lesson_media_by_id_for_studio",
+        fake_get_lesson_media_by_id_for_studio,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio,
+        "_require_canonical_lesson_media_authoring_context",
+        fake_authoring_context,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.courses_service,
+        "lesson_content_references_lesson_media",
+        fake_lesson_content_references_lesson_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.courses_repo,
+        "delete_lesson_media",
+        fake_delete_lesson_media,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.media_cleanup,
+        "request_lifecycle_evaluation",
+        fake_lifecycle_request,
+        raising=True,
+    )
+
+    with pytest.raises(studio.HTTPException) as exc_info:
+        await studio.canonical_delete_lesson_media_placement(
+            lesson_media_id=studio.UUID(LESSON_MEDIA_ID),
+            current={"id": TEACHER_ID},
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Lesson media is still referenced by lesson content"
+    assert delete_calls == []
+    assert lifecycle_calls == []

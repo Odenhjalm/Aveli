@@ -5,6 +5,7 @@ import pytest
 from app import db, repositories
 from app.repositories import courses as courses_repo
 from app.repositories import media_assets as media_assets_repo
+from app.routes import studio
 from app.services import courses_service
 from ._custom_drip_test_support import ensure_custom_drip_schema
 
@@ -32,6 +33,32 @@ def lesson_document(text: str) -> dict:
             }
         ],
     }
+
+
+def lesson_document_with_media(
+    text: str,
+    *,
+    lesson_media_id: str,
+    media_type: str = "image",
+) -> dict:
+    document = lesson_document(text)
+    document["blocks"].append(
+        {
+            "type": "media",
+            "id": f"media-block-{lesson_media_id}",
+            "media_type": media_type,
+            "lesson_media_id": lesson_media_id,
+        }
+    )
+    return document
+
+
+def lesson_document_media_refs(content_document: dict) -> list[str]:
+    return [
+        str(block["lesson_media_id"])
+        for block in content_document.get("blocks", [])
+        if isinstance(block, dict) and block.get("type") == "media"
+    ]
 
 
 async def register_user(client, email: str, password: str, display_name: str):
@@ -124,6 +151,29 @@ async def read_lesson_content_etag(
     etag = response.headers.get("etag")
     assert etag
     return etag
+
+
+async def assert_persisted_preview_media_resolves(
+    async_client,
+    *,
+    lesson_id: str,
+    token: str,
+) -> tuple[dict, list[str]]:
+    response = await async_client.get(
+        f"/studio/lessons/{lesson_id}/content",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    media_refs = lesson_document_media_refs(body["content_document"])
+    for lesson_media_id in media_refs:
+        placement = await async_client.get(
+            f"/api/media-placements/{lesson_media_id}",
+            headers=auth_header(token),
+        )
+        assert placement.status_code == 200, placement.text
+        assert placement.json()["lesson_media_id"] == lesson_media_id
+    return body, media_refs
 
 
 async def read_course_family_rows(course_group_id: str) -> list[tuple[str, int]]:
@@ -559,6 +609,237 @@ async def test_studio_lesson_delete_removes_content_and_placements_only(
         ]
         assert str(placement["media_asset_id"]) == media_asset_id
         lesson_id = None
+    finally:
+        if lesson_id:
+            await async_client.delete(
+                f"/studio/lessons/{lesson_id}",
+                headers=auth_header(teacher_token),
+            )
+        if course_id:
+            await async_client.delete(
+                f"/studio/courses/{course_id}",
+                headers=auth_header(teacher_token),
+            )
+        if media_asset_id:
+            async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                    await cur.execute(
+                        "DELETE FROM app.lesson_media WHERE media_asset_id = %s::uuid",
+                        (media_asset_id,),
+                    )
+                    await cur.execute(
+                        "DELETE FROM app.media_assets WHERE id = %s::uuid",
+                        (media_asset_id,),
+                    )
+                    await conn.commit()
+        await cleanup_course_families(teacher_id)
+        await cleanup_user(teacher_id)
+
+
+async def test_persisted_preview_media_delete_integrity_gate(
+    async_client,
+    monkeypatch,
+):
+    teacher_email = f"preview_delete_teacher_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+    teacher_token, _, teacher_id = await register_user(
+        async_client,
+        teacher_email,
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+
+    course_id = None
+    lesson_id = None
+    media_asset_id = None
+    lifecycle_calls: list[dict[str, object]] = []
+
+    async def fake_lifecycle_request(**kwargs):
+        lifecycle_calls.append(dict(kwargs))
+        return len(list(kwargs["media_asset_ids"]))
+
+    monkeypatch.setattr(
+        studio.media_cleanup,
+        "request_lifecycle_evaluation",
+        fake_lifecycle_request,
+        raising=True,
+    )
+
+    try:
+        family = await create_course_family(
+            async_client,
+            token=teacher_token,
+            name="Preview Delete Family",
+        )
+        create_course = await async_client.post(
+            "/studio/courses",
+            headers=auth_header(teacher_token),
+            json={
+                "title": "Preview delete integrity",
+                "slug": f"preview-delete-{uuid.uuid4().hex[:8]}",
+                "course_group_id": family["id"],
+                "price_amount_cents": None,
+                "drip_enabled": False,
+                "drip_interval_days": None,
+            },
+        )
+        assert create_course.status_code == 200, create_course.text
+        course_id = str(create_course.json()["id"])
+
+        create_lesson = await async_client.post(
+            f"/studio/courses/{course_id}/lessons",
+            headers=auth_header(teacher_token),
+            json={"lesson_title": "Persisted preview media", "position": 1},
+        )
+        assert create_lesson.status_code == 200, create_lesson.text
+        lesson_id = str(create_lesson.json()["id"])
+
+        upload = await async_client.post(
+            f"/api/lessons/{lesson_id}/media-assets/upload-url",
+            headers=auth_header(teacher_token),
+            json={
+                "media_type": "image",
+                "filename": "preview.png",
+                "mime_type": "image/png",
+                "size_bytes": 128,
+            },
+        )
+        assert upload.status_code == 200, upload.text
+        media_asset_id = upload.json()["media_asset_id"]
+
+        uploaded_asset = await media_assets_repo.mark_media_asset_uploaded(
+            media_id=media_asset_id,
+        )
+        assert uploaded_asset is not None
+        assert uploaded_asset["state"] == "uploaded"
+
+        placement_create = await async_client.post(
+            f"/api/lessons/{lesson_id}/media-placements",
+            headers=auth_header(teacher_token),
+            json={"media_asset_id": media_asset_id},
+        )
+        assert placement_create.status_code == 200, placement_create.text
+        placement_body = placement_create.json()
+        lesson_media_id = placement_body["lesson_media_id"]
+        assert placement_body["media_asset_id"] == media_asset_id
+        assert placement_body["media_type"] == "image"
+
+        save_with_media = await async_client.patch(
+            f"/studio/lessons/{lesson_id}/content",
+            headers={
+                **auth_header(teacher_token),
+                "If-Match": await read_lesson_content_etag(
+                    async_client,
+                    lesson_id=lesson_id,
+                    token=teacher_token,
+                ),
+            },
+            json={
+                "content_document": lesson_document_with_media(
+                    "Saved preview media",
+                    lesson_media_id=lesson_media_id,
+                    media_type="image",
+                )
+            },
+        )
+        assert save_with_media.status_code == 200, save_with_media.text
+
+        persisted_body, persisted_media_refs = (
+            await assert_persisted_preview_media_resolves(
+                async_client,
+                lesson_id=lesson_id,
+                token=teacher_token,
+            )
+        )
+        assert persisted_media_refs == [lesson_media_id]
+        assert [
+            item["lesson_media_id"] for item in persisted_body["media"]
+        ] == [lesson_media_id]
+
+        referenced_delete = await async_client.delete(
+            f"/api/media-placements/{lesson_media_id}",
+            headers=auth_header(teacher_token),
+        )
+        assert referenced_delete.status_code == 409, referenced_delete.text
+        assert referenced_delete.json()["detail"] == (
+            "Lesson media is still referenced by lesson content"
+        )
+        assert lifecycle_calls == []
+
+        placement_after_rejected_delete = await async_client.get(
+            f"/api/media-placements/{lesson_media_id}",
+            headers=auth_header(teacher_token),
+        )
+        assert placement_after_rejected_delete.status_code == 200, (
+            placement_after_rejected_delete.text
+        )
+        assert (
+            placement_after_rejected_delete.json()["lesson_media_id"]
+            == lesson_media_id
+        )
+
+        persisted_body, persisted_media_refs = (
+            await assert_persisted_preview_media_resolves(
+                async_client,
+                lesson_id=lesson_id,
+                token=teacher_token,
+            )
+        )
+        assert persisted_media_refs == [lesson_media_id]
+        assert [
+            item["lesson_media_id"] for item in persisted_body["media"]
+        ] == [lesson_media_id]
+
+        save_without_media = await async_client.patch(
+            f"/studio/lessons/{lesson_id}/content",
+            headers={
+                **auth_header(teacher_token),
+                "If-Match": await read_lesson_content_etag(
+                    async_client,
+                    lesson_id=lesson_id,
+                    token=teacher_token,
+                ),
+            },
+            json={"content_document": lesson_document("Media reference removed")},
+        )
+        assert save_without_media.status_code == 200, save_without_media.text
+        assert (
+            lesson_document_media_refs(
+                save_without_media.json()["content_document"]
+            )
+            == []
+        )
+
+        unreferenced_delete = await async_client.delete(
+            f"/api/media-placements/{lesson_media_id}",
+            headers=auth_header(teacher_token),
+        )
+        assert unreferenced_delete.status_code == 200, unreferenced_delete.text
+        assert unreferenced_delete.json() == {"deleted": True}
+        assert lifecycle_calls == [
+            {
+                "media_asset_ids": [media_asset_id],
+                "trigger_source": "placement_delete",
+                "subject_type": "lesson_media",
+                "subject_id": lesson_media_id,
+            }
+        ]
+
+        final_body, final_media_refs = await assert_persisted_preview_media_resolves(
+            async_client,
+            lesson_id=lesson_id,
+            token=teacher_token,
+        )
+        assert final_media_refs == []
+        assert final_body["media"] == []
+
+        placement_after_delete = await async_client.get(
+            f"/api/media-placements/{lesson_media_id}",
+            headers=auth_header(teacher_token),
+        )
+        assert placement_after_delete.status_code == 404
+        assert placement_after_delete.json()["detail"] == "Lesson media not found"
     finally:
         if lesson_id:
             await async_client.delete(

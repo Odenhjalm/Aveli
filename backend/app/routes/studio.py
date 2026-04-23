@@ -1370,6 +1370,15 @@ async def canonical_delete_lesson_media_placement(
         lesson_id=lesson_id,
         current=current,
     )
+    if await courses_service.lesson_content_references_lesson_media(
+        lesson_id,
+        str(lesson_media_id),
+        str(current["id"]),
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Lesson media is still referenced by lesson content",
+        )
     deleted = await courses_repo.delete_lesson_media(
         lesson_id,
         str(lesson_media_id),

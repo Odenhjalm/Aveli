@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.main import app
 from app.repositories import courses as courses_repo
+from app.routes import studio
 from app.services import courses_service
 
 
@@ -23,6 +24,14 @@ def _route_method_pairs() -> set[tuple[str, str]]:
             if method not in {"HEAD", "OPTIONS"}:
                 pairs.add((str(method).upper(), str(path)))
     return pairs
+
+
+def _allowed_preview_projection_routes() -> set[tuple[str, str]]:
+    return {
+        ("GET", "/api/lesson-media/{lesson_id}/{lesson_media_id}/preview"),
+        ("POST", "/api/lesson-media/previews"),
+        ("POST", "/api/media/previews"),
+    }
 
 
 def _source_block(source: str, needle: str) -> str:
@@ -119,18 +128,34 @@ def test_canonical_write_routes_remain_mounted() -> None:
     assert ("DELETE", "/api/media-placements/{lesson_media_id}") in route_pairs
 
 
+def test_media_placement_integrity_aggregate_gate() -> None:
+    route_pairs = _route_method_pairs()
+    delete_route_source = inspect.getsource(
+        studio.canonical_delete_lesson_media_placement
+    )
+
+    guard_index = delete_route_source.index(
+        "courses_service.lesson_content_references_lesson_media"
+    )
+    conflict_index = delete_route_source.index("status.HTTP_409_CONFLICT")
+    delete_index = delete_route_source.index("courses_repo.delete_lesson_media")
+
+    assert ("DELETE", "/api/media-placements/{lesson_media_id}") in route_pairs
+    assert guard_index < conflict_index < delete_index
+    assert "Lesson media is still referenced by lesson content" in delete_route_source
+
+    preview_routes = {
+        (method, path) for method, path in route_pairs if "preview" in path
+    }
+    assert preview_routes - _allowed_preview_projection_routes() == set()
+
+
 def test_preview_mode_routes_do_not_add_mutation_surface() -> None:
     preview_routes = {
         (method, path) for method, path in _route_method_pairs() if "preview" in path
     }
 
-    allowed_projection_routes = {
-        ("GET", "/api/lesson-media/{lesson_id}/{lesson_media_id}/preview"),
-        ("POST", "/api/lesson-media/previews"),
-        ("POST", "/api/media/previews"),
-    }
-
-    assert preview_routes.issubset(allowed_projection_routes)
+    assert preview_routes.issubset(_allowed_preview_projection_routes())
 
 
 def test_application_code_does_not_write_runtime_media_directly() -> None:

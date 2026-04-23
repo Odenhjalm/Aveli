@@ -838,6 +838,31 @@ async def read_studio_lesson_content(
     }
 
 
+async def lesson_content_references_lesson_media(
+    lesson_id: str,
+    lesson_media_id: str,
+    teacher_id: str,
+) -> bool:
+    target_lesson_media_id = str(lesson_media_id or "").strip()
+    if not target_lesson_media_id:
+        return False
+
+    current = await read_studio_lesson_content(lesson_id, teacher_id=teacher_id)
+    if current is None:
+        return False
+
+    body = current.get("body")
+    if not isinstance(body, Mapping):
+        return False
+    content_document = body.get("content_document")
+    if not isinstance(content_document, Mapping):
+        return False
+
+    return target_lesson_media_id in _referenced_lesson_media_ids_from_document(
+        content_document
+    )
+
+
 async def lesson_course_ids(lesson_id: str) -> tuple[str | None, str | None]:
     return await courses_repo.get_lesson_course_ids(lesson_id)
 
