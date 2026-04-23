@@ -755,6 +755,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _lessonContentSaving = false;
   String _lastSavedLessonTitle = '';
   LessonDocument _lessonDocument = LessonDocument.empty();
+  int? _lessonDocumentInsertionIndex;
   LessonDocument _lastSavedLessonDocument = LessonDocument.empty();
   String? _lastSavedLessonContentEtag;
   LessonDocument? _lessonPreviewDocument;
@@ -928,6 +929,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonContentHydratedLessonId = null;
     _lastSavedLessonContentEtag = null;
     _lessonDocument = LessonDocument.empty();
+    _lessonDocumentInsertionIndex = null;
     _lessonContentLoadError = errorMessage;
     _resetLessonPreviewHydrationValues(bumpRevision: bumpHydrationRevision);
     _lessonPreviewRequestId += 1;
@@ -1145,9 +1147,17 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       lessonMediaId: media.lessonMediaId,
       mediaType: media.mediaType,
       state: media.state,
-      label: media.originalName ?? media.mediaAssetId,
+      label: _safeLessonPreviewMediaLabel(media.originalName),
       resolvedUrl: media.media?.resolvedUrl,
     );
+  }
+
+  String? _safeLessonPreviewMediaLabel(String? label) {
+    final normalized = label?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
   }
 
   Future<void> _loadPersistedLessonPreview({
@@ -1336,6 +1346,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         ..addListener(_handleLessonTitleChanged);
       _lastSavedLessonTitle = '';
       _lessonDocument = LessonDocument.empty();
+      _lessonDocumentInsertionIndex = null;
       _lastSavedLessonDocument = LessonDocument.empty();
       _lessonContentDirty = false;
     }
@@ -2545,6 +2556,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _documentReadyRequestId = requestId;
       _lessonContentHydratedLessonId = lessonId;
       _lessonDocument = storedDocument;
+      _lessonDocumentInsertionIndex = null;
       _lastSavedLessonDocument = storedDocument;
       _lastSavedLessonTitle = storedTitle;
       _lastSavedLessonContentEtag = normalizedEtag;
@@ -2797,6 +2809,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             .toList();
         if (updatedContent != null) {
           _lessonDocument = updatedContent.contentDocument;
+          _lessonDocumentInsertionIndex = _clampedLessonDocumentInsertionIndex(
+            _lessonDocumentInsertionIndex,
+            updatedContent.contentDocument,
+          );
           _lastSavedLessonDocument = updatedContent.contentDocument;
         }
         _lastSavedLessonTitle = title;
@@ -2976,9 +2992,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           onChanged: (document) {
             setState(() {
               _lessonDocument = document;
+              _lessonDocumentInsertionIndex =
+                  _clampedLessonDocumentInsertionIndex(
+                    _lessonDocumentInsertionIndex,
+                    document,
+                  );
             });
             _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
           },
+          onInsertionIndexChanged: _rememberLessonDocumentInsertionIndex,
         ),
       ),
     );
@@ -4346,17 +4368,42 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  int? _clampedLessonDocumentInsertionIndex(
+    int? index,
+    LessonDocument document,
+  ) {
+    if (index == null) return null;
+    return index.clamp(0, document.blocks.length).toInt();
+  }
+
+  int _resolvedLessonDocumentInsertionIndex() {
+    return _clampedLessonDocumentInsertionIndex(
+          _lessonDocumentInsertionIndex,
+          _lessonDocument,
+        ) ??
+        _lessonDocument.blocks.length;
+  }
+
+  void _rememberLessonDocumentInsertionIndex(int index) {
+    _lessonDocumentInsertionIndex = _clampedLessonDocumentInsertionIndex(
+      index,
+      _lessonDocument,
+    );
+  }
+
   void _insertMediaBlockIntoDocument({
     required String mediaType,
     required String lessonMediaId,
   }) {
+    final insertionIndex = _resolvedLessonDocumentInsertionIndex();
     final nextDocument = _lessonDocument.insertMedia(
-      _lessonDocument.blocks.length,
+      insertionIndex,
       mediaType: mediaType,
       lessonMediaId: lessonMediaId,
     );
     setState(() {
       _lessonDocument = nextDocument;
+      _lessonDocumentInsertionIndex = insertionIndex + 1;
     });
     _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
   }

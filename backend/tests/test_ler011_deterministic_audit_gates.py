@@ -152,6 +152,46 @@ def test_seeded_gate_detects_draft_preview_and_frontend_media_url_authority() ->
     assert "resolved_preview_url" in {finding.token for finding in media_findings}
 
 
+def test_seeded_gate_detects_media_block_regressions() -> None:
+    seeded = """
+      void _insertMediaBlockIntoDocument({
+        required String mediaType,
+        required String lessonMediaId,
+      }) {
+        final nextDocument = _lessonDocument.insertMedia(
+          _lessonDocument.blocks.length,
+          mediaType: mediaType,
+          lessonMediaId: lessonMediaId,
+        );
+      }
+
+      Text('Media: ${block.mediaType}\\n${block.lessonMediaId}');
+      final title = 'Media saknas: ${block.mediaType}';
+      final label = media.originalName ?? media.mediaAssetId;
+      return mediaAssetId;
+    """
+
+    findings = forbidden_token_findings(
+        seeded,
+        scope="seeded_media_block_regressions",
+        tokens=(
+            "_lessonDocument.blocks.length,",
+            "Media: ${block.mediaType}",
+            "${block.lessonMediaId}",
+            "Media saknas: ${block.mediaType}",
+            "media.originalName ?? media.mediaAssetId",
+            "return mediaAssetId;",
+        ),
+    )
+
+    detected = {finding.token for finding in findings}
+    assert "_lessonDocument.blocks.length," in detected
+    assert "Media: ${block.mediaType}" in detected
+    assert "${block.lessonMediaId}" in detected
+    assert "media.originalName ?? media.mediaAssetId" in detected
+    assert "return mediaAssetId;" in detected
+
+
 def test_seeded_dependency_gate_detects_removed_editor_packages() -> None:
     seeded_pubspec = """
     dependencies:
@@ -366,6 +406,148 @@ def test_course_editor_preview_gate_is_persisted_read_only() -> None:
                 "reorderLessonMedia(",
                 "content_markdown",
                 "contentMarkdown",
+            ),
+        )
+    )
+
+
+def test_media_block_editor_regression_gate_is_positioned_and_document_ordered() -> None:
+    course_editor = read_repo_text(
+        REPO_ROOT,
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+    )
+    document_editor = read_repo_text(
+        REPO_ROOT,
+        "frontend/lib/editor/document/lesson_document_editor.dart",
+    )
+    document_model = read_repo_text(
+        REPO_ROOT,
+        "frontend/lib/editor/document/lesson_document.dart",
+    )
+
+    insert_block = dart_source_block(
+        course_editor, "void _insertMediaBlockIntoDocument({"
+    )
+    move_block = dart_source_block(document_editor, "void _moveBlock(")
+
+    assert_no_findings(
+        missing_token_findings(
+            insert_block,
+            scope="CourseEditor._insertMediaBlockIntoDocument",
+            tokens=(
+                "final insertionIndex = _resolvedLessonDocumentInsertionIndex();",
+                "_lessonDocument.insertMedia(",
+                "insertionIndex,",
+                "_lessonDocumentInsertionIndex = insertionIndex + 1;",
+            ),
+        )
+    )
+    assert_no_findings(
+        forbidden_token_findings(
+            insert_block,
+            scope="CourseEditor.media_insert_append_only",
+            tokens=("_lessonDocument.blocks.length,",),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            document_editor,
+            scope="LessonDocumentEditor.position_and_move_controls",
+            tokens=(
+                "onInsertionIndexChanged",
+                "int insertionIndex(LessonDocument document)",
+                "lesson_document_media_move_up_",
+                "lesson_document_media_move_down_",
+                "Flytta media upp",
+                "Flytta media ned",
+            ),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            move_block,
+            scope="LessonDocumentEditor._moveBlock",
+            tokens=(
+                "widget.document.moveBlock(blockIndex, targetIndex)",
+                "nextTarget.insertionIndex(next)",
+            ),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            document_model,
+            scope="LessonDocument.moveBlock_primitives",
+            tokens=(
+                "LessonDocument moveBlock(int fromIndex, int toIndex)",
+                "LessonDocument moveBlockUp(int index)",
+                "LessonDocument moveBlockDown(int index)",
+            ),
+        )
+    )
+
+
+def test_media_block_user_facing_no_leak_regression_gate() -> None:
+    document_editor = read_repo_text(
+        REPO_ROOT,
+        "frontend/lib/editor/document/lesson_document_editor.dart",
+    )
+    course_editor = read_repo_text(
+        REPO_ROOT,
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+    )
+    learner_page = read_repo_text(
+        REPO_ROOT,
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+    )
+
+    assert_no_findings(
+        missing_token_findings(
+            document_editor,
+            scope="LessonDocumentEditor.safe_media_copy",
+            tokens=("Infogad media", "Sparad media"),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            course_editor,
+            scope="CourseEditor.safe_preview_media_label",
+            tokens=("_safeLessonPreviewMediaLabel(media.originalName)",),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            learner_page,
+            scope="Learner.safe_media_labels",
+            tokens=("Lektionsljud", "Lektionsvideo", "Lektionsfil"),
+        )
+    )
+    assert_no_findings(
+        forbidden_token_findings(
+            document_editor,
+            scope="LessonDocumentEditor.user_facing_media_no_leak",
+            tokens=(
+                "Media: ${block.mediaType}",
+                "Media saknas: ${block.mediaType}",
+                "block.lessonMediaId,",
+                "'Status: $state'",
+            ),
+        )
+    )
+    assert_no_findings(
+        forbidden_token_findings(
+            course_editor,
+            scope="CourseEditor.preview_media_label_no_asset_id",
+            tokens=("label: media.originalName ?? media.mediaAssetId",),
+        )
+    )
+    assert_no_findings(
+        forbidden_token_findings(
+            learner_page,
+            scope="Learner.media_label_no_asset_id",
+            tokens=(
+                "label: item.mediaAssetId",
+                "final mediaAssetId = item.mediaAssetId?.trim();",
+                "return mediaAssetId;",
             ),
         )
     )

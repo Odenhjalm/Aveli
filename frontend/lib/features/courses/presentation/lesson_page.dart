@@ -329,7 +329,7 @@ LessonDocumentPreviewMedia _previewMediaFromLessonMediaItem(
     lessonMediaId: item.id,
     mediaType: item.mediaType,
     state: item.state,
-    label: item.mediaAssetId,
+    label: null,
     resolvedUrl: item.media?.resolvedUrl,
   );
 }
@@ -573,7 +573,7 @@ class _LearnerDocumentMediaBlock extends StatelessWidget {
         message: 'Lektionsmedia kunde inte laddas.',
       );
     }
-    final label = _lessonMediaLabel(item, block.mediaType);
+    final label = _lessonMediaLabel(block.mediaType);
     switch (block.mediaType) {
       case 'image':
         return Padding(
@@ -627,16 +627,12 @@ class _LearnerDocumentMediaBlock extends StatelessWidget {
     }
   }
 
-  String _lessonMediaLabel(LessonMediaItem item, String mediaType) {
-    final mediaAssetId = item.mediaAssetId?.trim();
-    if (mediaAssetId != null && mediaAssetId.isNotEmpty) {
-      return mediaAssetId;
-    }
+  String _lessonMediaLabel(String mediaType) {
     return switch (mediaType) {
       'image' => 'Bild',
-      'audio' => 'Ljud',
-      'video' => 'Video',
-      'document' => 'Dokument',
+      'audio' => 'Lektionsljud',
+      'video' => 'Lektionsvideo',
+      'document' => 'Lektionsfil',
       _ => 'Media',
     };
   }

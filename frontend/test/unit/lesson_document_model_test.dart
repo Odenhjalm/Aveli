@@ -7,6 +7,9 @@ import 'package:aveli/editor/document/lesson_document.dart';
 import '../helpers/lesson_document_fixture_corpus.dart';
 
 const mediaId = '11111111-1111-4111-8111-111111111111';
+const imageMediaId = '22222222-2222-4222-8222-222222222222';
+const audioMediaId = '33333333-3333-4333-8333-333333333333';
+const documentMediaId = '44444444-4444-4444-8444-444444444444';
 
 void main() {
   test('serializes an empty lesson_document_v1 document canonically', () {
@@ -41,6 +44,119 @@ void main() {
     );
 
     expect(parsed.toJson(), document.toJson());
+  });
+
+  test('inserts media before, between, and after text blocks', () {
+    final base = LessonDocument.empty()
+        .insertParagraph(0, const [LessonTextRun('Intro')])
+        .insertParagraph(1, const [LessonTextRun('Outro')]);
+
+    final before = base.insertMedia(
+      0,
+      mediaType: 'image',
+      lessonMediaId: imageMediaId,
+    );
+    final between = base.insertMedia(
+      1,
+      mediaType: 'audio',
+      lessonMediaId: audioMediaId,
+    );
+    final after = base.insertMedia(
+      2,
+      mediaType: 'document',
+      lessonMediaId: documentMediaId,
+    );
+
+    expect(_blockTypes(before), ['media', 'paragraph', 'paragraph']);
+    expect(_blockTypes(between), ['paragraph', 'media', 'paragraph']);
+    expect(_blockTypes(after), ['paragraph', 'paragraph', 'media']);
+    expect(after.toJson()['blocks'], [
+      {
+        'type': 'paragraph',
+        'children': [
+          {'text': 'Intro'},
+        ],
+      },
+      {
+        'type': 'paragraph',
+        'children': [
+          {'text': 'Outro'},
+        ],
+      },
+      {
+        'type': 'media',
+        'media_type': 'document',
+        'lesson_media_id': documentMediaId,
+      },
+    ]);
+    expect(after.toCanonicalJsonString(), contains('lesson_media_id'));
+    expect(after.toCanonicalJsonString(), isNot(contains('media_asset_id')));
+  });
+
+  test('moves media blocks by changing only document order', () {
+    const intro = LessonParagraphBlock(children: [LessonTextRun('Intro')]);
+    const media = LessonMediaBlock(
+      mediaType: 'image',
+      lessonMediaId: imageMediaId,
+    );
+    const outro = LessonParagraphBlock(children: [LessonTextRun('Outro')]);
+    const document = LessonDocument(blocks: [intro, media, outro]);
+
+    final movedUp = document.moveBlockUp(1);
+    final movedDown = movedUp.moveBlockDown(0);
+    final movedToEnd = document.moveBlock(0, 2);
+
+    expect(_blockTypes(movedUp), ['media', 'paragraph', 'paragraph']);
+    expect(movedUp.blocks[0], same(media));
+    expect((movedUp.blocks[0] as LessonMediaBlock).mediaType, 'image');
+    expect((movedUp.blocks[0] as LessonMediaBlock).lessonMediaId, imageMediaId);
+    expect(movedDown.toJson(), document.toJson());
+    expect(_blockTypes(movedToEnd), ['media', 'paragraph', 'paragraph']);
+    expect(movedToEnd.blocks[0], same(media));
+    expect(movedToEnd.blocks[2], same(intro));
+    expect(jsonDecode(movedUp.toCanonicalJsonString()), {
+      'blocks': [
+        {
+          'lesson_media_id': imageMediaId,
+          'media_type': 'image',
+          'type': 'media',
+        },
+        {
+          'children': [
+            {'text': 'Intro'},
+          ],
+          'type': 'paragraph',
+        },
+        {
+          'children': [
+            {'text': 'Outro'},
+          ],
+          'type': 'paragraph',
+        },
+      ],
+      'schema_version': 'lesson_document_v1',
+    });
+  });
+
+  test('block movement boundaries are deterministic and safe', () {
+    final document = LessonDocument.empty()
+        .insertParagraph(0, const [LessonTextRun('Intro')])
+        .insertMedia(1, mediaType: 'image', lessonMediaId: imageMediaId)
+        .insertParagraph(2, const [LessonTextRun('Outro')]);
+
+    expect(document.moveBlockUp(0), same(document));
+    expect(document.moveBlockDown(document.blocks.length - 1), same(document));
+    expect(document.moveBlock(1, 1), same(document));
+    expect(() => document.moveBlockUp(-1), throwsRangeError);
+    expect(
+      () => document.moveBlockDown(document.blocks.length),
+      throwsRangeError,
+    );
+    expect(
+      () => document.moveBlock(0, document.blocks.length),
+      throwsRangeError,
+    );
+    expect(document.toJson()['schema_version'], lessonDocumentSchemaVersion);
   });
 
   test('positive document corpus covers every required editor capability', () {
@@ -357,4 +473,8 @@ void main() {
       throwsFormatException,
     );
   });
+}
+
+List<String> _blockTypes(LessonDocument document) {
+  return document.blocks.map((block) => block.type).toList(growable: false);
 }

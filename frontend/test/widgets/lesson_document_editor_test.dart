@@ -39,13 +39,18 @@ void main() {
       find.text('Draft-only corpus content', findRichText: true),
       findsNothing,
     );
-    expect(find.text('Media: image'), findsOneWidget);
+    expect(find.text('Infogad media'), findsOneWidget);
     expect(
       find.textContaining(corpus.mediaRows.first.lessonMediaId),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(
+      find.textContaining(corpus.mediaRows.first.mediaAssetId),
+      findsNothing,
+    );
+    expect(find.text('Media: image'), findsNothing);
     expect(find.textContaining('Corpus image'), findsOneWidget);
-    expect(find.textContaining('Status: ready'), findsOneWidget);
+    expect(find.textContaining('Status: ready'), findsNothing);
     expect(find.text('Persisted CTA'), findsOneWidget);
     expect(savedDocument.toCanonicalJsonString(), isNot(contains('!image(')));
     expect(
@@ -124,6 +129,40 @@ void main() {
       findsNothing,
     );
     expect(document.toCanonicalJsonString(), initialJson);
+  });
+
+  testWidgets('document preview fallback hides media metadata', (tester) async {
+    const lessonMediaId = '99999999-9999-4999-8999-999999999999';
+    const document = LessonDocument(
+      blocks: [
+        LessonMediaBlock(mediaType: 'image', lessonMediaId: lessonMediaId),
+      ],
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LessonDocumentPreview(
+            document: document,
+            media: [
+              LessonDocumentPreviewMedia(
+                lessonMediaId: lessonMediaId,
+                mediaType: 'image',
+                state: 'ready',
+                resolvedUrl: 'https://cdn.test/image.webp',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Infogad media'), findsOneWidget);
+    expect(find.text('Sparad media'), findsOneWidget);
+    expect(find.textContaining(lessonMediaId), findsNothing);
+    expect(find.textContaining('Media: image'), findsNothing);
+    expect(find.textContaining('Status: ready'), findsNothing);
+    expect(find.textContaining('media_type'), findsNothing);
   });
 
   testWidgets('document editor toolbar formats only selected text ranges', (
@@ -325,6 +364,271 @@ void main() {
       (document.blocks[2] as LessonParagraphBlock).children.single.text,
       ' Gamma',
     );
+  });
+
+  testWidgets('document editor exposes active position for media insertion', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Intro')]),
+        LessonParagraphBlock(children: [LessonTextRun('Outro')]),
+      ],
+    );
+    int? insertionIndex;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              void insertMedia(String mediaType, String lessonMediaId) {
+                final index = insertionIndex ?? document.blocks.length;
+                setState(() {
+                  document = document.insertMedia(
+                    index,
+                    mediaType: mediaType,
+                    lessonMediaId: lessonMediaId,
+                  );
+                  insertionIndex = index + 1;
+                });
+              }
+
+              return Column(
+                children: [
+                  SizedBox(
+                    height: 520,
+                    child: LessonDocumentEditor(
+                      document: document,
+                      onChanged: (next) => setState(() => document = next),
+                      onInsertionIndexChanged: (index) {
+                        insertionIndex = index;
+                      },
+                    ),
+                  ),
+                  ElevatedButton(
+                    key: const Key('insert_image_at_editor_position'),
+                    onPressed: () => insertMedia(
+                      'image',
+                      '55555555-5555-4555-8555-555555555555',
+                    ),
+                    child: const Text('Insert image'),
+                  ),
+                  ElevatedButton(
+                    key: const Key('insert_audio_at_editor_position'),
+                    onPressed: () => insertMedia(
+                      'audio',
+                      '66666666-6666-4666-8666-666666666666',
+                    ),
+                    child: const Text('Insert audio'),
+                  ),
+                  Expanded(
+                    child: LessonDocumentPreview(
+                      key: const ValueKey<String>('positioned_media_preview'),
+                      document: document,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _selectTextRange(
+      tester,
+      const ValueKey('lesson_document_editor_block_0'),
+      text: 'Intro',
+      start: 0,
+      end: 5,
+    );
+    await tester.tap(find.byKey(const Key('insert_image_at_editor_position')));
+    await tester.pump();
+
+    expect(_blockTypes(document), ['paragraph', 'media', 'paragraph']);
+    expect(
+      (document.blocks[0] as LessonParagraphBlock).children.single.text,
+      'Intro',
+    );
+    expect(
+      (document.blocks[2] as LessonParagraphBlock).children.single.text,
+      'Outro',
+    );
+    final imageBlock = document.blocks[1] as LessonMediaBlock;
+    expect(imageBlock.mediaType, 'image');
+    expect(imageBlock.lessonMediaId, '55555555-5555-4555-8555-555555555555');
+    final preview = tester.widget<LessonDocumentPreview>(
+      find.byKey(const ValueKey<String>('positioned_media_preview')),
+    );
+    expect(preview.document.toJson(), document.toJson());
+
+    await tester.tap(
+      find.byKey(const ValueKey('lesson_document_editor_block_2')),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('insert_audio_at_editor_position')));
+    await tester.pump();
+
+    expect(_blockTypes(document), ['paragraph', 'media', 'paragraph', 'media']);
+    expect(
+      (document.blocks[2] as LessonParagraphBlock).children.single.text,
+      'Outro',
+    );
+    final audioBlock = document.blocks[3] as LessonMediaBlock;
+    expect(audioBlock.mediaType, 'audio');
+    expect(audioBlock.lessonMediaId, '66666666-6666-4666-8666-666666666666');
+  });
+
+  testWidgets('document editor moves media blocks deterministically', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Intro')]),
+        LessonMediaBlock(
+          mediaType: 'image',
+          lessonMediaId: '77777777-7777-4777-8777-777777777777',
+        ),
+        LessonParagraphBlock(children: [LessonTextRun('Outro')]),
+      ],
+    );
+    int? insertionIndex;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return Column(
+                children: [
+                  SizedBox(
+                    height: 520,
+                    child: LessonDocumentEditor(
+                      document: document,
+                      onChanged: (next) => setState(() => document = next),
+                      onInsertionIndexChanged: (index) {
+                        insertionIndex = index;
+                      },
+                    ),
+                  ),
+                  Expanded(
+                    child: LessonDocumentPreview(
+                      key: const ValueKey<String>('moved_media_preview'),
+                      document: document,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    IconButton moveUpButton(int index) {
+      return tester.widget<IconButton>(
+        find.byKey(ValueKey<String>('lesson_document_media_move_up_$index')),
+      );
+    }
+
+    IconButton moveDownButton(int index) {
+      return tester.widget<IconButton>(
+        find.byKey(ValueKey<String>('lesson_document_media_move_down_$index')),
+      );
+    }
+
+    expect(_blockTypes(document), ['paragraph', 'media', 'paragraph']);
+    expect(moveUpButton(1).onPressed, isNotNull);
+    expect(moveDownButton(1).onPressed, isNotNull);
+    expect(moveUpButton(1).tooltip, 'Flytta media upp');
+    expect(moveDownButton(1).tooltip, 'Flytta media ned');
+    expect(moveUpButton(1).tooltip, isNot(contains('image')));
+    expect(moveDownButton(1).tooltip, isNot(contains('77777777')));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_media_move_up_1')),
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['media', 'paragraph', 'paragraph']);
+    final movedToTop = document.blocks[0] as LessonMediaBlock;
+    expect(movedToTop.mediaType, 'image');
+    expect(movedToTop.lessonMediaId, '77777777-7777-4777-8777-777777777777');
+    expect(moveUpButton(0).onPressed, isNull);
+    expect(moveDownButton(0).onPressed, isNotNull);
+    expect(insertionIndex, 1);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_media_move_down_0')),
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['paragraph', 'media', 'paragraph']);
+    final restored = document.blocks[1] as LessonMediaBlock;
+    expect(restored.mediaType, 'image');
+    expect(restored.lessonMediaId, '77777777-7777-4777-8777-777777777777');
+    expect(insertionIndex, 2);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_media_move_down_1')),
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['paragraph', 'paragraph', 'media']);
+    expect(moveUpButton(2).onPressed, isNotNull);
+    expect(moveDownButton(2).onPressed, isNull);
+    final preview = tester.widget<LessonDocumentPreview>(
+      find.byKey(const ValueKey<String>('moved_media_preview')),
+    );
+    expect(preview.document.toJson(), document.toJson());
+  });
+
+  testWidgets('document editor media blocks hide internal metadata', (
+    tester,
+  ) async {
+    const document = LessonDocument(
+      blocks: [
+        LessonMediaBlock(
+          mediaType: 'image',
+          lessonMediaId: '88888888-8888-4888-8888-888888888888',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 360,
+            child: LessonDocumentEditor(document: document, onChanged: (_) {}),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Infogad media'), findsOneWidget);
+    expect(
+      find.textContaining('88888888-8888-4888-8888-888888888888'),
+      findsNothing,
+    );
+    expect(find.textContaining('Media: image'), findsNothing);
+    expect(find.textContaining('media_type'), findsNothing);
+    expect(find.textContaining('lesson_media_id'), findsNothing);
   });
 
   testWidgets('document editor renders positive corpus authoring nodes', (
@@ -613,6 +917,10 @@ Future<void> _expectEditorKeyVisible(WidgetTester tester, Key key) async {
     );
   }
   expect(finder, findsOneWidget);
+}
+
+List<String> _blockTypes(LessonDocument document) {
+  return document.blocks.map((block) => block.type).toList(growable: false);
 }
 
 List<LessonDocumentPreviewMedia> _previewMediaFromCorpus(

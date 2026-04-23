@@ -361,6 +361,11 @@ void main() {
         find.textContaining('Ladda ner dokument', findRichText: true),
         findsOneWidget,
       );
+      expect(find.textContaining('asset-1', findRichText: true), findsNothing);
+      expect(
+        find.textContaining('media-document-1', findRichText: true),
+        findsNothing,
+      );
       expect(
         find.textContaining('!document(', findRichText: true),
         findsNothing,

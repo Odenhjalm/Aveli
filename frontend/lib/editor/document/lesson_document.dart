@@ -377,6 +377,34 @@ final class LessonDocument {
     return LessonDocument(blocks: List<LessonBlock>.unmodifiable(next));
   }
 
+  LessonDocument moveBlock(int fromIndex, int toIndex) {
+    RangeError.checkValidIndex(fromIndex, blocks, 'fromIndex');
+    RangeError.checkValidIndex(toIndex, blocks, 'toIndex');
+    if (fromIndex == toIndex) {
+      return this;
+    }
+    final next = [...blocks];
+    final block = next.removeAt(fromIndex);
+    next.insert(toIndex, block);
+    return LessonDocument(blocks: List<LessonBlock>.unmodifiable(next));
+  }
+
+  LessonDocument moveBlockUp(int index) {
+    RangeError.checkValidIndex(index, blocks, 'index');
+    if (index == 0) {
+      return this;
+    }
+    return moveBlock(index, index - 1);
+  }
+
+  LessonDocument moveBlockDown(int index) {
+    RangeError.checkValidIndex(index, blocks, 'index');
+    if (index == blocks.length - 1) {
+      return this;
+    }
+    return moveBlock(index, index + 1);
+  }
+
   LessonDocument insertParagraph(int index, List<LessonTextRun> children) {
     return insertBlock(index, LessonParagraphBlock(children: children));
   }

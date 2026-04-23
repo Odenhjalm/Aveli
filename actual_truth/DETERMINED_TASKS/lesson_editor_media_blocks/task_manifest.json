@@ -1,0 +1,212 @@
+{
+  "input": {
+    "task": "Materialize deterministic DAG task tree for lesson editor media blocks",
+    "mode": "generate",
+    "scope": [
+      "Media blocks must render inline in lesson_document_v1 document order",
+      "Media insertion must use active editor document position instead of unconditional append",
+      "Media block movement must be deterministic and preserve document identity",
+      "Editor, persisted preview, and learner UI must not expose internal media identifiers or raw metadata",
+      "lesson_document_v1 and backend APIs must remain unchanged unless a future contract task explicitly amends them",
+      "No Markdown, Quill, or legacy media-token pathways may be reintroduced"
+    ],
+    "parent_dag": "actual_truth/DETERMINED_TASKS/lesson_editor_rebuild",
+    "external_prerequisites": [
+      "lesson_editor_rebuild/LER-015"
+    ],
+    "contracts": [
+      "actual_truth/contracts/course_lesson_editor_contract.md",
+      "actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
+      "actual_truth/contracts/media_pipeline_contract.md",
+      "actual_truth/contracts/SYSTEM_LAWS.md",
+      "actual_truth/contracts/retrieval/retrieval_contract.md"
+    ],
+    "audits": [
+      "actual_truth/analysis/lesson_editor_media_blocks/MEDIA_BLOCK_FLOW_NO_CODE_AUDIT.md"
+    ]
+  },
+  "controller": {
+    "execution_mode": "full_chain",
+    "retrieval_contract": "actual_truth/contracts/retrieval/retrieval_contract.md",
+    "audit_cadence": "pre_task_and_post_task",
+    "stop_on_contract_contradiction": true,
+    "stop_on_unverified_output": true,
+    "stop_on_internal_ui_leakage": true
+  },
+  "task_tree": [
+    {
+      "task_id": "LEMB-001",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "CONTRACT_BOUNDARY_LOCK",
+      "description": "Lock media identity authority before implementation: lesson_document_v1 media blocks use lesson_media_id and media_type; media_asset_id remains asset/placement metadata outside editor document truth.",
+      "depends_on": [],
+      "target_files": [
+        "actual_truth/contracts/course_lesson_editor_contract.md",
+        "actual_truth/contracts/lesson_editor_rebuild_manifest_contract.md",
+        "actual_truth/contracts/media_pipeline_contract.md",
+        "actual_truth/analysis/lesson_editor_media_blocks/MEDIA_BLOCK_FLOW_NO_CODE_AUDIT.md",
+        "frontend/lib/editor/document/lesson_document.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart"
+      ],
+      "retrieval_queries": [
+        "lesson_document_v1 media block lesson_media_id media_asset_id contract",
+        "LessonMediaBlock media_type lessonMediaId serialization",
+        "media_pipeline_contract media_asset_id lesson_media_id identity boundary",
+        "course_lesson_editor_contract lesson media document references"
+      ],
+      "verification_requirement": "Active contracts still require lesson_media_id as editor document media identity and no implementation output stores media_asset_id in lesson_document_v1."
+    },
+    {
+      "task_id": "LEMB-002",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "FRONTEND_DOCUMENT_OPERATIONS",
+      "description": "Add deterministic document-model operations for explicit media insertion and block movement before editor UI controls depend on them.",
+      "depends_on": [
+        "LEMB-001"
+      ],
+      "target_files": [
+        "frontend/lib/editor/document/lesson_document.dart",
+        "frontend/test/unit/lesson_document_model_test.dart"
+      ],
+      "retrieval_queries": [
+        "LessonDocument insertBlock insertMedia blocks unmodifiable move operation",
+        "lesson_document_model_test insert media ordered blocks",
+        "LessonMediaBlock validation mediaTypesByLessonMediaId"
+      ],
+      "verification_requirement": "Unit tests prove explicit media insertion and block movement preserve canonical lesson_document_v1 serialization and mutate only document order."
+    },
+    {
+      "task_id": "LEMB-003",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "FRONTEND_EDITOR_POSITIONED_INSERTION",
+      "description": "Replace Course Editor append-only media insertion with insertion at the active document cursor or selection position.",
+      "depends_on": [
+        "LEMB-002"
+      ],
+      "target_files": [
+        "frontend/lib/editor/document/lesson_document_editor.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/test/widgets/lesson_document_editor_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart"
+      ],
+      "retrieval_queries": [
+        "_insertMediaBlockIntoDocument insertMedia blocks.length",
+        "LessonDocumentEditor selected block selection insertion index",
+        "_insertImageIntoLesson _insertVideoIntoLesson _insertAudioIntoLesson _insertDocumentIntoLesson",
+        "lesson media pipeline inline document tokens without trailing fallback"
+      ],
+      "verification_requirement": "Widget tests prove media insertion uses active document position, not unconditional append, and preview receives the same block order."
+    },
+    {
+      "task_id": "LEMB-004",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "FRONTEND_EDITOR_MEDIA_BLOCK_CONTROLS",
+      "description": "Add deterministic editor controls for moving non-text media blocks within the continuous writing surface.",
+      "depends_on": [
+        "LEMB-002",
+        "LEMB-003"
+      ],
+      "target_files": [
+        "frontend/lib/editor/document/lesson_document_editor.dart",
+        "frontend/test/widgets/lesson_document_editor_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart"
+      ],
+      "retrieval_queries": [
+        "LessonDocumentEditor LessonMediaBlock focus selected block controls",
+        "moveBlockUp moveBlockDown LessonDocumentEditor test",
+        "continuous writing surface media block controls"
+      ],
+      "verification_requirement": "Widget tests prove media block move controls update document order deterministically, respect boundaries, and do not expose internal ids or types."
+    },
+    {
+      "task_id": "LEMB-005",
+      "status": "completed",
+      "type": "OWNER",
+      "task_type": "FRONTEND_RENDERER_UI_LEAK_CLEANUP",
+      "description": "Remove user-facing internal media identifiers and raw media type/debug labels from editor, persisted preview, and learner UI.",
+      "depends_on": [
+        "LEMB-001"
+      ],
+      "target_files": [
+        "frontend/lib/editor/document/lesson_document_editor.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "frontend/test/widgets/lesson_document_editor_test.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart"
+      ],
+      "retrieval_queries": [
+        "Media: block.mediaType block.lessonMediaId LessonDocumentEditor",
+        "LessonDocumentPreviewMedia label mediaAssetId",
+        "_lessonMediaLabel mediaAssetId lesson_page",
+        "debug labels lesson_document_v1 Markdown Quill rendered UI"
+      ],
+      "verification_requirement": "Widget tests and deterministic string audits prove editor, persisted preview, and learner UI do not expose lesson_media_id, media_asset_id, raw media_type, or debug/model labels."
+    },
+    {
+      "task_id": "LEMB-006",
+      "status": "completed",
+      "type": "GATE",
+      "task_type": "MEDIA_BLOCK_REGRESSION_GATES",
+      "description": "Add deterministic regression gates for media insertion order, media block movement, renderer parity, and metadata no-leak behavior.",
+      "depends_on": [
+        "LEMB-003",
+        "LEMB-004",
+        "LEMB-005"
+      ],
+      "target_files": [
+        "frontend/test/unit/lesson_document_model_test.dart",
+        "frontend/test/widgets/lesson_document_editor_test.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart",
+        "tools/lesson_editor_authority_audit.py",
+        "backend/tests/test_ler011_deterministic_audit_gates.py",
+        "backend/tests/test_ler012_final_aggregate_editor_gate.py"
+      ],
+      "retrieval_queries": [
+        "lesson_document_fixture_corpus media blocks image audio video document",
+        "lesson_media_pipeline_test inline document tokens trailing fallback",
+        "lesson_editor_authority_audit forbidden rendered labels",
+        "LER-011 deterministic audit gates media metadata leak"
+      ],
+      "verification_requirement": "Regression gates fail on forbidden metadata leakage or append-only insertion and pass on positioned media insertion, movement, and inline renderer parity."
+    },
+    {
+      "task_id": "LEMB-007",
+      "status": "completed",
+      "type": "AGGREGATE",
+      "task_type": "FINAL_MEDIA_BLOCK_GATE",
+      "description": "Run final aggregate verification for the media-block implementation slice and record completion evidence.",
+      "depends_on": [
+        "LEMB-006"
+      ],
+      "target_files": [
+        "actual_truth/analysis/lesson_editor_media_blocks",
+        "actual_truth/DETERMINED_TASKS/lesson_editor_media_blocks",
+        "frontend/lib/editor/document/lesson_document.dart",
+        "frontend/lib/editor/document/lesson_document_editor.dart",
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+        "frontend/lib/features/courses/presentation/lesson_page.dart",
+        "frontend/test/unit/lesson_document_model_test.dart",
+        "frontend/test/widgets/lesson_document_editor_test.dart",
+        "frontend/test/widgets/lesson_preview_rendering_test.dart",
+        "frontend/test/widgets/lesson_media_pipeline_test.dart",
+        "tools/lesson_editor_authority_audit.py",
+        "backend/tests/test_ler011_deterministic_audit_gates.py",
+        "backend/tests/test_ler012_final_aggregate_editor_gate.py"
+      ],
+      "retrieval_queries": [
+        "lesson editor media blocks final gate",
+        "lesson_document_v1 media insertion movement no metadata leak",
+        "Markdown Quill legacy media token forbidden editor authority",
+        "preview learner media inline document order"
+      ],
+      "verification_requirement": "Final gate proves media blocks insert and move in document order, render inline in preview and learner views, leak no internal metadata, and do not alter lesson_document_v1 or backend APIs."
+    }
+  ]
+}

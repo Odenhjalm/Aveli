@@ -8,12 +8,14 @@ class LessonDocumentEditor extends StatefulWidget {
     super.key,
     required this.document,
     required this.onChanged,
+    this.onInsertionIndexChanged,
     this.enabled = true,
     this.minHeight = 280,
   });
 
   final LessonDocument document;
   final ValueChanged<LessonDocument> onChanged;
+  final ValueChanged<int>? onInsertionIndexChanged;
   final bool enabled;
   final double minHeight;
 
@@ -123,7 +125,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       final node = FocusNode();
       node.addListener(() {
         if (node.hasFocus && mounted) {
-          setState(() => _selectedTarget = target);
+          _select(target);
         }
       });
       return node;
@@ -136,6 +138,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _select(_EditorTarget target) {
+    widget.onInsertionIndexChanged?.call(
+      target.insertionIndex(widget.document),
+    );
     if (_selectedTarget == target) return;
     setState(() => _selectedTarget = target);
   }
@@ -301,6 +306,28 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     setState(
       () => _selectedTarget = _EditorTarget.block(next.blocks.length - 1),
     );
+  }
+
+  void _moveBlock(int blockIndex, int targetIndex) {
+    if (!widget.enabled) return;
+    if (blockIndex < 0 || blockIndex >= widget.document.blocks.length) return;
+    if (targetIndex < 0 || targetIndex >= widget.document.blocks.length) {
+      return;
+    }
+    if (blockIndex == targetIndex) return;
+    final next = widget.document.moveBlock(blockIndex, targetIndex);
+    _emit(next);
+    final nextTarget = _EditorTarget.block(targetIndex);
+    widget.onInsertionIndexChanged?.call(nextTarget.insertionIndex(next));
+    setState(() => _selectedTarget = nextTarget);
+  }
+
+  void _moveBlockUp(int blockIndex) {
+    _moveBlock(blockIndex, blockIndex - 1);
+  }
+
+  void _moveBlockDown(int blockIndex) {
+    _moveBlock(blockIndex, blockIndex + 1);
   }
 
   void _updateCtaBlock(int blockIndex, {String? label, String? targetUrl}) {
@@ -516,6 +543,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     }
     if (block is LessonMediaBlock) {
       final theme = Theme.of(context);
+      final canMoveUp = widget.enabled && blockIndex > 0;
+      final canMoveDown =
+          widget.enabled && blockIndex < widget.document.blocks.length - 1;
       return _buildFlowingBlockPadding(
         block: block,
         blockIndex: blockIndex,
@@ -532,12 +562,38 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Media: ${block.mediaType}\n${block.lessonMediaId}',
+                  'Infogad media\nFlytta blocket med pilarna.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     height: 1.35,
                   ),
                 ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    key: ValueKey<String>(
+                      'lesson_document_media_move_up_$blockIndex',
+                    ),
+                    tooltip: 'Flytta media upp',
+                    onPressed: canMoveUp
+                        ? () => _moveBlockUp(blockIndex)
+                        : null,
+                    icon: const Icon(Icons.keyboard_arrow_up),
+                  ),
+                  IconButton(
+                    key: ValueKey<String>(
+                      'lesson_document_media_move_down_$blockIndex',
+                    ),
+                    tooltip: 'Flytta media ned',
+                    onPressed: canMoveDown
+                        ? () => _moveBlockDown(blockIndex)
+                        : null,
+                    icon: const Icon(Icons.keyboard_arrow_down),
+                  ),
+                ],
               ),
             ],
           ),
@@ -980,12 +1036,13 @@ class _PreviewMediaBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolved = media;
     final typeMatches = resolved?.mediaType == block.mediaType;
-    final title = typeMatches
-        ? 'Media: ${block.mediaType}'
-        : 'Media saknas: ${block.mediaType}';
+    final title = typeMatches ? 'Infogad media' : 'Media kunde inte laddas';
     final label = resolved?.label?.trim();
-    final state = resolved?.state.trim();
     final resolvedUrl = resolved?.resolvedUrl?.trim();
+    final subtitleLines = [
+      if (label != null && label.isNotEmpty) label,
+      if (typeMatches) 'Sparad media' else 'Kontrollera media i lektionen.',
+    ];
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.04),
@@ -998,13 +1055,7 @@ class _PreviewMediaBlock extends StatelessWidget {
           ListTile(
             leading: Icon(_iconForMediaType(block.mediaType)),
             title: Text(title),
-            subtitle: Text(
-              [
-                if (label != null && label.isNotEmpty) label,
-                block.lessonMediaId,
-                if (state != null && state.isNotEmpty) 'Status: $state',
-              ].join('\n'),
-            ),
+            subtitle: Text(subtitleLines.join('\n')),
           ),
           if (typeMatches &&
               block.mediaType == 'image' &&
@@ -1251,6 +1302,17 @@ class _EditorTarget {
       return null;
     }
     return this;
+  }
+
+  int insertionIndex(LessonDocument document) {
+    if (document.blocks.isEmpty) {
+      return 0;
+    }
+    final target = normalized(document);
+    if (target == null) {
+      return document.blocks.length;
+    }
+    return (target.blockIndex + 1).clamp(0, document.blocks.length).toInt();
   }
 
   @override

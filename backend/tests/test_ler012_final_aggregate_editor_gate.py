@@ -459,7 +459,10 @@ def test_frontend_authoring_preview_learner_and_transport_are_document_model() -
     assert "LessonDocumentEditor(" in course_editor
     assert "LessonDocumentPreview(" in course_editor
     assert "insertMedia(" in media_insert_block
+    assert "final insertionIndex = _resolvedLessonDocumentInsertionIndex();" in media_insert_block
+    assert "insertionIndex," in media_insert_block
     assert "lessonMediaId: lessonMediaId" in media_insert_block
+    assert "_lessonDocument.blocks.length," not in media_insert_block
     assert "insertCta(" in cta_insert_block
     assert "targetUrl: url" in cta_insert_block
 
@@ -548,6 +551,132 @@ def test_frontend_authoring_preview_learner_and_transport_are_document_model() -
             tokens=FRONTEND_DOCUMENT_AUTHORITY_FORBIDDEN,
         )
     )
+
+
+def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
+    document_model = read_repo_text(
+        REPO_ROOT, "frontend/lib/editor/document/lesson_document.dart"
+    )
+    document_editor = read_repo_text(
+        REPO_ROOT, "frontend/lib/editor/document/lesson_document_editor.dart"
+    )
+    course_editor = read_repo_text(
+        REPO_ROOT,
+        "frontend/lib/features/studio/presentation/course_editor_page.dart",
+    )
+    learner_page = read_repo_text(
+        REPO_ROOT, "frontend/lib/features/courses/presentation/lesson_page.dart"
+    )
+    model_tests = read_repo_text(
+        REPO_ROOT, "frontend/test/unit/lesson_document_model_test.dart"
+    )
+    editor_tests = read_repo_text(
+        REPO_ROOT, "frontend/test/widgets/lesson_document_editor_test.dart"
+    )
+    preview_tests = read_repo_text(
+        REPO_ROOT, "frontend/test/widgets/lesson_preview_rendering_test.dart"
+    )
+    pipeline_tests = read_repo_text(
+        REPO_ROOT, "frontend/test/widgets/lesson_media_pipeline_test.dart"
+    )
+    audit_gate_tests = read_repo_text(
+        REPO_ROOT, "backend/tests/test_ler011_deterministic_audit_gates.py"
+    )
+
+    media_insert_block = dart_source_block(
+        course_editor, "void _insertMediaBlockIntoDocument({"
+    )
+    editor_move_block = dart_source_block(document_editor, "void _moveBlock(")
+
+    assert_no_findings(
+        missing_token_findings(
+            document_model,
+            scope="final_gate.document_media_operations",
+            tokens=(
+                "LessonDocument moveBlock(int fromIndex, int toIndex)",
+                "LessonDocument moveBlockUp(int index)",
+                "LessonDocument moveBlockDown(int index)",
+                "'media_type': mediaType",
+                "'lesson_media_id': lessonMediaId",
+            ),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            media_insert_block,
+            scope="final_gate.positioned_media_insert",
+            tokens=(
+                "_resolvedLessonDocumentInsertionIndex()",
+                "insertionIndex,",
+                "_lessonDocumentInsertionIndex = insertionIndex + 1;",
+            ),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            editor_move_block,
+            scope="final_gate.editor_media_movement",
+            tokens=("widget.document.moveBlock(blockIndex, targetIndex)",),
+        )
+    )
+    assert_no_findings(
+        forbidden_token_findings(
+            media_insert_block,
+            scope="final_gate.no_append_only_media_insert",
+            tokens=("_lessonDocument.blocks.length,",),
+        )
+    )
+    assert_no_findings(
+        forbidden_token_findings(
+            document_editor + "\n" + course_editor + "\n" + learner_page,
+            scope="final_gate.user_facing_media_no_leak",
+            tokens=(
+                "Media: ${block.mediaType}",
+                "Media saknas: ${block.mediaType}",
+                "${block.lessonMediaId}",
+                "'Status: $state'",
+                "label: media.originalName ?? media.mediaAssetId",
+                "label: item.mediaAssetId",
+                "return mediaAssetId;",
+            ),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            document_editor + "\n" + course_editor + "\n" + learner_page,
+            scope="final_gate.safe_media_user_copy",
+            tokens=(
+                "Infogad media",
+                "Sparad media",
+                "_safeLessonPreviewMediaLabel(media.originalName)",
+                "label: null",
+                "Lektionsljud",
+                "Lektionsvideo",
+                "Lektionsfil",
+            ),
+        )
+    )
+
+    regression_test_text = "\n".join(
+        [model_tests, editor_tests, preview_tests, pipeline_tests]
+    )
+    for required_test_marker in (
+        "inserts media before, between, and after text blocks",
+        "moves media blocks by changing only document order",
+        "document editor exposes active position for media insertion",
+        "document editor moves media blocks deterministically",
+        "document editor media blocks hide internal metadata",
+        "document preview fallback hides media metadata",
+        "lesson renders inline document tokens without trailing fallback duplication",
+    ):
+        assert required_test_marker in regression_test_text
+
+    for required_gate_marker in (
+        "test_seeded_gate_detects_media_block_regressions",
+        "test_media_block_editor_regression_gate_is_positioned_and_document_ordered",
+        "test_media_block_user_facing_no_leak_regression_gate",
+    ):
+        assert required_gate_marker in audit_gate_tests
 
 
 def test_legacy_authority_files_dependencies_and_media_preview_urls_stay_removed() -> (

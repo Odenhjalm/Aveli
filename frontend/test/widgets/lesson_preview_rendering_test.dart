@@ -125,6 +125,16 @@ void main() {
       expect(_lessonMediaPlayerFinder('audio'), findsOneWidget);
       expect(_lessonMediaPlayerFinder('video'), findsOneWidget);
       expect(find.text('Ladda ner dokument'), findsOneWidget);
+      for (final row in corpus.mediaRows) {
+        expect(
+          find.textContaining(row.lessonMediaId, findRichText: true),
+          findsNothing,
+        );
+        expect(
+          find.textContaining(row.mediaAssetId, findRichText: true),
+          findsNothing,
+        );
+      }
       expect(find.text('Book now'), findsOneWidget);
       expect(find.textContaining('!image(', findRichText: true), findsNothing);
       expect(
@@ -190,6 +200,8 @@ void main() {
       await tester.pump();
 
       expect(find.text('Lektionsmedia kunde inte laddas.'), findsOneWidget);
+      expect(find.textContaining(_videoMediaId), findsNothing);
+      expect(find.textContaining('video'), findsNothing);
       expect(_lessonMediaPlayerFinder('video'), findsNothing);
       expect(tester.takeException(), isNull);
     },
