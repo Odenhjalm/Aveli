@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -190,13 +192,13 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final target = selection.target;
     _emit(
       target.itemIndex == null
-          ? widget.document.formatBlockInlineRange(
+          ? widget.document.toggleBlockInlineMark(
               target.blockIndex,
               start: selection.start,
               end: selection.end,
               mark: mark,
             )
-          : widget.document.formatListItemInlineRange(
+          : widget.document.toggleListItemInlineMark(
               target.blockIndex,
               itemIndex: target.itemIndex!,
               start: selection.start,
@@ -1487,32 +1489,166 @@ List<LessonTextRun> _textRunsForReplacement(
   List<LessonTextRun> previous,
   String text,
 ) {
-  final marks = _uniformMarks(previous);
-  return <LessonTextRun>[
-    LessonTextRun(
-      text,
-      marks: text.isEmpty ? const <LessonInlineMark>[] : marks,
-    ),
+  final previousText = _plainText(previous);
+  if (previousText == text) {
+    return List<LessonTextRun>.unmodifiable(previous);
+  }
+
+  final prefixLength = _commonPrefixLength(previousText, text);
+  final suffixLength = _commonSuffixLength(previousText, text, prefixLength);
+  final replacedStart = prefixLength;
+  final replacedEnd = previousText.length - suffixLength;
+  final insertedText = text.substring(prefixLength, text.length - suffixLength);
+  final next = <LessonTextRun>[
+    ..._sliceRuns(previous, 0, replacedStart),
+    if (insertedText.isNotEmpty)
+      LessonTextRun(
+        insertedText,
+        marks: _marksForReplacement(
+          previous,
+          start: replacedStart,
+          end: replacedEnd,
+        ),
+      ),
+    ..._sliceRuns(previous, replacedEnd, previousText.length),
   ];
+  final merged = _mergeReplacementRuns(next);
+  if (merged.isEmpty) {
+    return const <LessonTextRun>[LessonTextRun('')];
+  }
+  return List<LessonTextRun>.unmodifiable(merged);
 }
 
-List<LessonInlineMark> _uniformMarks(List<LessonTextRun> runs) {
+int _commonPrefixLength(String previousText, String nextText) {
+  final max = previousText.length < nextText.length
+      ? previousText.length
+      : nextText.length;
+  var index = 0;
+  while (index < max && previousText[index] == nextText[index]) {
+    index += 1;
+  }
+  return index;
+}
+
+int _commonSuffixLength(
+  String previousText,
+  String nextText,
+  int prefixLength,
+) {
+  final previousAvailable = previousText.length - prefixLength;
+  final nextAvailable = nextText.length - prefixLength;
+  final max = previousAvailable < nextAvailable
+      ? previousAvailable
+      : nextAvailable;
+  var suffix = 0;
+  while (suffix < max &&
+      previousText[previousText.length - 1 - suffix] ==
+          nextText[nextText.length - 1 - suffix]) {
+    suffix += 1;
+  }
+  return suffix;
+}
+
+List<LessonInlineMark> _marksForReplacement(
+  List<LessonTextRun> previous, {
+  required int start,
+  required int end,
+}) {
+  if (start == end) {
+    return _boundaryMarks(previous, start);
+  }
+  final uniformSelection = _uniformMarksOrNull(
+    _sliceRuns(previous, start, end),
+  );
+  if (uniformSelection != null) {
+    return uniformSelection;
+  }
+  return const <LessonInlineMark>[];
+}
+
+List<LessonInlineMark>? _uniformMarksOrNull(List<LessonTextRun> runs) {
   if (runs.isEmpty) return const <LessonInlineMark>[];
   final first = runs.first.marks;
   for (final run in runs.skip(1)) {
-    if (!_sameMarkTypes(first, run.marks)) {
-      return const <LessonInlineMark>[];
+    if (!_sameMarkSet(first, run.marks)) {
+      return null;
     }
   }
   return List<LessonInlineMark>.unmodifiable(first);
 }
 
-bool _sameMarkTypes(List<LessonInlineMark> left, List<LessonInlineMark> right) {
-  if (left.length != right.length) return false;
-  for (var index = 0; index < left.length; index += 1) {
-    if (left[index].type != right[index].type) return false;
+List<LessonInlineMark> _boundaryMarks(List<LessonTextRun> runs, int offset) {
+  final left = _marksAdjacentToOffset(runs, offset, preferLeft: true);
+  final right = _marksAdjacentToOffset(runs, offset, preferLeft: false);
+  if (left == null && right == null) {
+    return const <LessonInlineMark>[];
+  }
+  if (left == null) {
+    return right!;
+  }
+  if (right == null) {
+    return left;
+  }
+  return _sameMarkSet(left, right) ? left : const <LessonInlineMark>[];
+}
+
+List<LessonInlineMark>? _marksAdjacentToOffset(
+  List<LessonTextRun> runs,
+  int offset, {
+  required bool preferLeft,
+}) {
+  var current = 0;
+  for (final run in runs) {
+    final start = current;
+    final end = start + run.text.length;
+    current = end;
+    if (offset > start && offset < end) {
+      return List<LessonInlineMark>.unmodifiable(run.marks);
+    }
+    if (preferLeft && offset == end) {
+      return List<LessonInlineMark>.unmodifiable(run.marks);
+    }
+    if (!preferLeft && offset == start) {
+      return List<LessonInlineMark>.unmodifiable(run.marks);
+    }
+  }
+  return null;
+}
+
+List<LessonTextRun> _mergeReplacementRuns(List<LessonTextRun> runs) {
+  final merged = <LessonTextRun>[];
+  for (final run in runs) {
+    if (run.text.isEmpty) {
+      continue;
+    }
+    if (merged.isNotEmpty && _sameMarkSet(merged.last.marks, run.marks)) {
+      final previous = merged.removeLast();
+      merged.add(previous.copyWith(text: '${previous.text}${run.text}'));
+    } else {
+      merged.add(run);
+    }
+  }
+  return merged;
+}
+
+bool _sameMarkSet(List<LessonInlineMark> left, List<LessonInlineMark> right) {
+  if (left.length != right.length) {
+    return false;
+  }
+  final rightSignatures = right.map(_markSignature).toSet();
+  if (rightSignatures.length != right.length) {
+    return false;
+  }
+  for (final mark in left) {
+    if (!rightSignatures.contains(_markSignature(mark))) {
+      return false;
+    }
   }
   return true;
+}
+
+String _markSignature(LessonInlineMark mark) {
+  return jsonEncode(mark.toJson());
 }
 
 String _plainText(List<LessonTextRun> children) {

@@ -518,6 +518,315 @@ void main() {
     );
   });
 
+  testWidgets(
+    'document editor preserves inline formatting through typing, scroll, and focus changes',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      var document = LessonDocument(
+        blocks: List<LessonBlock>.unmodifiable([
+          for (var index = 0; index < 14; index += 1)
+            if (index == 8)
+              const LessonParagraphBlock(
+                children: [
+                  LessonTextRun('Bold', marks: [LessonInlineMark.bold]),
+                  LessonTextRun(' tail'),
+                ],
+              )
+            else
+              LessonParagraphBlock(
+                children: [LessonTextRun('Filler paragraph $index')],
+              ),
+        ]),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 420,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    onChanged: (next) => setState(() => document = next),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      const targetKey = ValueKey<String>('lesson_document_editor_block_8');
+      await _expectEditorKeyVisible(tester, targetKey);
+      await tester.tap(find.byKey(targetKey));
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'BolXd tail',
+          selection: TextSelection.collapsed(offset: 4),
+        ),
+      );
+      await tester.pump();
+
+      var paragraph = document.blocks[8] as LessonParagraphBlock;
+      expect(paragraph.children.map((run) => run.text).toList(), [
+        'BolXd',
+        ' tail',
+      ]);
+      expect(paragraph.children.first.marks.map((mark) => mark.type), ['bold']);
+      expect(paragraph.children.last.marks, isEmpty);
+
+      var segments = _editorTextSegments(tester, targetKey);
+      expect(segments.map((segment) => segment.text).toList(), [
+        'BolXd',
+        ' tail',
+      ]);
+      expect(segments.first.style.fontWeight, FontWeight.w700);
+      expect(segments.last.style.fontWeight, isNot(FontWeight.w700));
+
+      await _expectEditorKeyVisible(
+        tester,
+        const ValueKey<String>('lesson_document_editor_block_13'),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('lesson_document_editor_block_13')),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      await _expectEditorKeyVisible(tester, targetKey);
+
+      segments = _editorTextSegments(tester, targetKey);
+      expect(segments.map((segment) => segment.text).toList(), [
+        'BolXd',
+        ' tail',
+      ]);
+      expect(segments.first.style.fontWeight, FontWeight.w700);
+      expect(segments.last.style.fontWeight, isNot(FontWeight.w700));
+    },
+  );
+
+  testWidgets(
+    'document editor preserves mixed inline formatting across save and reload',
+    (tester) async {
+      var document = const LessonDocument(
+        blocks: [
+          LessonParagraphBlock(
+            children: [
+              LessonTextRun('Bold', marks: [LessonInlineMark.bold]),
+              LessonTextRun(' and '),
+              LessonTextRun('Italic', marks: [LessonInlineMark.italic]),
+            ],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 420,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    onChanged: (next) => setState(() => document = next),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      const fieldKey = ValueKey<String>('lesson_document_editor_block_0');
+      await tester.tap(find.byKey(fieldKey));
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'BoXld and Italic',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
+      );
+      await tester.pump();
+
+      final savedPayload = document.toJson();
+      final reloaded = LessonDocument.fromJson(savedPayload);
+
+      _expectRunTextsAndMarks(
+        (reloaded.blocks.single as LessonParagraphBlock).children,
+        const ['BoXld', ' and ', 'Italic'],
+        const [
+          ['bold'],
+          <String>[],
+          ['italic'],
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 420,
+              child: LessonDocumentEditor(
+                document: reloaded,
+                onChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final segments = _editorTextSegments(tester, fieldKey);
+      expect(segments.map((segment) => segment.text).toList(), [
+        'BoXld',
+        ' and ',
+        'Italic',
+      ]);
+      expect(segments[0].style.fontWeight, FontWeight.w700);
+      expect(segments[1].style.fontWeight, isNot(FontWeight.w700));
+      expect(segments[2].style.fontStyle, FontStyle.italic);
+    },
+  );
+
+  testWidgets(
+    'document editor preserves bold and italic marks through delete edits',
+    (tester) async {
+      var document = const LessonDocument(
+        blocks: [
+          LessonParagraphBlock(
+            children: [
+              LessonTextRun('Bold', marks: [LessonInlineMark.bold]),
+              LessonTextRun(' and '),
+              LessonTextRun('Italic', marks: [LessonInlineMark.italic]),
+            ],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 420,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    onChanged: (next) => setState(() => document = next),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      const fieldKey = ValueKey<String>('lesson_document_editor_block_0');
+      await tester.tap(find.byKey(fieldKey));
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Bod and Italic',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+      );
+      await tester.pump();
+
+      var paragraph = document.blocks.single as LessonParagraphBlock;
+      _expectRunTextsAndMarks(
+        paragraph.children,
+        const ['Bod', ' and ', 'Italic'],
+        const [
+          ['bold'],
+          <String>[],
+          ['italic'],
+        ],
+      );
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Bod and Italc',
+          selection: TextSelection.collapsed(offset: 12),
+        ),
+      );
+      await tester.pump();
+
+      paragraph = document.blocks.single as LessonParagraphBlock;
+      _expectRunTextsAndMarks(
+        paragraph.children,
+        const ['Bod', ' and ', 'Italc'],
+        const [
+          ['bold'],
+          <String>[],
+          ['italic'],
+        ],
+      );
+    },
+  );
+
+  testWidgets('document editor bold button toggles selection on and off', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Toggle me')]),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 420,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    const fieldKey = ValueKey<String>('lesson_document_editor_block_0');
+    await _selectTextRange(
+      tester,
+      fieldKey,
+      text: 'Toggle me',
+      start: 0,
+      end: 6,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_bold'));
+
+    var paragraph = document.blocks.single as LessonParagraphBlock;
+    expect(paragraph.children.first.text, 'Toggle');
+    expect(paragraph.children.first.marks.map((mark) => mark.type), ['bold']);
+
+    await _selectTextRange(
+      tester,
+      fieldKey,
+      text: 'Toggle me',
+      start: 0,
+      end: 6,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_bold'));
+
+    paragraph = document.blocks.single as LessonParagraphBlock;
+    expect(paragraph.children.single.text, 'Toggle me');
+    expect(paragraph.children.single.marks, isEmpty);
+  });
+
   testWidgets('document editor exposes active position for media insertion', (
     tester,
   ) async {
@@ -1083,6 +1392,66 @@ Future<void> _expectEditorKeyVisible(WidgetTester tester, Key key) async {
     );
   }
   expect(finder, findsOneWidget);
+}
+
+List<_TextSegment> _editorTextSegments(
+  WidgetTester tester,
+  ValueKey<String> key,
+) {
+  final finder = find.byKey(key);
+  final field = tester.widget<TextField>(finder);
+  final text =
+      field.controller!.buildTextSpan(
+            context: tester.element(finder),
+            style: field.style,
+            withComposing: false,
+          )
+          as TextSpan;
+  return _flattenTextSpan(text);
+}
+
+List<_TextSegment> _flattenTextSpan(TextSpan span) {
+  final output = <_TextSegment>[];
+  final baseStyle = span.style ?? const TextStyle();
+
+  void visit(TextSpan current, TextStyle inherited) {
+    final style = inherited.merge(current.style);
+    final text = current.text;
+    if (text != null && text.isNotEmpty) {
+      output.add(_TextSegment(text: text, style: style));
+    }
+    for (final child in current.children ?? const <InlineSpan>[]) {
+      if (child is TextSpan) {
+        visit(child, style);
+      }
+    }
+  }
+
+  visit(span, baseStyle);
+  return output;
+}
+
+class _TextSegment {
+  const _TextSegment({required this.text, required this.style});
+
+  final String text;
+  final TextStyle style;
+}
+
+void _expectRunTextsAndMarks(
+  List<LessonTextRun> runs,
+  List<String> expectedTexts,
+  List<List<String>> expectedMarks,
+) {
+  expect(runs.map((run) => run.text).toList(growable: false), expectedTexts);
+  expect(
+    runs
+        .map(
+          (run) => run.marks.map((mark) => mark.type).toList(growable: false),
+        )
+        .toList(growable: false),
+    expectedMarks,
+  );
 }
 
 List<String> _blockTypes(LessonDocument document) {

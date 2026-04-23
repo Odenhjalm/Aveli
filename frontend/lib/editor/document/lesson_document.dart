@@ -478,6 +478,17 @@ final class LessonDocument {
     });
   }
 
+  LessonDocument toggleBlockInlineMark(
+    int blockIndex, {
+    required int start,
+    required int end,
+    required LessonInlineMark mark,
+  }) {
+    return _replaceInlineChildren(blockIndex, (children) {
+      return _toggleMarkRange(children, start: start, end: end, mark: mark);
+    });
+  }
+
   LessonDocument formatListItemInlineRange(
     int blockIndex, {
     required int itemIndex,
@@ -498,6 +509,18 @@ final class LessonDocument {
   }) {
     return _replaceListItemChildren(blockIndex, itemIndex, (children) {
       return _clearRange(children, start: start, end: end);
+    });
+  }
+
+  LessonDocument toggleListItemInlineMark(
+    int blockIndex, {
+    required int itemIndex,
+    required int start,
+    required int end,
+    required LessonInlineMark mark,
+  }) {
+    return _replaceListItemChildren(blockIndex, itemIndex, (children) {
+      return _toggleMarkRange(children, start: start, end: end, mark: mark);
     });
   }
 
@@ -629,6 +652,62 @@ List<LessonTextRun> _clearRange(
   );
 }
 
+List<LessonTextRun> _toggleMarkRange(
+  List<LessonTextRun> children, {
+  required int start,
+  required int end,
+  required LessonInlineMark mark,
+}) {
+  return _rangeHasMark(children, start: start, end: end, mark: mark)
+      ? _clearMarkRange(children, start: start, end: end, mark: mark)
+      : _formatRange(children, start: start, end: end, mark: mark);
+}
+
+List<LessonTextRun> _clearMarkRange(
+  List<LessonTextRun> children, {
+  required int start,
+  required int end,
+  required LessonInlineMark mark,
+}) {
+  _validateRange(children, start: start, end: end);
+  return _mapRange(
+    children,
+    start: start,
+    end: end,
+    transform: (run) {
+      final nextMarks = run.marks
+          .where((existing) => !_sameMark(existing, mark))
+          .toList(growable: false);
+      return run.copyWith(marks: nextMarks);
+    },
+  );
+}
+
+bool _rangeHasMark(
+  List<LessonTextRun> children, {
+  required int start,
+  required int end,
+  required LessonInlineMark mark,
+}) {
+  _validateRange(children, start: start, end: end);
+  if (start == end) {
+    return false;
+  }
+  var offset = 0;
+  for (final run in children) {
+    final runStart = offset;
+    final runEnd = offset + run.text.length;
+    offset = runEnd;
+    if (end <= runStart || start >= runEnd) {
+      continue;
+    }
+    if (!_containsMark(run.marks, mark)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 List<LessonTextRun> _mapRange(
   List<LessonTextRun> children, {
   required int start,
@@ -688,6 +767,19 @@ bool _sameMarks(List<LessonInlineMark> left, List<LessonInlineMark> right) {
     }
   }
   return true;
+}
+
+bool _containsMark(List<LessonInlineMark> marks, LessonInlineMark target) {
+  for (final mark in marks) {
+    if (_sameMark(mark, target)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _sameMark(LessonInlineMark left, LessonInlineMark right) {
+  return jsonEncode(left.toJson()) == jsonEncode(right.toJson());
 }
 
 void _validateRange(
