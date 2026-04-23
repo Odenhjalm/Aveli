@@ -1,6 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:aveli/shared/audio/home_audio_engine.dart';
+import 'package:aveli/shared/widgets/inline_audio_player.dart';
+
 import 'lesson_document.dart';
 
 class LessonDocumentEditor extends StatefulWidget {
@@ -855,6 +858,7 @@ class LessonDocumentPreview extends StatelessWidget {
     this.mediaBuilder,
     this.onLaunchUrl,
     this.readingMode = LessonDocumentReadingMode.glass,
+    this.audioEngineFactory,
   });
 
   final LessonDocument document;
@@ -862,6 +866,7 @@ class LessonDocumentPreview extends StatelessWidget {
   final LessonDocumentPreviewMediaBuilder? mediaBuilder;
   final ValueChanged<String>? onLaunchUrl;
   final LessonDocumentReadingMode readingMode;
+  final HomeAudioEngineFactory? audioEngineFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -888,6 +893,7 @@ class LessonDocumentPreview extends StatelessWidget {
             mediaByLessonMediaId: mediaByLessonMediaId,
             mediaBuilder: mediaBuilder,
             onLaunchUrl: onLaunchUrl,
+            audioEngineFactory: audioEngineFactory,
           ),
           const SizedBox(height: 12),
         ],
@@ -984,12 +990,14 @@ class _PreviewBlock extends StatelessWidget {
     required this.mediaByLessonMediaId,
     required this.mediaBuilder,
     required this.onLaunchUrl,
+    required this.audioEngineFactory,
   });
 
   final LessonBlock block;
   final Map<String, LessonDocumentPreviewMedia> mediaByLessonMediaId;
   final LessonDocumentPreviewMediaBuilder? mediaBuilder;
   final ValueChanged<String>? onLaunchUrl;
+  final HomeAudioEngineFactory? audioEngineFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -1055,6 +1063,7 @@ class _PreviewBlock extends StatelessWidget {
       return _PreviewMediaBlock(
         block: media,
         media: mediaByLessonMediaId[media.lessonMediaId],
+        audioEngineFactory: audioEngineFactory,
       );
     }
     if (block is LessonCtaBlock) {
@@ -1071,10 +1080,15 @@ class _PreviewBlock extends StatelessWidget {
 }
 
 class _PreviewMediaBlock extends StatelessWidget {
-  const _PreviewMediaBlock({required this.block, required this.media});
+  const _PreviewMediaBlock({
+    required this.block,
+    required this.media,
+    required this.audioEngineFactory,
+  });
 
   final LessonMediaBlock block;
   final LessonDocumentPreviewMedia? media;
+  final HomeAudioEngineFactory? audioEngineFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -1112,10 +1126,22 @@ class _PreviewMediaBlock extends StatelessWidget {
               child: Image.network(
                 resolvedUrl,
                 width: double.infinity,
-                height: 180,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) =>
                     const SizedBox.shrink(),
+              ),
+            ),
+          if (typeMatches &&
+              block.mediaType == 'audio' &&
+              resolvedUrl != null &&
+              resolvedUrl.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: InlineAudioPlayer(
+                url: resolvedUrl,
+                title: label == null || label.isEmpty ? 'Ljud' : label,
+                minimalUi: true,
+                engineFactory: audioEngineFactory,
               ),
             ),
         ],

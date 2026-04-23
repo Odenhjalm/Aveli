@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/editor/document/lesson_document_editor.dart';
+import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
+import '../helpers/fake_home_audio_engine.dart';
 import '../helpers/lesson_document_fixture_corpus.dart';
 
 void main() {
@@ -163,6 +165,94 @@ void main() {
     expect(find.textContaining('Media: image'), findsNothing);
     expect(find.textContaining('Status: ready'), findsNothing);
     expect(find.textContaining('media_type'), findsNothing);
+
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(image.width, double.infinity);
+    expect(image.height, isNull);
+    expect(image.fit, BoxFit.contain);
+  });
+
+  testWidgets('document preview fallback renders audio playback controls', (
+    tester,
+  ) async {
+    const lessonMediaId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const audioUrl = 'https://cdn.test/audio.mp3';
+    final engineFactory = FakeHomeAudioEngineFactory();
+    const document = LessonDocument(
+      blocks: [
+        LessonMediaBlock(mediaType: 'audio', lessonMediaId: lessonMediaId),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LessonDocumentPreview(
+            document: document,
+            audioEngineFactory: engineFactory.create,
+            media: const [
+              LessonDocumentPreviewMedia(
+                lessonMediaId: lessonMediaId,
+                mediaType: 'audio',
+                state: 'ready',
+                label: 'narration.mp3',
+                resolvedUrl: audioUrl,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Infogad media'), findsOneWidget);
+    expect(find.textContaining('narration.mp3'), findsOneWidget);
+    expect(find.byType(InlineAudioPlayer), findsOneWidget);
+    expect(find.byType(InlineAudioPlayerView), findsOneWidget);
+    final player = tester.widget<InlineAudioPlayer>(
+      find.byType(InlineAudioPlayer),
+    );
+    expect(player.url, audioUrl);
+    expect(player.title, 'narration.mp3');
+    expect(player.minimalUi, isTrue);
+    expect(engineFactory.createCount, 1);
+    expect(engineFactory.single.loadedUrls, orderedEquals([audioUrl]));
+  });
+
+  testWidgets('document preview fallback leaves document media presentation', (
+    tester,
+  ) async {
+    const lessonMediaId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const document = LessonDocument(
+      blocks: [
+        LessonMediaBlock(mediaType: 'document', lessonMediaId: lessonMediaId),
+      ],
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LessonDocumentPreview(
+            document: document,
+            media: [
+              LessonDocumentPreviewMedia(
+                lessonMediaId: lessonMediaId,
+                mediaType: 'document',
+                state: 'ready',
+                label: 'handout.pdf',
+                resolvedUrl: 'https://cdn.test/handout.pdf',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Infogad media'), findsOneWidget);
+    expect(find.textContaining('handout.pdf'), findsOneWidget);
+    expect(find.textContaining(lessonMediaId), findsNothing);
+    expect(find.byType(Image), findsNothing);
+    expect(find.byType(InlineAudioPlayer), findsNothing);
   });
 
   testWidgets('document editor toolbar formats only selected text ranges', (
