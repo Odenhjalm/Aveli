@@ -88,15 +88,15 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "61ecf976b5e8bf124685c06cbc3394d6461a1ae16e22ce25ea157cd76c30fdfb",
+    "expected_schema_hash": "748793baa2825858a65f5279640343fd39e52d0557396e9dfb7d4a4a6b328b06",
     "expected_counts": {
       "enums": 13,
-      "tables": 37,
+      "tables": 38,
       "views": 5,
-      "fks": 53,
-      "constraints": 195,
+      "fks": 55,
+      "constraints": 201,
       "triggers": 36,
-      "functions": 53
+      "functions": 54
     },
     "forbidden_legacy_columns": [
       "role_v2",
@@ -141,7 +141,50 @@
   },
   "release_cutover_verification": {
     "schema_scope": "app_owned_schema_only",
-    "state_hash_algorithm": "backend.bootstrap.baseline_v2_cutover.app_schema_state_fingerprint_v1"
+    "state_hash_algorithm": "backend.bootstrap.baseline_v2_cutover.app_schema_state_fingerprint_v1",
+    "accepted_current_states": [
+      {
+        "slot": 30,
+        "label": "production_slot_30_missing_compute_course_final_unlock_at",
+        "state_hash": "b9d175192d3678a9b17d94dc28947d2b53f4ba541493b2e33eb896f9a8abd83f",
+        "counts": {
+          "constraints": 201,
+          "enums": 13,
+          "fks": 55,
+          "functions": 53,
+          "tables": 38,
+          "triggers": 36,
+          "views": 5
+        },
+        "resolution": {
+          "mode": "heal_to_slot_post_state",
+          "healing_unit_id": "heal_slot_30_missing_compute_course_final_unlock_at"
+        }
+      }
+    ],
+    "healing_units": [
+      {
+        "id": "heal_slot_30_missing_compute_course_final_unlock_at",
+        "owner_slot": 30,
+        "target_slot": 30,
+        "source_kind": "slot_fragment",
+        "source_slot": 30,
+        "source_path": "backend/supabase/baseline_v2_slots/V2_0030_intro_course_progression.sql",
+        "line_start": 58,
+        "line_end": 142,
+        "sql_sha256": "74ce7bb4fbbf1c30fb6fb5e3ea204d618eaba410ddf580055771991e3b3297d7",
+        "expected_post_state_hash": "2bc2e8ce980b5905300b903a670977c791133f1c42603e9e160f6cb3d3bed394",
+        "expected_post_counts": {
+          "constraints": 201,
+          "enums": 13,
+          "fks": 55,
+          "functions": 54,
+          "tables": 38,
+          "triggers": 36,
+          "views": 5
+        }
+      }
+    ]
   },
   "slots": [
     {
@@ -604,6 +647,22 @@
         "fks": 53,
         "functions": 53,
         "tables": 37,
+        "triggers": 36,
+        "views": 5
+      }
+    },
+    {
+      "slot": 30,
+      "filename": "V2_0030_intro_course_progression.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0030_intro_course_progression.sql",
+      "sha256": "b1bbb3f7cf4e322a82cf7cdf80fe5e0720e653786dfef93850f94acd9bb44639",
+      "post_state_hash": "2bc2e8ce980b5905300b903a670977c791133f1c42603e9e160f6cb3d3bed394",
+      "post_counts": {
+        "constraints": 201,
+        "enums": 13,
+        "fks": 55,
+        "functions": 54,
+        "tables": 38,
         "triggers": 36,
         "views": 5
       }
