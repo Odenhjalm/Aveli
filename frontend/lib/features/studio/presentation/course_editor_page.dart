@@ -3345,9 +3345,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         : fallbackLessonTitle.isNotEmpty
         ? fallbackLessonTitle
         : 'Lektion';
-    final previewCoverUrl = (_courseCoverPath?.trim().isNotEmpty ?? false)
-        ? _courseCoverPath!.trim()
-        : null;
     final previewDocument = _lessonPreviewDocument;
     final previewMedia = _lessonPreviewMedia;
     final previewError = _lessonPreviewError;
@@ -3387,23 +3384,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           },
         ),
         gap12,
-        if (previewCoverUrl case final coverUrl?)
-          if (coverUrl.trim().isNotEmpty) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                width: double.infinity,
-                height: 120,
-                child: Image.network(
-                  coverUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const SizedBox.shrink(),
-                ),
-              ),
-            ),
-            gap12,
-          ],
         Expanded(
           child: _lessonPreviewLoading
               ? const Center(child: CircularProgressIndicator())

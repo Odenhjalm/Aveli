@@ -57,6 +57,21 @@ void main() {
       expect(mediaListItem, contains('final mediaIsEmbedded ='));
     });
   });
+
+  test('lesson preview mode does not render the course cover block', () {
+    final source = _courseEditorSource();
+    final previewMode = _sourceSlice(
+      source,
+      '  Widget _buildLessonPreviewMode(BuildContext context) {',
+      '  Widget _buildLessonEditorWorkspace(BuildContext context) {',
+    );
+
+    expect(previewMode, isNot(contains('previewCoverUrl')));
+    expect(previewMode, isNot(contains('coverUrl')));
+    expect(previewMode, isNot(contains('ClipRRect(')));
+    expect(previewMode, contains('LessonDocumentReadingModeToggle('));
+    expect(previewMode, contains('Expanded('));
+  });
 }
 
 String _courseEditorSource() {
