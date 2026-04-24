@@ -73,6 +73,7 @@ from .db import get_conn
 from .services import (
     media_transcode_worker,
     membership_expiry_warnings,
+    notifications_dispatcher_worker,
     studio_home_player_text_catalog,
 )
 
@@ -107,6 +108,11 @@ def _local_background_workers() -> tuple[tuple[str, _WorkerStart, _WorkerStop], 
             "membership_expiry_warnings",
             membership_expiry_warnings.start_worker,
             membership_expiry_warnings.stop_worker,
+        ),
+        (
+            "notifications_dispatcher",
+            notifications_dispatcher_worker.start_worker,
+            notifications_dispatcher_worker.stop_worker,
         ),
     )
 

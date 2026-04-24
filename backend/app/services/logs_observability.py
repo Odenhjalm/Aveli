@@ -10,7 +10,12 @@ from ..repositories import (
     media_assets as media_assets_repo,
     media_resolution_failures as media_resolution_failures_repo,
 )
-from . import livekit_events, media_transcode_worker, membership_expiry_warnings
+from . import (
+    livekit_events,
+    media_transcode_worker,
+    membership_expiry_warnings,
+    notifications_dispatcher_worker,
+)
 
 _DEFAULT_LIMIT = 20
 _MAX_LIMIT = 50
@@ -279,6 +284,7 @@ async def get_worker_health() -> dict[str, Any]:
     transcode_metrics = await media_transcode_worker.get_metrics()
     webhook_metrics = livekit_events.get_metrics()
     membership_metrics = membership_expiry_warnings.get_metrics()
+    notification_metrics = notifications_dispatcher_worker.get_metrics()
 
     transcode_enabled = bool(transcode_metrics.get("final_state"))
     transcode_last_error = transcode_metrics.get("last_error")
@@ -313,6 +319,15 @@ async def get_worker_health() -> dict[str, Any]:
         last_error=membership_metrics.get("last_error"),
         verification_mode=membership_verification_mode,
         write_suppressed=membership_write_suppressed,
+    )
+
+    notification_verification_mode = bool(notification_metrics.get("verification_mode"))
+    notification_write_suppressed = bool(notification_metrics.get("write_suppressed"))
+    notification_status = _status_from_flags(
+        worker_running=bool(notification_metrics.get("worker_running")),
+        last_error=notification_metrics.get("last_error"),
+        verification_mode=notification_verification_mode,
+        write_suppressed=notification_write_suppressed,
     )
 
     worker_health = {
@@ -362,6 +377,16 @@ async def get_worker_health() -> dict[str, Any]:
             "last_error": membership_metrics.get("last_error"),
             "verification_mode": membership_verification_mode,
             "write_suppressed": membership_write_suppressed,
+        },
+        "notifications_dispatcher": {
+            "status": notification_status,
+            "worker_running": bool(notification_metrics.get("worker_running")),
+            "poll_interval_seconds": int(
+                notification_metrics.get("poll_interval_seconds") or 0
+            ),
+            "last_error": notification_metrics.get("last_error"),
+            "verification_mode": notification_verification_mode,
+            "write_suppressed": notification_write_suppressed,
         },
     }
     return {

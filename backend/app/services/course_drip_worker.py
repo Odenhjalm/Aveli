@@ -12,6 +12,7 @@ from ..db import pool
 from ..observability import log_buffer
 from ..repositories import lesson_completions
 from ..repositories.lesson_completions import LessonCompletionAlreadyExistsError
+from . import notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,10 @@ async def run_once(*, now: datetime | None = None) -> int:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                select ce.id, ce.current_unlock_position
+                select ce.id,
+                       ce.user_id,
+                       ce.course_id,
+                       ce.current_unlock_position
                 from app.course_enrollments as ce
                 where app.resolve_course_drip_mode(ce.course_id) in (
                     'legacy_uniform_drip',
@@ -103,7 +107,12 @@ async def run_once(*, now: datetime | None = None) -> int:
             )
             candidates = await cur.fetchall()
             advanced_enrollments = 0
-            for enrollment_id, current_unlock_position in candidates:
+            for (
+                enrollment_id,
+                user_id,
+                course_id,
+                current_unlock_position,
+            ) in candidates:
                 await cur.execute(
                     """
                     select current_unlock_position
@@ -115,6 +124,24 @@ async def run_once(*, now: datetime | None = None) -> int:
                 next_unlock_position = int(row[0] if row else 0)
                 if next_unlock_position > int(current_unlock_position or 0):
                     advanced_enrollments += 1
+                    await notification_service.create_notification(
+                        str(user_id),
+                        "course_drip_lesson_unlocked",
+                        {
+                            "course_id": str(course_id),
+                            "enrollment_id": str(enrollment_id),
+                            "previous_unlock_position": int(
+                                current_unlock_position or 0
+                            ),
+                            "current_unlock_position": next_unlock_position,
+                            "evaluated_at": current_time.isoformat(),
+                        },
+                        (
+                            "course_drip_lesson_unlocked:"
+                            f"{enrollment_id}:{next_unlock_position}"
+                        ),
+                        conn=conn,
+                    )
 
             await cur.execute(
                 """

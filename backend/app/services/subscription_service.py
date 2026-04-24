@@ -17,6 +17,7 @@ from ..repositories import payments as payments_repo
 from ..repositories import stripe_customers as stripe_customers_repo
 from ..schemas.billing import SubscriptionCheckoutResponse, SubscriptionInterval
 from ..services.onboarding_state import sync_onboarding_state
+from . import notification_service
 from ..utils import membership_status
 
 logger = logging.getLogger(__name__)
@@ -577,6 +578,19 @@ async def _settle_membership_checkout_session(
                         "payment_recorded": payment_recorded,
                         "membership_activated": membership_activated,
                     },
+                    conn=conn,
+                )
+            if membership_activated:
+                await notification_service.create_notification(
+                    user_id,
+                    "stripe_membership_activated",
+                    {
+                        "order_id": order_id,
+                        "checkout_id": checkout_id,
+                        "subscription_id": subscription_id,
+                        "payment_reference": payment_reference,
+                    },
+                    f"stripe_membership_activated:{order_id}",
                     conn=conn,
                 )
 

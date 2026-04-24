@@ -114,6 +114,10 @@ Accepted append-only continuation above the protected range:
   - Aligns canonical enrollment creation and worker-owned drip advancement to
     the accepted custom-drip authority model without changing legacy uniform
     drip ownership on `app.courses`.
+- Slot `0031_notifications.sql`
+  - Adds canonical notification records, notification delivery queue substrate,
+    and push device routing substrate. Notification records are created before
+    delivery attempts, and delivery state is worker-owned.
 
 ## 3. Domain Classification
 
@@ -160,6 +164,7 @@ owning backend/operator authority:
 | `app.home_player_course_links` | course-linked home-audio inclusion source                                                | home-audio/backend authority                                                         |
 | `app.profile_media_placements` | profile/community media authored-placement source                                        | profile/community media backend authority                                            |
 | `app.referral_codes`           | referral identity, recipient binding, duration, redemption lifecycle                     | referral backend authority                                                           |
+| `app.notifications`            | canonical notification records and deduplication authority                               | notification backend authority                                                       |
 
 Canonical tables are not automatically public write targets. Canonical means the
 table owns source truth for its domain. Writes must still use the canonical
@@ -178,6 +183,8 @@ become business authority.
 | `app.stripe_customers`     | retained Stripe customer support substrate                   | ACTIVE SUPPORT | not purchase, pricing, ownership, sellability, membership, or access authority                   |
 | `app.special_offer_composite_image_attempts` | special-offer image generation/regeneration attempt tracking | ACTIVE SUPPORT | support only; not active output, price, selected-course, or placement authority                  |
 | `app.livekit_webhook_jobs` | inert LiveKit webhook queue structure                        | PAUSED         | no worker execution allowed; no canonical mutation allowed; queue exists only as inert structure |
+| `app.notification_deliveries` | notification delivery queue state                           | ACTIVE SUPPORT | worker-owned delivery status only; notification truth remains `app.notifications`                 |
+| `app.user_devices`         | push device routing support                                  | ACTIVE SUPPORT | delivery routing only; not notification, membership, access, profile, or auth authority           |
 
 `app.livekit_webhook_jobs` is intentionally retained as runtime structure but
 is governed by the accepted paused/inert authority in

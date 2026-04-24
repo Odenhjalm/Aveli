@@ -177,13 +177,11 @@ tmp_*
 *.pid
 frontend/.env*
 backend/.env*
-actual_truth/DETERMINED_TASKS/retrieval_index_environment_dependencies/*
 actual_truth/offline_sources/*
 restore/*
 wheel_test_env/*
 actual_truth/build_approvals/*
 actual_truth/offline_wheelhouse/*
-actual_truth/DETERMINED_TASKS/retrieval_index_environment_wheelhouse/*
 actual_truth/build_approvals/*
 audit_output/*
 courses/*
@@ -193,3 +191,8 @@ canonical_projection_export_v2/*
 canonical_projection_export_v2_clean/*
 media/*
 final_courses/*
+.codex_tmp/*
+actual_truth/DETERMINED_TASKS/retrieval_index_environment_bootstrap/*
+actual_truth/DETERMINED_TASKS/retrieval_index_environment_dependencies/*
+actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/*
+actual_truth/DETERMINED_TASKS/retrieval_index_environment_wheelhouse/*

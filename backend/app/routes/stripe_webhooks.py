@@ -15,6 +15,7 @@ from ..repositories import orders as orders_repo
 from ..repositories import payments as payments_repo
 from .. import stripe_mode
 from ..services import (
+    notification_service,
     stripe_webhook_bundle_service,
     stripe_webhook_course_service,
     stripe_webhook_membership_service,
@@ -648,11 +649,18 @@ async def _assert_course_checkout_fulfillment_completed(
     if payment is None:
         raise RuntimeError("Course checkout payment record is missing")
 
-    await stripe_webhook_course_service.assert_purchase_enrollment_exists(
+    enrollment = await stripe_webhook_course_service.assert_purchase_enrollment_exists(
         order=order,
         conn=conn,
         repair_missing_enrollment=repair_missing_enrollment,
         event_type=event_type,
+    )
+    await _create_course_purchase_notification(
+        order=order,
+        session=session,
+        enrollment=enrollment,
+        event_type=event_type,
+        conn=conn,
     )
 
 
@@ -824,8 +832,15 @@ async def _fulfill_course_checkout_order(
                 conn=active_conn,
             )
 
-            await stripe_webhook_course_service.handle_paid_checkout_order(
+            enrollment = await stripe_webhook_course_service.handle_paid_checkout_order(
                 order=updated_order,
+                event_type=event_type,
+                conn=active_conn,
+            )
+            await _create_course_purchase_notification(
+                order=updated_order,
+                session=session,
+                enrollment=enrollment,
                 event_type=event_type,
                 conn=active_conn,
             )
@@ -840,6 +855,35 @@ async def _fulfill_course_checkout_order(
 
     async with pool.connection() as active_conn:  # type: ignore[attr-defined]
         await _execute(active_conn)
+
+
+async def _create_course_purchase_notification(
+    *,
+    order: Mapping[str, object],
+    session: Mapping[str, object],
+    enrollment: Mapping[str, object],
+    event_type: str,
+    conn: Any | None = None,
+) -> None:
+    order_id = str(order.get("id") or "").strip()
+    user_id = str(order.get("user_id") or "").strip()
+    course_id = str(order.get("course_id") or "").strip()
+    if not order_id or not user_id or not course_id:
+        raise CheckoutOrderValidationError("Ordern saknar notifikationsunderlag")
+
+    await notification_service.create_notification(
+        user_id,
+        "stripe_course_purchase_fulfilled",
+        {
+            "order_id": order_id,
+            "course_id": course_id,
+            "enrollment_id": str(enrollment.get("id") or ""),
+            "checkout_id": str(session.get("id") or ""),
+            "event_type": event_type,
+        },
+        f"stripe_course_purchase_fulfilled:{order_id}",
+        conn=conn,
+    )
 
 
 async def _fulfill_bundle_checkout_order(
