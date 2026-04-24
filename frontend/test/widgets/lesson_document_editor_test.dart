@@ -702,34 +702,79 @@ void main() {
     paragraph = document.blocks.single as LessonParagraphBlock;
     expect(paragraph.children.single.text, 'Alpha Beta Gamma');
     expect(paragraph.children.single.marks, isEmpty);
-
-    await _selectTextRange(
-      tester,
-      fieldKey,
-      text: 'Alpha Beta Gamma',
-      start: 6,
-      end: 10,
-    );
-    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
-    expect(document.blocks, hasLength(3));
-    expect(document.blocks[0], isA<LessonParagraphBlock>());
-    expect(
-      (document.blocks[0] as LessonParagraphBlock).children.single.text,
-      'Alpha ',
-    );
-    expect(document.blocks[1], isA<LessonHeadingBlock>());
-    expect(
-      (document.blocks[1] as LessonHeadingBlock).children.single.text,
-      'Beta',
-    );
-    expect(document.blocks[2], isA<LessonParagraphBlock>());
-    expect(
-      (document.blocks[2] as LessonParagraphBlock).children.single.text,
-      ' Gamma',
-    );
   });
 
-  testWidgets('document editor ignores toolbar formatting without selection', (
+  testWidgets(
+    'document editor heading toggles the active block for selection and cursor',
+    (tester) async {
+      var document = const LessonDocument(
+        blocks: [
+          LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 520,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    onChanged: (next) => setState(() => document = next),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      const fieldKey = ValueKey('lesson_document_editor_block_0');
+      await _selectTextRange(
+        tester,
+        fieldKey,
+        text: 'Alpha Beta Gamma',
+        start: 6,
+        end: 10,
+      );
+      await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+      expect(document.blocks, hasLength(1));
+      expect(document.blocks.single, isA<LessonHeadingBlock>());
+      expect(
+        (document.blocks.single as LessonHeadingBlock).children.single.text,
+        'Alpha Beta Gamma',
+      );
+      expect(
+        LessonDocument.fromJson(document.toJson()).toCanonicalJsonString(),
+        document.toCanonicalJsonString(),
+      );
+
+      await _selectTextRange(
+        tester,
+        fieldKey,
+        text: 'Alpha Beta Gamma',
+        start: 6,
+        end: 6,
+      );
+      await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+      expect(document.blocks, hasLength(1));
+      expect(document.blocks.single, isA<LessonParagraphBlock>());
+      expect(
+        (document.blocks.single as LessonParagraphBlock).children.single.text,
+        'Alpha Beta Gamma',
+      );
+      expect(
+        LessonDocument.fromJson(document.toJson()).toCanonicalJsonString(),
+        document.toCanonicalJsonString(),
+      );
+    },
+  );
+
+  testWidgets('document editor ignores inline formatting without selection', (
     tester,
   ) async {
     const initial = LessonDocument(
@@ -762,10 +807,73 @@ void main() {
     );
     await tester.pump();
     await _tapToolbar(tester, const Key('lesson_document_toolbar_bold'));
-    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
 
     expect(document.toJson(), initial.toJson());
   });
+
+  testWidgets(
+    'document editor heading extracts the active list item without disturbing siblings',
+    (tester) async {
+      var document = const LessonDocument(
+        blocks: [
+          LessonListBlock.bullet(
+            items: [
+              LessonListItem(children: [LessonTextRun('Alpha')]),
+              LessonListItem(children: [LessonTextRun('Beta')]),
+              LessonListItem(children: [LessonTextRun('Gamma')]),
+            ],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 520,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    onChanged: (next) => setState(() => document = next),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await _selectTextRange(
+        tester,
+        const ValueKey('lesson_document_editor_block_0_item_1'),
+        text: 'Beta',
+        start: 0,
+        end: 4,
+      );
+      await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+      expect(_blockTypes(document), ['bullet_list', 'heading', 'bullet_list']);
+      expect(
+        ((document.blocks[0] as LessonListBlock).items.single.children.single)
+            .text,
+        'Alpha',
+      );
+      expect(
+        (document.blocks[1] as LessonHeadingBlock).children.single.text,
+        'Beta',
+      );
+      expect(
+        ((document.blocks[2] as LessonListBlock).items.single.children.single)
+            .text,
+        'Gamma',
+      );
+      expect(
+        LessonDocument.fromJson(document.toJson()).toCanonicalJsonString(),
+        document.toCanonicalJsonString(),
+      );
+    },
+  );
 
   testWidgets('document editor applies list formatting only to selection', (
     tester,

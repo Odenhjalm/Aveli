@@ -28,6 +28,8 @@ class LessonDocumentEditor extends StatefulWidget {
 }
 
 class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
+  static const int _defaultHeadingLevel = 2;
+
   final Map<String, _LessonTextEditingController> _controllers =
       <String, _LessonTextEditingController>{};
   final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
@@ -280,15 +282,88 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     _emit(LessonDocument(blocks: List<LessonBlock>.unmodifiable(nextBlocks)));
   }
 
-  _SelectedTextRange? _selectedTextRange() {
+  void _toggleHeading() {
+    final target = _activeTextTarget();
+    if (target == null) return;
+    final sourceBlocks = widget.document.blocks.isEmpty
+        ? const <LessonBlock>[
+            LessonParagraphBlock(children: <LessonTextRun>[LessonTextRun('')]),
+          ]
+        : widget.document.blocks;
+    final block = sourceBlocks[target.blockIndex];
+    final nextBlocks = List<LessonBlock>.from(sourceBlocks);
+    late final _EditorTarget nextTarget;
+
+    if (target.itemIndex case final itemIndex?) {
+      if (block is! LessonListBlock) return;
+      final replacement = _toggleHeadingForListItem(block, itemIndex);
+      nextBlocks
+        ..removeAt(target.blockIndex)
+        ..insertAll(target.blockIndex, replacement);
+      nextTarget = _EditorTarget.block(
+        target.blockIndex + (itemIndex > 0 ? 1 : 0),
+      );
+    } else if (block is LessonHeadingBlock) {
+      nextBlocks[target.blockIndex] = LessonParagraphBlock(
+        id: block.id,
+        children: block.children,
+      );
+      nextTarget = _EditorTarget.block(target.blockIndex);
+    } else if (block is LessonParagraphBlock) {
+      nextBlocks[target.blockIndex] = LessonHeadingBlock(
+        id: block.id,
+        level: _defaultHeadingLevel,
+        children: block.children,
+      );
+      nextTarget = _EditorTarget.block(target.blockIndex);
+    } else {
+      return;
+    }
+
+    final next = LessonDocument(
+      blocks: List<LessonBlock>.unmodifiable(nextBlocks),
+    );
+    _emit(next);
+    widget.onInsertionIndexChanged?.call(nextTarget.insertionIndex(next));
+    setState(() => _selectedTarget = nextTarget);
+  }
+
+  List<LessonBlock> _toggleHeadingForListItem(
+    LessonListBlock source,
+    int itemIndex,
+  ) {
+    final selectedItem = source.items[itemIndex];
+    final beforeItems = source.items.take(itemIndex).toList(growable: false);
+    final afterItems = source.items.skip(itemIndex + 1).toList(growable: false);
+    return <LessonBlock>[
+      if (beforeItems.isNotEmpty) _listBlockLike(source, beforeItems),
+      LessonHeadingBlock(
+        id: selectedItem.id,
+        level: _defaultHeadingLevel,
+        children: selectedItem.children,
+      ),
+      if (afterItems.isNotEmpty) _listBlockLike(source, afterItems),
+    ];
+  }
+
+  _EditorTarget? _activeTextTarget() {
     final target = _selectedTarget.normalized(widget.document);
+    if (target == null) return null;
+    final selection = _controllers[target.key]?.selection;
+    if (selection == null || !selection.isValid) {
+      return null;
+    }
+    return target;
+  }
+
+  _SelectedTextRange? _selectedTextRange() {
+    final target = _activeTextTarget();
     if (target == null) return null;
     final children = _childrenForTarget(target);
     final length = _plainText(children).length;
     if (length == 0) return null;
-    final controller = _controllers[target.key];
-    final selection = controller?.selection;
-    if (selection == null || !selection.isValid || selection.isCollapsed) {
+    final selection = _controllers[target.key]?.selection;
+    if (selection == null || selection.isCollapsed) {
       return null;
     }
     final start = selection.start.clamp(0, length).toInt();
@@ -373,7 +448,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
             onClearFormatting: _clearFormatting,
             onParagraph: () =>
                 _convertSelectedBlock(_BlockConversion.paragraph),
-            onHeading: () => _convertSelectedBlock(_BlockConversion.heading),
+            onHeading: _toggleHeading,
             onBulletList: () =>
                 _convertSelectedBlock(_BlockConversion.bulletList),
             onOrderedList: () =>

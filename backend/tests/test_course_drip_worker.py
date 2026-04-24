@@ -6,6 +6,8 @@ from uuid import uuid4
 import pytest
 from psycopg.rows import dict_row
 
+from app.repositories import lesson_completions as lesson_completion_repo
+from app.services import course_drip_worker
 from tests.test_course_drip_worker_selection import (
     _apply_baseline_v2_slots,
     _baseline_v2_connection,
@@ -15,7 +17,6 @@ from tests.test_course_drip_worker_selection import (
     _insert_auth_subject,
     _insert_lessons,
     _lesson_rows,
-    _read_current_unlock_position,
     _run_course_drip_worker_once,
 )
 
@@ -111,8 +112,20 @@ async def test_run_once_advances_custom_lesson_offset_drip_enrollment():
             now=granted_at + timedelta(days=10),
         )
 
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT current_unlock_position
+                FROM app.course_enrollments
+                WHERE id = %s
+                """,
+                (str(enrollment["id"]),),
+            )
+            unlock_row = cur.fetchone()
+
         assert advanced_enrollments == 1
-        assert _read_current_unlock_position(conn, str(enrollment["id"])) == 3
+        assert unlock_row is not None
+        assert int(unlock_row[0]) == 3
 
 
 async def test_run_once_does_not_advance_no_drip_immediate_access_enrollment():
@@ -147,8 +160,20 @@ async def test_run_once_does_not_advance_no_drip_immediate_access_enrollment():
             now=granted_at + timedelta(days=10),
         )
 
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT current_unlock_position
+                FROM app.course_enrollments
+                WHERE id = %s
+                """,
+                (str(enrollment["id"]),),
+            )
+            unlock_row = cur.fetchone()
+
         assert advanced_enrollments == 0
-        assert _read_current_unlock_position(conn, str(enrollment["id"])) == 3
+        assert unlock_row is not None
+        assert int(unlock_row[0]) == 3
         assert _completion_rows(conn, user_id=user_id) == []
 
 
@@ -261,9 +286,31 @@ async def test_worker_auto_completion_supports_custom_and_no_drip_intro_enrollme
             database_conninfo,
             now=granted_at + timedelta(days=6),
         )
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT current_unlock_position
+                FROM app.course_enrollments
+                WHERE id = %s
+                """,
+                (str(custom_enrollment["id"]),),
+            )
+            custom_unlock_before_window = cur.fetchone()
+            cur.execute(
+                """
+                SELECT current_unlock_position
+                FROM app.course_enrollments
+                WHERE id = %s
+                """,
+                (str(no_drip_enrollment["id"]),),
+            )
+            no_drip_unlock_before_window = cur.fetchone()
+
         assert before_window == 1
-        assert _read_current_unlock_position(conn, str(custom_enrollment["id"])) == 2
-        assert _read_current_unlock_position(conn, str(no_drip_enrollment["id"])) == 3
+        assert custom_unlock_before_window is not None
+        assert int(custom_unlock_before_window[0]) == 2
+        assert no_drip_unlock_before_window is not None
+        assert int(no_drip_unlock_before_window[0]) == 3
         assert _completion_rows(conn, user_id=custom_user_id) == []
         assert _completion_rows(conn, user_id=no_drip_user_id) == []
 
@@ -271,8 +318,20 @@ async def test_worker_auto_completion_supports_custom_and_no_drip_intro_enrollme
             database_conninfo,
             now=granted_at + timedelta(days=7),
         )
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT current_unlock_position
+                FROM app.course_enrollments
+                WHERE id = %s
+                """,
+                (str(custom_enrollment["id"]),),
+            )
+            custom_unlock_at_no_drip_window = cur.fetchone()
+
         assert no_drip_window == 1
-        assert _read_current_unlock_position(conn, str(custom_enrollment["id"])) == 3
+        assert custom_unlock_at_no_drip_window is not None
+        assert int(custom_unlock_at_no_drip_window[0]) == 3
         assert _completion_rows(conn, user_id=no_drip_user_id) == [
             {
                 "user_id": no_drip_user_id,
@@ -282,11 +341,31 @@ async def test_worker_auto_completion_supports_custom_and_no_drip_intro_enrollme
             }
         ]
 
-        custom_window = await _run_course_drip_worker_once(
+        custom_before_window = await _run_course_drip_worker_once(
+            database_conninfo,
+            now=granted_at + timedelta(days=20),
+        )
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT current_unlock_position
+                FROM app.course_enrollments
+                WHERE id = %s
+                """,
+                (str(custom_enrollment["id"]),),
+            )
+            custom_unlock_before_completion = cur.fetchone()
+
+        assert custom_before_window == 1
+        assert custom_unlock_before_completion is not None
+        assert int(custom_unlock_before_completion[0]) == 4
+        assert _completion_rows(conn, user_id=custom_user_id) == []
+
+        custom_completion_window = await _run_course_drip_worker_once(
             database_conninfo,
             now=granted_at + timedelta(days=21),
         )
-        assert custom_window == 1
+        assert custom_completion_window == 0
         assert _completion_rows(conn, user_id=custom_user_id) == [
             {
                 "user_id": custom_user_id,
@@ -314,6 +393,101 @@ async def test_worker_auto_completion_supports_custom_and_no_drip_intro_enrollme
                 "user_id": no_drip_user_id,
                 "course_id": no_drip_course_id,
                 "lesson_id": no_drip_final_lesson_id,
+                "completion_source": "auto_final_lesson",
+            }
+        ]
+
+
+async def test_worker_auto_completion_duplicate_race_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    with _baseline_v2_connection() as (conn, database_conninfo):
+        _apply_baseline_v2_slots(conn)
+
+        course_id = str(uuid4())
+        user_id = str(uuid4())
+        granted_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        _insert_course(
+            conn,
+            course_id=course_id,
+            slug="worker-duplicate-race-autocomplete",
+            required_enrollment_source="intro_enrollment",
+            drip_enabled=True,
+            drip_interval_days=2,
+        )
+        _insert_lessons(conn, course_id, count=3)
+        final_lesson_id = str(_lesson_rows(conn, course_id)[-1]["id"])
+        enrollment = _create_intro_enrollment(
+            conn,
+            enrollment_id=str(uuid4()),
+            user_id=user_id,
+            course_id=course_id,
+            granted_at=granted_at,
+        )
+        assert enrollment["current_unlock_position"] == 1
+
+        original_create = course_drip_worker.lesson_completions.create_lesson_completion
+        race_triggered = False
+
+        async def _create_with_duplicate_race(
+            *,
+            user_id: str,
+            course_id: str,
+            lesson_id: str,
+            completion_source: str,
+            conn=None,
+        ):
+            nonlocal race_triggered
+            if not race_triggered:
+                race_triggered = True
+                await original_create(
+                    user_id=user_id,
+                    course_id=course_id,
+                    lesson_id=lesson_id,
+                    completion_source=completion_source,
+                    conn=conn,
+                )
+                raise lesson_completion_repo.LessonCompletionAlreadyExistsError()
+            return await original_create(
+                user_id=user_id,
+                course_id=course_id,
+                lesson_id=lesson_id,
+                completion_source=completion_source,
+                conn=conn,
+            )
+
+        monkeypatch.setattr(
+            course_drip_worker.lesson_completions,
+            "create_lesson_completion",
+            _create_with_duplicate_race,
+        )
+
+        first_run = await _run_course_drip_worker_once(
+            database_conninfo,
+            now=granted_at + timedelta(days=11),
+        )
+        assert first_run == 1
+        assert race_triggered is True
+        assert _completion_rows(conn, user_id=user_id) == [
+            {
+                "user_id": user_id,
+                "course_id": course_id,
+                "lesson_id": final_lesson_id,
+                "completion_source": "auto_final_lesson",
+            }
+        ]
+
+        second_run = await _run_course_drip_worker_once(
+            database_conninfo,
+            now=granted_at + timedelta(days=20),
+        )
+        assert second_run == 0
+        assert _completion_rows(conn, user_id=user_id) == [
+            {
+                "user_id": user_id,
+                "course_id": course_id,
+                "lesson_id": final_lesson_id,
                 "completion_source": "auto_final_lesson",
             }
         ]
