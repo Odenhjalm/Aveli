@@ -124,6 +124,8 @@ def _course_access_response(payload: dict) -> schemas.CourseAccessStateResponse:
         course_id=payload["course_id"],
         group_position=payload["group_position"],
         required_enrollment_source=payload.get("required_enrollment_source"),
+        is_intro_course=payload["is_intro_course"],
+        selection_locked=payload["selection_locked"],
         enrollable=payload["enrollable"],
         purchasable=payload["purchasable"],
         can_access=payload["can_access"],

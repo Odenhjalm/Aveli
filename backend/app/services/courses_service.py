@@ -31,6 +31,7 @@ from . import lesson_playback_service
 from . import media_cleanup
 from . import studio_authority
 from . import storage_service
+from . import intro_selection_state
 
 logger = logging.getLogger(__name__)
 _CANONICAL_COURSE_STRIPE_CURRENCY = "sek"
@@ -2505,6 +2506,8 @@ def _canonical_course_state_payload(
     course: Mapping[str, Any],
     enrollment: Mapping[str, Any] | None,
     required_enrollment_source: str | None,
+    is_intro_course: bool,
+    selection_locked: bool,
     can_access: bool,
     next_unlock_at: Any | None,
 ) -> dict[str, Any]:
@@ -2513,6 +2516,8 @@ def _canonical_course_state_payload(
         "course_id": str(course.get("id") or ""),
         "group_position": int(course.get("group_position") or 0),
         "required_enrollment_source": required_enrollment_source,
+        "is_intro_course": bool(is_intro_course),
+        "selection_locked": bool(selection_locked),
         "enrollable": bool(access_model["enrollable"]),
         "purchasable": bool(access_model["purchasable"]),
         "can_access": bool(can_access),
@@ -2542,6 +2547,13 @@ async def read_canonical_course_access(
         else None
     )
     required_enrollment_source = _course_required_enrollment_source(course)
+    is_intro_course = required_enrollment_source == "intro_enrollment"
+    selection_locked = False
+    if is_intro_course and normalized_user_id:
+        lock_state = await intro_selection_state.read_intro_selection_lock(
+            user_id=normalized_user_id
+        )
+        selection_locked = bool(lock_state["selection_locked"])
     source_matches = (
         enrollment is not None
         and required_enrollment_source is not None
@@ -2555,6 +2567,8 @@ async def read_canonical_course_access(
         "course": course,
         "enrollment": _canonical_course_enrollment_payload(enrollment),
         "required_enrollment_source": required_enrollment_source,
+        "is_intro_course": is_intro_course,
+        "selection_locked": selection_locked,
         "can_access": bool(source_matches),
         "next_unlock_at": next_unlock_at if source_matches else None,
     }
@@ -2571,6 +2585,8 @@ async def read_canonical_course_state(
         course=course,
         enrollment=access["enrollment"],
         required_enrollment_source=access["required_enrollment_source"],
+        is_intro_course=access["is_intro_course"],
+        selection_locked=access["selection_locked"],
         can_access=access["can_access"],
         next_unlock_at=access["next_unlock_at"],
     )
@@ -2642,6 +2658,7 @@ async def create_intro_course_enrollment(
     user_id: str,
     course_id: str,
 ) -> dict[str, Any]:
+    normalized_user_id = str(user_id or "").strip()
     course = await fetch_course(course_id=course_id)
     if course is None:
         raise LookupError("course not found")
@@ -2651,7 +2668,7 @@ async def create_intro_course_enrollment(
 
     try:
         enrollment = await courses_repo.create_course_enrollment(
-            user_id=str(user_id),
+            user_id=normalized_user_id,
             course_id=str(course_id),
             source="intro_enrollment",
         )
@@ -2660,10 +2677,18 @@ async def create_intro_course_enrollment(
         if mapped is not None:
             raise mapped from exc
         raise
+    selection_locked = False
+    if normalized_user_id:
+        lock_state = await intro_selection_state.read_intro_selection_lock(
+            user_id=normalized_user_id
+        )
+        selection_locked = bool(lock_state["selection_locked"])
     return _canonical_course_state_payload(
         course=course,
         enrollment=enrollment,
         required_enrollment_source="intro_enrollment",
+        is_intro_course=True,
+        selection_locked=selection_locked,
         can_access=True,
         next_unlock_at=enrollment.get("next_unlock_at"),
     )

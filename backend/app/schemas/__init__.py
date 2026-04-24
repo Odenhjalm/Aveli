@@ -1157,6 +1157,8 @@ class CourseAccessStateResponse(BaseModel):
     course_id: UUID
     group_position: int
     required_enrollment_source: Literal["purchase", "intro_enrollment"] | None = None
+    is_intro_course: bool
+    selection_locked: bool
     enrollable: bool
     purchasable: bool
     can_access: bool

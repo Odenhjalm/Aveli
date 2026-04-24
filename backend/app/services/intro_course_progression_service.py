@@ -4,38 +4,27 @@ from typing import Any
 
 from ..repositories import courses as courses_repo
 from . import courses_service
+from . import intro_selection_state
 
 
 async def read_intro_selection_state(
     *,
     user_id: str,
 ) -> dict[str, Any]:
+    lock_state = await intro_selection_state.read_intro_selection_lock(user_id=user_id)
+    if bool(lock_state["selection_locked"]):
+        return {
+            "selection_locked": True,
+            "selection_lock_reason": lock_state["selection_lock_reason"],
+            "eligible_courses": [],
+        }
+
     progress_rows = await courses_repo.list_intro_selection_progress_rows(user_id=user_id)
     enrolled_intro_course_ids = {
         str(row.get("course_id") or "")
         for row in progress_rows
         if str(row.get("course_id") or "").strip()
     }
-
-    for row in progress_rows:
-        current_unlock_position = int(row.get("current_unlock_position") or 0)
-        max_lesson_position = int(row.get("max_lesson_position") or 0)
-        if current_unlock_position < max_lesson_position:
-            return {
-                "selection_locked": True,
-                "selection_lock_reason": "incomplete_drip",
-                "eligible_courses": [],
-            }
-
-    for row in progress_rows:
-        completed_lesson_count = int(row.get("completed_lesson_count") or 0)
-        lesson_count = int(row.get("lesson_count") or 0)
-        if completed_lesson_count < lesson_count:
-            return {
-                "selection_locked": True,
-                "selection_lock_reason": "incomplete_lesson_completion",
-                "eligible_courses": [],
-            }
 
     eligible_courses = [
         dict(row)
