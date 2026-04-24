@@ -540,7 +540,11 @@ async def get_course(
     return dict(row) if row else None
 
 
-async def get_studio_course(course_id: str) -> CourseRow | None:
+async def get_studio_course(
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> CourseRow | None:
     query = f"""
         select {_STUDIO_COURSE_COLUMNS}
         from app.courses as c
@@ -548,11 +552,17 @@ async def get_studio_course(course_id: str) -> CourseRow | None:
         limit 1
     """
 
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+    async def _execute(active_conn: Any) -> CourseRow | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (course_id,))
             row = await cur.fetchone()
-    return dict(row) if row else None
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
 
 
 async def get_course_by_slug(slug: str) -> CourseRow | None:
@@ -1357,7 +1367,11 @@ async def get_lesson_content_surface_rows(
     return [dict(row) for row in rows]
 
 
-async def list_studio_course_lessons(course_id: str) -> Sequence[LessonRow]:
+async def list_studio_course_lessons(
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> Sequence[LessonRow]:
     query = """
         select
             l.id,
@@ -1368,11 +1382,18 @@ async def list_studio_course_lessons(course_id: str) -> Sequence[LessonRow]:
         where l.course_id = %s::uuid
         order by l.position asc, l.id asc
     """
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+
+    async def _execute(active_conn: Any) -> Sequence[LessonRow]:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (course_id,))
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+        return [dict(row) for row in rows]
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
 
 
 async def list_course_custom_drip_lesson_offsets(
@@ -2081,22 +2102,68 @@ async def create_lesson_structure(
     course_id: str,
     lesson_title: str,
     position: int,
+    conn: Any | None = None,
 ) -> LessonRow:
     new_lesson_id = str(uuid4())
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+
+    async def _execute(active_conn: Any) -> LessonRow:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 """
                 insert into app.lessons (id, course_id, lesson_title, position)
                 values (%s::uuid, %s::uuid, %s, %s)
+                returning id, course_id, lesson_title, position
                 """,
                 (new_lesson_id, course_id, lesson_title, position),
             )
-            await conn.commit()
-    row = await get_lesson_structure(new_lesson_id)
-    if row is None:
-        raise RuntimeError("created lesson structure was not returned")
-    return row
+            row = await cur.fetchone()
+        if row is None:
+            raise RuntimeError("created lesson structure was not returned")
+        return dict(row)
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        row = await _execute(active_conn)
+        await active_conn.commit()
+        return row
+
+
+async def create_custom_drip_row(
+    *,
+    course_id: str,
+    lesson_id: str,
+    unlock_offset_days: int,
+    conn: Any | None = None,
+) -> None:
+    query = """
+        insert into app.course_custom_drip_lesson_offsets (
+            course_id,
+            lesson_id,
+            unlock_offset_days
+        )
+        values (
+            %s::uuid,
+            %s::uuid,
+            %s
+        )
+    """
+
+    async def _execute(active_conn: Any) -> None:
+        async with active_conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                query,
+                (course_id, lesson_id, unlock_offset_days),
+            )
+
+    if conn is not None:
+        await _execute(conn)
+        return
+
+    async with pool.connection() as active_conn:  # type: ignore
+        await _execute(active_conn)
+        await active_conn.commit()
 
 
 async def update_lesson_structure(

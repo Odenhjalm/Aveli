@@ -16,6 +16,7 @@ from psycopg import errors as psycopg_errors
 from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
+from ..db import pool
 from .. import stripe_mode
 from ..media_control_plane.services.media_resolver_service import (
     LessonMediaPlaybackMode,
@@ -1524,6 +1525,44 @@ async def _validate_full_custom_schedule_payload(
     return ordered_rows
 
 
+async def _default_new_custom_drip_unlock_offset_days(
+    *,
+    course_id: str,
+    lesson_id: str,
+    conn: Any,
+) -> int:
+    lessons = [
+        dict(row)
+        for row in await courses_repo.list_studio_course_lessons(course_id, conn=conn)
+    ]
+    ordered_lesson_ids = [str(row["id"]) for row in lessons]
+    try:
+        lesson_index = ordered_lesson_ids.index(lesson_id)
+    except ValueError as exc:
+        raise RuntimeError("created lesson missing from custom drip lesson order") from exc
+
+    if lesson_index == 0:
+        return 0
+
+    custom_schedule_rows = [
+        dict(row)
+        for row in await courses_repo.list_course_custom_drip_lesson_offsets(
+            course_id,
+            conn=conn,
+        )
+    ]
+    offset_by_lesson_id = {
+        str(row["lesson_id"]): int(row["unlock_offset_days"])
+        for row in custom_schedule_rows
+    }
+    previous_lesson_id = ordered_lesson_ids[lesson_index - 1]
+    if previous_lesson_id not in offset_by_lesson_id:
+        raise RuntimeError(
+            "custom drip schedule row missing for preceding lesson during lesson create"
+        )
+    return offset_by_lesson_id[previous_lesson_id]
+
+
 async def update_course(
     course_id: str,
     patch: dict[str, Any],
@@ -2201,11 +2240,34 @@ async def create_lesson_structure(
         teacher_id,
         course_id,
     )
-    row = await courses_repo.create_lesson_structure(
-        course_id=course_id,
-        lesson_title=lesson_title,
-        position=position,
-    )
+
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        try:
+            course = await courses_repo.get_studio_course(course_id, conn=conn)
+            if course is None:
+                raise RuntimeError("studio course not found")
+
+            row = await courses_repo.create_lesson_structure(
+                course_id=course_id,
+                lesson_title=lesson_title,
+                position=position,
+                conn=conn,
+            )
+            if _normalized_studio_course_drip_mode(course) == "custom_lesson_offsets":
+                await courses_repo.create_custom_drip_row(
+                    course_id=course_id,
+                    lesson_id=str(row["id"]),
+                    unlock_offset_days=await _default_new_custom_drip_unlock_offset_days(
+                        course_id=course_id,
+                        lesson_id=str(row["id"]),
+                        conn=conn,
+                    ),
+                    conn=conn,
+                )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
     return dict(row)
 
 

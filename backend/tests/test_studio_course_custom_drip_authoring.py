@@ -218,6 +218,30 @@ async def read_drip_storage(course_id: str) -> dict:
     }
 
 
+async def read_custom_drip_counts(course_id: str) -> tuple[int, int]:
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            await cur.execute(
+                """
+                SELECT COUNT(*)
+                  FROM app.lessons
+                 WHERE course_id = %s::uuid
+                """,
+                (course_id,),
+            )
+            lesson_count = int((await cur.fetchone())[0])
+            await cur.execute(
+                """
+                SELECT COUNT(*)
+                  FROM app.course_custom_drip_lesson_offsets
+                 WHERE course_id = %s::uuid
+                """,
+                (course_id,),
+            )
+            offset_count = int((await cur.fetchone())[0])
+    return lesson_count, offset_count
+
+
 async def seed_first_enrollment(course_id: str, user_id: str) -> None:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
@@ -323,6 +347,132 @@ async def test_studio_custom_drip_write_replaces_full_schedule_atomically(async_
             "drip_interval_days": None,
             "has_custom_config": True,
             "rows": replacement_rows,
+        }
+    finally:
+        if course_id:
+            await async_client.delete(
+                f"/studio/courses/{course_id}",
+                headers=auth_header(teacher_token),
+            )
+        await cleanup_course_families(teacher_id)
+        await cleanup_user(teacher_id)
+
+
+async def test_custom_drip_lesson_create_preserves_schedule_invariant(async_client):
+    teacher_email = f"custom_create_teacher_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+    teacher_token, _, teacher_id = await register_user(
+        async_client,
+        teacher_email,
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+
+    course_id = None
+
+    try:
+        family = await create_course_family(
+            async_client,
+            token=teacher_token,
+            name="Lesson Create Family",
+        )
+        course = await create_course(
+            async_client,
+            token=teacher_token,
+            course_group_id=family["id"],
+            slug=f"custom-create-{uuid.uuid4().hex[:8]}",
+        )
+        course_id = str(course["id"])
+        lesson_ids = await create_lessons(
+            async_client,
+            token=teacher_token,
+            course_id=course_id,
+            count=2,
+        )
+
+        write_response = await async_client.put(
+            f"/studio/courses/{course_id}/drip-authoring",
+            headers=auth_header(teacher_token),
+            json=custom_schedule_payload(lesson_ids, [0, 6]),
+        )
+        assert write_response.status_code == 200, write_response.text
+
+        create_response = await async_client.post(
+            f"/studio/courses/{course_id}/lessons",
+            headers=auth_header(teacher_token),
+            json={
+                "lesson_title": "Lesson 3",
+                "position": 3,
+            },
+        )
+        assert create_response.status_code == 200, create_response.text
+        created_lesson_id = str(create_response.json()["id"])
+
+        assert await read_custom_drip_counts(course_id) == (3, 3)
+        assert await read_drip_storage(course_id) == {
+            "drip_enabled": False,
+            "drip_interval_days": None,
+            "has_custom_config": True,
+            "rows": [
+                {"lesson_id": lesson_ids[0], "unlock_offset_days": 0},
+                {"lesson_id": lesson_ids[1], "unlock_offset_days": 6},
+                {"lesson_id": created_lesson_id, "unlock_offset_days": 6},
+            ],
+        }
+    finally:
+        if course_id:
+            await async_client.delete(
+                f"/studio/courses/{course_id}",
+                headers=auth_header(teacher_token),
+            )
+        await cleanup_course_families(teacher_id)
+        await cleanup_user(teacher_id)
+
+
+async def test_non_custom_lesson_create_does_not_create_custom_drip_rows(async_client):
+    teacher_email = f"plain_create_teacher_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Passw0rd!"
+    teacher_token, _, teacher_id = await register_user(
+        async_client,
+        teacher_email,
+        password,
+        "Teacher",
+    )
+    await promote_to_teacher(teacher_id)
+
+    course_id = None
+
+    try:
+        family = await create_course_family(
+            async_client,
+            token=teacher_token,
+            name="Plain Lesson Family",
+        )
+        course = await create_course(
+            async_client,
+            token=teacher_token,
+            course_group_id=family["id"],
+            slug=f"plain-create-{uuid.uuid4().hex[:8]}",
+        )
+        course_id = str(course["id"])
+
+        create_response = await async_client.post(
+            f"/studio/courses/{course_id}/lessons",
+            headers=auth_header(teacher_token),
+            json={
+                "lesson_title": "Plain Lesson",
+                "position": 1,
+            },
+        )
+        assert create_response.status_code == 200, create_response.text
+
+        assert await read_custom_drip_counts(course_id) == (1, 0)
+        assert await read_drip_storage(course_id) == {
+            "drip_enabled": False,
+            "drip_interval_days": None,
+            "has_custom_config": False,
+            "rows": [],
         }
     finally:
         if course_id:
