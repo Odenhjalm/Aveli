@@ -39,6 +39,62 @@ function Get-RequiredProperty([object]$Object, [string]$Name, [string]$Context) 
     return $Object.PSObject.Properties[$Name].Value
 }
 
+function Assert-NonEmptyConfiguredValue([object]$Value, [string]$Context) {
+    if ($null -eq $Value) {
+        Fail "$Context is null"
+    }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        Fail "$Context is empty"
+    }
+    if ($text -match '\$\{[^}]+\}') {
+        Fail "$Context contains unresolved placeholders"
+    }
+
+    return $text
+}
+
+function Assert-ValidCredentialValue([object]$Value, [string]$Context) {
+    $text = Assert-NonEmptyConfiguredValue -Value $Value -Context $Context
+    if ($text -ieq "local_token") {
+        Fail "$Context must not use local_token"
+    }
+    if ($text.Length -lt 20) {
+        Fail "$Context is shorter than 20 characters"
+    }
+
+    return $text
+}
+
+function Get-RequiredEnvValue([hashtable]$Values, [string]$Key) {
+    if (-not $Values.ContainsKey($Key)) {
+        Fail "Missing required env key: $Key"
+    }
+
+    return $Values[$Key]
+}
+
+function Assert-ValidEnvValue([hashtable]$Values, [string]$Key) {
+    $value = Get-RequiredEnvValue -Values $Values -Key $Key
+    return Assert-NonEmptyConfiguredValue -Value $value -Context "env key $Key"
+}
+
+function Assert-ValidEnvCredential([hashtable]$Values, [string]$Key) {
+    $value = Get-RequiredEnvValue -Values $Values -Key $Key
+    return Assert-ValidCredentialValue -Value $value -Context "env key $Key"
+}
+
+function Assert-BearerCredential([object]$Value, [string]$Context) {
+    $header = Assert-NonEmptyConfiguredValue -Value $Value -Context $Context
+    $match = [System.Text.RegularExpressions.Regex]::Match($header, '^Bearer\s+(.+)$')
+    if (-not $match.Success) {
+        Fail "$Context is missing a Bearer token"
+    }
+
+    [void](Assert-ValidCredentialValue -Value $match.Groups[1].Value -Context "$Context token")
+}
+
 function Read-EnvFile([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) {
         Fail "Missing env file: $Path"
@@ -137,15 +193,21 @@ function Assert-McpConfig {
         if ($serverType -ne "http") {
             Fail "$name must use http transport"
         }
-        $serverUrl = [string](Get-RequiredProperty -Object $server -Name "url" -Context $name)
+        $serverUrl = Assert-NonEmptyConfiguredValue -Value (Get-RequiredProperty -Object $server -Name "url" -Context $name) -Context "$name url"
         if (-not ($serverUrl -match '^https?://')) {
             Fail "$name URL is not absolute"
         }
-        $headers = Get-RequiredProperty -Object $server -Name "headers" -Context $name
-        $authorization = [string](Get-RequiredProperty -Object $headers -Name "Authorization" -Context "$name headers")
-        if (-not ($authorization -match '^Bearer\s+\S+')) {
-            Fail "$name Authorization header is missing a Bearer token"
+
+        if ($name -eq "supabase") {
+            if (Test-ObjectProperty -Object $server -Name "headers") {
+                Fail "supabase must not define headers; use SUPABASE_PAT from the environment"
+            }
+            continue
         }
+
+        $headers = Get-RequiredProperty -Object $server -Name "headers" -Context $name
+        $authorization = Get-RequiredProperty -Object $headers -Name "Authorization" -Context "$name headers"
+        Assert-BearerCredential -Value $authorization -Context "$name Authorization header"
     }
 
     $figma = Get-RequiredProperty -Object $servers -Name "figma" -Context "mcp.json servers"
@@ -165,6 +227,7 @@ function Assert-McpConfig {
         [string]::IsNullOrWhiteSpace([string]$figmaArgs[$keyIndex + 1])) {
         Fail "figma API key arg is empty"
     }
+    [void](Assert-ValidCredentialValue -Value $figmaArgs[$keyIndex + 1] -Context "figma API key arg")
 
     $playwright = Get-RequiredProperty -Object $servers -Name "playwright" -Context "mcp.json servers"
     $playwrightType = [string](Get-RequiredProperty -Object $playwright -Name "type" -Context "playwright")
@@ -180,13 +243,6 @@ function Assert-McpConfig {
 
 try {
     $envValues = Read-EnvFile $EnvPath
-    $requiredEnvKeys = @(
-        "SUPABASE_PROJECT_REF",
-        "SUPABASE_ACCESS_TOKEN",
-        "CONTEXT7_URL",
-        "CONTEXT7_TOKEN",
-        "FIGMA_ACCESS_TOKEN"
-    )
     $forbiddenEnvKeys = @(
         "SUPABASE_ACCES_TOKEN",
         "CONTEXT7_MCP_URL",
@@ -194,11 +250,11 @@ try {
         "FIGMA_ACCES_TOKEN"
     )
 
-    foreach ($key in $requiredEnvKeys) {
-        if (-not $envValues.ContainsKey($key) -or [string]::IsNullOrWhiteSpace([string]$envValues[$key])) {
-            Fail "Missing required env key: $key"
-        }
-    }
+    [void](Assert-ValidEnvValue -Values $envValues -Key "SUPABASE_PROJECT_REF")
+    [void](Assert-ValidEnvCredential -Values $envValues -Key "SUPABASE_PAT")
+    [void](Assert-ValidEnvValue -Values $envValues -Key "CONTEXT7_URL")
+    [void](Assert-ValidEnvCredential -Values $envValues -Key "CONTEXT7_TOKEN")
+    [void](Assert-ValidEnvCredential -Values $envValues -Key "FIGMA_ACCESS_TOKEN")
     foreach ($key in $forbiddenEnvKeys) {
         if ($envValues.ContainsKey($key)) {
             Fail "Forbidden near-miss env key is still present: $key"
