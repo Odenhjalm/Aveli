@@ -354,20 +354,6 @@ class StudioRepository {
     );
   }
 
-  Future<CourseStudio> moveCourseToFamily(
-    String courseId, {
-    required String courseGroupId,
-  }) async {
-    final response = await _client.raw.post<Object?>(
-      '/studio/courses/$courseId/move-family',
-      data: <String, Object?>{'course_group_id': courseGroupId},
-    );
-    return CourseStudio.fromResponse(
-      response.data,
-      label: 'Moved studio course',
-    );
-  }
-
   Future<CourseStudio> publishCourse(String courseId) async {
     final response = await _client.raw.post<Object?>(
       '/studio/courses/$courseId/publish',

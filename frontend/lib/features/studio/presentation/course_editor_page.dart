@@ -783,7 +783,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   bool _creatingCourseFamily = false;
   bool _publishingCourse = false;
   bool _updatingCourseFamily = false;
-  String? _moveCourseTargetCourseGroupId;
   String? _courseCoverPath;
   bool _updatingCourseCover = false;
   String? _coverPipelineMediaId;
@@ -1339,7 +1338,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonsLoading = false;
     _mediaLoading = false;
     _lessonsNeedingRefresh.clear();
-    _moveCourseTargetCourseGroupId = null;
     _courseDripMode = DripAuthoringMode.noDripImmediateAccess;
     _courseCustomTimelineEntrySourceMode = null;
     _courseScheduleLocked = false;
@@ -1459,12 +1457,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           courses: myCourses,
           courseFamilies: myCourseFamilies,
         );
-        _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
-          selectedCourseId: selected,
-          courses: myCourses,
-          courseFamilies: myCourseFamilies,
-          currentValue: null,
-        );
         _checking = false;
       });
       if (_selectedCourseId != null) {
@@ -1527,10 +1519,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           _courseDripMode = course.dripAuthoring.mode;
           _courseCustomTimelineEntrySourceMode = null;
           _courseScheduleLocked = course.dripAuthoring.scheduleLocked;
-          _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
-            selectedCourseId: courseId,
-            currentValue: _moveCourseTargetCourseGroupId,
-          );
           _courseCoverPath = resolvedCoverUrl;
           if (!_updatingCourseCover) {
             _coverPipelineError = coverError;
@@ -2132,41 +2120,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       courseFamilies: families,
     );
     return _courseFamilyById(targetId, families);
-  }
-
-  String _defaultCourseFamilyMoveTargetCourseGroupId({
-    required String currentCourseGroupId,
-    List<CourseFamilyStudio>? courseFamilies,
-  }) {
-    for (final family in courseFamilies ?? _courseFamilies) {
-      if (family.id != currentCourseGroupId) {
-        return family.id;
-      }
-    }
-    return '';
-  }
-
-  String? _courseFamilyMoveTargetForSelection({
-    required String? selectedCourseId,
-    required String? currentValue,
-    List<CourseStudio>? courses,
-    List<CourseFamilyStudio>? courseFamilies,
-  }) {
-    final selectedCourse = _courseById(selectedCourseId, courses);
-    if (selectedCourse == null) {
-      return null;
-    }
-    for (final family in courseFamilies ?? _courseFamilies) {
-      if (family.id == currentValue &&
-          family.id != selectedCourse.courseGroupId) {
-        return currentValue;
-      }
-    }
-    final fallback = _defaultCourseFamilyMoveTargetCourseGroupId(
-      currentCourseGroupId: selectedCourse.courseGroupId,
-      courseFamilies: courseFamilies,
-    );
-    return fallback.isEmpty ? null : fallback;
   }
 
   String? _firstCourseId(List<CourseStudio> items) {
@@ -5997,11 +5950,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         currentValue: _managedCourseFamilyId,
         courseFamilies: refreshedFamilies,
       );
-      _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
-        selectedCourseId: _selectedCourseId,
-        currentValue: _moveCourseTargetCourseGroupId,
-        courseFamilies: refreshedFamilies,
-      );
     });
   }
 
@@ -6035,12 +5983,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _managedCourseFamilyId = _courseFamilyManagementTarget(
         selectedCourseId: effectiveSelectedCourseId,
         currentValue: null,
-        courses: nextCourses,
-        courseFamilies: refreshedFamilies,
-      );
-      _moveCourseTargetCourseGroupId = _courseFamilyMoveTargetForSelection(
-        selectedCourseId: effectiveSelectedCourseId,
-        currentValue: _moveCourseTargetCourseGroupId,
         courses: nextCourses,
         courseFamilies: refreshedFamilies,
       );
@@ -6080,41 +6022,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     } catch (error, stackTrace) {
       _showFriendlyErrorSnack(
         'Kunde inte uppdatera kursordningen',
-        error,
-        stackTrace,
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _updatingCourseFamily = false);
-      }
-    }
-  }
-
-  Future<void> _moveSelectedCourseToFamily() async {
-    if (!_requireEditModeForMutation()) {
-      return;
-    }
-    final course = _courseById(_selectedCourseId);
-    final targetSelection = _moveCourseTargetCourseGroupId;
-    if (course == null || targetSelection == null || _updatingCourseFamily) {
-      return;
-    }
-    if (targetSelection == course.courseGroupId) {
-      return;
-    }
-
-    setState(() => _updatingCourseFamily = true);
-    try {
-      final updated = await _studioRepo.moveCourseToFamily(
-        course.id,
-        courseGroupId: targetSelection,
-      );
-      await _refreshSelectedCourseAuthoringState(selectedCourseId: updated.id);
-      if (!mounted || !context.mounted) return;
-      showSnack(context, 'Kursfamiljen uppdaterad.');
-    } catch (error, stackTrace) {
-      _showFriendlyErrorSnack(
-        'Kunde inte flytta kursen till familjen',
         error,
         stackTrace,
       );
@@ -7072,27 +6979,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final canMoveDown =
         canMutateFamily &&
         selectedCourse.groupPosition < selectedFamily.courses.length - 1;
-    final moveTargetFamilies = [
-      for (final family in availableFamilies)
-        if (family.id != selectedCourse.courseGroupId) family,
-    ];
-    final moveTargetItems = <DropdownMenuItem<String>>[
-      for (final family in moveTargetFamilies)
-        DropdownMenuItem<String>(
-          value: family.id,
-          child: Text(
-            '${family.name} · placeras sist',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-    ];
-    final moveTargetValue =
-        moveTargetItems.any(
-          (item) => item.value == _moveCourseTargetCourseGroupId,
-        )
-        ? _moveCourseTargetCourseGroupId
-        : (moveTargetItems.isEmpty ? null : moveTargetItems.first.value);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -7199,58 +7085,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               label: const Text('Flytta ned'),
             ),
           ],
-        ),
-        gap12,
-        DropdownButtonFormField<String>(
-          key: ValueKey<String>(
-            'course_family_move_target-${moveTargetValue ?? 'none'}',
-          ),
-          isExpanded: true,
-          initialValue: moveTargetValue,
-          decoration: const InputDecoration(
-            labelText: 'Flytta till kursfamilj',
-          ),
-          selectedItemBuilder: (context) => moveTargetFamilies
-              .map((family) => _dropdownValueLabel(family.name))
-              .toList(growable: false),
-          items: moveTargetItems,
-          onChanged: canMutateFamily && moveTargetValue != null
-              ? (value) {
-                  if (value == null) return;
-                  setState(() => _moveCourseTargetCourseGroupId = value);
-                }
-              : null,
-        ),
-        gap8,
-        Text(
-          moveTargetItems.isEmpty
-              ? 'Skapa en annan kursfamilj för att kunna flytta kursen.'
-              : 'Flytt använder den kanoniska move-family-surface och placerar kursen sist i vald familj.',
-          style: theme.textTheme.bodySmall,
-        ),
-        gap12,
-        FilledButton.icon(
-          key: const ValueKey<String>('course_family_move_submit_button'),
-          onPressed: !canMutateFamily || moveTargetValue == null
-              ? null
-              : () {
-                  if (_moveCourseTargetCourseGroupId != moveTargetValue) {
-                    setState(
-                      () => _moveCourseTargetCourseGroupId = moveTargetValue,
-                    );
-                  }
-                  _moveSelectedCourseToFamily();
-                },
-          icon: _updatingCourseFamily
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.drive_file_move_outline),
-          label: Text(
-            _updatingCourseFamily ? 'Flyttar...' : 'Flytta till vald familj',
-          ),
         ),
       ],
     );
