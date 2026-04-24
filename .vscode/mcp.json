@@ -5,22 +5,22 @@
       "type": "http",
       "url": "https://mcp.context7.com/mcp",
       "headers": {
-        "Authorization": "Bearer local_token"
-      }
+      "Authorization": "Bearer ${CONTEXT7_TOKEN}"
+       }
     },
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=ihirfhnpjtetdmdvqvyu"
-
     },
       "stripe": {
       "type": "http",
       "url": "https://mcp.stripe.com",
       "headers": {
-        "Authorization": "Bearer local_token"
+        "Authorization": "Bearer ${STRIPE_SECRET_KEY}"
       }
     },
     "netlify": {
+      "type": "stdio",
       "command": "npx",
       "args": ["-y", "@netlify/mcp"]
     },
@@ -41,7 +41,7 @@
         "figma-developer-mcp",
         "--stdio",
         "--figma-api-key",
-        "local_token"
+        "${FIGMA_ACCESS_TOKEN}"
       ]
     },
     "aveli-logs": {

@@ -1,31 +1,16 @@
 from __future__ import annotations
 
-# --- ENV LOADING (CORRECT + ORDERED) ---
+import asyncio
+import os
+import subprocess
+import sys
 from dotenv import load_dotenv
 from pathlib import Path
-import os
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 BACKEND_DIR = ROOT_DIR / "backend"
-CALLER_ENV = dict(os.environ)
-
-# 1. Load base env (only if not already set)
-load_dotenv(BACKEND_DIR / ".env", override=False)
-
-# 2. Load local env over the base file, while preserving caller-provided env.
-load_dotenv(BACKEND_DIR / ".env.local", override=True)
-for key, value in CALLER_ENV.items():
-    os.environ[key] = value
-
-# DEBUG
-print("[ENV] APP_ENV =", os.getenv("APP_ENV"))
-print("[ENV] DATABASE_URL =", "<set>" if os.getenv("DATABASE_URL") else "")
-print("[ENV] MCP_MODE =", os.getenv("MCP_MODE"))
-print("[ENV] SUPABASE_URL =", os.getenv("SUPABASE_URL"))
-
-# --- STANDARD IMPORTS ---
-import asyncio
-import sys
+MCP_BOOTSTRAP_GATE_PATH = ROOT_DIR / "ops" / "mcp_bootstrap_gate.ps1"
+ROOT_ENV_PATH = ROOT_DIR / ".env"
 
 from backend.bootstrap.baseline_v2 import BaselineV2Error, verify_v2_runtime
 from backend.scripts.bootstrap_gate import ensure_runtime_execution_ready
@@ -57,9 +42,45 @@ def _port() -> int:
         raise SystemExit(f"[AVELI] Invalid PORT value: {raw}") from exc
 
 
+def _load_root_env_for_mcp_gate() -> None:
+    load_dotenv(ROOT_ENV_PATH, override=False)
+
+
+def _run_mcp_bootstrap_gate() -> None:
+    _load_root_env_for_mcp_gate()
+
+    command = (
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(MCP_BOOTSTRAP_GATE_PATH),
+        ]
+        if sys.platform == "win32"
+        else [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(MCP_BOOTSTRAP_GATE_PATH),
+        ]
+    )
+
+    try:
+        completed = subprocess.run(command, cwd=str(ROOT_DIR), check=False)
+    except OSError as exc:
+        raise SystemExit(1) from exc
+
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
+
+
 # --- MAIN ENTRYPOINT ---
 def main() -> None:
     print("[AVELI] Bootstrapping backend...")
+
+    _run_mcp_bootstrap_gate()
 
     # Ensure environment, DB reachability, and canonical V2 lock readiness.
     ensure_runtime_execution_ready()
