@@ -2080,11 +2080,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (selectedCourse != null) {
       return _courseFamilyById(selectedCourse.courseGroupId, families);
     }
-    final availableFamilies = families ?? _courseFamilies;
-    if (availableFamilies.isEmpty) {
-      return null;
-    }
-    return availableFamilies.first;
+    final activeFamilyId = _selectedCourseFamilyIdForCourseSelection(
+      courses: courses,
+      courseFamilies: families,
+    );
+    return _courseFamilyById(activeFamilyId, families);
   }
 
   String? _courseFamilyManagementTarget({
@@ -2122,6 +2122,37 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     return _courseFamilyById(targetId, families);
   }
 
+  String? _selectedCourseFamilyIdForCourseSelection({
+    List<CourseStudio>? courses,
+    List<CourseFamilyStudio>? courseFamilies,
+  }) {
+    return _courseFamilyManagementTarget(
+      selectedCourseId: _selectedCourseId,
+      currentValue: _managedCourseFamilyId,
+      courses: courses,
+      courseFamilies: courseFamilies,
+    );
+  }
+
+  List<CourseStudio> _coursesForSelectedFamily([
+    List<CourseStudio>? source,
+    List<CourseFamilyStudio>? courseFamilies,
+  ]) {
+    // Temporary non-canonical frontend filtering until GET /studio/courses
+    // accepts course_group_id as a canonical request filter.
+    final selectedFamilyId = _selectedCourseFamilyIdForCourseSelection(
+      courses: source,
+      courseFamilies: courseFamilies,
+    );
+    if (selectedFamilyId == null || selectedFamilyId.isEmpty) {
+      return const <CourseStudio>[];
+    }
+    return _sortCoursesWithinFamily([
+      for (final course in source ?? _courses)
+        if (course.courseGroupId == selectedFamilyId) course,
+    ]);
+  }
+
   String? _firstCourseId(List<CourseStudio> items) {
     for (final item in items) {
       if (item.id.isNotEmpty) {
@@ -2142,13 +2173,40 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   List<DropdownMenuItem<String>> _courseDropdownItems() {
     final items = <DropdownMenuItem<String>>[];
-    for (final course in _courses) {
+    for (final course in _coursesForSelectedFamily()) {
       final id = course.id;
       if (id.isEmpty) continue;
       final title = course.title;
       items.add(DropdownMenuItem<String>(value: id, child: Text(title)));
     }
     return items;
+  }
+
+  Future<void> _handleManagedCourseFamilyChanged(String familyId) async {
+    final nextFamilyId = familyId.trim();
+    if (nextFamilyId.isEmpty) {
+      return;
+    }
+    final currentFamilyId = _selectedCourseFamilyIdForCourseSelection();
+    if (nextFamilyId == currentFamilyId) {
+      return;
+    }
+    final canSwitch = await _maybeSaveLessonEdits();
+    if (!canSwitch || !mounted) {
+      return;
+    }
+
+    final selectedCourse = _courseById(_selectedCourseId);
+    final clearSelectedCourse =
+        selectedCourse != null && selectedCourse.courseGroupId != nextFamilyId;
+
+    setState(() {
+      if (clearSelectedCourse) {
+        _resetCourseContext(clearLists: true);
+        _selectedCourseId = null;
+      }
+      _managedCourseFamilyId = nextFamilyId;
+    });
   }
 
   String? _lessonCourseId(String? lessonId) {
@@ -6941,7 +6999,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             onChanged: canManageFamily && managedFamilyValue != null
                 ? (value) {
                     if (value == null) return;
-                    setState(() => _managedCourseFamilyId = value);
+                    _handleManagedCourseFamilyChanged(value);
                   }
                 : null,
           ),
@@ -7007,7 +7065,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           onChanged: canManageFamily && managedFamilyValue != null
               ? (value) {
                   if (value == null) return;
-                  setState(() => _managedCourseFamilyId = value);
+                  _handleManagedCourseFamilyChanged(value);
                 }
               : null,
         ),
@@ -7281,7 +7339,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                         Text(
                           _courseFamilies.isEmpty
                               ? 'Skapa en kursfamilj först. Kurser kan bara skapas i en befintlig familj.'
-                              : 'Inga kurser tillgängliga i monterad runtime.',
+                              : 'Inga kurser i vald kursfamilj.',
                         ),
                       ],
                     ],
