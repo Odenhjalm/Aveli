@@ -16,6 +16,13 @@ double _renderedFontSize(WidgetTester tester, String text) {
   return richText.text.style?.fontSize ?? 0;
 }
 
+double _textFieldFontSize(WidgetTester tester, String fieldKey) {
+  final textField = tester.widget<TextField>(
+    find.byKey(ValueKey<String>(fieldKey)),
+  );
+  return textField.style?.fontSize ?? 0;
+}
+
 double _baselineY(WidgetTester tester, String text) {
   final finder = find.text(text, findRichText: true).first;
   final renderParagraph = tester.renderObject(finder) as dynamic;
@@ -440,6 +447,66 @@ void main() {
     expect(find.byType(InlineAudioPlayer), findsNothing);
     expect(find.byType(AveliLessonMediaPlayer), findsNothing);
   });
+
+  testWidgets(
+    'document editor scales heading fields by 1.6x without changing paragraphs',
+    (tester) async {
+      const document = LessonDocument(
+        blocks: [
+          LessonParagraphBlock(children: [LessonTextRun('Paragraph body')]),
+          LessonHeadingBlock(
+            level: 1,
+            children: [LessonTextRun('Heading one')],
+          ),
+          LessonHeadingBlock(
+            level: 2,
+            children: [LessonTextRun('Heading two')],
+          ),
+          LessonHeadingBlock(
+            level: 3,
+            children: [LessonTextRun('Heading three')],
+          ),
+          LessonHeadingBlock(
+            level: 4,
+            children: [LessonTextRun('Heading four')],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 520,
+              child: LessonDocumentEditor(document: document, onChanged: _noop),
+            ),
+          ),
+        ),
+      );
+
+      final theme = Theme.of(tester.element(find.byType(LessonDocumentEditor)));
+      expect(
+        _textFieldFontSize(tester, 'lesson_document_editor_block_0'),
+        closeTo(theme.textTheme.bodyLarge?.fontSize ?? 0, 0.001),
+      );
+      expect(
+        _textFieldFontSize(tester, 'lesson_document_editor_block_1'),
+        closeTo((theme.textTheme.headlineMedium?.fontSize ?? 24) * 1.6, 0.001),
+      );
+      expect(
+        _textFieldFontSize(tester, 'lesson_document_editor_block_2'),
+        closeTo((theme.textTheme.headlineSmall?.fontSize ?? 24) * 1.6, 0.001),
+      );
+      expect(
+        _textFieldFontSize(tester, 'lesson_document_editor_block_3'),
+        closeTo((theme.textTheme.titleLarge?.fontSize ?? 20) * 1.6, 0.001),
+      );
+      expect(
+        _textFieldFontSize(tester, 'lesson_document_editor_block_4'),
+        closeTo((theme.textTheme.titleMedium?.fontSize ?? 20) * 1.6, 0.001),
+      );
+    },
+  );
 
   testWidgets('document editor toolbar formats only selected text ranges', (
     tester,
@@ -1594,3 +1661,5 @@ List<LessonDocumentPreviewMedia> _previewMediaFromCorpus(
       ),
   ];
 }
+
+void _noop(LessonDocument _) {}

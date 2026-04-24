@@ -82,6 +82,10 @@ RichText _richTextFor(WidgetTester tester, String text) {
   return tester.widget<RichText>(find.text(text, findRichText: true).first);
 }
 
+double _fontSizeForText(WidgetTester tester, String text) {
+  return _richTextFor(tester, text).text.style?.fontSize ?? 0;
+}
+
 List<LessonMediaItem> _lessonMediaItemsFromCorpus(
   LessonDocumentFixtureCorpus corpus,
 ) {
@@ -296,6 +300,117 @@ void main() {
   );
 
   testWidgets(
+    'glass preview and learner renderer scale headings by 1.6x only',
+    (tester) async {
+      const document = LessonDocument(
+        blocks: [
+          LessonParagraphBlock(
+            children: [LessonTextRun('Preview paragraph body')],
+          ),
+          LessonHeadingBlock(
+            level: 1,
+            children: [LessonTextRun('Glass heading one')],
+          ),
+          LessonHeadingBlock(
+            level: 2,
+            children: [LessonTextRun('Glass heading two')],
+          ),
+          LessonHeadingBlock(
+            level: 3,
+            children: [LessonTextRun('Glass heading three')],
+          ),
+          LessonHeadingBlock(
+            level: 4,
+            children: [LessonTextRun('Glass heading four')],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: LessonDocumentPreview(document: document)),
+        ),
+      );
+      await tester.pump();
+
+      final previewContext = tester.element(find.byType(LessonDocumentPreview));
+      final previewTheme = Theme.of(previewContext);
+      final previewBodyStyle = DefaultTextStyle.of(previewContext).style;
+      final previewParagraphSize = _fontSizeForText(
+        tester,
+        'Preview paragraph body',
+      );
+      final previewHeadingSizes = <String, double>{
+        'Glass heading one': _fontSizeForText(tester, 'Glass heading one'),
+        'Glass heading two': _fontSizeForText(tester, 'Glass heading two'),
+        'Glass heading three': _fontSizeForText(tester, 'Glass heading three'),
+        'Glass heading four': _fontSizeForText(tester, 'Glass heading four'),
+      };
+
+      expect(
+        previewParagraphSize,
+        closeTo(previewBodyStyle.fontSize ?? 0, 0.001),
+      );
+      expect(
+        previewHeadingSizes['Glass heading one'],
+        closeTo(
+          (previewTheme.textTheme.headlineMedium?.fontSize ?? 24) * 1.6,
+          0.001,
+        ),
+      );
+      expect(
+        previewHeadingSizes['Glass heading two'],
+        closeTo(
+          (previewTheme.textTheme.headlineSmall?.fontSize ?? 24) * 1.6,
+          0.001,
+        ),
+      );
+      expect(
+        previewHeadingSizes['Glass heading three'],
+        closeTo(
+          (previewTheme.textTheme.titleLarge?.fontSize ?? 20) * 1.6,
+          0.001,
+        ),
+      );
+      expect(
+        previewHeadingSizes['Glass heading four'],
+        closeTo(
+          (previewTheme.textTheme.titleMedium?.fontSize ?? 20) * 1.6,
+          0.001,
+        ),
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: LessonPageRenderer(document: document)),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        _fontSizeForText(tester, 'Preview paragraph body'),
+        closeTo(previewParagraphSize, 0.001),
+      );
+      expect(
+        _fontSizeForText(tester, 'Glass heading one'),
+        closeTo(previewHeadingSizes['Glass heading one'] ?? 0, 0.001),
+      );
+      expect(
+        _fontSizeForText(tester, 'Glass heading two'),
+        closeTo(previewHeadingSizes['Glass heading two'] ?? 0, 0.001),
+      );
+      expect(
+        _fontSizeForText(tester, 'Glass heading three'),
+        closeTo(previewHeadingSizes['Glass heading three'] ?? 0, 0.001),
+      );
+      expect(
+        _fontSizeForText(tester, 'Glass heading four'),
+        closeTo(previewHeadingSizes['Glass heading four'] ?? 0, 0.001),
+      );
+    },
+  );
+
+  testWidgets(
     'lesson paper rendering matches preview paper typography exactly',
     (tester) async {
       const document = LessonDocument(
@@ -360,6 +475,68 @@ void main() {
             _baselineY(tester, 'Shared paper paragraph'),
         closeTo(previewBaselineDelta, 0.01),
       );
+    },
+  );
+
+  testWidgets(
+    'lesson paper rendering matches preview paper heading typography exactly',
+    (tester) async {
+      const document = LessonDocument(
+        blocks: [
+          LessonHeadingBlock(
+            level: 2,
+            children: [LessonTextRun('Shared paper heading')],
+          ),
+          LessonParagraphBlock(children: [LessonTextRun('Shared paper body')]),
+        ],
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LessonDocumentPreview(
+              document: document,
+              readingMode: LessonDocumentReadingMode.paper,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final previewHeading = _richTextFor(tester, 'Shared paper heading');
+      final previewHeadingStrut = previewHeading.strutStyle;
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LessonPageRenderer(
+              document: document,
+              readingMode: LessonDocumentReadingMode.paper,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final lessonHeading = _richTextFor(tester, 'Shared paper heading');
+      final lessonHeadingStrut = lessonHeading.strutStyle;
+      expect(
+        lessonHeading.text.style?.fontSize,
+        closeTo(previewHeading.text.style?.fontSize ?? 0, 0.001),
+      );
+      expect(
+        lessonHeading.text.style?.height,
+        closeTo(previewHeading.text.style?.height ?? 0, 0.001),
+      );
+      expect(
+        lessonHeadingStrut?.fontSize,
+        closeTo(previewHeadingStrut?.fontSize ?? 0, 0.001),
+      );
+      expect(
+        lessonHeadingStrut?.height,
+        closeTo(previewHeadingStrut?.height ?? 0, 0.001),
+      );
+      expect(lessonHeadingStrut?.forceStrutHeight, isTrue);
     },
   );
 }

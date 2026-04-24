@@ -9,6 +9,31 @@ import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
 import 'lesson_document.dart';
 
+const double _lessonHeadingScaleFactor = 1.6;
+
+TextStyle _lessonHeadingPresentationStyle(
+  ThemeData theme, {
+  required int level,
+  required Color color,
+}) {
+  final base = switch (level) {
+    1 => theme.textTheme.headlineMedium,
+    2 => theme.textTheme.headlineSmall,
+    3 => theme.textTheme.titleLarge,
+    _ => theme.textTheme.titleMedium,
+  };
+  final fallbackFontSize = switch (level) {
+    1 || 2 => 24.0,
+    _ => 20.0,
+  };
+  return (base ?? TextStyle(fontSize: fallbackFontSize)).copyWith(
+    fontSize: (base?.fontSize ?? fallbackFontSize) * _lessonHeadingScaleFactor,
+    fontWeight: FontWeight.w700,
+    height: 1.22,
+    color: color,
+  );
+}
+
 class LessonDocumentEditor extends StatefulWidget {
   const LessonDocumentEditor({
     super.key,
@@ -419,23 +444,11 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
   TextStyle _headingStyle(BuildContext context, int level) {
     final theme = Theme.of(context);
-    final base = switch (level) {
-      1 => theme.textTheme.headlineMedium,
-      2 => theme.textTheme.headlineSmall,
-      3 => theme.textTheme.titleLarge,
-      _ => theme.textTheme.titleMedium,
-    };
-    return base?.copyWith(
-          fontWeight: FontWeight.w700,
-          height: 1.22,
-          color: theme.colorScheme.onSurface,
-        ) ??
-        TextStyle(
-          fontSize: level <= 2 ? 24 : 20,
-          fontWeight: FontWeight.w700,
-          height: 1.22,
-          color: theme.colorScheme.onSurface,
-        );
+    return _lessonHeadingPresentationStyle(
+      theme,
+      level: level,
+      color: theme.colorScheme.onSurface,
+    );
   }
 
   TextStyle _listMarkerStyle(BuildContext context) {
@@ -862,7 +875,22 @@ class _PaperReadingLayout {
     return painter.computeDistanceToActualBaseline(TextBaseline.alphabetic);
   }
 
-  TextStyle headingStyle() => textStyle.copyWith(fontWeight: FontWeight.w700);
+  TextStyle headingStyle(ThemeData theme, int level) =>
+      _lessonHeadingPresentationStyle(
+        theme,
+        level: level,
+        color: _paperReadingTextColor,
+      );
+
+  StrutStyle headingStrutStyle(ThemeData theme, int level) {
+    final headingStyle = this.headingStyle(theme, level);
+    return StrutStyle(
+      fontSize: headingStyle.fontSize,
+      height: headingStyle.height,
+      leading: 0,
+      forceStrutHeight: true,
+    );
+  }
 
   TextStyle markerStyle(Color color) =>
       textStyle.copyWith(fontWeight: FontWeight.w600, color: color);
@@ -1143,14 +1171,16 @@ class _PreviewBlock extends StatelessWidget {
       final heading = block as LessonHeadingBlock;
       return DefaultTextStyle.merge(
         style:
-            paperLayout?.headingStyle() ??
-            theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
+            paperLayout?.headingStyle(theme, heading.level) ??
+            _lessonHeadingPresentationStyle(
+              theme,
+              level: heading.level,
+              color: theme.colorScheme.onSurface,
             ),
         child: _InlineRunsView(
           children: heading.children,
           onLaunchUrl: onLaunchUrl,
-          strutStyle: paperLayout?.strutStyle,
+          strutStyle: paperLayout?.headingStrutStyle(theme, heading.level),
           textHeightBehavior: paperLayout == null
               ? null
               : _paperReadingTextHeightBehavior,
