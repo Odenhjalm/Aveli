@@ -1164,6 +1164,29 @@ class CourseAccessStateResponse(BaseModel):
     enrollment: CourseEnrollmentRecord | None = None
 
 
+class LessonCompletionRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    user_id: UUID
+    course_id: UUID
+    lesson_id: UUID
+    completed_at: datetime
+    completion_source: str
+
+
+class LessonCompletionCommandResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal[
+        "completed",
+        "already_completed",
+        "lesson_not_found",
+        "access_denied",
+    ]
+    completion: LessonCompletionRecord | None
+
+
 class StudioCoursePublicContentUpsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -102,6 +102,7 @@ def test_studio_courses_read_route_is_mounted_exactly_once() -> None:
 def test_canonical_write_routes_remain_mounted() -> None:
     route_pairs = _route_method_pairs()
 
+    assert ("POST", "/courses/lessons/{lesson_id}/complete") in route_pairs
     assert ("POST", "/studio/courses") in route_pairs
     assert ("PATCH", "/studio/courses/{course_id}") in route_pairs
     assert ("PUT", "/studio/courses/{course_id}/drip-authoring") in route_pairs

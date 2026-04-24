@@ -6,7 +6,8 @@ from pydantic import ValidationError
 
 from .. import schemas
 from ..auth import AppEntryUser, OptionalCurrentUser
-from ..services import courses_read_service, courses_service
+from ..services import courses_read_service, courses_service, lesson_completion_service
+from ..services.lesson_completion_service import LessonCompletionServiceInvariantError
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 api_router = APIRouter(prefix="/api/courses", tags=["courses"])
@@ -227,6 +228,38 @@ async def lesson_detail(lesson_id: str, current: AppEntryUser):
         lessons=list(lessons),
         media_rows=protected_media,
     )
+
+
+@router.post(
+    "/lessons/{lesson_id}/complete",
+    response_model=schemas.LessonCompletionCommandResponse,
+)
+async def complete_lesson_route(
+    lesson_id: str,
+    current: AppEntryUser,
+) -> schemas.LessonCompletionCommandResponse:
+    try:
+        result = await lesson_completion_service.complete_lesson(
+            user_id=str(current["id"]),
+            lesson_id=lesson_id,
+        )
+    except LessonCompletionServiceInvariantError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        ) from exc
+
+    if result["status"] == "completed":
+        return schemas.LessonCompletionCommandResponse(**result)
+    if result["status"] == "already_completed":
+        return schemas.LessonCompletionCommandResponse(**result)
+    if result["status"] == "lesson_not_found":
+        raise HTTPException(status_code=404, detail=_LESSON_NOT_FOUND_DETAIL)
+    if result["status"] == "access_denied":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_LESSON_ACCESS_DENIED_DETAIL,
+        )
 
 
 @router.get("/me", response_model=schemas.CourseListResponse)
