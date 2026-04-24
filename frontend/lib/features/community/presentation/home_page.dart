@@ -44,18 +44,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     final assets = ref.watch(backendAssetResolverProvider);
     final mediaRepository = ref.watch(mediaRepositoryProvider);
 
-    final progressAsync = coursesAsync.when<AsyncValue<Map<String, double>>>(
-      data: (courses) {
-        if (courses.isEmpty) {
-          return const AsyncValue.data({});
-        }
-        final ids = courses.map((c) => c.id).toList();
-        return ref.watch(courseProgressProvider(CourseProgressRequest(ids)));
-      },
-      loading: () => const AsyncValue.loading(),
-      error: (error, stackTrace) => AsyncValue.error(error, stackTrace),
-    );
-
     return AppScaffold(
       title: 'Andlig Väg',
       disableBack: true,
@@ -112,7 +100,6 @@ class _HomePageState extends ConsumerState<HomePage> {
             const SizedBox(height: 18),
             _CoursesCard(
               coursesAsync: coursesAsync,
-              progressAsync: progressAsync,
               assets: assets,
               mediaRepository: mediaRepository,
             ),
@@ -304,7 +291,8 @@ class _ShortcutCards extends StatelessWidget {
             runSpacing: 12,
             children: [
               ElevatedButton(
-                onPressed: () => context.pushNamed(AppRoute.courseIntro),
+                onPressed: () =>
+                    context.pushNamed(AppRoute.courseIntroRedirect),
                 child: const Text('Öppna introduktionskurs'),
               ),
               OutlinedButton(
@@ -334,13 +322,11 @@ class _ShortcutCards extends StatelessWidget {
 class _CoursesCard extends StatelessWidget {
   const _CoursesCard({
     required this.coursesAsync,
-    required this.progressAsync,
     required this.assets,
     required this.mediaRepository,
   });
 
   final AsyncValue<List<CourseSummary>> coursesAsync;
-  final AsyncValue<Map<String, double>> progressAsync;
   final BackendAssetResolver assets;
   final MediaRepository mediaRepository;
 
@@ -376,21 +362,11 @@ class _CoursesCard extends StatelessWidget {
                   style: t.bodyMedium,
                 );
               }
-              return progressAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-                error: (error, _) => Text(
-                  error is AppFailure ? error.message : error.toString(),
-                  style: t.bodyMedium,
-                ),
-                data: (progress) => CoursesGrid(
-                  courses: courses,
-                  progress: progress,
-                  assets: assets,
-                  mediaRepository: mediaRepository,
-                ),
+              return CoursesGrid(
+                courses: courses,
+                progress: const <String, double>{},
+                assets: assets,
+                mediaRepository: mediaRepository,
               );
             },
           ),

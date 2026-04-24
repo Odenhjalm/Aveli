@@ -192,7 +192,17 @@ class _CourseContent extends StatelessWidget {
     );
     final canAccess = visibility.canAccess;
     final canEnroll =
-        !canAccess && (courseState?.enrollable == true || course.enrollable);
+        courseState != null &&
+        !canAccess &&
+        courseState.isIntroCourse &&
+        !courseState.selectionLocked;
+    final lockedIntroMessage =
+        courseState != null &&
+            !canAccess &&
+            courseState.isIntroCourse &&
+            courseState.selectionLocked
+        ? 'Du behöver slutföra din pågående introduktion innan du kan välja en ny.'
+        : null;
     final lessons = visibility.lessons;
     final unlockedLessons = visibility.unlockedLessons;
     final isEnrolling = enrollState.isLoading;
@@ -307,6 +317,17 @@ class _CourseContent extends StatelessWidget {
                     child: Text(
                       _courseEnrollmentErrorMessage(enrollError),
                       style: t.bodyMedium?.copyWith(color: cs.error),
+                    ),
+                  )
+                else if (lockedIntroMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      lockedIntroMessage,
+                      style: t.bodyMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
               ],

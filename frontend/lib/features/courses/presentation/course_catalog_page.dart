@@ -54,6 +54,7 @@ class _JourneyPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final introSelectionState = ref.watch(introSelectionStateProvider);
     final published = courses
         .where((course) => course.slug.trim().isNotEmpty)
         .toList(growable: false);
@@ -88,26 +89,13 @@ class _JourneyPage extends ConsumerWidget {
       );
     }
 
-    final introCourses = published
-        .where((course) => course.groupPosition == 0)
-        .toList(growable: false);
+    final introCourses =
+        introSelectionState.valueOrNull?.eligibleCourses ??
+        const <CourseSummary>[];
     final journeyFamilies = buildCourseJourneyFamilies(published);
     final progressionFamilies = journeyFamilies
         .where((family) => family.progressionCourses.isNotEmpty)
         .toList(growable: false);
-    final advancedCourseIds = published
-        .where((course) => course.groupPosition >= 3)
-        .map((course) => course.id)
-        .toList(growable: false);
-
-    final advancedProgressAsync = ref.watch(
-      courseProgressProvider(CourseProgressRequest(advancedCourseIds)),
-    );
-    final hasCompletedAdvancedCourse =
-        advancedProgressAsync.valueOrNull?.values.any(
-          (value) => value >= 0.999,
-        ) ??
-        false;
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -125,7 +113,7 @@ class _JourneyPage extends ConsumerWidget {
             mediaRepository: mediaRepository,
           ),
           const SizedBox(height: 26),
-          _ActAveliProSection(isEnabled: hasCompletedAdvancedCourse),
+          const _ActAveliProSection(isEnabled: false),
         ],
       ),
     );
@@ -489,13 +477,6 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final courseCoverImageUrlFuture = Future<String?>.value(
       courseCoverResolvedUrl(course.cover),
     );
-    final isIntro = course.isIntroCourse;
-    final priceLabel = course.priceCents == null
-        ? 'Pris saknas'
-        : formatCoursePriceFromOre(
-            amountOre: course.priceCents!,
-            debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
-          );
 
     return Material(
       color: Colors.transparent,
@@ -576,47 +557,17 @@ class _IntroMiniCourseCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (isIntro) ...[
-                        Text(
-                          course.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: DesignTokens.bodyTextColor,
-                            fontWeight: FontWeight.w800,
-                          ),
+                      Text(
+                        course.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: DesignTokens.bodyTextColor,
+                          fontWeight: FontWeight.w800,
                         ),
-                        const Spacer(),
-                        const CourseIntroBadge(label: 'Introduction'),
-                      ] else ...[
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                course.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: DesignTokens.bodyTextColor,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              priceLabel,
-                              textAlign: TextAlign.right,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: DesignTokens.bodyTextColor.withValues(
-                                  alpha: 0.72,
-                                ),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                      ),
+                      const Spacer(),
+                      const CourseIntroBadge(label: 'Introduction'),
                     ],
                   ),
                 ),
@@ -647,7 +598,6 @@ class _JourneyCourseCard extends StatelessWidget {
     );
 
     final radius = BorderRadius.circular(18);
-    final isIntro = course.isIntroCourse;
     final priceLabel = course.priceCents == null
         ? 'Pris saknas'
         : formatCoursePriceFromOre(
@@ -758,18 +708,16 @@ class _JourneyCourseCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        isIntro
-                            ? const CourseIntroBadge()
-                            : Text(
-                                priceLabel,
-                                textAlign: TextAlign.right,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: DesignTokens.bodyTextColor.withValues(
-                                    alpha: 0.72,
-                                  ),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
+                        Text(
+                          priceLabel,
+                          textAlign: TextAlign.right,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: DesignTokens.bodyTextColor.withValues(
+                              alpha: 0.72,
+                            ),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ],
                     ),
                   ],

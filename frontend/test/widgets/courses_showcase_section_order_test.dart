@@ -64,11 +64,25 @@ void main() {
       final courses = <CourseSummary>[
         _course(id: 'step-2', title: 'Zen Flow', groupPosition: 2),
         _course(id: 'step-1-b', title: 'Breathwork', groupPosition: 1),
-        _course(id: 'intro-b', title: 'Aurora', groupPosition: 0),
+        _course(
+          id: 'intro-b',
+          title: 'Aurora',
+          groupPosition: 0,
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
+        ),
         _course(id: 'step-3', title: 'Tarot Mastery', groupPosition: 3),
         _course(id: 'step-4', title: 'Celestial Practice', groupPosition: 4),
         _course(id: 'unknown', title: 'Mystery Course'),
-        _course(id: 'intro-a', title: 'Alchemy Basics', groupPosition: 0),
+        _course(
+          id: 'intro-a',
+          title: 'Alchemy Basics',
+          groupPosition: 0,
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
+        ),
         _course(id: 'step-1-a', title: 'Astral Travel', groupPosition: 1),
       ];
 
@@ -154,10 +168,10 @@ CourseSummary _course({
   String? coverMediaId,
   CourseCoverData? cover,
   int? priceCents,
-  bool? enrollable,
-  bool? purchasable,
+  String requiredEnrollmentSource = 'purchase',
+  bool enrollable = false,
+  bool purchasable = true,
 }) {
-  final isFreeIntro = groupPosition == 0;
   return CourseSummary(
     id: id,
     slug: 'foundations-of-soulwisdom',
@@ -173,10 +187,8 @@ CourseSummary _course({
     priceCents: priceCents,
     dripEnabled: false,
     dripIntervalDays: null,
-    requiredEnrollmentSource: (enrollable ?? isFreeIntro)
-        ? 'intro_enrollment'
-        : 'purchase',
-    enrollable: enrollable ?? isFreeIntro,
-    purchasable: purchasable ?? !isFreeIntro,
+    requiredEnrollmentSource: requiredEnrollmentSource,
+    enrollable: enrollable,
+    purchasable: purchasable,
   );
 }

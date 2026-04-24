@@ -16,6 +16,7 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/repositories/profile_repository.dart';
 import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_pipeline_repository.dart';
 import 'package:aveli/features/media/data/profile_avatar_repository.dart';
@@ -450,7 +451,13 @@ void main() {
       ProviderScope(
         overrides: [
           authControllerProvider.overrideWith((ref) => authController),
-          firstFreeIntroCourseProvider.overrideWith((ref) async => null),
+          introSelectionStateProvider.overrideWith(
+            (ref) async => const IntroSelectionStateData(
+              selectionLocked: false,
+              selectionLockReason: null,
+              eligibleCourses: <CourseSummary>[],
+            ),
+          ),
         ],
         child: const MaterialApp(home: WelcomePage()),
       ),
@@ -475,7 +482,13 @@ void main() {
         overrides: [
           authControllerProvider.overrideWith((ref) => authController),
           profileRepositoryProvider.overrideWithValue(profileRepository),
-          firstFreeIntroCourseProvider.overrideWith((ref) async => null),
+          introSelectionStateProvider.overrideWith(
+            (ref) async => const IntroSelectionStateData(
+              selectionLocked: false,
+              selectionLockReason: null,
+              eligibleCourses: <CourseSummary>[],
+            ),
+          ),
         ],
         child: const MaterialApp(home: WelcomePage()),
       ),

@@ -10,8 +10,33 @@ $EnvPath = Join-Path $RootDir ".env"
 $McpPath = Join-Path $RootDir ".vscode/mcp.json"
 
 function Fail([string]$Message) {
-    Write-Error $Message
+    [Console]::Error.WriteLine($Message)
     exit 1
+}
+
+function Test-ObjectProperty([object]$Object, [string]$Name) {
+    if ($null -eq $Object) {
+        return $false
+    }
+
+    $properties = $Object.PSObject.Properties
+    if ($null -eq $properties) {
+        return $false
+    }
+
+    return $properties.Name -contains $Name
+}
+
+function Get-RequiredProperty([object]$Object, [string]$Name, [string]$Context) {
+    if ($null -eq $Object) {
+        Fail "$Context is missing"
+    }
+
+    if (-not (Test-ObjectProperty -Object $Object -Name $Name)) {
+        Fail "$Context missing property: $Name"
+    }
+
+    return $Object.PSObject.Properties[$Name].Value
 }
 
 function Read-EnvFile([string]$Path) {
@@ -84,8 +109,14 @@ function Assert-McpConfig {
         Fail "mcp.json contains unresolved placeholders"
     }
 
-    $config = $raw | ConvertFrom-Json
-    $servers = $config.servers
+    try {
+        $config = $raw | ConvertFrom-Json
+    }
+    catch {
+        Fail "mcp.json is not valid JSON: $($_.Exception.Message)"
+    }
+
+    $servers = Get-RequiredProperty -Object $config -Name "servers" -Context "mcp.json root"
 
     foreach ($name in @(
         "aveli-logs",
@@ -97,29 +128,33 @@ function Assert-McpConfig {
         "playwright",
         "figma"
     )) {
-        if (-not ($servers.PSObject.Properties.Name -contains $name)) {
-            Fail "mcp.json missing server: $name"
-        }
+        [void](Get-RequiredProperty -Object $servers -Name $name -Context "mcp.json servers")
     }
 
     foreach ($name in @("context7", "supabase")) {
-        $server = $servers.$name
-        if ($server.type -ne "http") {
+        $server = Get-RequiredProperty -Object $servers -Name $name -Context "mcp.json servers"
+        $serverType = [string](Get-RequiredProperty -Object $server -Name "type" -Context $name)
+        if ($serverType -ne "http") {
             Fail "$name must use http transport"
         }
-        if (-not ([string]$server.url -match '^https?://')) {
+        $serverUrl = [string](Get-RequiredProperty -Object $server -Name "url" -Context $name)
+        if (-not ($serverUrl -match '^https?://')) {
             Fail "$name URL is not absolute"
         }
-        if (-not ([string]$server.headers.Authorization -match '^Bearer\s+\S+')) {
+        $headers = Get-RequiredProperty -Object $server -Name "headers" -Context $name
+        $authorization = [string](Get-RequiredProperty -Object $headers -Name "Authorization" -Context "$name headers")
+        if (-not ($authorization -match '^Bearer\s+\S+')) {
             Fail "$name Authorization header is missing a Bearer token"
         }
     }
 
-    $figma = $servers.figma
-    if ($figma.type -ne "stdio" -or $figma.command -ne "npx") {
+    $figma = Get-RequiredProperty -Object $servers -Name "figma" -Context "mcp.json servers"
+    $figmaType = [string](Get-RequiredProperty -Object $figma -Name "type" -Context "figma")
+    $figmaCommand = [string](Get-RequiredProperty -Object $figma -Name "command" -Context "figma")
+    if ($figmaType -ne "stdio" -or $figmaCommand -ne "npx") {
         Fail "figma must use stdio transport through npx"
     }
-    $figmaArgs = @($figma.args)
+    $figmaArgs = @(Get-RequiredProperty -Object $figma -Name "args" -Context "figma")
     if (-not ($figmaArgs -contains "figma-developer-mcp") -or
         -not ($figmaArgs -contains "--stdio") -or
         -not ($figmaArgs -contains "--figma-api-key")) {
@@ -131,52 +166,65 @@ function Assert-McpConfig {
         Fail "figma API key arg is empty"
     }
 
-    $playwright = $servers.playwright
-    if ($playwright.type -ne "stdio" -or $playwright.command -ne "npx") {
+    $playwright = Get-RequiredProperty -Object $servers -Name "playwright" -Context "mcp.json servers"
+    $playwrightType = [string](Get-RequiredProperty -Object $playwright -Name "type" -Context "playwright")
+    $playwrightCommand = [string](Get-RequiredProperty -Object $playwright -Name "command" -Context "playwright")
+    if ($playwrightType -ne "stdio" -or $playwrightCommand -ne "npx") {
         Fail "playwright must use stdio transport through npx"
     }
-    if (-not ((@($playwright.args) -join " ") -match '@playwright/mcp')) {
+    $playwrightArgs = @(Get-RequiredProperty -Object $playwright -Name "args" -Context "playwright")
+    if (-not (($playwrightArgs -join " ") -match '@playwright/mcp')) {
         Fail "playwright args do not reference @playwright/mcp"
     }
 }
 
-$envValues = Read-EnvFile $EnvPath
-$requiredEnvKeys = @(
-    "SUPABASE_PROJECT_REF",
-    "SUPABASE_ACCESS_TOKEN",
-    "CONTEXT7_URL",
-    "CONTEXT7_TOKEN",
-    "FIGMA_ACCESS_TOKEN"
-)
-$forbiddenEnvKeys = @(
-    "SUPABASE_ACCES_TOKEN",
-    "CONTEXT7_MCP_URL",
-    "CONTEXT7_API_KEY",
-    "FIGMA_ACCES_TOKEN"
-)
+try {
+    $envValues = Read-EnvFile $EnvPath
+    $requiredEnvKeys = @(
+        "SUPABASE_PROJECT_REF",
+        "SUPABASE_ACCESS_TOKEN",
+        "CONTEXT7_URL",
+        "CONTEXT7_TOKEN",
+        "FIGMA_ACCESS_TOKEN"
+    )
+    $forbiddenEnvKeys = @(
+        "SUPABASE_ACCES_TOKEN",
+        "CONTEXT7_MCP_URL",
+        "CONTEXT7_API_KEY",
+        "FIGMA_ACCES_TOKEN"
+    )
 
-foreach ($key in $requiredEnvKeys) {
-    if (-not $envValues.ContainsKey($key) -or [string]::IsNullOrWhiteSpace([string]$envValues[$key])) {
-        Fail "Missing required env key: $key"
+    foreach ($key in $requiredEnvKeys) {
+        if (-not $envValues.ContainsKey($key) -or [string]::IsNullOrWhiteSpace([string]$envValues[$key])) {
+            Fail "Missing required env key: $key"
+        }
     }
-}
-foreach ($key in $forbiddenEnvKeys) {
-    if ($envValues.ContainsKey($key)) {
-        Fail "Forbidden near-miss env key is still present: $key"
+    foreach ($key in $forbiddenEnvKeys) {
+        if ($envValues.ContainsKey($key)) {
+            Fail "Forbidden near-miss env key is still present: $key"
+        }
     }
+
+    Assert-NodeRuntime
+    Assert-McpConfig
+
+    foreach ($path in @(
+        "/healthz",
+        "/mcp/logs",
+        "/mcp/verification",
+        "/mcp/media-control-plane",
+        "/mcp/domain-observability"
+    )) {
+        Assert-HttpOk $path
+    }
+
+    Write-Output "MCP_BOOTSTRAP_GATE_OK"
+    exit 0
 }
-
-Assert-NodeRuntime
-Assert-McpConfig
-
-foreach ($path in @(
-    "/healthz",
-    "/mcp/logs",
-    "/mcp/verification",
-    "/mcp/media-control-plane",
-    "/mcp/domain-observability"
-)) {
-    Assert-HttpOk $path
+catch {
+    $message = $_.Exception.Message
+    if ([string]::IsNullOrWhiteSpace($message)) {
+        $message = "Unexpected bootstrap gate failure"
+    }
+    Fail $message
 }
-
-Write-Output "MCP_BOOTSTRAP_GATE_OK"

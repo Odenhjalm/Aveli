@@ -174,25 +174,28 @@ class CoursesRepository {
 
   final ApiClient _client;
 
-  Future<List<CourseSummary>> fetchPublishedCourses({
-    bool onlyFreeIntro = false,
-  }) async {
+  Future<List<CourseSummary>> fetchPublishedCourses() async {
     try {
       final response = await _client.raw.get<Object?>(
         '/courses',
         queryParameters: const <String, Object?>{'published_only': true},
       );
-      final items = switch (response.data) {
+      return switch (response.data) {
         {'items': final List items} =>
           items.map(CourseSummary.fromResponse).toList(growable: false),
         _ => throw StateError('Invalid course list payload'),
       };
-      if (!onlyFreeIntro) {
-        return items;
-      }
-      return items
-          .where((course) => course.isIntroCourse)
-          .toList(growable: false);
+    } catch (error, stackTrace) {
+      throw AppFailure.from(error, stackTrace);
+    }
+  }
+
+  Future<IntroSelectionStateData> fetchIntroSelectionState() async {
+    try {
+      final response = await _client.raw.get<Object?>(
+        '/courses/intro-selection',
+      );
+      return IntroSelectionStateData.fromResponse(response.data);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -239,20 +242,6 @@ class CoursesRepository {
     try {
       final response = await _client.raw.get<Object?>('/courses/$courseId');
       return CourseDetailData.fromResponse(response.data);
-    } catch (error, stackTrace) {
-      throw AppFailure.from(error, stackTrace);
-    }
-  }
-
-  Future<CourseSummary?> firstFreeIntroCourse() async {
-    try {
-      final courses = await fetchPublishedCourses();
-      for (final course in courses) {
-        if (course.isIntroCourse) {
-          return course;
-        }
-      }
-      return null;
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
@@ -365,6 +354,35 @@ class CourseEnrollmentRecord {
   }
 }
 
+class IntroSelectionStateData {
+  const IntroSelectionStateData({
+    required this.selectionLocked,
+    required this.selectionLockReason,
+    required this.eligibleCourses,
+  });
+
+  final bool selectionLocked;
+  final String? selectionLockReason;
+  final List<CourseSummary> eligibleCourses;
+
+  factory IntroSelectionStateData.fromResponse(Object? payload) {
+    return IntroSelectionStateData(
+      selectionLocked: _requireBool(
+        _requiredField(payload, 'selection_locked'),
+        'selection_locked',
+      ),
+      selectionLockReason: _optionalString(
+        _requiredField(payload, 'selection_lock_reason'),
+        'selection_lock_reason',
+      ),
+      eligibleCourses: _requireList(
+        _requiredField(payload, 'eligible_courses'),
+        'eligible_courses',
+      ).map(CourseSummary.fromResponse).toList(growable: false),
+    );
+  }
+}
+
 class CourseAccessData {
   const CourseAccessData({
     required this.courseId,
@@ -372,6 +390,8 @@ class CourseAccessData {
     required this.requiredEnrollmentSource,
     required this.enrollable,
     required this.purchasable,
+    required this.isIntroCourse,
+    required this.selectionLocked,
     required this.canAccess,
     required this.enrollment,
     this.nextUnlockAt,
@@ -382,6 +402,8 @@ class CourseAccessData {
   final String? requiredEnrollmentSource;
   final bool enrollable;
   final bool purchasable;
+  final bool isIntroCourse;
+  final bool selectionLocked;
   final bool canAccess;
   final CourseEnrollmentRecord? enrollment;
   final DateTime? nextUnlockAt;
@@ -409,6 +431,14 @@ class CourseAccessData {
       purchasable: _requireBool(
         _requiredField(payload, 'purchasable'),
         'purchasable',
+      ),
+      isIntroCourse: _requireBool(
+        _requiredField(payload, 'is_intro_course'),
+        'is_intro_course',
+      ),
+      selectionLocked: _requireBool(
+        _requiredField(payload, 'selection_locked'),
+        'selection_locked',
       ),
       canAccess: _requireBool(
         _requiredField(payload, 'can_access'),
@@ -493,8 +523,6 @@ class CourseSummary {
   final String? requiredEnrollmentSource;
   final bool enrollable;
   final bool purchasable;
-
-  bool get isIntroCourse => enrollable && !purchasable;
 
   factory CourseSummary.fromResponse(Object? payload) {
     _rejectLegacyCourseCoverFields(payload, 'course');

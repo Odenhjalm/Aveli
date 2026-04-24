@@ -6,15 +6,10 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/courses/data/progress_repository.dart';
 
 final coursesRepositoryProvider = Provider<CoursesRepository>((ref) {
   final client = ref.watch(apiClientProvider);
   return CoursesRepository(client: client);
-});
-
-final progressRepositoryProvider = Provider<ProgressRepository>((ref) {
-  return ProgressRepository();
 });
 
 final coursesProvider = AutoDisposeFutureProvider<List<CourseSummary>>((
@@ -31,12 +26,11 @@ final myCoursesProvider = AutoDisposeFutureProvider<List<CourseSummary>>((
   return repo.myEnrolledCourses();
 });
 
-final firstFreeIntroCourseProvider = AutoDisposeFutureProvider<CourseSummary?>((
-  ref,
-) async {
-  final repo = ref.watch(coursesRepositoryProvider);
-  return repo.firstFreeIntroCourse();
-});
+final introSelectionStateProvider =
+    AutoDisposeFutureProvider<IntroSelectionStateData>((ref) async {
+      final repo = ref.watch(coursesRepositoryProvider);
+      return repo.fetchIntroSelectionState();
+    });
 
 final courseDetailProvider =
     AutoDisposeFutureProvider.family<CourseDetailData, String>((
@@ -76,39 +70,6 @@ final lessonDetailProvider =
     ) async {
       final repo = ref.watch(coursesRepositoryProvider);
       return repo.fetchLessonDetail(lessonId);
-    });
-
-class CourseProgressRequest {
-  CourseProgressRequest(List<String> ids)
-    : courseIds = List.unmodifiable(ids..sort());
-
-  final List<String> courseIds;
-
-  @override
-  bool operator ==(Object other) {
-    return other is CourseProgressRequest &&
-        _listEquals(other.courseIds, courseIds);
-  }
-
-  @override
-  int get hashCode => Object.hashAll(courseIds);
-}
-
-bool _listEquals(List<String> a, List<String> b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
-}
-
-final courseProgressProvider =
-    AutoDisposeFutureProvider.family<
-      Map<String, double>,
-      CourseProgressRequest
-    >((ref, request) async {
-      final repo = ref.watch(progressRepositoryProvider);
-      return repo.getProgressForCourses(request.courseIds);
     });
 
 class EnrollController

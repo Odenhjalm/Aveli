@@ -192,8 +192,8 @@ class _IntroCourseOffer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final asyncCourse = ref.watch(firstFreeIntroCourseProvider);
-    return asyncCourse.when(
+    final asyncSelectionState = ref.watch(introSelectionStateProvider);
+    return asyncSelectionState.when(
       loading: () => const _IntroOfferShell(
         title: 'Valfri introduktionskurs',
         body:
@@ -204,11 +204,18 @@ class _IntroCourseOffer extends ConsumerWidget {
         body:
             'Introduktionskursen kan väljas senare och blockerar inte appåtkomst.',
       ),
-      data: (course) => _IntroOfferShell(
-        title: course?.title ?? 'Valfri introduktionskurs',
-        body: 'Det här valet är frivilligt och påverkar inte appåtkomst.',
-        course: course,
-      ),
+      data: (selectionState) {
+        final course =
+            !selectionState.selectionLocked &&
+                selectionState.eligibleCourses.isNotEmpty
+            ? selectionState.eligibleCourses.first
+            : null;
+        return _IntroOfferShell(
+          title: course?.title ?? 'Valfri introduktionskurs',
+          body: 'Det här valet är frivilligt och påverkar inte appåtkomst.',
+          course: course,
+        );
+      },
     );
   }
 }
@@ -251,10 +258,8 @@ class _IntroOfferShell extends StatelessWidget {
               Align(
                 alignment: Alignment.centerRight,
                 child: OutlinedButton(
-                  onPressed: () => context.goNamed(
-                    AppRoute.courseIntro,
-                    queryParameters: {'id': course.id, 'title': course.title},
-                  ),
+                  onPressed: () =>
+                      context.goNamed(AppRoute.courseIntroRedirect),
                   child: const Text('Visa introduktionskurs'),
                 ),
               ),

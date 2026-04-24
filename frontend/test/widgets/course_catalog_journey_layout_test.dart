@@ -21,10 +21,10 @@ CourseSummary _course({
   int? priceCents,
   String? coverMediaId,
   CourseCoverData? cover,
-  bool? enrollable,
-  bool? purchasable,
+  String requiredEnrollmentSource = 'purchase',
+  bool enrollable = false,
+  bool purchasable = true,
 }) {
-  final isFreeIntro = groupPosition == 0;
   return CourseSummary(
     id: id,
     slug: slug,
@@ -40,11 +40,9 @@ CourseSummary _course({
     priceCents: priceCents,
     dripEnabled: false,
     dripIntervalDays: null,
-    requiredEnrollmentSource: (enrollable ?? isFreeIntro)
-        ? 'intro_enrollment'
-        : 'purchase',
-    enrollable: enrollable ?? isFreeIntro,
-    purchasable: purchasable ?? !isFreeIntro,
+    requiredEnrollmentSource: requiredEnrollmentSource,
+    enrollable: enrollable,
+    purchasable: purchasable,
   );
 }
 
@@ -52,6 +50,9 @@ Future<void> _pumpCatalog(
   WidgetTester tester, {
   required List<CourseSummary> courses,
 }) async {
+  final introCourses = courses
+      .where((course) => course.requiredEnrollmentSource == 'intro_enrollment')
+      .toList(growable: false);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -65,8 +66,12 @@ Future<void> _pumpCatalog(
           (ref) => _FakeAuthController(const AuthState()),
         ),
         coursesProvider.overrideWith((ref) async => courses),
-        courseProgressProvider.overrideWith(
-          (ref, request) async => const <String, double>{},
+        introSelectionStateProvider.overrideWith(
+          (ref) async => IntroSelectionStateData(
+            selectionLocked: false,
+            selectionLockReason: null,
+            eligibleCourses: introCourses,
+          ),
         ),
       ],
       child: const MaterialApp(home: CourseCatalogPage()),
@@ -105,6 +110,9 @@ void main() {
           title: 'Intro Start',
           groupPosition: 0,
           courseGroupId: 'series:solo',
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
         ),
       ],
     );
@@ -144,6 +152,9 @@ void main() {
             title: 'Healing Path Intro',
             groupPosition: 0,
             courseGroupId: 'series:healing-path',
+            requiredEnrollmentSource: 'intro_enrollment',
+            enrollable: true,
+            purchasable: false,
           ),
           _course(
             id: 'healing-2',
@@ -239,6 +250,9 @@ void main() {
           title: 'Reordered Intro',
           groupPosition: 0,
           courseGroupId: 'series:reordered',
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
         ),
       ],
     );
@@ -275,6 +289,9 @@ void main() {
           title: 'Healing Intro',
           groupPosition: 0,
           courseGroupId: 'series:healing-path',
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
         ),
         _course(
           id: 'tarot-intro',
@@ -282,6 +299,9 @@ void main() {
           title: 'Tarot Intro',
           groupPosition: 0,
           courseGroupId: 'series:tarot-core',
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
         ),
         _course(
           id: 'tarot-1',
@@ -340,6 +360,9 @@ void main() {
           title: '',
           groupPosition: 0,
           courseGroupId: 'series:hidden-family-id',
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
         ),
         _course(
           id: 'untitled-step',
@@ -372,6 +395,9 @@ void main() {
           title: 'Premium Intro',
           groupPosition: 0,
           courseGroupId: 'series:premium-course',
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
         ),
         _course(
           id: 'premium-1',

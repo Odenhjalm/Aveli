@@ -13,6 +13,9 @@ void main() {
           title: 'Intro',
           courseGroupId: 'series:solo',
           groupPosition: 0,
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
         ),
       ]);
 
@@ -44,6 +47,9 @@ void main() {
           title: 'Healing Intro',
           courseGroupId: 'series:healing',
           groupPosition: 0,
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
         ),
         _course(
           id: 'healing-2',
@@ -58,6 +64,9 @@ void main() {
           title: 'Tarot Intro',
           courseGroupId: 'series:tarot',
           groupPosition: 0,
+          requiredEnrollmentSource: 'intro_enrollment',
+          enrollable: true,
+          purchasable: false,
         ),
         _course(
           id: 'tarot-1',
@@ -93,6 +102,9 @@ void main() {
             title: 'Duplicate Intro',
             courseGroupId: 'series:duplicate',
             groupPosition: 0,
+            requiredEnrollmentSource: 'intro_enrollment',
+            enrollable: true,
+            purchasable: false,
           ),
           _course(
             id: 'duplicate-progress-a',
@@ -114,6 +126,9 @@ void main() {
             title: 'Sparse Intro',
             courseGroupId: 'series:sparse',
             groupPosition: 0,
+            requiredEnrollmentSource: 'intro_enrollment',
+            enrollable: true,
+            purchasable: false,
           ),
           _course(
             id: 'sparse-progress',
@@ -136,8 +151,10 @@ CourseSummary _course({
   required String title,
   required String courseGroupId,
   required int groupPosition,
+  String requiredEnrollmentSource = 'purchase',
+  bool enrollable = false,
+  bool purchasable = true,
 }) {
-  final isFreeIntro = groupPosition == 0;
   return CourseSummary(
     id: id,
     slug: slug,
@@ -153,8 +170,8 @@ CourseSummary _course({
     priceCents: null,
     dripEnabled: false,
     dripIntervalDays: null,
-    requiredEnrollmentSource: isFreeIntro ? 'intro_enrollment' : 'purchase',
-    enrollable: isFreeIntro,
-    purchasable: !isFreeIntro,
+    requiredEnrollmentSource: requiredEnrollmentSource,
+    enrollable: enrollable,
+    purchasable: purchasable,
   );
 }

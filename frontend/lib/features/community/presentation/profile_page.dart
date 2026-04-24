@@ -241,7 +241,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   ),
                   _CoursesSection(
                     coursesAsync: coursesAsync,
-                    onSeeAll: () => context.goNamed(AppRoute.courseIntro),
+                    onSeeAll: () =>
+                        context.goNamed(AppRoute.courseIntroRedirect),
                   ),
                 ),
                 columnGap,
@@ -709,13 +710,6 @@ class _CoursesSection extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            if (course.isIntroCourse) ...[
-                              const SizedBox(height: 10),
-                              const _ProfileChip(
-                                icon: Icons.auto_awesome,
-                                label: 'Introduktion',
-                              ),
-                            ],
                           ],
                         ),
                       ),

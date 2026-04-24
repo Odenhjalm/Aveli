@@ -27,36 +27,6 @@ class LessonPage extends ConsumerStatefulWidget {
 }
 
 class _LessonPageState extends ConsumerState<LessonPage> {
-  ProviderSubscription<AsyncValue<LessonDetailData>>? _lessonSub;
-
-  @override
-  void initState() {
-    super.initState();
-    _lessonSub = ref.listenManual<AsyncValue<LessonDetailData>>(
-      lessonDetailProvider(widget.lessonId),
-      (previous, next) {
-        next.whenData(_updateProgress);
-      },
-    );
-  }
-
-  @override
-  void dispose() {
-    _lessonSub?.close();
-    super.dispose();
-  }
-
-  Future<void> _updateProgress(LessonDetailData data) async {
-    final courseId = data.courseId;
-    final visibleLessons = visibleLearnerLessons(data.lessons);
-    if (visibleLessons.isEmpty) return;
-    final index = visibleLessons.indexWhere((l) => l.id == data.lesson.id);
-    if (index < 0) return;
-    final progress = (index + 1) / visibleLessons.length;
-    final progressRepo = ref.read(progressRepositoryProvider);
-    unawaited(progressRepo.setProgress(courseId, progress));
-  }
-
   @override
   Widget build(BuildContext context) {
     final asyncLesson = ref.watch(lessonDetailProvider(widget.lessonId));

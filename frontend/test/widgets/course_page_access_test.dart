@@ -72,6 +72,11 @@ CourseDetailData _detail({
 CourseAccessData _courseState(
   String courseId, {
   bool canAccess = true,
+  bool isIntroCourse = true,
+  bool selectionLocked = false,
+  String? requiredEnrollmentSource = 'intro_enrollment',
+  bool enrollable = true,
+  bool purchasable = false,
   int currentUnlockPosition = 1,
   String source = 'intro_enrollment',
   DateTime? grantedAt,
@@ -81,9 +86,11 @@ CourseAccessData _courseState(
   return CourseAccessData(
     courseId: courseId,
     groupPosition: 0,
-    requiredEnrollmentSource: 'intro_enrollment',
-    enrollable: true,
-    purchasable: false,
+    requiredEnrollmentSource: requiredEnrollmentSource,
+    enrollable: enrollable,
+    purchasable: purchasable,
+    isIntroCourse: isIntroCourse,
+    selectionLocked: selectionLocked,
     canAccess: canAccess,
     nextUnlockAt: nextUnlockAt,
     enrollment: CourseEnrollmentRecord(
@@ -103,7 +110,15 @@ CourseAccessData _enrolledState(String courseId) {
 }
 
 CourseAccessData _deniedStateWithEnrollment(String courseId) {
-  return _courseState(courseId, canAccess: false, source: 'purchase');
+  return _courseState(
+    courseId,
+    canAccess: false,
+    isIntroCourse: false,
+    requiredEnrollmentSource: 'purchase',
+    enrollable: false,
+    purchasable: true,
+    source: 'purchase',
+  );
 }
 
 void main() {
@@ -116,7 +131,7 @@ void main() {
     );
   }
 
-  testWidgets('intro courses show the canonical enrollment CTA', (
+  testWidgets('intro CTA renders only from backend unlocked intro state', (
     tester,
   ) async {
     final detail = _detail(
@@ -139,7 +154,9 @@ void main() {
           ),
           authOverride(),
           courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith((ref, courseId) async => null),
+          courseStateProvider.overrideWith(
+            (ref, courseId) async => _courseState(courseId, canAccess: false),
+          ),
         ],
         child: const MaterialApp(home: CoursePage(slug: 'intro-course')),
       ),
@@ -148,6 +165,84 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Starta introduktion'), findsOneWidget);
+  });
+
+  testWidgets(
+    'intro CTA does not fall back to course enrollable when access state is absent',
+    (tester) async {
+      final detail = _detail(
+        courseId: 'course-intro-null',
+        slug: 'intro-course-null',
+        title: 'Intro Course Null',
+        groupPosition: 2,
+        enrollable: true,
+        purchasable: false,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost:8080',
+                subscriptionsEnabled: true,
+              ),
+            ),
+            authOverride(),
+            courseDetailProvider.overrideWith((ref, slug) async => detail),
+            courseStateProvider.overrideWith((ref, courseId) async => null),
+          ],
+          child: const MaterialApp(home: CoursePage(slug: 'intro-course-null')),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Starta introduktion'), findsNothing);
+    },
+  );
+
+  testWidgets('selection-locked intro courses do not show enrollment CTA', (
+    tester,
+  ) async {
+    final detail = _detail(
+      courseId: 'course-intro-locked',
+      slug: 'intro-course-locked',
+      title: 'Locked Intro Course',
+      groupPosition: 2,
+      enrollable: true,
+      purchasable: false,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(
+              apiBaseUrl: 'http://localhost:8080',
+              subscriptionsEnabled: true,
+            ),
+          ),
+          authOverride(),
+          courseDetailProvider.overrideWith((ref, slug) async => detail),
+          courseStateProvider.overrideWith(
+            (ref, courseId) async =>
+                _courseState(courseId, canAccess: false, selectionLocked: true),
+          ),
+        ],
+        child: const MaterialApp(home: CoursePage(slug: 'intro-course-locked')),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Starta introduktion'), findsNothing);
+    expect(
+      find.text(
+        'Du behöver slutföra din pågående introduktion innan du kan välja en ny.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('course detail renders backend teacher and description', (

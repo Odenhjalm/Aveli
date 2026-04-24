@@ -82,6 +82,8 @@ CourseAccessData _courseState({
     requiredEnrollmentSource: 'intro_enrollment',
     enrollable: true,
     purchasable: false,
+    isIntroCourse: true,
+    selectionLocked: false,
     canAccess: canAccess,
     nextUnlockAt: nextUnlockAt,
     enrollment: CourseEnrollmentRecord(

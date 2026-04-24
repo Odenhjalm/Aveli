@@ -671,7 +671,6 @@ class _CourseTileGlass extends StatelessWidget {
     final title = course.title;
     const desc = '';
     final slug = course.slug;
-    final isIntro = course.isIntroCourse;
     final priceCents = course.priceCents;
     final courseCoverImageUrlFuture = Future<String?>.value(
       courseCoverResolvedUrl(course.cover),
@@ -812,21 +811,16 @@ class _CourseTileGlass extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              isIntro
-                                  ? CourseIntroBadge(variant: introBadgeVariant)
-                                  : Text(
-                                      priceLabel,
-                                      textAlign: TextAlign.right,
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color:
-                                                (textColor ??
-                                                        DesignTokens
-                                                            .bodyTextColor)
-                                                    .withValues(alpha: 0.72),
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
+                              Text(
+                                priceLabel,
+                                textAlign: TextAlign.right,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color:
+                                      (textColor ?? DesignTokens.bodyTextColor)
+                                          .withValues(alpha: 0.72),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ],
                           ),
                           if (desc.isNotEmpty) ...[

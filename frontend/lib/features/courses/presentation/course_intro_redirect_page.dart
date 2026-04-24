@@ -21,27 +21,31 @@ class CourseIntroRedirectPage extends ConsumerStatefulWidget {
 class _CourseIntroRedirectPageState
     extends ConsumerState<CourseIntroRedirectPage> {
   bool _navigated = false;
-  ProviderSubscription<AsyncValue<CourseSummary?>>? _courseSub;
+  ProviderSubscription<AsyncValue<IntroSelectionStateData>>? _courseSub;
 
   @override
   void initState() {
     super.initState();
-    _courseSub = ref.listenManual<AsyncValue<CourseSummary?>>(
-      firstFreeIntroCourseProvider,
+    _courseSub = ref.listenManual<AsyncValue<IntroSelectionStateData>>(
+      introSelectionStateProvider,
       (previous, next) => _handleState(next),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _handleState(ref.read(firstFreeIntroCourseProvider));
+      _handleState(ref.read(introSelectionStateProvider));
     });
   }
 
-  void _handleState(AsyncValue<CourseSummary?> value) {
+  void _handleState(AsyncValue<IntroSelectionStateData> value) {
     if (_navigated) return;
     value.when(
-      data: (course) {
+      data: (selectionState) {
         if (_navigated) return;
         _navigated = true;
-        final slug = course?.slug;
+        final slug =
+            !selectionState.selectionLocked &&
+                selectionState.eligibleCourses.isNotEmpty
+            ? selectionState.eligibleCourses.first.slug
+            : null;
         if (!mounted || !context.mounted) return;
         if (slug != null && slug.isNotEmpty) {
           context.goNamed(AppRoute.course, pathParameters: {'slug': slug});
@@ -67,12 +71,12 @@ class _CourseIntroRedirectPageState
 
   @override
   Widget build(BuildContext context) {
-    final asyncCourse = ref.watch(firstFreeIntroCourseProvider);
+    final asyncSelectionState = ref.watch(introSelectionStateProvider);
     return AppScaffold(
       title: 'Introduktionskurs',
       showHomeAction: false,
       body: Center(
-        child: asyncCourse.when(
+        child: asyncSelectionState.when(
           loading: () => const CircularProgressIndicator(),
           data: (_) => const CircularProgressIndicator(),
           error: (error, _) {

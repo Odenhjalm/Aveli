@@ -61,29 +61,36 @@ void main() {
       );
     });
 
-    test('does not infer intro access from group position', () {
-      final sellablePositionZero = CourseSummary.fromResponse(
-        _coursePayload(
-          priceCents: 9900,
-          groupPosition: 0,
-          requiredEnrollmentSource: 'purchase',
-          enrollable: false,
-          purchasable: true,
-        ),
-      );
-      final freeNonZero = CourseSummary.fromResponse(
-        _coursePayload(
-          priceCents: 0,
-          groupPosition: 2,
-          requiredEnrollmentSource: 'intro_enrollment',
-          enrollable: true,
-          purchasable: false,
-        ),
-      );
+    test(
+      'preserves backend intro authority fields without local derivation',
+      () {
+        final sellablePositionZero = CourseSummary.fromResponse(
+          _coursePayload(
+            priceCents: 9900,
+            groupPosition: 0,
+            requiredEnrollmentSource: 'purchase',
+            enrollable: false,
+            purchasable: true,
+          ),
+        );
+        final freeNonZero = CourseSummary.fromResponse(
+          _coursePayload(
+            priceCents: 0,
+            groupPosition: 2,
+            requiredEnrollmentSource: 'intro_enrollment',
+            enrollable: true,
+            purchasable: false,
+          ),
+        );
 
-      expect(sellablePositionZero.isIntroCourse, isFalse);
-      expect(freeNonZero.isIntroCourse, isTrue);
-    });
+        expect(sellablePositionZero.requiredEnrollmentSource, 'purchase');
+        expect(sellablePositionZero.enrollable, isFalse);
+        expect(sellablePositionZero.purchasable, isTrue);
+        expect(freeNonZero.requiredEnrollmentSource, 'intro_enrollment');
+        expect(freeNonZero.enrollable, isTrue);
+        expect(freeNonZero.purchasable, isFalse);
+      },
+    );
 
     test('rejects legacy step progression field', () {
       expect(
@@ -182,6 +189,36 @@ void main() {
     });
   });
 
+  group('CoursesRepository.fetchIntroSelectionState', () {
+    test('calls canonical intro selection route and preserves order', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/intro-selection') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: _introSelectionPayload(
+              eligibleCourses: [
+                _coursePayload(slug: 'second-intro', title: 'Second Intro'),
+                _coursePayload(slug: 'first-intro', title: 'First Intro'),
+              ],
+            ),
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      final state = await repo.fetchIntroSelectionState();
+
+      expect(state.selectionLocked, isFalse);
+      expect(state.selectionLockReason, isNull);
+      expect(
+        state.eligibleCourses.map((course) => course.slug),
+        orderedEquals(['second-intro', 'first-intro']),
+      );
+      expect(adapter.requestsFor('/courses/intro-selection'), hasLength(1));
+    });
+  });
+
   group('CoursesRepository.fetchCourseState', () {
     test('maps canonical enrollment-backed access state', () async {
       const nextUnlockAt = '2024-01-17T12:00:00Z';
@@ -203,6 +240,8 @@ void main() {
       expect(state.requiredEnrollmentSource, 'purchase');
       expect(state.enrollable, isFalse);
       expect(state.purchasable, isTrue);
+      expect(state.isIntroCourse, isFalse);
+      expect(state.selectionLocked, isFalse);
       expect(state.canAccess, isTrue);
       expect(state.nextUnlockAt, DateTime.parse(nextUnlockAt));
       expect(state.enrollment!.source, 'purchase');
@@ -233,6 +272,8 @@ void main() {
       expect(state.requiredEnrollmentSource, 'purchase');
       expect(state.enrollable, isFalse);
       expect(state.purchasable, isTrue);
+      expect(state.isIntroCourse, isFalse);
+      expect(state.selectionLocked, isFalse);
       expect(state.canAccess, isFalse);
       expect(state.enrollment, isNull);
       expect(adapter.requestsFor('/courses/course-2/access'), hasLength(1));
@@ -245,6 +286,10 @@ void main() {
             statusCode: 200,
             body: _accessPayload(
               courseId: 'course-3',
+              requiredEnrollmentSource: 'intro_enrollment',
+              enrollable: true,
+              purchasable: false,
+              isIntroCourse: true,
               canAccess: false,
               enrollment: _enrollmentPayload(source: 'intro_enrollment'),
             ),
@@ -258,6 +303,36 @@ void main() {
 
       expect(state.enrollment, isNotNull);
       expect(state.enrollment!.source, 'intro_enrollment');
+      expect(state.isIntroCourse, isTrue);
+      expect(state.selectionLocked, isFalse);
+      expect(state.canAccess, isFalse);
+    });
+
+    test('maps intro classification and selection lock fields', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/course-4/access') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: _accessPayload(
+              courseId: 'course-4',
+              requiredEnrollmentSource: 'intro_enrollment',
+              enrollable: true,
+              purchasable: false,
+              isIntroCourse: true,
+              selectionLocked: true,
+              canAccess: false,
+              enrollment: null,
+            ),
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      final state = await repo.fetchCourseState('course-4');
+
+      expect(state.isIntroCourse, isTrue);
+      expect(state.selectionLocked, isTrue);
       expect(state.canAccess, isFalse);
     });
 
@@ -422,6 +497,7 @@ CoursesRepository _repository(_RecordingAdapter adapter) {
 
 Map<String, Object?> _coursePayload({
   String slug = 'aveli-course',
+  String title = 'Aveli 101',
   String? coverMediaId = 'media-1',
   Object? cover = _defaultCover,
   int groupPosition = 0,
@@ -434,7 +510,7 @@ Map<String, Object?> _coursePayload({
   return {
     'id': 'course-1',
     'slug': slug,
-    'title': 'Aveli 101',
+    'title': title,
     'teacher': const {'user_id': 'teacher-1', 'display_name': 'Aveli Teacher'},
     'group_position': groupPosition,
     'course_group_id': 'group-1',
@@ -462,6 +538,8 @@ Map<String, Object?> _accessPayload({
   String? requiredEnrollmentSource = 'purchase',
   bool enrollable = false,
   bool purchasable = true,
+  bool isIntroCourse = false,
+  bool selectionLocked = false,
   bool canAccess = true,
   String? nextUnlockAt,
   Map<String, Object?> extra = const {},
@@ -472,12 +550,43 @@ Map<String, Object?> _accessPayload({
     'required_enrollment_source': requiredEnrollmentSource,
     'enrollable': enrollable,
     'purchasable': purchasable,
+    'is_intro_course': isIntroCourse,
+    'selection_locked': selectionLocked,
     'can_access': canAccess,
     'next_unlock_at': nextUnlockAt,
     'enrollment': enrollment,
     ...extra,
   };
 }
+
+Map<String, Object?> _introSelectionPayload({
+  bool selectionLocked = false,
+  String? selectionLockReason,
+  List<Map<String, Object?>> eligibleCourses = const [_defaultCoursePayload],
+}) {
+  return {
+    'selection_locked': selectionLocked,
+    'selection_lock_reason': selectionLockReason,
+    'eligible_courses': eligibleCourses,
+  };
+}
+
+const Map<String, Object?> _defaultCoursePayload = {
+  'id': 'course-1',
+  'slug': 'aveli-course',
+  'title': 'Aveli 101',
+  'teacher': {'user_id': 'teacher-1', 'display_name': 'Aveli Teacher'},
+  'group_position': 0,
+  'course_group_id': 'group-1',
+  'cover_media_id': 'media-1',
+  'cover': _defaultCover,
+  'price_amount_cents': 0,
+  'drip_enabled': false,
+  'drip_interval_days': null,
+  'required_enrollment_source': 'intro_enrollment',
+  'enrollable': true,
+  'purchasable': false,
+};
 
 const Map<String, Object?> _defaultEnrollment = {
   'id': 'enrollment-1',
