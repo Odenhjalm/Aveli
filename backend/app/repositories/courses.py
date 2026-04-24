@@ -1280,6 +1280,53 @@ async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
     return [dict(row) for row in rows]
 
 
+async def list_intro_selection_progress_rows(
+    *,
+    user_id: str,
+    conn: Any | None = None,
+) -> list[dict[str, Any]]:
+    query = """
+        select
+            ce.id as enrollment_id,
+            ce.course_id,
+            ce.current_unlock_position,
+            coalesce(max(l.position), 0)::integer as max_lesson_position,
+            count(l.id)::integer as lesson_count,
+            count(lc.id)::integer as completed_lesson_count
+        from app.course_enrollments as ce
+        join app.courses as c
+          on c.id = ce.course_id
+        left join app.lessons as l
+          on l.course_id = ce.course_id
+        left join app.lesson_completions as lc
+          on lc.user_id = ce.user_id
+         and lc.course_id = ce.course_id
+         and lc.lesson_id = l.id
+        where ce.user_id = %s::uuid
+          and c.required_enrollment_source = 'intro_enrollment'::app.course_enrollment_source
+        group by
+            ce.id,
+            ce.course_id,
+            ce.current_unlock_position,
+            ce.granted_at
+        order by ce.granted_at asc, ce.id asc
+    """
+
+    async def _execute(active_conn: Any) -> list[dict[str, Any]]:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (user_id,))
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        rows = await _execute(active_conn)
+        await active_conn.commit()
+        return rows
+
+
 async def get_course_enrollment(
     user_id: str,
     course_id: str,

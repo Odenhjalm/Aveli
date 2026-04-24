@@ -1164,6 +1164,17 @@ class CourseAccessStateResponse(BaseModel):
     enrollment: CourseEnrollmentRecord | None = None
 
 
+class IntroSelectionStateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selection_locked: bool
+    selection_lock_reason: Literal[
+        "incomplete_drip",
+        "incomplete_lesson_completion",
+    ] | None = None
+    eligible_courses: List[Course]
+
+
 class LessonCompletionRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

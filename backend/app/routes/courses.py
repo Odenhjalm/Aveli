@@ -6,7 +6,12 @@ from pydantic import ValidationError
 
 from .. import schemas
 from ..auth import AppEntryUser, OptionalCurrentUser
-from ..services import courses_read_service, courses_service, lesson_completion_service
+from ..services import (
+    courses_read_service,
+    courses_service,
+    intro_course_progression_service,
+    lesson_completion_service,
+)
 from ..services.lesson_completion_service import LessonCompletionServiceInvariantError
 
 router = APIRouter(prefix="/courses", tags=["courses"])
@@ -268,6 +273,21 @@ async def my_courses(current: AppEntryUser):
     normalized_rows = list(rows)
     await courses_service.attach_course_cover_read_contract(normalized_rows)
     return _course_list_response(normalized_rows)
+
+
+@router.get(
+    "/intro-selection",
+    response_model=schemas.IntroSelectionStateResponse,
+)
+async def intro_selection_state(current: AppEntryUser):
+    state = await intro_course_progression_service.read_intro_selection_state(
+        user_id=str(current["id"]),
+    )
+    return schemas.IntroSelectionStateResponse(
+        selection_locked=state["selection_locked"],
+        selection_lock_reason=state["selection_lock_reason"],
+        eligible_courses=[_course_response(row) for row in state["eligible_courses"]],
+    )
 
 
 async def _read_course_state_or_404(*, user_id: str, course_id: str) -> dict:
