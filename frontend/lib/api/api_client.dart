@@ -20,7 +20,7 @@ class ApiClient {
            baseUrl: baseUrl,
            connectTimeout: const Duration(seconds: 10),
            receiveTimeout: const Duration(seconds: 15),
-           contentType: 'application/json',
+           contentType: 'application/json; charset=utf-8',
          ),
        ) {
     _dio.interceptors.add(

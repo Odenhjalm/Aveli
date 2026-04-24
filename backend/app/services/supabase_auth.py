@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any
 
 import httpx
@@ -8,6 +9,7 @@ import httpx
 from ..config import settings
 
 _AUTH_TIMEOUT_SECONDS = 10.0
+_JSON_CONTENT_TYPE = "application/json; charset=utf-8"
 
 
 class SupabaseAuthError(RuntimeError):
@@ -87,8 +89,18 @@ def _headers(api_key: str) -> dict[str, str]:
     return {
         "apikey": api_key,
         "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
+        "Content-Type": _JSON_CONTENT_TYPE,
     }
+
+
+def _encode_json_body(json_body: dict[str, Any] | None) -> bytes | None:
+    if json_body is None:
+        return None
+    return json.dumps(
+        json_body,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 def _message_from_payload(payload: object) -> str:
@@ -155,13 +167,14 @@ async def _request(
 ) -> dict[str, Any]:
     api_key = _admin_api_key() if admin else _public_api_key()
     url = f"{_auth_base_url()}{path}"
+    content = _encode_json_body(json_body)
     try:
         async with httpx.AsyncClient(timeout=_AUTH_TIMEOUT_SECONDS) as client:
             response = await client.request(
                 method,
                 url,
                 headers=_headers(api_key),
-                json=json_body,
+                content=content,
             )
     except httpx.HTTPError as exc:
         raise SupabaseAuthError("Failed to reach Supabase Auth") from exc

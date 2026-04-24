@@ -170,12 +170,60 @@ async def list_course_lesson_completions(
         return rows
 
 
+async def get_intro_final_lesson_auto_completion_candidate(
+    *,
+    enrollment_id: str,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    query = """
+        select
+            ce.id as enrollment_id,
+            ce.user_id,
+            ce.course_id,
+            ce.drip_started_at,
+            fl.id as final_lesson_id,
+            app.compute_course_final_unlock_at(
+                ce.course_id,
+                ce.drip_started_at
+            ) as final_unlock_at
+        from app.course_enrollments as ce
+        join app.courses as c
+          on c.id = ce.course_id
+        join app.lessons as fl
+          on fl.course_id = ce.course_id
+        where ce.id = %s::uuid
+          and c.required_enrollment_source = 'intro_enrollment'::app.course_enrollment_source
+          and fl.position = (
+            select max(l2.position)
+            from app.lessons as l2
+            where l2.course_id = ce.course_id
+          )
+        order by fl.id asc
+        limit 1
+    """
+
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (enrollment_id,))
+            row = await cur.fetchone()
+        return dict(row) if row is not None else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        result = await _execute(active_conn)
+        await active_conn.commit()
+        return result
+
+
 __all__ = [
     "LessonCompletionAlreadyExistsError",
     "LessonCompletionInvalidLessonCourseError",
     "LessonCompletionInvalidSourceError",
     "LessonCompletionUnknownUserError",
     "create_lesson_completion",
+    "get_intro_final_lesson_auto_completion_candidate",
     "get_lesson_completion",
     "list_course_lesson_completions",
 ]

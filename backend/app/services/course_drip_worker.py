@@ -4,12 +4,14 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ..config import settings
 from ..db import pool
 from ..observability import log_buffer
+from ..repositories import lesson_completions
+from ..repositories.lesson_completions import LessonCompletionAlreadyExistsError
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +115,60 @@ async def run_once(*, now: datetime | None = None) -> int:
                 next_unlock_position = int(row[0] if row else 0)
                 if next_unlock_position > int(current_unlock_position or 0):
                     advanced_enrollments += 1
-            await conn.commit()
+
+            await cur.execute(
+                """
+                select ce.id
+                from app.course_enrollments as ce
+                join app.courses as c
+                  on c.id = ce.course_id
+                where c.required_enrollment_source = 'intro_enrollment'::app.course_enrollment_source
+                  and app.resolve_course_drip_mode(ce.course_id) in (
+                    'legacy_uniform_drip',
+                    'custom_lesson_offsets',
+                    'no_drip_immediate_access'
+                  )
+                order by ce.granted_at asc, ce.id asc
+                limit 100
+                """
+            )
+            auto_completion_candidates = await cur.fetchall()
+
+        for (enrollment_id,) in auto_completion_candidates:
+            candidate = await lesson_completions.get_intro_final_lesson_auto_completion_candidate(
+                enrollment_id=str(enrollment_id),
+                conn=conn,
+            )
+            if candidate is None:
+                continue
+
+            final_unlock_at = candidate["final_unlock_at"]
+            if final_unlock_at is None:
+                continue
+
+            if current_time < final_unlock_at + timedelta(days=7):
+                continue
+
+            existing_completion = await lesson_completions.get_lesson_completion(
+                user_id=str(candidate["user_id"]),
+                lesson_id=str(candidate["final_lesson_id"]),
+                conn=conn,
+            )
+            if existing_completion is not None:
+                continue
+
+            try:
+                await lesson_completions.create_lesson_completion(
+                    user_id=str(candidate["user_id"]),
+                    course_id=str(candidate["course_id"]),
+                    lesson_id=str(candidate["final_lesson_id"]),
+                    completion_source="auto_final_lesson",
+                    conn=conn,
+                )
+            except LessonCompletionAlreadyExistsError:
+                continue
+
+        await conn.commit()
     logger.info(
         "COURSE_DRIP_WORKER_RUN_SUMMARY",
         extra={"advanced_enrollments": advanced_enrollments},
