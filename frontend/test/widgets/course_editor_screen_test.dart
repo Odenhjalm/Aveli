@@ -91,6 +91,45 @@ void main() {
       expect(lessonPageSource, contains('return LessonDocumentPreview('));
     },
   );
+
+  test('teacher editor route no longer keys the screen by course boundary', () {
+    final routerSource = _readFrontendSource(
+      'lib/core/routing/app_router.dart',
+    );
+    final routeExtrasSource = _readFrontendSource(
+      'lib/core/routing/route_extras.dart',
+    );
+
+    expect(
+      routerSource,
+      contains('return CourseEditorScreen(courseId: courseId);'),
+    );
+    expect(routerSource, isNot(contains(r'teacher-editor-${courseId ??')));
+    expect(
+      routeExtrasSource,
+      contains('const CourseEditorRouteArgs({this.courseId});'),
+    );
+    expect(routeExtrasSource, isNot(contains('managedCourseFamilyId')));
+  });
+
+  test(
+    'course boundary resets lesson state in place and keeps narrow editor mounted',
+    () {
+      final source = _courseEditorSource();
+
+      expect(source, contains('void _prepareCourseBoundarySelection({'));
+      expect(
+        source,
+        contains('_resetSelectedLessonState(bumpHydrationRevision: true);'),
+      );
+      expect(source, isNot(contains('_restartEditorAtCourseBoundary(')));
+      expect(
+        source,
+        contains('if (!isWide && _selectedCourseId != null) ...['),
+      );
+      expect(source, contains('Välj en lektion för att hantera media.'));
+    },
+  );
 }
 
 String _courseEditorSource() {
