@@ -495,13 +495,20 @@ async def fetch_course(
     *,
     course_id: str | None = None,
     slug: str | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any] | None:
-    row = await courses_repo.get_course(course_id=course_id, slug=slug)
+    if conn is None:
+        row = await courses_repo.get_course(course_id=course_id, slug=slug)
+    else:
+        row = await courses_repo.get_course(course_id=course_id, slug=slug, conn=conn)
     course = dict(row) if row else None
     if course is not None:
         attach_course_access_model(course)
         attach_course_teacher_read_contract(course)
-        await attach_course_cover_read_contract(course)
+        if conn is None:
+            await attach_course_cover_read_contract(course)
+        else:
+            await attach_course_cover_read_contract(course, conn=conn)
     return course
 
 
@@ -650,8 +657,15 @@ async def list_studio_course_lessons(course_id: str) -> Sequence[dict[str, Any]]
     return list(await courses_repo.list_studio_course_lessons(course_id))
 
 
-async def fetch_lesson(lesson_id: str) -> dict[str, Any] | None:
-    row = await courses_repo.get_lesson(lesson_id)
+async def fetch_lesson(
+    lesson_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    if conn is None:
+        row = await courses_repo.get_lesson(lesson_id)
+    else:
+        row = await courses_repo.get_lesson(lesson_id, conn=conn)
     return dict(row) if row else None
 
 
@@ -1226,11 +1240,19 @@ async def _resolve_course_cover_runtime_media(
     *,
     course_id: str,
     media_id: str,
+    conn: Any | None = None,
 ) -> dict[str, Any] | None:
-    runtime_row = await runtime_media_repo.get_course_cover_runtime_media(
-        course_id=course_id,
-        media_asset_id=media_id,
-    )
+    if conn is None:
+        runtime_row = await runtime_media_repo.get_course_cover_runtime_media(
+            course_id=course_id,
+            media_asset_id=media_id,
+        )
+    else:
+        runtime_row = await runtime_media_repo.get_course_cover_runtime_media(
+            course_id=course_id,
+            media_asset_id=media_id,
+            conn=conn,
+        )
     if runtime_row is None:
         return None
 
@@ -1332,6 +1354,8 @@ async def resolve_course_cover(
 
 async def attach_course_cover_read_contract(
     courses: dict[str, Any] | list[dict[str, Any]] | None,
+    *,
+    conn: Any | None = None,
 ) -> None:
     if courses is None:
         return
@@ -1351,6 +1375,7 @@ async def attach_course_cover_read_contract(
             cover=await _resolve_course_cover_runtime_media(
                 course_id=str(row.get("id") or "").strip(),
                 media_id=media_id,
+                conn=conn,
             ),
         )
 
@@ -2415,8 +2440,19 @@ async def is_user_enrolled(user_id: str, course_id: str) -> bool:
     return await courses_repo.is_enrolled(str(user_id), str(course_id))
 
 
-async def get_course_enrollment(user_id: str, course_id: str) -> dict[str, Any] | None:
-    return await courses_repo.get_course_enrollment(str(user_id), str(course_id))
+async def get_course_enrollment(
+    user_id: str,
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    if conn is None:
+        return await courses_repo.get_course_enrollment(str(user_id), str(course_id))
+    return await courses_repo.get_course_enrollment(
+        str(user_id),
+        str(course_id),
+        conn=conn,
+    )
 
 
 def _canonical_course_enrollment_payload(
@@ -2450,11 +2486,23 @@ def _canonical_course_state_payload(
     }
 
 
-async def read_canonical_course_access(user_id: str, course_id: str) -> dict[str, Any]:
-    course = await fetch_course(course_id=course_id)
+async def read_canonical_course_access(
+    user_id: str,
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any]:
+    if conn is None:
+        course = await fetch_course(course_id=course_id)
+    else:
+        course = await fetch_course(course_id=course_id, conn=conn)
     normalized_user_id = str(user_id or "").strip()
     enrollment = (
-        await get_course_enrollment(normalized_user_id, course_id)
+        await (
+            get_course_enrollment(normalized_user_id, course_id)
+            if conn is None
+            else get_course_enrollment(normalized_user_id, course_id, conn=conn)
+        )
         if course is not None and normalized_user_id
         else None
     )
@@ -2493,8 +2541,16 @@ async def read_canonical_course_state(
     )
 
 
-async def read_canonical_lesson_access(user_id: str, lesson_id: str) -> dict[str, Any]:
-    lesson = await fetch_lesson(lesson_id)
+async def read_canonical_lesson_access(
+    user_id: str,
+    lesson_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any]:
+    if conn is None:
+        lesson = await fetch_lesson(lesson_id)
+    else:
+        lesson = await fetch_lesson(lesson_id, conn=conn)
     if lesson is None:
         return {
             "lesson": None,
@@ -2506,7 +2562,10 @@ async def read_canonical_lesson_access(user_id: str, lesson_id: str) -> dict[str
         }
 
     course_id = str(lesson.get("course_id") or "").strip()
-    course_access = await read_canonical_course_access(user_id, course_id)
+    if conn is None:
+        course_access = await read_canonical_course_access(user_id, course_id)
+    else:
+        course_access = await read_canonical_course_access(user_id, course_id, conn=conn)
     enrollment = course_access["enrollment"]
     current_unlock_position = (
         int(enrollment.get("current_unlock_position") or 0)

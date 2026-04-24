@@ -513,6 +513,7 @@ async def get_course(
     *,
     course_id: str | None = None,
     slug: str | None = None,
+    conn: Any | None = None,
 ) -> CourseRow | None:
     if not course_id and not slug:
         raise ValueError("course_id or slug is required")
@@ -533,11 +534,17 @@ async def get_course(
         limit 1
     """
 
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+    async def _execute(active_conn: Any) -> CourseRow | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
             row = await cur.fetchone()
-    return dict(row) if row else None
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
 
 
 async def get_studio_course(
@@ -1588,7 +1595,11 @@ async def list_course_publish_lessons(course_id: str) -> Sequence[dict[str, Any]
     return [dict(row) for row in rows]
 
 
-async def get_lesson(lesson_id: str) -> LessonRow | None:
+async def get_lesson(
+    lesson_id: str,
+    *,
+    conn: Any | None = None,
+) -> LessonRow | None:
     query = f"""
         select {_lesson_columns(include_content=True)}
         from app.lessons as l
@@ -1597,11 +1608,18 @@ async def get_lesson(lesson_id: str) -> LessonRow | None:
         where l.id = %s
         limit 1
     """
-    async with pool.connection() as conn:  # type: ignore
-        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+
+    async def _execute(active_conn: Any) -> LessonRow | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (lesson_id,))
             row = await cur.fetchone()
-    return dict(row) if row else None
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
 
 
 async def get_studio_lesson(lesson_id: str) -> LessonRow | None:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg.rows import dict_row
+
 from ..db import get_conn
 
 
@@ -56,26 +58,33 @@ async def get_course_cover_runtime_media(
     *,
     course_id: str,
     media_asset_id: str,
+    conn: Any | None = None,
 ) -> dict[str, Any] | None:
-    async with get_conn() as cur:
-        await cur.execute(
-            f"""
-            select
-              {_RUNTIME_MEDIA_COLUMNS}
-            from app.runtime_media as rm
-            join app.media_assets as ma
-              on ma.id = rm.media_asset_id
-            where rm.course_id = %s::uuid
-              and rm.media_asset_id = %s::uuid
-              and ma.purpose = 'course_cover'::app.media_purpose
-              and rm.lesson_media_id is null
-              and rm.lesson_id is null
-            limit 1
-            """,
-            (course_id, media_asset_id),
-        )
+    query = f"""
+        select
+          {_RUNTIME_MEDIA_COLUMNS}
+        from app.runtime_media as rm
+        join app.media_assets as ma
+          on ma.id = rm.media_asset_id
+        where rm.course_id = %s::uuid
+          and rm.media_asset_id = %s::uuid
+          and ma.purpose = 'course_cover'::app.media_purpose
+          and rm.lesson_media_id is null
+          and rm.lesson_id is null
+        limit 1
+    """
+
+    async def _execute(cur: Any) -> dict[str, Any] | None:
+        await cur.execute(query, (course_id, media_asset_id))
         row = await cur.fetchone()
-    return dict(row) if row else None
+        return dict(row) if row else None
+
+    if conn is not None:
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            return await _execute(cur)
+
+    async with get_conn() as cur:
+        return await _execute(cur)
 
 
 async def get_home_player_runtime_media(
