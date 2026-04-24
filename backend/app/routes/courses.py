@@ -307,6 +307,18 @@ async def enroll_course(course_id: UUID, current: AppEntryUser):
             course_id=normalized_course_id,
         )
         return _course_access_response(state)
+    except courses_service.IntroCourseSelectionLockedByIncompleteDripError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"reason": "incomplete_drip"},
+        ) from exc
+    except (
+        courses_service.IntroCourseSelectionLockedByIncompleteLessonCompletionError
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"reason": "incomplete_lesson_completion"},
+        ) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL) from exc
     except PermissionError as exc:

@@ -648,9 +648,85 @@ async def test_enroll_route_maps_purchase_required_to_swedish_safe_error(
     assert "purchase" not in str(excinfo.value.detail).lower()
 
 
-def test_enroll_route_does_not_depend_on_intro_selection_sql_message_strings() -> None:
+async def test_enroll_route_maps_incomplete_drip_selection_lock_to_409(
+    monkeypatch,
+) -> None:
+    async def _fake_create_intro_course_enrollment(*, user_id: str, course_id: str):
+        del user_id, course_id
+        raise courses_service.IntroCourseSelectionLockedByIncompleteDripError()
+
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "create_intro_course_enrollment",
+        _fake_create_intro_course_enrollment,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await course_routes.enroll_course(
+            UUID("77777777-7777-7777-7777-777777777777"),
+            {"id": UUID("88888888-8888-8888-8888-888888888888")},
+        )
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail == {"reason": "incomplete_drip"}
+
+
+async def test_enroll_route_maps_incomplete_lesson_completion_selection_lock_to_409(
+    monkeypatch,
+) -> None:
+    async def _fake_create_intro_course_enrollment(*, user_id: str, course_id: str):
+        del user_id, course_id
+        raise (
+            courses_service.IntroCourseSelectionLockedByIncompleteLessonCompletionError()
+        )
+
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "create_intro_course_enrollment",
+        _fake_create_intro_course_enrollment,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await course_routes.enroll_course(
+            UUID("77777777-7777-7777-7777-777777777777"),
+            {"id": UUID("88888888-8888-8888-8888-888888888888")},
+        )
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail == {"reason": "incomplete_lesson_completion"}
+
+
+async def test_enroll_route_maps_not_found_to_existing_safe_error(
+    monkeypatch,
+) -> None:
+    async def _fake_create_intro_course_enrollment(*, user_id: str, course_id: str):
+        del user_id, course_id
+        raise LookupError("course not found")
+
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "create_intro_course_enrollment",
+        _fake_create_intro_course_enrollment,
+        raising=True,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await course_routes.enroll_course(
+            UUID("77777777-7777-7777-7777-777777777777"),
+            {"id": UUID("88888888-8888-8888-8888-888888888888")},
+        )
+
+    assert excinfo.value.status_code == 404
+    assert excinfo.value.detail == "Kursen kunde inte hittas."
+
+
+def test_enroll_route_catches_only_typed_selection_lock_errors() -> None:
     source = inspect.getsource(course_routes.enroll_course)
 
+    assert "IntroCourseSelectionLockedByIncompleteDripError" in source
+    assert "IntroCourseSelectionLockedByIncompleteLessonCompletionError" in source
     assert "intro course selection locked by incomplete drip" not in source
     assert (
         "intro course selection locked by incomplete lesson completion" not in source
