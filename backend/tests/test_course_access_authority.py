@@ -7,6 +7,7 @@ from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
+from psycopg import Error as PsycopgError
 
 from app.routes import courses as course_routes
 from app.services import courses_service, lesson_playback_service
@@ -51,6 +52,21 @@ def _enrollment(
     if next_unlock_at is not None:
         enrollment["next_unlock_at"] = next_unlock_at
     return enrollment
+
+
+class _FakeDiag:
+    def __init__(self, message_primary: str | None = None) -> None:
+        self.message_primary = message_primary
+
+
+class _FakePsycopgError(PsycopgError):
+    def __init__(self, message: str, *, message_primary: str | None = None) -> None:
+        super().__init__(message)
+        self._fake_diag = _FakeDiag(message_primary)
+
+    @property
+    def diag(self) -> _FakeDiag:
+        return self._fake_diag
 
 
 def test_course_required_source_uses_required_enrollment_source_only() -> None:
@@ -343,7 +359,7 @@ async def test_create_intro_course_enrollment_uses_intro_enrollment_source(
     assert state["enrollment"]["source"] == "intro_enrollment"
 
 
-async def test_create_intro_course_enrollment_rejects_non_intro_course(
+async def test_create_intro_course_enrollment_purchase_required_behavior_remains_unchanged(
     monkeypatch,
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
@@ -364,6 +380,191 @@ async def test_create_intro_course_enrollment_rejects_non_intro_course(
         await courses_service.create_intro_course_enrollment(
             user_id="user-1",
             course_id="course-paid",
+        )
+
+    create_course_enrollment.assert_not_awaited()
+
+
+async def test_create_intro_course_enrollment_maps_incomplete_drip_sql_failure_to_typed_error(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(
+            course_id or "course-intro",
+            group_position=0,
+            price_amount_cents=None,
+            required_enrollment_source="intro_enrollment",
+        )
+
+    async def _raise_incomplete_drip(**kwargs):
+        del kwargs
+        raise _FakePsycopgError(
+            "fallback text should not be used",
+            message_primary=(
+                "intro course selection locked by incomplete drip for course "
+                "course-intro"
+            ),
+        )
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "create_course_enrollment",
+        _raise_incomplete_drip,
+        raising=True,
+    )
+
+    with pytest.raises(
+        courses_service.IntroCourseSelectionLockedByIncompleteDripError
+    ) as excinfo:
+        await courses_service.create_intro_course_enrollment(
+            user_id="user-1",
+            course_id="course-intro",
+        )
+
+    assert excinfo.value.reason == "incomplete_drip"
+    assert not hasattr(excinfo.value, "course_id")
+
+
+async def test_create_intro_course_enrollment_maps_incomplete_completion_sql_failure_to_typed_error(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(
+            course_id or "course-intro",
+            group_position=0,
+            price_amount_cents=None,
+            required_enrollment_source="intro_enrollment",
+        )
+
+    async def _raise_incomplete_completion(**kwargs):
+        del kwargs
+        raise _FakePsycopgError(
+            "fallback text should not be used",
+            message_primary=(
+                "intro course selection locked by incomplete lesson completion "
+                "for course course-intro"
+            ),
+        )
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "create_course_enrollment",
+        _raise_incomplete_completion,
+        raising=True,
+    )
+
+    with pytest.raises(
+        courses_service.IntroCourseSelectionLockedByIncompleteLessonCompletionError
+    ) as excinfo:
+        await courses_service.create_intro_course_enrollment(
+            user_id="user-1",
+            course_id="course-intro",
+        )
+
+    assert excinfo.value.reason == "incomplete_completion"
+    assert not hasattr(excinfo.value, "course_id")
+
+
+async def test_create_intro_course_enrollment_maps_sql_failure_using_str_fallback_when_message_primary_missing(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(
+            course_id or "course-intro",
+            group_position=0,
+            price_amount_cents=None,
+            required_enrollment_source="intro_enrollment",
+        )
+
+    async def _raise_incomplete_drip(**kwargs):
+        del kwargs
+        raise _FakePsycopgError(
+            "intro course selection locked by incomplete drip for course course-intro"
+        )
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "create_course_enrollment",
+        _raise_incomplete_drip,
+        raising=True,
+    )
+
+    with pytest.raises(
+        courses_service.IntroCourseSelectionLockedByIncompleteDripError
+    ) as excinfo:
+        await courses_service.create_intro_course_enrollment(
+            user_id="user-1",
+            course_id="course-intro",
+        )
+
+    assert excinfo.value.reason == "incomplete_drip"
+
+
+async def test_create_intro_course_enrollment_propagates_unrelated_database_error_unchanged(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del slug
+        return _course(
+            course_id or "course-intro",
+            group_position=0,
+            price_amount_cents=None,
+            required_enrollment_source="intro_enrollment",
+        )
+
+    original_error = _FakePsycopgError(
+        "some unrelated enrollment database failure",
+        message_primary="some unrelated enrollment database failure",
+    )
+
+    async def _raise_unrelated_error(**kwargs):
+        del kwargs
+        raise original_error
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "create_course_enrollment",
+        _raise_unrelated_error,
+        raising=True,
+    )
+
+    with pytest.raises(_FakePsycopgError) as excinfo:
+        await courses_service.create_intro_course_enrollment(
+            user_id="user-1",
+            course_id="course-intro",
+        )
+
+    assert excinfo.value is original_error
+
+
+async def test_create_intro_course_enrollment_not_found_behavior_remains_unchanged(
+    monkeypatch,
+) -> None:
+    async def _fake_fetch_course(*, course_id=None, slug=None):
+        del course_id, slug
+        return None
+
+    create_course_enrollment = AsyncMock()
+
+    monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
+    monkeypatch.setattr(
+        courses_service.courses_repo,
+        "create_course_enrollment",
+        create_course_enrollment,
+        raising=True,
+    )
+
+    with pytest.raises(LookupError, match="course not found"):
+        await courses_service.create_intro_course_enrollment(
+            user_id="user-1",
+            course_id="course-intro",
         )
 
     create_course_enrollment.assert_not_awaited()
@@ -445,6 +646,16 @@ async def test_enroll_route_maps_purchase_required_to_swedish_safe_error(
     assert excinfo.value.status_code == 403
     assert excinfo.value.detail == "Kursen kräver köp innan du kan fortsätta."
     assert "purchase" not in str(excinfo.value.detail).lower()
+
+
+def test_enroll_route_does_not_depend_on_intro_selection_sql_message_strings() -> None:
+    source = inspect.getsource(course_routes.enroll_course)
+
+    assert "intro course selection locked by incomplete drip" not in source
+    assert (
+        "intro course selection locked by incomplete lesson completion" not in source
+    )
+    assert "message_primary" not in source
 
 
 async def test_course_access_route_projects_backend_can_access(monkeypatch) -> None:

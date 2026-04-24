@@ -96,6 +96,22 @@ class LessonContentPreconditionFailed(Exception):
     pass
 
 
+class IntroCourseSelectionLockedByIncompleteDripError(RuntimeError):
+    reason = "incomplete_drip"
+
+    def __init__(self) -> None:
+        super().__init__("intro course selection locked by incomplete drip")
+
+
+class IntroCourseSelectionLockedByIncompleteLessonCompletionError(RuntimeError):
+    reason = "incomplete_completion"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "intro course selection locked by incomplete lesson completion"
+        )
+
+
 def _safe_course_create_log_value(value: Any, *, limit: int = 160) -> str | None:
     if value is None:
         return None
@@ -110,6 +126,25 @@ def _course_create_db_constraint_name(exc: BaseException) -> str | None:
     constraint_name = getattr(diag, "constraint_name", None)
     if isinstance(constraint_name, str) and constraint_name:
         return constraint_name
+    return None
+
+
+def _db_message_primary(exc: BaseException) -> str:
+    diag = getattr(exc, "diag", None)
+    message_primary = getattr(diag, "message_primary", None)
+    if isinstance(message_primary, str) and message_primary:
+        return message_primary
+    return str(exc)
+
+
+def _map_intro_selection_lock_error(exc: PsycopgError) -> RuntimeError | None:
+    message = _db_message_primary(exc)
+    if message.startswith("intro course selection locked by incomplete drip"):
+        return IntroCourseSelectionLockedByIncompleteDripError()
+    if message.startswith(
+        "intro course selection locked by incomplete lesson completion"
+    ):
+        return IntroCourseSelectionLockedByIncompleteLessonCompletionError()
     return None
 
 
@@ -2614,11 +2649,17 @@ async def create_intro_course_enrollment(
     if build_course_access_model(course)["enrollable"] is not True:
         raise PermissionError("purchase enrollment required")
 
-    enrollment = await courses_repo.create_course_enrollment(
-        user_id=str(user_id),
-        course_id=str(course_id),
-        source="intro_enrollment",
-    )
+    try:
+        enrollment = await courses_repo.create_course_enrollment(
+            user_id=str(user_id),
+            course_id=str(course_id),
+            source="intro_enrollment",
+        )
+    except PsycopgError as exc:
+        mapped = _map_intro_selection_lock_error(exc)
+        if mapped is not None:
+            raise mapped from exc
+        raise
     return _canonical_course_state_payload(
         course=course,
         enrollment=enrollment,
