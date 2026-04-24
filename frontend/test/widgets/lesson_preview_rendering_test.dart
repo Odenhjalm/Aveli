@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/editor/document/lesson_document_editor.dart';
+import 'package:aveli/editor/document/lesson_document_renderer.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart';
 import 'package:aveli/shared/media/AveliLessonImage.dart';
@@ -239,6 +240,41 @@ void main() {
     expect(find.text('Lektionsinnehållet saknas.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'lesson page renderer delegates to the shared document preview primitive',
+    (tester) async {
+      const document = LessonDocument(
+        blocks: [
+          LessonParagraphBlock(
+            children: [LessonTextRun('Shared primitive body')],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LessonPageRenderer(
+              document: document,
+              readingMode: LessonDocumentReadingMode.paper,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final preview = tester.widget<LessonDocumentPreview>(
+        find.descendant(
+          of: find.byType(LessonPageRenderer),
+          matching: find.byType(LessonDocumentPreview),
+        ),
+      );
+
+      expect(preview.document.toJson(), document.toJson());
+      expect(preview.readingMode, LessonDocumentReadingMode.paper);
+    },
+  );
 
   testWidgets(
     'learner content renderer toggles glass and paper reading modes',

@@ -17,6 +17,7 @@ import 'package:uuid/uuid.dart';
 
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/editor/document/lesson_document_editor.dart';
+import 'package:aveli/editor/document/lesson_document_renderer.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/utils/snack.dart';

@@ -3,10 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/editor/document/lesson_document_editor.dart';
+import 'package:aveli/editor/document/lesson_document_renderer.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
-import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
-import '../helpers/fake_home_audio_engine.dart';
 import '../helpers/lesson_document_fixture_corpus.dart';
 
 double _renderedFontSize(WidgetTester tester, String text) {
@@ -14,6 +13,17 @@ double _renderedFontSize(WidgetTester tester, String text) {
     find.text(text, findRichText: true).first,
   );
   return richText.text.style?.fontSize ?? 0;
+}
+
+double _renderedLineHeightPx(WidgetTester tester, String text) {
+  final richText = tester.widget<RichText>(
+    find.text(text, findRichText: true).first,
+  );
+  final fontSize =
+      richText.text.style?.fontSize ?? richText.strutStyle?.fontSize ?? 0;
+  final height =
+      richText.text.style?.height ?? richText.strutStyle?.height ?? 1;
+  return fontSize * height;
 }
 
 double _textFieldFontSize(WidgetTester tester, String fieldKey) {
@@ -161,7 +171,7 @@ void main() {
   });
 
   testWidgets(
-    'paper preview locks font size, paragraph spacing, and line height to the grid',
+    'paper preview uses shared glass metrics plus four and row-aligned spacing',
     (tester) async {
       const document = LessonDocument(
         blocks: [
@@ -180,6 +190,10 @@ void main() {
         ),
       );
       final glassFontSize = _renderedFontSize(tester, 'First locked paragraph');
+      final glassLineHeight = _renderedLineHeightPx(
+        tester,
+        'First locked paragraph',
+      );
 
       await tester.pumpWidget(
         const MaterialApp(
@@ -199,17 +213,21 @@ void main() {
       final strutStyle = paperRichText.strutStyle;
       expect(
         paperRichText.text.style?.fontSize,
-        closeTo(glassFontSize + 2, 0.001),
+        closeTo(glassFontSize + 4, 0.001),
       );
       expect(strutStyle?.forceStrutHeight, isTrue);
       expect(
+        _renderedLineHeightPx(tester, 'First locked paragraph'),
+        closeTo(glassLineHeight + 4, 0.001),
+      );
+      expect(
         (strutStyle?.fontSize ?? 0) * (strutStyle?.height ?? 0),
-        closeTo(28, 0.001),
+        closeTo(glassLineHeight + 4, 0.001),
       );
       expect(
         _baselineY(tester, 'Second locked paragraph') -
             _baselineY(tester, 'First locked paragraph'),
-        closeTo(56, 0.01),
+        closeTo((glassLineHeight + 4) * 2, 0.05),
       );
     },
   );
@@ -267,6 +285,94 @@ void main() {
     },
   );
 
+  testWidgets(
+    'paper preview snaps mixed heading and paragraph blocks to paper rows',
+    (tester) async {
+      const document = LessonDocument(
+        blocks: [
+          LessonHeadingBlock(
+            level: 2,
+            children: [LessonTextRun('Paper row heading')],
+          ),
+          LessonParagraphBlock(
+            children: [
+              LessonTextRun(
+                'This paragraph wraps onto another line in paper mode and must keep the next block aligned to the shared paper rows.',
+              ),
+            ],
+          ),
+          LessonParagraphBlock(
+            children: [LessonTextRun('Paper row follow-up')],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 260,
+              child: LessonDocumentPreview(
+                document: document,
+                readingMode: LessonDocumentReadingMode.paper,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final surface = find.byKey(
+        const ValueKey<String>('lesson_document_paper_reading_surface'),
+      );
+      final metrics = LessonDocumentPaperMetrics.resolve(
+        tester.element(surface),
+      );
+      final originY =
+          tester.getTopLeft(surface).dy + metrics.contentPadding.top;
+      final headingTop =
+          tester
+              .getTopLeft(
+                find.text('Paper row heading', findRichText: true).first,
+              )
+              .dy -
+          originY;
+      final paragraphTop =
+          tester
+              .getTopLeft(
+                find
+                    .textContaining('This paragraph wraps', findRichText: true)
+                    .first,
+              )
+              .dy -
+          originY;
+      final followUpTop =
+          tester
+              .getTopLeft(
+                find.text('Paper row follow-up', findRichText: true).first,
+              )
+              .dy -
+          originY;
+
+      expect(headingTop, closeTo(0, 0.05));
+      expect(
+        paragraphTop / metrics.rowHeight,
+        closeTo((paragraphTop / metrics.rowHeight).roundToDouble(), 0.05),
+      );
+      expect(
+        followUpTop / metrics.rowHeight,
+        closeTo((followUpTop / metrics.rowHeight).roundToDouble(), 0.05),
+      );
+      expect(
+        (followUpTop - paragraphTop) / metrics.rowHeight,
+        closeTo(
+          ((followUpTop - paragraphTop) / metrics.rowHeight).roundToDouble(),
+          0.05,
+        ),
+      );
+    },
+  );
+
   testWidgets('document preview fallback renders only image media', (
     tester,
   ) async {
@@ -310,12 +416,11 @@ void main() {
     expect(image.fit, BoxFit.contain);
   });
 
-  testWidgets('document preview fallback renders audio playback controls', (
+  testWidgets('document preview fallback renders shared audio lesson player', (
     tester,
   ) async {
     const lessonMediaId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const audioUrl = 'https://cdn.test/audio.mp3';
-    final engineFactory = FakeHomeAudioEngineFactory();
     const document = LessonDocument(
       blocks: [
         LessonMediaBlock(mediaType: 'audio', lessonMediaId: lessonMediaId),
@@ -327,7 +432,6 @@ void main() {
         home: Scaffold(
           body: LessonDocumentPreview(
             document: document,
-            audioEngineFactory: engineFactory.create,
             media: const [
               LessonDocumentPreviewMedia(
                 lessonMediaId: lessonMediaId,
@@ -348,16 +452,16 @@ void main() {
     expect(find.textContaining('narration.mp3'), findsNothing);
     expect(find.textContaining(lessonMediaId), findsNothing);
     expect(find.textContaining('Media: audio'), findsNothing);
-    expect(find.byType(InlineAudioPlayer), findsOneWidget);
-    expect(find.byType(InlineAudioPlayerView), findsOneWidget);
-    final player = tester.widget<InlineAudioPlayer>(
-      find.byType(InlineAudioPlayer),
+    expect(
+      find.byWidgetPredicate((widget) {
+        return widget is AveliLessonMediaPlayer &&
+            widget.kind == 'audio' &&
+            widget.mediaUrl == audioUrl &&
+            widget.title == 'Lektionsljud' &&
+            widget.preferLessonLayout;
+      }),
+      findsOneWidget,
     );
-    expect(player.url, audioUrl);
-    expect(player.title, isNull);
-    expect(player.minimalUi, isTrue);
-    expect(engineFactory.createCount, 1);
-    expect(engineFactory.single.loadedUrls, orderedEquals([audioUrl]));
   });
 
   testWidgets(
@@ -400,16 +504,23 @@ void main() {
           return widget is AveliLessonMediaPlayer &&
               widget.kind == 'video' &&
               widget.mediaUrl == videoUrl &&
-              widget.title.isEmpty;
+              widget.title == 'Lektionsvideo' &&
+              widget.preferLessonLayout;
         }),
         findsOneWidget,
       );
       expect(find.byType(Image), findsNothing);
-      expect(find.byType(InlineAudioPlayer), findsNothing);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is AveliLessonMediaPlayer && widget.kind == 'audio',
+        ),
+        findsNothing,
+      );
     },
   );
 
-  testWidgets('document preview fallback omits non-renderable media metadata', (
+  testWidgets('document preview fallback renders shared document card', (
     tester,
   ) async {
     const lessonMediaId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -443,8 +554,9 @@ void main() {
     expect(find.textContaining('handout.pdf'), findsNothing);
     expect(find.textContaining(lessonMediaId), findsNothing);
     expect(find.textContaining('Media: document'), findsNothing);
+    expect(find.text('Lektionsfil'), findsOneWidget);
+    expect(find.text('Ladda ner dokument'), findsOneWidget);
     expect(find.byType(Image), findsNothing);
-    expect(find.byType(InlineAudioPlayer), findsNothing);
     expect(find.byType(AveliLessonMediaPlayer), findsNothing);
   });
 

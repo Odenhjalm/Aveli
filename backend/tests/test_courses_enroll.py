@@ -57,7 +57,13 @@ async def _insert_teacher(email: str) -> str:
     return user_id
 
 
-async def _insert_free_course(teacher_id: str) -> dict[str, str]:
+async def _insert_intro_course(
+    teacher_id: str,
+    *,
+    title: str = "Free Intro Course",
+    drip_enabled: bool,
+    drip_interval_days: int | None,
+) -> dict[str, str]:
     course_id = str(uuid.uuid4())
     slug = f"free-intro-{uuid.uuid4().hex[:8]}"
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
@@ -71,6 +77,7 @@ async def _insert_free_course(teacher_id: str) -> dict[str, str]:
                     slug,
                     course_group_id,
                     group_position,
+                    required_enrollment_source,
                     visibility,
                     content_ready,
                     price_amount_cents,
@@ -81,35 +88,80 @@ async def _insert_free_course(teacher_id: str) -> dict[str, str]:
                 VALUES (
                     %s::uuid,
                     %s::uuid,
-                    'Free Intro Course',
+                    %s,
                     %s,
                     %s::uuid,
                     0,
+                    %s::app.course_enrollment_source,
                     'public',
                     true,
                     null,
                     false,
-                    false,
-                    null
+                    %s,
+                    %s
                 )
                 """,
-                (course_id, teacher_id, slug, str(uuid.uuid4())),
+                (
+                    course_id,
+                    teacher_id,
+                    title,
+                    slug,
+                    str(uuid.uuid4()),
+                    "intro_enrollment",
+                    drip_enabled,
+                    drip_interval_days,
+                ),
             )
             await conn.commit()
-    return {"id": course_id, "slug": slug, "title": "Free Intro Course"}
+    return {"id": course_id, "slug": slug, "title": title}
 
 
-async def _cleanup_course(course_id: str) -> None:
+async def _insert_lessons(course_id: str, *, count: int) -> None:
     async with db.pool.connection() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:  # type: ignore[attr-defined]
-            await cur.execute(
-                "DELETE FROM app.course_enrollments WHERE course_id = %s::uuid",
-                (course_id,),
-            )
-            await cur.execute(
-                "DELETE FROM app.courses WHERE id = %s::uuid",
-                (course_id,),
-            )
+            for position in range(1, count + 1):
+                await cur.execute(
+                    """
+                    INSERT INTO app.lessons (
+                        id,
+                        course_id,
+                        lesson_title,
+                        position
+                    )
+                    VALUES (%s::uuid, %s::uuid, %s, %s)
+                    """,
+                    (
+                        str(uuid.uuid4()),
+                        course_id,
+                        f"Lesson {position}",
+                        position,
+                    ),
+                )
+            await conn.commit()
+
+
+async def _cleanup_courses(course_ids: list[str]) -> None:
+    if not course_ids:
+        return
+    async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:  # type: ignore[attr-defined]
+            for course_id in course_ids:
+                await cur.execute(
+                    "DELETE FROM app.lesson_completions WHERE course_id = %s::uuid",
+                    (course_id,),
+                )
+                await cur.execute(
+                    "DELETE FROM app.course_enrollments WHERE course_id = %s::uuid",
+                    (course_id,),
+                )
+                await cur.execute(
+                    "DELETE FROM app.lessons WHERE course_id = %s::uuid",
+                    (course_id,),
+                )
+                await cur.execute(
+                    "DELETE FROM app.courses WHERE id = %s::uuid",
+                    (course_id,),
+                )
             await conn.commit()
 
 
@@ -153,7 +205,12 @@ async def test_enroll_free_intro_course_updates_my_courses(async_client):
     teacher_id = await _insert_teacher(
         f"free_intro_teacher_{uuid.uuid4().hex[:8]}@example.com"
     )
-    course = await _insert_free_course(teacher_id)
+    course = await _insert_intro_course(
+        teacher_id,
+        drip_enabled=False,
+        drip_interval_days=None,
+    )
+    await _insert_lessons(course["id"], count=2)
 
     try:
         me_resp = await async_client.get("/courses/me", headers=headers)
@@ -191,6 +248,130 @@ async def test_enroll_free_intro_course_updates_my_courses(async_client):
         enrolled_ids = [row["id"] for row in me_after.json().get("items", [])]
         assert course_id in enrolled_ids
     finally:
-        await _cleanup_course(course["id"])
+        await _cleanup_courses([course["id"]])
+        await _cleanup_user(teacher_id)
+        await _cleanup_user(user_id)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_enroll_second_intro_course_returns_409_when_first_intro_is_drip_incomplete(
+    async_client,
+):
+    email = f"intro_drip_lock_{uuid.uuid4().hex[:8]}@example.com"
+    register_resp = await async_client.post(
+        "/auth/register",
+        json={
+            "email": email,
+            "password": "Intro123!",
+        },
+    )
+    assert register_resp.status_code == 201, register_resp.text
+    access_token = register_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    profile_resp = await async_client.get("/profiles/me", headers=headers)
+    assert profile_resp.status_code == 200, profile_resp.text
+    user_id = str(profile_resp.json()["user_id"])
+    await _grant_app_entry(async_client, headers, user_id)
+    teacher_id = await _insert_teacher(
+        f"intro_drip_lock_teacher_{uuid.uuid4().hex[:8]}@example.com"
+    )
+    first_course = await _insert_intro_course(
+        teacher_id,
+        title="Drip Locked Intro One",
+        drip_enabled=True,
+        drip_interval_days=7,
+    )
+    second_course = await _insert_intro_course(
+        teacher_id,
+        title="Drip Locked Intro Two",
+        drip_enabled=True,
+        drip_interval_days=7,
+    )
+    await _insert_lessons(first_course["id"], count=2)
+    await _insert_lessons(second_course["id"], count=2)
+
+    try:
+        first_enroll_resp = await async_client.post(
+            f"/courses/{first_course['id']}/enroll",
+            headers=headers,
+        )
+        assert first_enroll_resp.status_code == 200, first_enroll_resp.text
+        first_payload = first_enroll_resp.json()
+        assert first_payload["required_enrollment_source"] == "intro_enrollment"
+        assert first_payload["enrollment"] is not None
+
+        second_enroll_resp = await async_client.post(
+            f"/courses/{second_course['id']}/enroll",
+            headers=headers,
+        )
+        assert second_enroll_resp.status_code == 409, second_enroll_resp.text
+        assert second_enroll_resp.json() == {
+            "detail": {"reason": "incomplete_drip"}
+        }
+    finally:
+        await _cleanup_courses([first_course["id"], second_course["id"]])
+        await _cleanup_user(teacher_id)
+        await _cleanup_user(user_id)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_enroll_second_intro_course_returns_409_when_first_intro_has_full_unlock_but_incomplete_lesson_completion(
+    async_client,
+):
+    email = f"intro_completion_lock_{uuid.uuid4().hex[:8]}@example.com"
+    register_resp = await async_client.post(
+        "/auth/register",
+        json={
+            "email": email,
+            "password": "Intro123!",
+        },
+    )
+    assert register_resp.status_code == 201, register_resp.text
+    access_token = register_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    profile_resp = await async_client.get("/profiles/me", headers=headers)
+    assert profile_resp.status_code == 200, profile_resp.text
+    user_id = str(profile_resp.json()["user_id"])
+    await _grant_app_entry(async_client, headers, user_id)
+    teacher_id = await _insert_teacher(
+        f"intro_completion_lock_teacher_{uuid.uuid4().hex[:8]}@example.com"
+    )
+    first_course = await _insert_intro_course(
+        teacher_id,
+        title="Completion Locked Intro One",
+        drip_enabled=False,
+        drip_interval_days=None,
+    )
+    second_course = await _insert_intro_course(
+        teacher_id,
+        title="Completion Locked Intro Two",
+        drip_enabled=False,
+        drip_interval_days=None,
+    )
+    await _insert_lessons(first_course["id"], count=2)
+    await _insert_lessons(second_course["id"], count=2)
+
+    try:
+        first_enroll_resp = await async_client.post(
+            f"/courses/{first_course['id']}/enroll",
+            headers=headers,
+        )
+        assert first_enroll_resp.status_code == 200, first_enroll_resp.text
+        first_payload = first_enroll_resp.json()
+        assert first_payload["required_enrollment_source"] == "intro_enrollment"
+        assert first_payload["enrollment"] is not None
+
+        second_enroll_resp = await async_client.post(
+            f"/courses/{second_course['id']}/enroll",
+            headers=headers,
+        )
+        assert second_enroll_resp.status_code == 409, second_enroll_resp.text
+        assert second_enroll_resp.json() == {
+            "detail": {"reason": "incomplete_lesson_completion"}
+        }
+    finally:
+        await _cleanup_courses([first_course["id"], second_course["id"]])
         await _cleanup_user(teacher_id)
         await _cleanup_user(user_id)

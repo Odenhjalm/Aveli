@@ -72,6 +72,25 @@ void main() {
     expect(previewMode, contains('LessonDocumentReadingModeToggle('));
     expect(previewMode, contains('Expanded('));
   });
+
+  test(
+    'editor preview and learner lesson page both depend on shared document rendering primitives',
+    () {
+      final courseEditorSource = _courseEditorSource();
+      final lessonPageSource = _readFrontendSource(
+        'lib/features/courses/presentation/lesson_page.dart',
+      );
+
+      expect(
+        courseEditorSource,
+        contains(
+          "import 'package:aveli/editor/document/lesson_document_renderer.dart';",
+        ),
+      );
+      expect(courseEditorSource, contains('LessonDocumentPreview('));
+      expect(lessonPageSource, contains('return LessonDocumentPreview('));
+    },
+  );
 }
 
 String _courseEditorSource() {
