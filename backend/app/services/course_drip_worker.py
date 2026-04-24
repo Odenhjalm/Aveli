@@ -91,8 +91,10 @@ async def run_once(*, now: datetime | None = None) -> int:
                 """
                 select ce.id, ce.current_unlock_position
                 from app.course_enrollments as ce
-                join app.courses as c on c.id = ce.course_id
-                where c.drip_enabled = true
+                where app.resolve_course_drip_mode(ce.course_id) in (
+                    'legacy_uniform_drip',
+                    'custom_lesson_offsets'
+                )
                 order by ce.granted_at asc, ce.id asc
                 limit 100
                 """
