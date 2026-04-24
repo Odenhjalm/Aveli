@@ -18,6 +18,11 @@ class ApiPaths {
   static const referralsRedeem = '/referrals/redeem';
   static const adminSettings = '/admin/settings';
   static const adminMediaHealth = '/admin/media/health';
+  static const notifications = '/notifications';
+  static const notificationDevices = '/notifications/devices';
+
+  static String notificationDevice(String deviceId) =>
+      '/notifications/devices/$deviceId';
 
   static const profileAvatarInit = '/api/media/profile-avatar/init';
   static const profileAvatarAttach = '/api/profile/avatar/attach';

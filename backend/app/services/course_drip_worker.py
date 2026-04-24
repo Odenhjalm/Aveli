@@ -124,11 +124,31 @@ async def run_once(*, now: datetime | None = None) -> int:
                 next_unlock_position = int(row[0] if row else 0)
                 if next_unlock_position > int(current_unlock_position or 0):
                     advanced_enrollments += 1
+                    await cur.execute(
+                        """
+                        select id::text as lesson_id,
+                               lesson_title
+                          from app.lessons
+                         where course_id = %s
+                           and position = %s
+                         limit 1
+                        """,
+                        (course_id, next_unlock_position),
+                    )
+                    lesson_row = await cur.fetchone()
+                    lesson_id = str(lesson_row[0]) if lesson_row else None
+                    lesson_title = str(lesson_row[1]) if lesson_row else None
+                    if lesson_id is None:
+                        raise RuntimeError(
+                            "advanced drip enrollment without unlocked lesson row"
+                        )
                     await notification_service.create_notification(
                         str(user_id),
-                        "course_drip_lesson_unlocked",
+                        "lesson_drip",
                         {
                             "course_id": str(course_id),
+                            "lesson_id": lesson_id,
+                            "title": lesson_title,
                             "enrollment_id": str(enrollment_id),
                             "previous_unlock_position": int(
                                 current_unlock_position or 0
@@ -137,9 +157,10 @@ async def run_once(*, now: datetime | None = None) -> int:
                             "evaluated_at": current_time.isoformat(),
                         },
                         (
-                            "course_drip_lesson_unlocked:"
-                            f"{enrollment_id}:{next_unlock_position}"
+                            "lesson_drip:"
+                            f"{enrollment_id}:{lesson_id}"
                         ),
+                        channels=("in_app", "push"),
                         conn=conn,
                     )
 

@@ -1,45 +1,56 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
+
+from ..auth import CurrentUser
+from ..schemas import notifications as notification_schemas
+from ..services import notification_service
 
 
-router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
-def _has_admin_role(current: dict) -> bool:
-    return str(current.get("role") or "").strip().lower() == "admin"
-
-
-def _raise_v2_feature_disabled() -> None:
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Notifications have no Baseline V2 authority",
+@router.post(
+    "/devices",
+    response_model=notification_schemas.DeviceRecord,
+    status_code=status.HTTP_201_CREATED,
+)
+async def register_device(
+    payload: notification_schemas.DeviceRegisterRequest,
+    current: CurrentUser,
+):
+    result = await notification_service.register_device(
+        user_id=str(current["id"]),
+        push_token=payload.push_token,
+        platform=payload.platform,
     )
+    return result.device
 
 
-async def _event_host_access(event_id: str, user_id: str) -> tuple[bool, bool]:
-    del event_id, user_id
-    return False, False
+@router.delete(
+    "/devices/{device_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_device(device_id: str, current: CurrentUser):
+    deactivated = await notification_service.deactivate_device(
+        user_id=str(current["id"]),
+        device_id=device_id,
+    )
+    if not deactivated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="device_not_found",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def _course_owner(course_id: str) -> str | None:
-    del course_id
-    return None
-
-
-@router.get("")
-async def list_notifications(request: Request) -> None:
-    del request
-    _raise_v2_feature_disabled()
-
-
-@router.post("", status_code=status.HTTP_201_CREATED)
-async def create_notification(request: Request) -> None:
-    del request
-    _raise_v2_feature_disabled()
-
-
-@router.api_route("/{path:path}", methods=["GET", "POST", "PATCH", "PUT", "DELETE"])
-async def disabled_notification_surface(path: str, request: Request) -> None:
-    del path, request
-    _raise_v2_feature_disabled()
+@router.get("", response_model=notification_schemas.NotificationListResponse)
+async def list_notifications(
+    current: CurrentUser,
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    items = await notification_service.list_notifications_for_user(
+        user_id=str(current["id"]),
+        limit=limit,
+    )
+    return {"items": items}

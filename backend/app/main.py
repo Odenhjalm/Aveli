@@ -45,6 +45,7 @@ from .middleware.request_context import RequestContextMiddleware
 from .routes import (
     admin,
     api_checkout,
+    api_notifications,
     auth,
     billing,
     playback,
@@ -256,6 +257,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(courses.api_router)
     app.include_router(billing.router)
     app.include_router(api_checkout.router)
+    app.include_router(api_notifications.router)
     app.include_router(stripe_webhooks.router)
     app.include_router(course_bundles.router)
     app.include_router(studio.router)

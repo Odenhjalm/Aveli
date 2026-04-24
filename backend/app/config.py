@@ -339,6 +339,36 @@ class Settings(BaseSettings):
     email_from: str | None = Field(default=None, validation_alias="EMAIL_FROM")
     membership_expiry_warning_interval_seconds: int = 60 * 60 * 24
     notification_dispatcher_interval_seconds: int = 30
+    firebase_project_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("FIREBASE_PROJECT_ID", "FCM_PROJECT_ID"),
+    )
+    firebase_service_account_json: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FIREBASE_SERVICE_ACCOUNT_JSON",
+            "FCM_SERVICE_ACCOUNT_JSON",
+        ),
+    )
+    firebase_service_account_file: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FIREBASE_SERVICE_ACCOUNT_FILE",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+        ),
+    )
+    fcm_api_base_url: str = Field(
+        default="https://fcm.googleapis.com",
+        validation_alias="FCM_API_BASE_URL",
+    )
+    fcm_oauth_token_url: str = Field(
+        default="https://oauth2.googleapis.com/token",
+        validation_alias="FCM_OAUTH_TOKEN_URL",
+    )
+    fcm_request_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias="FCM_REQUEST_TIMEOUT_SECONDS",
+    )
     # Required for deterministic Windows local runtime verification without replay:
     # start workers in read-only standby mode so backend health surfaces stay verifiable.
     runtime_verify_no_write: bool = Field(

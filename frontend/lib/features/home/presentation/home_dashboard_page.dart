@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/features/auth/application/user_access_provider.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/community/data/notifications_repository.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/home/application/home_audio_controller.dart';
 import 'package:aveli/features/home/presentation/widgets/home_audio_section.dart';
@@ -29,6 +31,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final access = ref.watch(userAccessProvider);
+    final notificationsAsync = ref.watch(notificationsProvider);
     final profile = authState.profile;
     if (profile == null) {
       return const AuthBootPage();
@@ -81,6 +84,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           ref.invalidate(landing.popularCoursesProvider);
           ref.invalidate(coursesProvider);
           ref.invalidate(homeAudioProvider);
+          ref.invalidate(notificationsProvider);
           await ref.read(authControllerProvider.notifier).loadSession();
         },
         child: LayoutBuilder(
@@ -95,10 +99,14 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                   constraints: BoxConstraints(maxWidth: isWide ? 860 : 720),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: const [
-                      HomeAudioSection(),
-                      SizedBox(height: 18),
-                      CoursesShowcaseSection(
+                    children: [
+                      _NotificationsPanel(
+                        notificationsAsync: notificationsAsync,
+                      ),
+                      const SizedBox(height: 18),
+                      const HomeAudioSection(),
+                      const SizedBox(height: 18),
+                      const CoursesShowcaseSection(
                         title: 'Utforska kurser',
                         layout: CoursesShowcaseLayout.vertical,
                         desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
@@ -121,5 +129,91 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         ),
       ),
     );
+  }
+}
+
+class _NotificationsPanel extends StatelessWidget {
+  const _NotificationsPanel({required this.notificationsAsync});
+
+  final AsyncValue<List<NotificationItem>> notificationsAsync;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: notificationsAsync.when(
+          loading: () => const SizedBox(
+            height: 36,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+          error: (error, _) => Text(
+            'Kunde inte hämta aviseringar.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+          data: (notifications) {
+            final latest = notifications.take(5).toList(growable: false);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Aviseringar',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (latest.isEmpty)
+                  Text(
+                    'Inga aviseringar ännu.',
+                    style: theme.textTheme.bodyMedium,
+                  )
+                else
+                  ...latest.map(
+                    (notification) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            notification.type,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _payloadSummary(notification.payload),
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  String _payloadSummary(Map<String, dynamic> payload) {
+    final title = payload['title']?.toString().trim();
+    if (title != null && title.isNotEmpty) return title;
+    final lessonId = payload['lesson_id']?.toString();
+    final courseId = payload['course_id']?.toString();
+    return [
+      if (lessonId != null && lessonId.isNotEmpty) 'lesson_id: $lessonId',
+      if (courseId != null && courseId.isNotEmpty) 'course_id: $courseId',
+    ].join(' | ');
   }
 }

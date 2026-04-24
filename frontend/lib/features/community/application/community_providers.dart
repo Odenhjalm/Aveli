@@ -8,6 +8,7 @@ import 'package:aveli/features/community/data/community_repository.dart';
 import 'package:aveli/features/community/data/posts_repository.dart';
 import 'package:aveli/features/community/data/admin_repository.dart';
 import 'package:aveli/features/community/data/meditations_repository.dart';
+import 'package:aveli/features/community/data/notifications_repository.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/data/models/teacher_profile_media.dart';
 import 'package:aveli/data/models/community_post.dart';
@@ -32,6 +33,20 @@ final meditationsRepositoryProvider = Provider<MeditationsRepository>((ref) {
   final client = ref.watch(apiClientProvider);
   return MeditationsRepository(client);
 });
+
+final notificationsRepositoryProvider = Provider<NotificationsRepository>((
+  ref,
+) {
+  final client = ref.watch(apiClientProvider);
+  return NotificationsRepository(client);
+});
+
+final notificationsProvider = AutoDisposeFutureProvider<List<NotificationItem>>(
+  (ref) async {
+    final repo = ref.watch(notificationsRepositoryProvider);
+    return repo.myNotifications();
+  },
+);
 
 final postsProvider = AutoDisposeFutureProvider<List<CommunityPost>>((
   ref,

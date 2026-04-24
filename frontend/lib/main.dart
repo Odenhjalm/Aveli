@@ -18,6 +18,8 @@ import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/guards/guard_context.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'package:aveli/core/auth/auth_controller.dart';
+import 'package:aveli/core/notifications/push_device_registrar.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/core/deeplinks/deep_link_service.dart';
@@ -205,6 +207,14 @@ class AveliApp extends ConsumerWidget {
     final deepLinks = ref.watch(deepLinkServiceProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       deepLinks.init();
+    });
+    ref.listen<AuthState>(authControllerProvider, (previous, next) {
+      final wasLoggedIn = previous?.hasStoredToken == true;
+      if (!wasLoggedIn && next.hasStoredToken) {
+        unawaited(
+          ref.read(pushDeviceRegistrarProvider).registerCurrentDevice(),
+        );
+      }
     });
     ref.listen<AsyncValue<AuthHttpEvent>>(authHttpEventsProvider, (
       previous,
