@@ -11,9 +11,10 @@ class MessagesRouteArgs {
 
 /// Payload for the teacher course editor route.
 class CourseEditorRouteArgs {
-  const CourseEditorRouteArgs({this.courseId});
+  const CourseEditorRouteArgs({this.courseId, this.managedCourseFamilyId});
 
   final String? courseId;
+  final String? managedCourseFamilyId;
 }
 
 /// Payload for course intro pages where course metadata is required.

@@ -40,6 +40,7 @@ import 'package:aveli/features/courses/application/course_providers.dart'
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/core/routing/route_extras.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
@@ -680,6 +681,7 @@ typedef CourseEditorWebFilePicker =
 
 class CourseEditorScreen extends ConsumerStatefulWidget {
   final String? courseId;
+  final String? managedCourseFamilyId;
   final StudioRepository? studioRepository;
   final CoursesRepository? coursesRepository;
   @visibleForTesting
@@ -688,6 +690,7 @@ class CourseEditorScreen extends ConsumerStatefulWidget {
   const CourseEditorScreen({
     super.key,
     this.courseId,
+    this.managedCourseFamilyId,
     this.studioRepository,
     this.coursesRepository,
     this.webImagePicker,
@@ -1251,23 +1254,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     );
   }
 
-  void _resetCoverState({bool clearPreview = false}) {
-    _coverPollTimer?.cancel();
-    _coverPollTimer = null;
-    _coverPollAttempts = 0;
-    _coverPollStartedAt = null;
-    _coverPollRequestId = 0;
-    _coverActionRequestId += 1;
-    _coverActionCourseId = null;
-    _updatingCourseCover = false;
-    _coverPipelineMediaId = null;
-    _coverPipelineState = null;
-    _coverPipelineError = null;
-    if (clearPreview) {
-      _courseCoverPath = null;
-    }
-  }
-
   int _beginCoverAction({required String courseId}) {
     _coverPollTimer?.cancel();
     _coverPollTimer = null;
@@ -1324,44 +1310,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     _lastCourseCoverRenderSignature = signature;
     debugPrint('[COURSE_COVER_RENDER] using=$source');
-  }
-
-  void _resetCourseContext({bool clearLists = false}) {
-    _lessonReorderDebounceTimer?.cancel();
-    _lessonReorderDebounceTimer = null;
-    _resetCoverState(clearPreview: true);
-    _lessonsLoadError = null;
-    _mediaLoadError = null;
-    _mediaStatus = null;
-    _downloadStatus = null;
-    _courseMetaLoading = false;
-    _lessonsLoading = false;
-    _mediaLoading = false;
-    _lessonsNeedingRefresh.clear();
-    _courseDripMode = DripAuthoringMode.noDripImmediateAccess;
-    _courseCustomTimelineEntrySourceMode = null;
-    _courseScheduleLocked = false;
-    _courseDripIntervalCtrl.text = '';
-    for (final controller in _courseCustomScheduleCtrls.values) {
-      _disposeCourseCustomScheduleController(controller);
-    }
-    _courseCustomScheduleCtrls.clear();
-    if (clearLists) {
-      _lessons = <LessonStudio>[];
-      _setSelectedLessonId(null);
-      _lessonMedia = <StudioLessonMediaItem>[];
-      _lessonMediaLessonId = null;
-      _resetLessonEditorBootValues(phase: _LessonEditorBootPhase.booting);
-      _lessonTitleCtrl
-        ..removeListener(_handleLessonTitleChanged)
-        ..text = ''
-        ..addListener(_handleLessonTitleChanged);
-      _lastSavedLessonTitle = '';
-      _lessonDocument = LessonDocument.empty();
-      _lessonDocumentInsertionIndex = null;
-      _lastSavedLessonDocument = LessonDocument.empty();
-      _lessonContentDirty = false;
-    }
   }
 
   void _handleMediaPreviewTap(StudioLessonMediaItem media) {
@@ -1446,6 +1394,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
               _courseById(initialId, myCourses) != null)
           ? initialId
           : _firstCourseId(myCourses);
+      final initialManagedCourseFamilyId = widget.managedCourseFamilyId?.trim();
       setState(() {
         _allowed = allowed;
         _courses = myCourses;
@@ -1453,7 +1402,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _selectedCourseId = selected;
         _managedCourseFamilyId = _courseFamilyManagementTarget(
           selectedCourseId: selected,
-          currentValue: null,
+          currentValue:
+              initialManagedCourseFamilyId != null &&
+                  initialManagedCourseFamilyId.isNotEmpty
+              ? initialManagedCourseFamilyId
+              : null,
           courses: myCourses,
           courseFamilies: myCourseFamilies,
         );
@@ -2200,11 +2153,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final clearSelectedCourse =
         selectedCourse != null && selectedCourse.courseGroupId != nextFamilyId;
 
+    if (clearSelectedCourse) {
+      _restartEditorAtCourseBoundary(managedCourseFamilyId: nextFamilyId);
+      return;
+    }
+
     setState(() {
-      if (clearSelectedCourse) {
-        _resetCourseContext(clearLists: true);
-        _selectedCourseId = null;
-      }
       _managedCourseFamilyId = nextFamilyId;
     });
   }
@@ -5971,6 +5925,51 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     ref.invalidate(coursesProvider);
   }
 
+  Map<String, String> _teacherEditorRouteQueryParameters({
+    String? courseId,
+    String? managedCourseFamilyId,
+  }) {
+    final params = <String, String>{};
+    final normalizedCourseId = courseId?.trim();
+    final normalizedManagedCourseFamilyId = managedCourseFamilyId?.trim();
+    if (normalizedCourseId != null && normalizedCourseId.isNotEmpty) {
+      params['courseId'] = normalizedCourseId;
+    }
+    if (normalizedManagedCourseFamilyId != null &&
+        normalizedManagedCourseFamilyId.isNotEmpty) {
+      params['managedCourseFamilyId'] = normalizedManagedCourseFamilyId;
+    }
+    return params;
+  }
+
+  void _restartEditorAtCourseBoundary({
+    String? courseId,
+    String? managedCourseFamilyId,
+    String? snackMessage,
+  }) {
+    final normalizedCourseId = courseId?.trim();
+    final normalizedManagedCourseFamilyId = managedCourseFamilyId?.trim();
+    final queryParameters = _teacherEditorRouteQueryParameters(
+      courseId: normalizedCourseId,
+      managedCourseFamilyId: normalizedManagedCourseFamilyId,
+    );
+    _invalidateCourseReadProviders();
+    if (snackMessage != null && context.mounted) {
+      showSnack(context, snackMessage);
+    }
+    if (!context.mounted) {
+      return;
+    }
+    context.goNamed(
+      AppRoute.teacherEditor,
+      queryParameters: queryParameters,
+      extra: CourseEditorRouteArgs(
+        courseId: normalizedCourseId,
+        managedCourseFamilyId: normalizedManagedCourseFamilyId,
+      ),
+    );
+  }
+
   Future<_CourseCreateInput?> _showCourseCreateDialog() async {
     return showDialog<_CourseCreateInput>(
       context: context,
@@ -6117,13 +6116,11 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         coverMediaId: null,
       );
       if (!mounted) return;
-      setState(() => _resetCourseContext(clearLists: true));
-      await _refreshSelectedCourseAuthoringState(
-        selectedCourseId: created.id,
-        reloadLessons: true,
+      _restartEditorAtCourseBoundary(
+        courseId: created.id,
+        managedCourseFamilyId: input.courseGroupId,
+        snackMessage: 'Kurs skapad.',
       );
-      if (!mounted || !context.mounted) return;
-      showSnack(context, 'Kurs skapad.');
     } catch (e, stackTrace) {
       _showFriendlyErrorSnack('Kunde inte skapa kurs', e, stackTrace);
     } finally {
@@ -7314,21 +7311,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                           if (value == _selectedCourseId) return;
                           final canSwitch = await _maybeSaveLessonEdits();
                           if (!canSwitch || !mounted) return;
-                          setState(() {
-                            _resetCourseContext(clearLists: true);
-                            _selectedCourseId = value;
-                            _managedCourseFamilyId =
-                                _courseFamilyManagementTarget(
-                                  selectedCourseId: value,
-                                  currentValue: null,
-                                  courses: _courses,
-                                  courseFamilies: _courseFamilies,
-                                );
-                          });
-                          await _loadCourseMeta();
-                          await _loadLessons(preserveSelection: false);
-                          if (!mounted) return;
-                          setState(() {});
+                          _restartEditorAtCourseBoundary(courseId: value);
                         },
                         decoration: const InputDecoration(
                           hintText: 'Välj kurs',

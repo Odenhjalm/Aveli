@@ -486,10 +486,32 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: AppRoute.teacherEditor,
         builder: (context, state) {
           final extra = state.extra;
-          final courseId = extra is CourseEditorRouteArgs
-              ? extra.courseId
+          final routeCourseId = state.uri.queryParameters['courseId']?.trim();
+          final routeManagedCourseFamilyId = state
+              .uri
+              .queryParameters['managedCourseFamilyId']
+              ?.trim();
+          final extraCourseId = extra is CourseEditorRouteArgs
+              ? extra.courseId?.trim()
               : null;
-          return CourseEditorScreen(courseId: courseId);
+          final extraManagedCourseFamilyId = extra is CourseEditorRouteArgs
+              ? extra.managedCourseFamilyId?.trim()
+              : null;
+          final courseId = routeCourseId != null && routeCourseId.isNotEmpty
+              ? routeCourseId
+              : extraCourseId;
+          final managedCourseFamilyId =
+              routeManagedCourseFamilyId != null &&
+                  routeManagedCourseFamilyId.isNotEmpty
+              ? routeManagedCourseFamilyId
+              : extraManagedCourseFamilyId;
+          return CourseEditorScreen(
+            key: ValueKey<String>(
+              'teacher-editor-${courseId ?? 'none'}-${managedCourseFamilyId ?? 'none'}',
+            ),
+            courseId: courseId,
+            managedCourseFamilyId: managedCourseFamilyId,
+          );
         },
       ),
       GoRoute(
