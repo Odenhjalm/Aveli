@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'lesson_document.dart';
 import 'lesson_document_renderer.dart';
@@ -33,12 +34,19 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   final Map<String, _LessonTextEditingController> _controllers =
       <String, _LessonTextEditingController>{};
   final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
+  final TextEditingController _emptyDocumentController =
+      TextEditingController();
+  final FocusNode _emptyDocumentFocusNode = FocusNode();
   _EditorTarget _selectedTarget = const _EditorTarget.block(0);
 
   @override
   void didUpdateWidget(LessonDocumentEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncControllers();
+    if (widget.document.blocks.isNotEmpty &&
+        _emptyDocumentController.text.isNotEmpty) {
+      _emptyDocumentController.clear();
+    }
   }
 
   @override
@@ -49,16 +57,14 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     for (final focusNode in _focusNodes.values) {
       focusNode.dispose();
     }
+    _emptyDocumentController.dispose();
+    _emptyDocumentFocusNode.dispose();
     super.dispose();
   }
 
   void _syncControllers() {
     final liveKeys = <String>{};
     final blocks = widget.document.blocks;
-    if (blocks.isEmpty) {
-      liveKeys.add(_EditorTarget.block(0).key);
-      _syncControllerText(_EditorTarget.block(0).key, '');
-    }
     for (var blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
       final block = blocks[blockIndex];
       if (block case LessonParagraphBlock(:final children)) {
@@ -152,15 +158,12 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _replaceTargetText(_EditorTarget target, String text) {
+    if (target.blockIndex < 0 ||
+        target.blockIndex >= widget.document.blocks.length) {
+      return;
+    }
     final normalizedText = text.replaceAll('\r\n', '\n');
-    final blocks = widget.document.blocks.isEmpty
-        ? <LessonBlock>[
-            const LessonParagraphBlock(
-              children: <LessonTextRun>[LessonTextRun('')],
-            ),
-          ]
-        : widget.document.blocks;
-    final nextBlocks = List<LessonBlock>.from(blocks);
+    final nextBlocks = List<LessonBlock>.from(widget.document.blocks);
     final block = nextBlocks[target.blockIndex];
     if (target.itemIndex case final itemIndex?) {
       if (block is! LessonListBlock) return;
@@ -227,13 +230,17 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   List<LessonTextRun> _childrenForTarget(_EditorTarget target) {
-    final blocks = widget.document.blocks.isEmpty
-        ? const <LessonBlock>[
-            LessonParagraphBlock(children: <LessonTextRun>[LessonTextRun('')]),
-          ]
-        : widget.document.blocks;
-    final block = blocks[target.blockIndex];
+    if (target.blockIndex < 0 ||
+        target.blockIndex >= widget.document.blocks.length) {
+      return const <LessonTextRun>[];
+    }
+    final block = widget.document.blocks[target.blockIndex];
     if (target.itemIndex case final itemIndex?) {
+      if (block is! LessonListBlock ||
+          itemIndex < 0 ||
+          itemIndex >= block.items.length) {
+        return const <LessonTextRun>[];
+      }
       return (block as LessonListBlock).items[itemIndex].children;
     }
     if (block is LessonParagraphBlock) return block.children;
@@ -244,11 +251,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   void _convertSelectedBlock(_BlockConversion conversion) {
     final selection = _selectedTextRange();
     if (selection == null) return;
-    final sourceBlocks = widget.document.blocks.isEmpty
-        ? const <LessonBlock>[
-            LessonParagraphBlock(children: <LessonTextRun>[LessonTextRun('')]),
-          ]
-        : widget.document.blocks;
+    final sourceBlocks = widget.document.blocks;
     final normalizedTarget = selection.target;
     final block = sourceBlocks[normalizedTarget.blockIndex];
     final split = _splitRunsByRange(
@@ -285,11 +288,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   void _toggleHeading() {
     final target = _activeTextTarget();
     if (target == null) return;
-    final sourceBlocks = widget.document.blocks.isEmpty
-        ? const <LessonBlock>[
-            LessonParagraphBlock(children: <LessonTextRun>[LessonTextRun('')]),
-          ]
-        : widget.document.blocks;
+    final sourceBlocks = widget.document.blocks;
     final block = sourceBlocks[target.blockIndex];
     final nextBlocks = List<LessonBlock>.from(sourceBlocks);
     late final _EditorTarget nextTarget;
@@ -409,6 +408,68 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     _moveBlock(blockIndex, blockIndex + 1);
   }
 
+  void _deleteBlock(int blockIndex) {
+    if (!widget.enabled) return;
+    if (blockIndex < 0 || blockIndex >= widget.document.blocks.length) return;
+
+    final next = widget.document.removeBlock(blockIndex);
+    final nextTarget = next.blocks.isEmpty
+        ? const _EditorTarget.block(0)
+        : _EditorTarget.block(
+            blockIndex.clamp(0, next.blocks.length - 1).toInt(),
+          );
+    _emit(next);
+    widget.onInsertionIndexChanged?.call(nextTarget.insertionIndex(next));
+    setState(() => _selectedTarget = nextTarget);
+  }
+
+  void _deleteSelectedBlock() {
+    final target = _selectedTarget.normalized(widget.document);
+    if (target == null) return;
+    _deleteBlock(target.blockIndex);
+  }
+
+  bool _isEmptyTextBlockTarget(_EditorTarget target) {
+    if (target.itemIndex != null ||
+        target.blockIndex < 0 ||
+        target.blockIndex >= widget.document.blocks.length) {
+      return false;
+    }
+    final block = widget.document.blocks[target.blockIndex];
+    if (block is LessonParagraphBlock) {
+      return _plainText(block.children).isEmpty;
+    }
+    if (block is LessonHeadingBlock) {
+      return _plainText(block.children).isEmpty;
+    }
+    return false;
+  }
+
+  bool _shouldDeleteEmptyBlockFromKey(
+    _EditorTarget target,
+    TextEditingController controller,
+  ) {
+    if (!widget.enabled || controller.text.isNotEmpty) return false;
+    final normalizedTarget = target.normalized(widget.document);
+    return normalizedTarget == target && _isEmptyTextBlockTarget(target);
+  }
+
+  void _insertFirstParagraphFromEmptyDocument(String text) {
+    if (!widget.enabled) return;
+    final normalizedText = text.replaceAll('\r\n', '\n');
+    if (normalizedText.isEmpty || widget.document.blocks.isNotEmpty) return;
+    final next = LessonDocument(
+      blocks: List<LessonBlock>.unmodifiable([
+        LessonParagraphBlock(
+          children: <LessonTextRun>[LessonTextRun(normalizedText)],
+        ),
+      ]),
+    );
+    _emit(next);
+    widget.onInsertionIndexChanged?.call(1);
+    setState(() => _selectedTarget = const _EditorTarget.block(0));
+  }
+
   void _updateCtaBlock(int blockIndex, {String? label, String? targetUrl}) {
     final block = widget.document.blocks[blockIndex];
     if (block is! LessonCtaBlock) return;
@@ -424,11 +485,6 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   @override
   Widget build(BuildContext context) {
     _syncControllers();
-    final blocks = widget.document.blocks.isEmpty
-        ? const <LessonBlock>[
-            LessonParagraphBlock(children: <LessonTextRun>[LessonTextRun('')]),
-          ]
-        : widget.document.blocks;
     return Container(
       key: const ValueKey<String>('lesson_document_editor_shell'),
       constraints: BoxConstraints(minHeight: widget.minHeight),
@@ -454,6 +510,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
             onOrderedList: () =>
                 _convertSelectedBlock(_BlockConversion.orderedList),
             onAddParagraph: _appendParagraph,
+            onDeleteBlock: _deleteSelectedBlock,
           ),
           const Divider(height: 1),
           Expanded(
@@ -462,16 +519,23 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                 'lesson_document_continuous_writing_surface',
               ),
               decoration: const BoxDecoration(color: Colors.white),
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(28, 22, 28, 28),
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                itemCount: blocks.length,
-                itemBuilder: (context, blockIndex) {
-                  final block = blocks[blockIndex];
-                  return _buildBlockEditor(context, block, blockIndex);
-                },
-              ),
+              child: widget.document.blocks.isEmpty
+                  ? ListView(
+                      padding: const EdgeInsets.fromLTRB(28, 22, 28, 28),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      children: [_buildEmptyDocumentAffordance(context)],
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(28, 22, 28, 28),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      itemCount: widget.document.blocks.length,
+                      itemBuilder: (context, blockIndex) {
+                        final block = widget.document.blocks[blockIndex];
+                        return _buildBlockEditor(context, block, blockIndex);
+                      },
+                    ),
             ),
           ),
         ],
@@ -527,6 +591,43 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     required Widget child,
   }) {
     return Padding(padding: _blockPadding(block, blockIndex), child: child);
+  }
+
+  Widget _buildEmptyDocumentAffordance(BuildContext context) {
+    final textStyle = _paragraphStyle(context);
+    return Semantics(
+      label: 'Tom lektionsyta',
+      textField: true,
+      child: TextField(
+        key: const ValueKey<String>('lesson_document_editor_block_0'),
+        enabled: widget.enabled,
+        controller: _emptyDocumentController,
+        focusNode: _emptyDocumentFocusNode,
+        style: textStyle,
+        minLines: 1,
+        maxLines: null,
+        keyboardType: TextInputType.multiline,
+        textInputAction: TextInputAction.newline,
+        decoration: InputDecoration(
+          hintText: 'Skriv lektionsinnehall',
+          hintStyle: textStyle.copyWith(
+            color: textStyle.color?.withValues(alpha: 0.34),
+          ),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          contentPadding: EdgeInsets.zero,
+        ),
+        onTap: () {
+          widget.onInsertionIndexChanged?.call(0);
+          if (_selectedTarget != const _EditorTarget.block(0)) {
+            setState(() => _selectedTarget = const _EditorTarget.block(0));
+          }
+        },
+        onChanged: _insertFirstParagraphFromEmptyDocument,
+      ),
+    );
   }
 
   LessonDocumentPreviewMedia? _mediaForBlock(LessonMediaBlock block) {
@@ -783,32 +884,44 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final key = target.key;
     final controller = _controllerFor(key, _plainText(children), children);
     final focusNode = _focusNodeFor(key, target);
+    final deleteEmptyBlockShortcuts =
+        _shouldDeleteEmptyBlockFromKey(target, controller)
+        ? <ShortcutActivator, VoidCallback>{
+            const SingleActivator(LogicalKeyboardKey.backspace): () =>
+                _deleteBlock(target.blockIndex),
+            const SingleActivator(LogicalKeyboardKey.delete): () =>
+                _deleteBlock(target.blockIndex),
+          }
+        : const <ShortcutActivator, VoidCallback>{};
     return Semantics(
       label: semanticsLabel,
       textField: true,
-      child: TextField(
-        key: ValueKey<String>('lesson_document_editor_$key'),
-        enabled: widget.enabled,
-        controller: controller,
-        focusNode: focusNode,
-        style: textStyle,
-        minLines: 1,
-        maxLines: null,
-        keyboardType: TextInputType.multiline,
-        textInputAction: TextInputAction.newline,
-        decoration: InputDecoration(
-          hintText: semanticsLabel,
-          hintStyle: textStyle.copyWith(
-            color: textStyle.color?.withValues(alpha: 0.34),
+      child: CallbackShortcuts(
+        bindings: deleteEmptyBlockShortcuts,
+        child: TextField(
+          key: ValueKey<String>('lesson_document_editor_$key'),
+          enabled: widget.enabled,
+          controller: controller,
+          focusNode: focusNode,
+          style: textStyle,
+          minLines: 1,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+          decoration: InputDecoration(
+            hintText: semanticsLabel,
+            hintStyle: textStyle.copyWith(
+              color: textStyle.color?.withValues(alpha: 0.34),
+            ),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            disabledBorder: InputBorder.none,
+            contentPadding: EdgeInsets.zero,
           ),
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          disabledBorder: InputBorder.none,
-          contentPadding: EdgeInsets.zero,
+          onTap: () => _select(target),
+          onChanged: (value) => _replaceTargetText(target, value),
         ),
-        onTap: () => _select(target),
-        onChanged: (value) => _replaceTargetText(target, value),
       ),
     );
   }
@@ -859,6 +972,7 @@ class _Toolbar extends StatelessWidget {
     required this.onBulletList,
     required this.onOrderedList,
     required this.onAddParagraph,
+    required this.onDeleteBlock,
   });
 
   final bool enabled;
@@ -871,6 +985,7 @@ class _Toolbar extends StatelessWidget {
   final VoidCallback onBulletList;
   final VoidCallback onOrderedList;
   final VoidCallback onAddParagraph;
+  final VoidCallback onDeleteBlock;
 
   @override
   Widget build(BuildContext context) {
@@ -935,6 +1050,12 @@ class _Toolbar extends StatelessWidget {
             label: 'Nytt stycke',
             onPressed: onAddParagraph,
           ),
+          _toolbarButton(
+            key: const Key('lesson_document_toolbar_delete_block'),
+            icon: Icons.delete_outline_rounded,
+            label: 'Ta bort',
+            onPressed: onDeleteBlock,
+          ),
         ],
       ),
     );
@@ -985,7 +1106,7 @@ class _EditorTarget {
 
   _EditorTarget? normalized(LessonDocument document) {
     if (document.blocks.isEmpty) {
-      return const _EditorTarget.block(0);
+      return null;
     }
     if (blockIndex < 0 || blockIndex >= document.blocks.length) {
       return null;

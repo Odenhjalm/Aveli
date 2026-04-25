@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/editor/document/lesson_document.dart';
@@ -1758,6 +1759,150 @@ void main() {
     expect(children.last.text, ' me');
     expect(children.last.marks, isEmpty);
   });
+
+  testWidgets('explicit delete-block command removes only the selected block', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('First')]),
+        LessonParagraphBlock(children: [LessonTextRun('Second')]),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 420,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_editor_block_0')),
+    );
+    await tester.pump();
+    await _tapToolbar(
+      tester,
+      const Key('lesson_document_toolbar_delete_block'),
+    );
+
+    expect(document.blocks, hasLength(1));
+    final paragraph = document.blocks.single as LessonParagraphBlock;
+    expect(paragraph.children.single.text, 'Second');
+  });
+
+  testWidgets('backspace on an empty final block removes it', (tester) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Only')]),
+      ],
+    );
+    var changeCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 420,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() {
+                    document = next;
+                    changeCount += 1;
+                  }),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    final finder = find.byKey(
+      const ValueKey<String>('lesson_document_editor_block_0'),
+    );
+    await tester.tap(finder);
+    await tester.pump();
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '',
+        selection: TextSelection.collapsed(offset: 0),
+      ),
+    );
+    await tester.pump();
+
+    expect(document.blocks, hasLength(1));
+    expect(
+      ((document.blocks.single as LessonParagraphBlock).children.single).text,
+      '',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+
+    expect(document.blocks, isEmpty);
+    final changesAfterDelete = changeCount;
+    await tester.pump();
+    expect(changeCount, changesAfterDelete);
+  });
+
+  testWidgets(
+    'empty document affordance inserts first paragraph only on text',
+    (tester) async {
+      var document = LessonDocument.empty();
+      var changeCount = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 420,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    onChanged: (next) => setState(() {
+                      document = next;
+                      changeCount += 1;
+                    }),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(document.blocks, isEmpty);
+      expect(changeCount, 0);
+      await tester.pump();
+      expect(changeCount, 0);
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('lesson_document_editor_block_0')),
+        'Hello',
+      );
+      await tester.pump();
+
+      expect(document.blocks, hasLength(1));
+      final paragraph = document.blocks.single as LessonParagraphBlock;
+      expect(paragraph.children.single.text, 'Hello');
+      expect(changeCount, 1);
+    },
+  );
 }
 
 Future<void> _selectTextRange(

@@ -377,6 +377,12 @@ final class LessonDocument {
     return LessonDocument(blocks: List<LessonBlock>.unmodifiable(next));
   }
 
+  LessonDocument removeBlock(int index) {
+    RangeError.checkValidIndex(index, blocks, 'index');
+    final next = [...blocks]..removeAt(index);
+    return LessonDocument(blocks: List<LessonBlock>.unmodifiable(next));
+  }
+
   LessonDocument moveBlock(int fromIndex, int toIndex) {
     RangeError.checkValidIndex(fromIndex, blocks, 'fromIndex');
     RangeError.checkValidIndex(toIndex, blocks, 'toIndex');

@@ -147,9 +147,17 @@ void main() {
     expect(document.moveBlockUp(0), same(document));
     expect(document.moveBlockDown(document.blocks.length - 1), same(document));
     expect(document.moveBlock(1, 1), same(document));
+    expect(document.removeBlock(1).blocks.map((block) => block.type), [
+      'paragraph',
+      'paragraph',
+    ]);
     expect(() => document.moveBlockUp(-1), throwsRangeError);
     expect(
       () => document.moveBlockDown(document.blocks.length),
+      throwsRangeError,
+    );
+    expect(
+      () => document.removeBlock(document.blocks.length),
       throwsRangeError,
     );
     expect(
