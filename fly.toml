@@ -37,3 +37,6 @@ kill_timeout = "5s"
     method = "get"
     path = "/healthz"
     processes = ["app"]
+
+[[vm]]
+  memory = "2gb"
