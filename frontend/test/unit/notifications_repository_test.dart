@@ -20,9 +20,27 @@ void main() {
     expect(notifications.single.id, 'notification-1');
     expect(notifications.single.type, 'lesson_drip');
     expect(notifications.single.payload['lesson_id'], 'lesson-1');
+    expect(notifications.single.isRead, isFalse);
+    expect(notifications.single.readAt, isNull);
     final requests = harness.adapter.requestsFor('/notifications');
     expect(requests, hasLength(1));
     expect(requests.single.method, 'GET');
+  });
+
+  test('markRead sends read intent to backend and parses state', () async {
+    final harness = await _Harness.create();
+    final repository = NotificationsRepository(harness.client);
+
+    final notification = await repository.markRead('notification-1');
+
+    expect(notification.id, 'notification-1');
+    expect(notification.isRead, isTrue);
+    expect(notification.readAt, DateTime.parse('2026-04-25T09:05:00Z'));
+    final requests = harness.adapter.requestsFor(
+      '/notifications/notification-1/read',
+    );
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'PATCH');
   });
 
   test('registerDevice sends token and platform to backend', () async {
@@ -99,8 +117,28 @@ ResponseBody _defaultHandler(RequestOptions options) {
               'title': 'Lesson one',
             },
             'created_at': '2026-04-25T09:00:00Z',
+            'read_at': null,
+            'is_read': false,
           },
         ],
+      },
+    );
+  }
+  if (options.path == '/notifications/notification-1/read' &&
+      method == 'PATCH') {
+    return _jsonResponse(
+      statusCode: 200,
+      body: {
+        'id': 'notification-1',
+        'type': 'lesson_drip',
+        'payload': {
+          'lesson_id': 'lesson-1',
+          'course_id': 'course-1',
+          'title': 'Lesson one',
+        },
+        'created_at': '2026-04-25T09:00:00Z',
+        'read_at': '2026-04-25T09:05:00Z',
+        'is_read': true,
       },
     );
   }

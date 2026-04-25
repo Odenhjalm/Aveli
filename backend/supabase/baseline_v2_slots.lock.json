@@ -88,15 +88,15 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "a88680be53e93c6838447195adaefc2427ad547ea5329b7febd65d51adf0babc",
+    "expected_schema_hash": "ffd509cbb0964fbf7a4bf4ae51385ae2ca1576f5f787fa870ee2b4147682b4ee",
     "expected_counts": {
-      "constraints": 224,
       "enums": 13,
-      "fks": 61,
-      "functions": 54,
-      "tables": 42,
+      "tables": 43,
+      "views": 5,
+      "fks": 62,
+      "constraints": 227,
       "triggers": 36,
-      "views": 5
+      "functions": 54
     },
     "forbidden_legacy_columns": [
       "role_v2",
@@ -697,6 +697,22 @@
         "tables": 42,
         "triggers": 36,
         "views": 5
+      }
+    },
+    {
+      "slot": 33,
+      "filename": "V2_0033_notification_read_state_preferences.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0033_notification_read_state_preferences.sql",
+      "sha256": "a820d2319873864739a1f3cd156b9a5e8dd9b130f3c00f23cd9e3e5ccc173f87",
+      "post_state_hash": "6b59bb477c499fca054ba4a1263da7a561f6a58b02cfe7029ce6d1e8fe4ca6a8",
+      "post_counts": {
+        "enums": 13,
+        "tables": 43,
+        "views": 5,
+        "fks": 62,
+        "constraints": 227,
+        "triggers": 36,
+        "functions": 54
       }
     }
   ]

@@ -160,7 +160,6 @@ async def run_once(*, now: datetime | None = None) -> int:
                             "lesson_drip:"
                             f"{enrollment_id}:{lesson_id}"
                         ),
-                        channels=("in_app", "push"),
                         conn=conn,
                     )
 

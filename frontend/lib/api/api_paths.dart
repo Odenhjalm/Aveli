@@ -21,6 +21,9 @@ class ApiPaths {
   static const notifications = '/notifications';
   static const notificationDevices = '/notifications/devices';
 
+  static String notificationRead(String notificationId) =>
+      '/notifications/$notificationId/read';
+
   static String notificationDevice(String deviceId) =>
       '/notifications/devices/$deviceId';
 

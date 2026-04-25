@@ -132,13 +132,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   }
 }
 
-class _NotificationsPanel extends StatelessWidget {
+class _NotificationsPanel extends ConsumerWidget {
   const _NotificationsPanel({required this.notificationsAsync});
 
   final AsyncValue<List<NotificationItem>> notificationsAsync;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -178,30 +178,81 @@ class _NotificationsPanel extends StatelessWidget {
                   )
                 else
                   ...latest.map(
-                    (notification) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            notification.type,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _payloadSummary(notification.payload),
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
+                    (notification) =>
+                        _notificationTile(context, ref, notification),
                   ),
               ],
             );
           },
         ),
+      ),
+    );
+  }
+
+  Widget _notificationTile(
+    BuildContext context,
+    WidgetRef ref,
+    NotificationItem notification,
+  ) {
+    final theme = Theme.of(context);
+    final unread = !notification.isRead;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 6, right: 8),
+            child: SizedBox(
+              width: 8,
+              height: 8,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: unread
+                      ? theme.colorScheme.primary
+                      : Colors.transparent,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  notification.type,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: unread ? FontWeight.w800 : FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _payloadSummary(notification.payload),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: unread
+                        ? theme.colorScheme.onSurface
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (unread)
+            IconButton(
+              tooltip: 'Mark as read',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              iconSize: 18,
+              icon: const Icon(Icons.done),
+              onPressed: () async {
+                await ref
+                    .read(notificationsRepositoryProvider)
+                    .markRead(notification.id);
+                ref.invalidate(notificationsProvider);
+              },
+            ),
+        ],
       ),
     );
   }

@@ -39,6 +39,8 @@ class NotificationRecord(BaseModel):
     user_id: UUID
     type: str
     payload: dict[str, object]
+    read_at: datetime | None
+    is_read: bool
     created_at: datetime
 
 
@@ -46,3 +48,24 @@ class NotificationListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[NotificationRecord]
+
+
+class NotificationPreferenceRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: str
+    push_enabled: bool
+    in_app_enabled: bool
+
+
+class NotificationPreferenceListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[NotificationPreferenceRecord]
+
+
+class NotificationPreferenceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    push_enabled: bool
+    in_app_enabled: bool

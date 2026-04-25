@@ -61,7 +61,8 @@ def _notification_rows(conn) -> list[dict[str, object]]:
                    user_id::text as user_id,
                    type,
                    payload_json,
-                   dedup_key
+                   dedup_key,
+                   read_at
               from app.notifications
              order by created_at asc, id asc
             """
@@ -119,6 +120,21 @@ def _push_delivery_rows(conn) -> list[dict[str, object]]:
               join app.user_devices as ud
                 on ud.id = pdd.device_id
              order by ud.push_token asc
+            """
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def _preference_rows(conn) -> list[dict[str, object]]:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            select user_id::text as user_id,
+                   type,
+                   push_enabled,
+                   in_app_enabled
+              from app.notification_preferences
+             order by user_id asc, type asc
             """
         )
         return [dict(row) for row in cur.fetchall()]
@@ -211,14 +227,20 @@ async def test_create_notification_is_deduped_and_dispatcher_marks_sent():
         try:
             first = await notification_service.create_notification(
                 user_id,
-                "manual_test",
-                {"source": "test"},
+                "message",
+                {
+                    "thread_id": "thread-1",
+                    "message_preview": "Hej fran test",
+                },
                 "test:dedup-key",
             )
             second = await notification_service.create_notification(
                 user_id,
-                "manual_test",
-                {"source": "test"},
+                "message",
+                {
+                    "thread_id": "thread-1",
+                    "message_preview": "Hej fran test",
+                },
                 "test:dedup-key",
             )
 
@@ -228,6 +250,7 @@ async def test_create_notification_is_deduped_and_dispatcher_marks_sent():
             assert second.notification["id"] == first.notification["id"]
             assert len(_notification_rows(conn)) == 1
             assert len(_delivery_rows(conn)) == 1
+            assert _delivery_rows(conn)[0]["channel"] == "in_app"
             assert _delivery_rows(conn)[0]["status"] == "pending"
 
             processed = await notifications_dispatcher_worker.run_once()
@@ -238,6 +261,178 @@ async def test_create_notification_is_deduped_and_dispatcher_marks_sent():
             assert deliveries[0]["attempts"] == 1
             assert deliveries[0]["last_attempt_at"] is not None
             assert deliveries[0]["error_text"] is None
+        finally:
+            await _close_worker_pool(worker_pool, originals)
+
+
+async def test_notification_contract_rejects_invalid_payload_before_storage():
+    with _baseline_v2_connection() as (conn, database_conninfo):
+        _apply_baseline_v2_slots(conn)
+        user_id = str(uuid4())
+        _insert_auth_subject(conn, user_id, role="learner")
+
+        worker_pool, originals = await _with_worker_pool(
+            database_conninfo,
+            notification_service,
+        )
+        try:
+            with pytest.raises(ValueError, match="lesson_id is required"):
+                await notification_service.create_notification(
+                    user_id,
+                    "lesson_drip",
+                    {"course_id": str(uuid4())},
+                    "lesson-drip:invalid",
+                )
+
+            assert _notification_rows(conn) == []
+            assert _delivery_rows(conn) == []
+        finally:
+            await _close_worker_pool(worker_pool, originals)
+
+
+async def test_notification_contract_canonicalizes_payload_and_policy_channels():
+    with _baseline_v2_connection() as (conn, database_conninfo):
+        _apply_baseline_v2_slots(conn)
+        user_id = str(uuid4())
+        _insert_auth_subject(conn, user_id, role="learner")
+
+        worker_pool, originals = await _with_worker_pool(
+            database_conninfo,
+            notification_service,
+        )
+        try:
+            result = await notification_service.create_notification(
+                user_id,
+                "lesson_drip",
+                {
+                    "course_id": str(uuid4()),
+                    "lesson_id": str(uuid4()),
+                    "title": "  Lesson title  ",
+                    "legacy_extra": "not canonical",
+                },
+                "lesson-drip:canonical-policy",
+                channels=("email",),
+            )
+
+            notifications = _notification_rows(conn)
+            deliveries = _delivery_rows(conn)
+            assert result.delivery_count == 2
+            assert notifications[0]["type"] == "lesson_drip"
+            assert set(notifications[0]["payload_json"]) == {
+                "course_id",
+                "lesson_id",
+                "title",
+            }
+            assert notifications[0]["payload_json"]["title"] == "Lesson title"
+            assert sorted(row["channel"] for row in deliveries) == ["in_app", "push"]
+            assert await notification_service.resolve_notification_channels(
+                "message",
+                user_id,
+            ) == ("in_app",)
+        finally:
+            await _close_worker_pool(worker_pool, originals)
+
+
+async def test_notification_preferences_default_and_user_override_channels():
+    with _baseline_v2_connection() as (conn, database_conninfo):
+        _apply_baseline_v2_slots(conn)
+        user_id = str(uuid4())
+        _insert_auth_subject(conn, user_id, role="learner")
+
+        worker_pool, originals = await _with_worker_pool(
+            database_conninfo,
+            notification_service,
+        )
+        try:
+            assert await notification_service.resolve_notification_channels(
+                "lesson_drip",
+                user_id,
+            ) == ("in_app", "push")
+            assert _preference_rows(conn) == []
+
+            result = await notification_service.set_notification_preference(
+                user_id=user_id,
+                type="lesson_drip",
+                push_enabled=False,
+                in_app_enabled=True,
+            )
+            assert result.preference["push_enabled"] is False
+            assert result.preference["in_app_enabled"] is True
+            assert await notification_service.resolve_notification_channels(
+                "lesson_drip",
+                user_id,
+            ) == ("in_app",)
+
+            created = await notification_service.create_notification(
+                user_id,
+                "lesson_drip",
+                {
+                    "course_id": str(uuid4()),
+                    "lesson_id": str(uuid4()),
+                    "title": "Preference lesson",
+                },
+                "lesson-drip:preference-policy",
+            )
+            assert created.delivery_count == 1
+            assert [row["channel"] for row in _delivery_rows(conn)] == ["in_app"]
+
+            await notification_service.set_notification_preference(
+                user_id=user_id,
+                type="message",
+                push_enabled=True,
+                in_app_enabled=False,
+            )
+            assert await notification_service.resolve_notification_channels(
+                "message",
+                user_id,
+            ) == ("push",)
+
+            message = await notification_service.create_notification(
+                user_id,
+                "message",
+                {
+                    "thread_id": "thread-preference",
+                    "message_preview": "Preference preview",
+                },
+                "message:preference-policy",
+            )
+            message_deliveries = [
+                row
+                for row in _delivery_rows(conn)
+                if row["notification_id"] == message.notification["id"]
+            ]
+            assert message.delivery_count == 1
+            assert [row["channel"] for row in message_deliveries] == ["push"]
+
+            await notification_service.set_notification_preference(
+                user_id=user_id,
+                type="purchase",
+                push_enabled=False,
+                in_app_enabled=False,
+            )
+            assert await notification_service.resolve_notification_channels(
+                "purchase",
+                user_id,
+            ) == ()
+
+            disabled = await notification_service.create_notification(
+                user_id,
+                "purchase",
+                {
+                    "product_id": "membership",
+                    "amount": 1000,
+                    "currency": "SEK",
+                },
+                "purchase:preference-disabled",
+            )
+            disabled_deliveries = [
+                row
+                for row in _delivery_rows(conn)
+                if row["notification_id"] == disabled.notification["id"]
+            ]
+            assert disabled.created is True
+            assert disabled.delivery_count == 0
+            assert disabled_deliveries == []
         finally:
             await _close_worker_pool(worker_pool, originals)
 
@@ -336,6 +531,57 @@ async def test_notification_routes_register_device_and_list_backend_truth():
                 assert len(items) == 1
                 assert items[0]["type"] == "lesson_drip"
                 assert items[0]["payload"]["title"] == "Route lesson"
+                assert items[0]["is_read"] is False
+                assert items[0]["read_at"] is None
+
+                marked = await client.patch(
+                    f"/notifications/{items[0]['id']}/read"
+                )
+                assert marked.status_code == 200, marked.text
+                marked_payload = marked.json()
+                assert marked_payload["is_read"] is True
+                assert marked_payload["read_at"] is not None
+
+                duplicate_marked = await client.patch(
+                    f"/notifications/{items[0]['id']}/read"
+                )
+                assert duplicate_marked.status_code == 200, duplicate_marked.text
+                assert duplicate_marked.json()["read_at"] == marked_payload["read_at"]
+
+                relisted = await client.get("/notifications")
+                assert relisted.status_code == 200, relisted.text
+                assert relisted.json()["items"][0]["is_read"] is True
+
+                default_preferences = await client.get("/notifications/preferences")
+                assert default_preferences.status_code == 200, default_preferences.text
+                assert default_preferences.json()["items"] == [
+                    {
+                        "type": "lesson_drip",
+                        "push_enabled": True,
+                        "in_app_enabled": True,
+                    },
+                    {
+                        "type": "purchase",
+                        "push_enabled": True,
+                        "in_app_enabled": True,
+                    },
+                    {
+                        "type": "message",
+                        "push_enabled": False,
+                        "in_app_enabled": True,
+                    },
+                ]
+
+                updated_preference = await client.patch(
+                    "/notifications/preferences/message",
+                    json={"push_enabled": True, "in_app_enabled": False},
+                )
+                assert updated_preference.status_code == 200, updated_preference.text
+                assert updated_preference.json() == {
+                    "type": "message",
+                    "push_enabled": True,
+                    "in_app_enabled": False,
+                }
 
                 deleted = await client.delete(
                     f"/notifications/devices/{registered_payload['id']}"
@@ -385,7 +631,7 @@ async def test_push_dispatcher_sends_to_all_active_devices_and_records_status():
 
             processed = await notifications_dispatcher_worker.run_once()
 
-            assert processed == 1
+            assert processed == 2
             assert [item["token"] for item in fake_push.sent] == [
                 "push-token-a",
                 "push-token-b",
@@ -395,8 +641,11 @@ async def test_push_dispatcher_sends_to_all_active_devices_and_records_status():
             }
             assert {item["body"] for item in fake_push.sent} == {"Opened lesson"}
             deliveries = _delivery_rows(conn)
-            assert deliveries[0]["status"] == "sent"
-            assert deliveries[0]["attempts"] == 1
+            assert sorted((row["channel"], row["status"]) for row in deliveries) == [
+                ("in_app", "sent"),
+                ("push", "sent"),
+            ]
+            assert {row["attempts"] for row in deliveries} == {1}
             push_rows = _push_delivery_rows(conn)
             assert [row["status"] for row in push_rows] == ["sent", "sent"]
             assert [row["attempts"] for row in push_rows] == [1, 1]
@@ -447,14 +696,19 @@ async def test_push_dispatcher_is_fail_safe_per_device():
 
             processed = await notifications_dispatcher_worker.run_once()
 
-            assert processed == 1
+            assert processed == 2
             assert [item["token"] for item in fake_push.sent] == [
                 "push-token-a",
                 "push-token-b",
             ]
             deliveries = _delivery_rows(conn)
-            assert deliveries[0]["status"] == "failed"
-            assert "push-token-b" in str(deliveries[0]["error_text"])
+            delivery_statuses = {
+                row["channel"]: (row["status"], row["error_text"])
+                for row in deliveries
+            }
+            assert delivery_statuses["in_app"] == ("sent", None)
+            assert delivery_statuses["push"][0] == "failed"
+            assert "push-token-b" in str(delivery_statuses["push"][1])
             push_rows = _push_delivery_rows(conn)
             assert [(row["push_token"], row["status"]) for row in push_rows] == [
                 ("push-token-a", "sent"),
@@ -595,8 +849,19 @@ async def test_stripe_course_webhook_fulfillment_creates_notification_record():
         notifications = _notification_rows(conn)
         assert len(notifications) == 1
         assert notifications[0]["user_id"] == user_id
-        assert notifications[0]["type"] == "stripe_course_purchase_fulfilled"
+        assert notifications[0]["type"] == "purchase"
+        assert notifications[0]["payload_json"] == {
+            "product_id": course_id,
+            "amount": 1000,
+            "currency": "sek",
+        }
         assert notifications[0]["dedup_key"] == (
             f"stripe_course_purchase_fulfilled:{order_id}"
         )
-        assert _delivery_rows(conn)[0]["status"] == "pending"
+        stripe_deliveries = sorted(
+            (row["channel"], row["status"]) for row in _delivery_rows(conn)
+        )
+        assert stripe_deliveries == [
+            ("in_app", "pending"),
+            ("push", "pending"),
+        ]

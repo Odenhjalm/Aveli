@@ -6,12 +6,16 @@ class NotificationItem {
     required this.id,
     required this.type,
     required this.payload,
+    required this.isRead,
+    required this.readAt,
     required this.createdAt,
   });
 
   final String id;
   final String type;
   final Map<String, dynamic> payload;
+  final bool isRead;
+  final DateTime? readAt;
   final DateTime createdAt;
 
   factory NotificationItem.fromJson(Map<String, dynamic> json) {
@@ -19,6 +23,8 @@ class NotificationItem {
       id: json['id'] as String? ?? '',
       type: json['type'] as String? ?? '',
       payload: Map<String, dynamic>.from(json['payload'] as Map? ?? const {}),
+      isRead: json['is_read'] == true,
+      readAt: DateTime.tryParse(json['read_at'] as String? ?? ''),
       createdAt:
           DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
@@ -83,5 +89,12 @@ class NotificationsRepository {
 
   Future<void> deactivateDevice(String id) async {
     await _client.delete<void>(ApiPaths.notificationDevice(id));
+  }
+
+  Future<NotificationItem> markRead(String id) async {
+    final data = await _client.patch<Map<String, dynamic>>(
+      ApiPaths.notificationRead(id),
+    );
+    return NotificationItem.fromJson(data ?? const <String, dynamic>{});
   }
 }
