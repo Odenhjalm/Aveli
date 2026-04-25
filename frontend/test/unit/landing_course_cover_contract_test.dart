@@ -79,6 +79,7 @@ Map<String, Object?> _canonicalCourse({required Object? cover}) {
     'id': '11111111-1111-1111-1111-111111111111',
     'slug': 'course-one',
     'title': 'Kurs ett',
+    'short_description': 'Backend landing description',
     'teacher': const {
       'user_id': '44444444-4444-4444-4444-444444444444',
       'display_name': 'Aveli Teacher',

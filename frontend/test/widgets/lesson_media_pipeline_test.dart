@@ -79,7 +79,7 @@ CourseAccessData _courseState({
   return CourseAccessData(
     courseId: 'course-1',
     groupPosition: 0,
-    requiredEnrollmentSource: 'intro_enrollment',
+    requiredEnrollmentSource: 'intro',
     enrollable: true,
     purchasable: false,
     isIntroCourse: true,
@@ -90,7 +90,7 @@ CourseAccessData _courseState({
       id: 'enrollment-1',
       userId: 'user-1',
       courseId: 'course-1',
-      source: 'intro_enrollment',
+      source: 'intro',
       grantedAt: DateTime.utc(2024, 1, 1),
       dripStartedAt: DateTime.utc(2024, 1, 1),
       currentUnlockPosition: currentUnlockPosition,

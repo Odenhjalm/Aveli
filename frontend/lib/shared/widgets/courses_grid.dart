@@ -9,6 +9,8 @@ import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/utils/slug_validator.dart';
+import 'package:aveli/shared/widgets/card_text.dart';
+import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
 class CoursesGrid extends StatelessWidget {
@@ -47,6 +49,7 @@ class CoursesGrid extends StatelessWidget {
               courseCoverResolvedUrl(c.cover),
             );
             final title = c.title;
+            final shortDescription = c.shortDescription?.trim() ?? '';
             final id = c.id;
             final pct = (progress?[id] ?? 0.0).clamp(0.0, 1.0);
             final slug = c.slug;
@@ -140,13 +143,35 @@ class CoursesGrid extends StatelessWidget {
                                       horizontal: 12,
                                       vertical: 10,
                                     ),
-                                    child: Text(
-                                      title,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: t.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.w800,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          title,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: t.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        if (shortDescription.isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          CourseDescriptionText(
+                                            shortDescription,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            baseStyle: t.bodySmall,
+                                          ),
+                                        ],
+                                        if (c.isIntroCourse) ...[
+                                          const SizedBox(height: 8),
+                                          const CourseIntroBadge(
+                                            label: 'Introduktion',
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ),
                                 ),

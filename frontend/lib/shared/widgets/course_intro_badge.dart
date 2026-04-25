@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'package:aveli/shared/theme/design_tokens.dart';
+import 'package:aveli/shared/theme/ui_consts.dart';
 
 enum CourseIntroBadgeVariant { badge, link }
 
-const LinearGradient _courseIntroBadgeGradient = LinearGradient(
-  colors: [Color(0xFF84B7FF), Color(0xFFA4B3FF)],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
+const LinearGradient _courseIntroBadgeGradient = kBrandVibrantGradient;
 
 class CourseIntroBadge extends StatelessWidget {
   const CourseIntroBadge({

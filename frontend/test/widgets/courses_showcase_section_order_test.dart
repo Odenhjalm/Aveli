@@ -68,7 +68,7 @@ void main() {
           id: 'intro-b',
           title: 'Aurora',
           groupPosition: 0,
-          requiredEnrollmentSource: 'intro_enrollment',
+          requiredEnrollmentSource: 'intro',
           enrollable: true,
           purchasable: false,
         ),
@@ -79,7 +79,7 @@ void main() {
           id: 'intro-a',
           title: 'Alchemy Basics',
           groupPosition: 0,
-          requiredEnrollmentSource: 'intro_enrollment',
+          requiredEnrollmentSource: 'intro',
           enrollable: true,
           purchasable: false,
         ),
@@ -118,6 +118,31 @@ void main() {
         expect(current.dy, greaterThan(previous.dy));
         previous = current;
       }
+    },
+  );
+
+  testWidgets(
+    'showcase renders backend short description and intro badge from backend source',
+    (tester) async {
+      await _pumpShowcase(
+        tester,
+        courses: [
+          _course(
+            id: 'intro-description',
+            title: 'Intro Description',
+            groupPosition: 0,
+            requiredEnrollmentSource: 'intro',
+            enrollable: true,
+            purchasable: false,
+            priceCents: null,
+            shortDescription: 'Backend showcase description',
+          ),
+        ],
+      );
+
+      expect(find.text('Backend showcase description'), findsOneWidget);
+      expect(find.text('Introduktion'), findsOneWidget);
+      expect(find.textContaining('saknas'), findsNothing);
     },
   );
 
@@ -171,11 +196,13 @@ CourseSummary _course({
   String requiredEnrollmentSource = 'purchase',
   bool enrollable = false,
   bool purchasable = true,
+  String? shortDescription = 'Backend showcase description',
 }) {
   return CourseSummary(
     id: id,
     slug: 'foundations-of-soulwisdom',
     title: title,
+    shortDescription: shortDescription,
     teacher: const CourseTeacherData(
       userId: 'teacher-1',
       displayName: 'Aveli Teacher',

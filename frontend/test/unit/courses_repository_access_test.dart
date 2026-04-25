@@ -77,7 +77,7 @@ void main() {
           _coursePayload(
             priceCents: 0,
             groupPosition: 2,
-            requiredEnrollmentSource: 'intro_enrollment',
+            requiredEnrollmentSource: 'intro',
             enrollable: true,
             purchasable: false,
           ),
@@ -86,11 +86,30 @@ void main() {
         expect(sellablePositionZero.requiredEnrollmentSource, 'purchase');
         expect(sellablePositionZero.enrollable, isFalse);
         expect(sellablePositionZero.purchasable, isTrue);
-        expect(freeNonZero.requiredEnrollmentSource, 'intro_enrollment');
+        expect(freeNonZero.requiredEnrollmentSource, 'intro');
         expect(freeNonZero.enrollable, isTrue);
         expect(freeNonZero.purchasable, isFalse);
       },
     );
+
+    test('maps backend short description and intro source classifier', () {
+      final intro = CourseSummary.fromResponse(
+        _coursePayload(
+          shortDescription: 'Backend list description',
+          requiredEnrollmentSource: 'intro',
+        ),
+      );
+      final legacyFree = CourseSummary.fromResponse(
+        _coursePayload(
+          priceCents: null,
+          requiredEnrollmentSource: 'intro_enrollment',
+        ),
+      );
+
+      expect(intro.shortDescription, 'Backend list description');
+      expect(intro.isIntroCourse, isTrue);
+      expect(legacyFree.isIntroCourse, isFalse);
+    });
 
     test('rejects legacy step progression field', () {
       expect(
@@ -286,12 +305,12 @@ void main() {
             statusCode: 200,
             body: _accessPayload(
               courseId: 'course-3',
-              requiredEnrollmentSource: 'intro_enrollment',
+              requiredEnrollmentSource: 'intro',
               enrollable: true,
               purchasable: false,
               isIntroCourse: true,
               canAccess: false,
-              enrollment: _enrollmentPayload(source: 'intro_enrollment'),
+              enrollment: _enrollmentPayload(source: 'intro'),
             ),
           );
         }
@@ -302,7 +321,7 @@ void main() {
       final state = await repo.fetchCourseState('course-3');
 
       expect(state.enrollment, isNotNull);
-      expect(state.enrollment!.source, 'intro_enrollment');
+      expect(state.enrollment!.source, 'intro');
       expect(state.isIntroCourse, isTrue);
       expect(state.selectionLocked, isFalse);
       expect(state.canAccess, isFalse);
@@ -315,7 +334,7 @@ void main() {
             statusCode: 200,
             body: _accessPayload(
               courseId: 'course-4',
-              requiredEnrollmentSource: 'intro_enrollment',
+              requiredEnrollmentSource: 'intro',
               enrollable: true,
               purchasable: false,
               isIntroCourse: true,
@@ -502,15 +521,17 @@ Map<String, Object?> _coursePayload({
   Object? cover = _defaultCover,
   int groupPosition = 0,
   int? priceCents = 0,
-  String? requiredEnrollmentSource = 'intro_enrollment',
+  String? requiredEnrollmentSource = 'intro',
   bool enrollable = true,
   bool purchasable = false,
+  String? shortDescription = 'Backend-authored summary description',
   Map<String, Object?> extra = const {},
 }) {
   return {
     'id': 'course-1',
     'slug': slug,
     'title': title,
+    'short_description': shortDescription,
     'teacher': const {'user_id': 'teacher-1', 'display_name': 'Aveli Teacher'},
     'group_position': groupPosition,
     'course_group_id': 'group-1',
@@ -575,6 +596,7 @@ const Map<String, Object?> _defaultCoursePayload = {
   'id': 'course-1',
   'slug': 'aveli-course',
   'title': 'Aveli 101',
+  'short_description': 'Backend-authored summary description',
   'teacher': {'user_id': 'teacher-1', 'display_name': 'Aveli Teacher'},
   'group_position': 0,
   'course_group_id': 'group-1',
@@ -583,7 +605,7 @@ const Map<String, Object?> _defaultCoursePayload = {
   'price_amount_cents': 0,
   'drip_enabled': false,
   'drip_interval_days': null,
-  'required_enrollment_source': 'intro_enrollment',
+  'required_enrollment_source': 'intro',
   'enrollable': true,
   'purchasable': false,
 };

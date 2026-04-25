@@ -24,11 +24,13 @@ CourseSummary _course({
   String requiredEnrollmentSource = 'purchase',
   bool enrollable = false,
   bool purchasable = true,
+  String? shortDescription = 'Backend catalog description',
 }) {
   return CourseSummary(
     id: id,
     slug: slug,
     title: title,
+    shortDescription: shortDescription,
     teacher: const CourseTeacherData(
       userId: 'teacher-1',
       displayName: 'Aveli Teacher',
@@ -51,7 +53,7 @@ Future<void> _pumpCatalog(
   required List<CourseSummary> courses,
 }) async {
   final introCourses = courses
-      .where((course) => course.requiredEnrollmentSource == 'intro_enrollment')
+      .where((course) => course.isIntroCourse)
       .toList(growable: false);
   await tester.pumpWidget(
     ProviderScope(
@@ -110,15 +112,18 @@ void main() {
           title: 'Intro Start',
           groupPosition: 0,
           courseGroupId: 'series:solo',
-          requiredEnrollmentSource: 'intro_enrollment',
+          requiredEnrollmentSource: 'intro',
           enrollable: true,
           purchasable: false,
+          shortDescription: 'Backend intro description',
         ),
       ],
     );
 
     expect(find.text('Intro Start'), findsOneWidget);
+    expect(find.text('Backend intro description'), findsOneWidget);
     expect(find.text('Introduktion'), findsOneWidget);
+    expect(find.textContaining('saknas'), findsNothing);
     expect(
       find.byKey(const ValueKey('journey-family-row:series:solo')),
       findsNothing,
@@ -152,7 +157,7 @@ void main() {
             title: 'Healing Path Intro',
             groupPosition: 0,
             courseGroupId: 'series:healing-path',
-            requiredEnrollmentSource: 'intro_enrollment',
+            requiredEnrollmentSource: 'intro',
             enrollable: true,
             purchasable: false,
           ),
@@ -250,7 +255,7 @@ void main() {
           title: 'Reordered Intro',
           groupPosition: 0,
           courseGroupId: 'series:reordered',
-          requiredEnrollmentSource: 'intro_enrollment',
+          requiredEnrollmentSource: 'intro',
           enrollable: true,
           purchasable: false,
         ),
@@ -289,7 +294,7 @@ void main() {
           title: 'Healing Intro',
           groupPosition: 0,
           courseGroupId: 'series:healing-path',
-          requiredEnrollmentSource: 'intro_enrollment',
+          requiredEnrollmentSource: 'intro',
           enrollable: true,
           purchasable: false,
         ),
@@ -299,7 +304,7 @@ void main() {
           title: 'Tarot Intro',
           groupPosition: 0,
           courseGroupId: 'series:tarot-core',
-          requiredEnrollmentSource: 'intro_enrollment',
+          requiredEnrollmentSource: 'intro',
           enrollable: true,
           purchasable: false,
         ),
@@ -360,7 +365,7 @@ void main() {
           title: '',
           groupPosition: 0,
           courseGroupId: 'series:hidden-family-id',
-          requiredEnrollmentSource: 'intro_enrollment',
+          requiredEnrollmentSource: 'intro',
           enrollable: true,
           purchasable: false,
         ),
@@ -395,7 +400,7 @@ void main() {
           title: 'Premium Intro',
           groupPosition: 0,
           courseGroupId: 'series:premium-course',
-          requiredEnrollmentSource: 'intro_enrollment',
+          requiredEnrollmentSource: 'intro',
           enrollable: true,
           purchasable: false,
         ),

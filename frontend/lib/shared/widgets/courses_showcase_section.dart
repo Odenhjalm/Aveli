@@ -669,16 +669,16 @@ class _CourseTileGlass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = course.title;
-    const desc = '';
+    final desc = course.shortDescription?.trim() ?? '';
     final slug = course.slug;
-    final priceCents = course.priceCents;
+    final isIntroCourse = course.isIntroCourse;
     final courseCoverImageUrlFuture = Future<String?>.value(
       courseCoverResolvedUrl(course.cover),
     );
-    final priceLabel = priceCents == null
-        ? 'Pris saknas'
-        : formatCoursePriceFromOre(
-            amountOre: priceCents,
+    final priceLabel = isIntroCourse
+        ? null
+        : _coursePriceLabel(
+            course,
             debugContext: slug.isEmpty
                 ? 'CoursesShowcaseSection'
                 : 'slug=$slug',
@@ -810,17 +810,30 @@ class _CourseTileGlass extends StatelessWidget {
                                   style: titleStyle,
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Text(
-                                priceLabel,
-                                textAlign: TextAlign.right,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color:
-                                      (textColor ?? DesignTokens.bodyTextColor)
-                                          .withValues(alpha: 0.72),
-                                  fontWeight: FontWeight.w700,
+                              if (isIntroCourse) ...[
+                                const SizedBox(width: 10),
+                                CourseIntroBadge(
+                                  variant: introBadgeVariant,
+                                  textColor:
+                                      introBadgeVariant ==
+                                          CourseIntroBadgeVariant.link
+                                      ? textColor
+                                      : null,
                                 ),
-                              ),
+                              ] else if (priceLabel != null) ...[
+                                const SizedBox(width: 10),
+                                Text(
+                                  priceLabel,
+                                  textAlign: TextAlign.right,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color:
+                                        (textColor ??
+                                                DesignTokens.bodyTextColor)
+                                            .withValues(alpha: 0.72),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                           if (desc.isNotEmpty) ...[
@@ -865,6 +878,19 @@ class _CourseTileGlass extends StatelessWidget {
 }
 
 String _normalizedCourseValue(String value) => value.trim().toLowerCase();
+
+String? _coursePriceLabel(
+  CourseSummary course, {
+  required String debugContext,
+}) {
+  return switch (course.priceCents) {
+    final int amountOre => formatCoursePriceFromOre(
+      amountOre: amountOre,
+      debugContext: debugContext,
+    ),
+    _ => null,
+  };
+}
 
 int _compareCourses(CourseSummary a, CourseSummary b) {
   final levelCompare = a.groupPosition.compareTo(b.groupPosition);

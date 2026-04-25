@@ -16,6 +16,7 @@ import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
+import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
@@ -222,9 +223,9 @@ class _ActIntroSection extends StatelessWidget {
                   final tileWidth = (width - (spacing * 2)) / 3;
 
                   final imageHeight = tileWidth * 9 / 16;
-                  const reservedBottom = 92.0;
+                  const reservedBottom = 116.0;
                   final listHeight = (imageHeight + reservedBottom)
-                      .clamp(156.0, 220.0)
+                      .clamp(180.0, 232.0)
                       .toDouble();
 
                   return SizedBox(
@@ -474,6 +475,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final theme = Theme.of(context);
     final radius = BorderRadius.circular(16);
     final slug = course.slug.trim();
+    final shortDescription = course.shortDescription?.trim() ?? '';
     final courseCoverImageUrlFuture = Future<String?>.value(
       courseCoverResolvedUrl(course.cover),
     );
@@ -559,13 +561,22 @@ class _IntroMiniCourseCard extends StatelessWidget {
                     children: [
                       Text(
                         course.title,
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: DesignTokens.bodyTextColor,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
+                      if (shortDescription.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        CourseDescriptionText(
+                          shortDescription,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          baseStyle: theme.textTheme.bodySmall,
+                        ),
+                      ],
                       const Spacer(),
                       const CourseIntroBadge(label: 'Introduktion'),
                     ],
@@ -593,15 +604,17 @@ class _JourneyCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final slug = course.slug.trim();
+    final shortDescription = course.shortDescription?.trim() ?? '';
+    final isIntroCourse = course.isIntroCourse;
     final courseCoverImageUrlFuture = Future<String?>.value(
       courseCoverResolvedUrl(course.cover),
     );
 
     final radius = BorderRadius.circular(18);
-    final priceLabel = course.priceCents == null
-        ? 'Pris saknas'
-        : formatCoursePriceFromOre(
-            amountOre: course.priceCents!,
+    final priceLabel = isIntroCourse
+        ? null
+        : _coursePriceLabel(
+            course,
             debugContext: slug.isEmpty ? 'CourseCatalogPage' : 'slug=$slug',
           );
 
@@ -707,19 +720,33 @@ class _JourneyCourseCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Text(
-                          priceLabel,
-                          textAlign: TextAlign.right,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: DesignTokens.bodyTextColor.withValues(
-                              alpha: 0.72,
+                        if (isIntroCourse) ...[
+                          const SizedBox(width: 12),
+                          const CourseIntroBadge(label: 'Introduktion'),
+                        ] else if (priceLabel != null) ...[
+                          const SizedBox(width: 12),
+                          Text(
+                            priceLabel,
+                            textAlign: TextAlign.right,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: DesignTokens.bodyTextColor.withValues(
+                                alpha: 0.72,
+                              ),
+                              fontWeight: FontWeight.w700,
                             ),
-                            fontWeight: FontWeight.w700,
                           ),
-                        ),
+                        ],
                       ],
                     ),
+                    if (shortDescription.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      CourseDescriptionText(
+                        shortDescription,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        baseStyle: theme.textTheme.bodyMedium,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -729,6 +756,19 @@ class _JourneyCourseCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String? _coursePriceLabel(
+  CourseSummary course, {
+  required String debugContext,
+}) {
+  return switch (course.priceCents) {
+    final int amountOre => formatCoursePriceFromOre(
+      amountOre: amountOre,
+      debugContext: debugContext,
+    ),
+    _ => null,
+  };
 }
 
 class _ActAveliProSection extends StatelessWidget {

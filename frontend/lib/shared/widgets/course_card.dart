@@ -3,6 +3,7 @@ import 'package:aveli/core/bootstrap/effects_policy.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/utils/image_error_logger.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
+import 'package:aveli/shared/widgets/course_intro_badge.dart';
 
 class CourseCard extends StatefulWidget {
   final String title;
@@ -105,22 +106,7 @@ class _CourseCardState extends State<CourseCard> {
                       ),
                       if (widget.isIntro) const SizedBox(width: 8),
                       if (widget.isIntro)
-                        Chip(
-                          label: Text(
-                            'Introduktion',
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onPrimary,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                          ),
-                          visualDensity: VisualDensity.compact,
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary,
-                        ),
+                        const CourseIntroBadge(label: 'Introduktion'),
                     ],
                   ),
                   if ((widget.description ?? '').isNotEmpty) ...[

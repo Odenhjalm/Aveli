@@ -10,18 +10,16 @@ class CourseJourneyFamily {
   final List<CourseSummary> courses;
 
   CourseSummary? get introCourse {
-    if (courses.isEmpty) {
+    final introCourses = courses.where((course) => course.isIntroCourse);
+    if (introCourses.isEmpty) {
       return null;
     }
-    final first = courses.first;
-    if (first.groupPosition != 0) {
-      return null;
-    }
-    return first;
+    final orderedIntroCourses = [...introCourses]..sort(_compareFamilyCourses);
+    return orderedIntroCourses.first;
   }
 
   List<CourseSummary> get progressionCourses =>
-      List.unmodifiable(courses.where((course) => course.groupPosition > 0));
+      List.unmodifiable(courses.where((course) => !course.isIntroCourse));
 }
 
 List<CourseJourneyFamily> buildCourseJourneyFamilies(

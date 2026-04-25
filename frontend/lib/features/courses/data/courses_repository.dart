@@ -496,6 +496,7 @@ class CourseSummary {
     required this.id,
     required this.slug,
     required this.title,
+    required this.shortDescription,
     required this.teacher,
     required this.groupPosition,
     required this.courseGroupId,
@@ -512,6 +513,7 @@ class CourseSummary {
   final String id;
   final String slug;
   final String title;
+  final String? shortDescription;
   final CourseTeacherData? teacher;
   final int groupPosition;
   final String courseGroupId;
@@ -524,6 +526,11 @@ class CourseSummary {
   final bool enrollable;
   final bool purchasable;
 
+  static const String introRequiredEnrollmentSource = 'intro';
+
+  bool get isIntroCourse =>
+      requiredEnrollmentSource == introRequiredEnrollmentSource;
+
   factory CourseSummary.fromResponse(Object? payload) {
     _rejectLegacyCourseCoverFields(payload, 'course');
     _rejectLegacyCourseProgressionFields(payload, 'course');
@@ -531,6 +538,10 @@ class CourseSummary {
       id: _requireString(_requiredField(payload, 'id'), 'id'),
       slug: _requireString(_requiredField(payload, 'slug'), 'slug'),
       title: _requireString(_requiredField(payload, 'title'), 'title'),
+      shortDescription: _optionalString(
+        _requiredField(payload, 'short_description'),
+        'short_description',
+      ),
       teacher: _optionalCourseTeacher(
         _requiredField(payload, 'teacher'),
         'teacher',

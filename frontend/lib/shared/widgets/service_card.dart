@@ -18,9 +18,10 @@ class ServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final priceText = priceCents == null
-        ? ''
-        : '${(priceCents! / 100).toStringAsFixed(0)} kr';
+    final priceText = switch (priceCents) {
+      final int cents => '${(cents / 100).toStringAsFixed(0)} kr',
+      _ => '',
+    };
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       clipBehavior: Clip.antiAlias,
