@@ -6,11 +6,153 @@ import 'package:flutter/services.dart';
 import 'lesson_document.dart';
 import 'lesson_document_renderer.dart';
 
+class LessonEditorSaveSnapshot {
+  const LessonEditorSaveSnapshot({
+    required this.lessonId,
+    required this.sessionId,
+    required this.revision,
+    required this.document,
+  });
+
+  final String lessonId;
+  final String sessionId;
+  final int revision;
+  final LessonDocument document;
+}
+
+class LessonDocumentEditorController extends ChangeNotifier {
+  _LessonDocumentEditorState? _state;
+
+  LessonEditorSaveSnapshot snapshotForSave() {
+    final state = _requireAttachedState();
+    return state._snapshotForSave();
+  }
+
+  LessonDocument? get currentDocument => _state?._document;
+
+  LessonDocument? get baseSavedDocument => _state?._baseSavedDocument;
+
+  bool get dirty => _state?._dirty ?? false;
+
+  int? get savedRevision => _state?._savedRevision;
+
+  int? get currentInsertionIndex => _state?._currentInsertionIndex();
+
+  bool acknowledgeSave({
+    required LessonEditorSaveSnapshot snapshot,
+    required LessonDocument document,
+  }) {
+    return _state?._acknowledgeSave(snapshot: snapshot, document: document) ??
+        false;
+  }
+
+  void resetTo({
+    required LessonDocument document,
+    required String lessonId,
+  }) {
+    _state?._startNewSession(document: document, lessonId: lessonId);
+  }
+
+  bool insertMediaBlock({
+    required String mediaType,
+    required String lessonMediaId,
+  }) {
+    return _state?._insertMediaBlockFromController(
+          mediaType: mediaType,
+          lessonMediaId: lessonMediaId,
+        ) ??
+        false;
+  }
+
+  bool insertCta({required String label, required String targetUrl}) {
+    return _state?._insertCtaFromController(
+          label: label,
+          targetUrl: targetUrl,
+        ) ??
+        false;
+  }
+
+  bool replaceMediaReference({
+    required String fromLessonMediaId,
+    required String toLessonMediaId,
+    required String mediaType,
+  }) {
+    return _state?._replaceMediaReferenceFromController(
+          fromLessonMediaId: fromLessonMediaId,
+          toLessonMediaId: toLessonMediaId,
+          mediaType: mediaType,
+        ) ??
+        false;
+  }
+
+  _LessonDocumentEditorState _requireAttachedState() {
+    final state = _state;
+    if (state == null) {
+      throw StateError('LessonDocumentEditorController is not attached.');
+    }
+    return state;
+  }
+
+  void _attach(_LessonDocumentEditorState state) {
+    _state = state;
+  }
+
+  void _detach(_LessonDocumentEditorState state) {
+    if (_state == state) {
+      _state = null;
+    }
+  }
+}
+
+class LessonEditorSessionHost extends StatelessWidget {
+  const LessonEditorSessionHost({
+    super.key,
+    required this.lessonId,
+    required this.document,
+    required this.controller,
+    this.rehydrationKey,
+    this.onDirtyChanged,
+    this.media = const <LessonDocumentPreviewMedia>[],
+    this.onInsertionIndexChanged,
+    this.enabled = true,
+    this.minHeight = 280,
+  });
+
+  final String lessonId;
+  final LessonDocument document;
+  final LessonDocumentEditorController controller;
+  final Object? rehydrationKey;
+  final ValueChanged<bool>? onDirtyChanged;
+  final List<LessonDocumentPreviewMedia> media;
+  final ValueChanged<int>? onInsertionIndexChanged;
+  final bool enabled;
+  final double minHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return LessonDocumentEditor(
+      lessonId: lessonId,
+      document: document,
+      controller: controller,
+      rehydrationKey: rehydrationKey,
+      onDirtyChanged: onDirtyChanged,
+      media: media,
+      onInsertionIndexChanged: onInsertionIndexChanged,
+      enabled: enabled,
+      minHeight: minHeight,
+    );
+  }
+}
+
 class LessonDocumentEditor extends StatefulWidget {
   const LessonDocumentEditor({
     super.key,
     required this.document,
-    required this.onChanged,
+    this.onChanged,
+    this.controller,
+    this.lessonId = '',
+    this.rehydrationKey,
+    this.onDirtyChanged,
     this.media = const <LessonDocumentPreviewMedia>[],
     this.onInsertionIndexChanged,
     this.enabled = true,
@@ -18,7 +160,11 @@ class LessonDocumentEditor extends StatefulWidget {
   });
 
   final LessonDocument document;
-  final ValueChanged<LessonDocument> onChanged;
+  final ValueChanged<LessonDocument>? onChanged;
+  final LessonDocumentEditorController? controller;
+  final String lessonId;
+  final Object? rehydrationKey;
+  final ValueChanged<bool>? onDirtyChanged;
   final List<LessonDocumentPreviewMedia> media;
   final ValueChanged<int>? onInsertionIndexChanged;
   final bool enabled;
@@ -30,6 +176,7 @@ class LessonDocumentEditor extends StatefulWidget {
 
 class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   static const int _defaultHeadingLevel = 2;
+  static int _nextSessionIndex = 0;
 
   final Map<String, _LessonTextEditingController> _controllers =
       <String, _LessonTextEditingController>{};
@@ -38,19 +185,44 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       TextEditingController();
   final FocusNode _emptyDocumentFocusNode = FocusNode();
   _EditorTarget _selectedTarget = const _EditorTarget.block(0);
+  late LessonDocument _document;
+  late LessonDocument _baseSavedDocument;
+  late String _sessionLessonId;
+  late String _sessionId;
+  int _revision = 0;
+  int _savedRevision = 0;
+  bool _dirty = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _document = widget.document;
+    _baseSavedDocument = widget.document;
+    _sessionLessonId = widget.lessonId;
+    _sessionId = _newSessionId(widget.lessonId);
+    widget.controller?._attach(this);
+  }
 
   @override
   void didUpdateWidget(LessonDocumentEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _syncControllers();
-    if (widget.document.blocks.isNotEmpty &&
-        _emptyDocumentController.text.isNotEmpty) {
-      _emptyDocumentController.clear();
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(this);
+    }
+    if (oldWidget.lessonId != widget.lessonId ||
+        oldWidget.rehydrationKey != widget.rehydrationKey) {
+      _startNewSession(
+        document: widget.document,
+        lessonId: widget.lessonId,
+        notifyDirty: false,
+      );
     }
   }
 
   @override
   void dispose() {
+    widget.controller?._detach(this);
     for (final controller in _controllers.values) {
       controller.dispose();
     }
@@ -62,9 +234,36 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     super.dispose();
   }
 
-  void _syncControllers() {
+  static String _newSessionId(String lessonId) {
+    final index = _nextSessionIndex;
+    _nextSessionIndex += 1;
+    return '${lessonId.isEmpty ? 'lesson' : lessonId}:$index';
+  }
+
+  void _startNewSession({
+    required LessonDocument document,
+    required String lessonId,
+    bool notifyDirty = true,
+  }) {
+    final wasDirty = _dirty;
+    _document = document;
+    _baseSavedDocument = document;
+    _sessionLessonId = lessonId;
+    _sessionId = _newSessionId(lessonId);
+    _revision = 0;
+    _savedRevision = 0;
+    _dirty = false;
+    _selectedTarget = const _EditorTarget.block(0);
+    _emptyDocumentController.clear();
+    _syncControllersFromDocument();
+    if (notifyDirty && wasDirty) {
+      widget.onDirtyChanged?.call(false);
+    }
+  }
+
+  void _syncControllersFromDocument() {
     final liveKeys = <String>{};
-    final blocks = widget.document.blocks;
+    final blocks = _document.blocks;
     for (var blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
       final block = blocks[blockIndex];
       if (block case LessonParagraphBlock(:final children)) {
@@ -95,6 +294,31 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       }
     }
 
+    final staleKeys = _controllers.keys
+        .where((key) => !liveKeys.contains(key))
+        .toList(growable: false);
+    for (final key in staleKeys) {
+      _controllers.remove(key)?.dispose();
+      _focusNodes.remove(key)?.dispose();
+    }
+  }
+
+  void _pruneControllers() {
+    final liveKeys = <String>{};
+    final blocks = _document.blocks;
+    for (var blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+      final block = blocks[blockIndex];
+      if (block is LessonParagraphBlock || block is LessonHeadingBlock) {
+        liveKeys.add(_EditorTarget.block(blockIndex).key);
+      } else if (block case LessonListBlock(:final items)) {
+        for (var itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+          liveKeys.add(_EditorTarget.listItem(blockIndex, itemIndex).key);
+        }
+      } else if (block is LessonCtaBlock) {
+        liveKeys.add('cta_label_$blockIndex');
+        liveKeys.add('cta_url_$blockIndex');
+      }
+    }
     final staleKeys = _controllers.keys
         .where((key) => !liveKeys.contains(key))
         .toList(growable: false);
@@ -146,12 +370,132 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
   void _emit(LessonDocument document) {
     if (!widget.enabled) return;
-    widget.onChanged(document);
+    _applyDocument(document);
+  }
+
+  void _applyDocument(LessonDocument document) {
+    final wasDirty = _dirty;
+    setState(() {
+      _document = document;
+      _revision += 1;
+      _dirty = true;
+    });
+    _pruneControllers();
+    if (!wasDirty) {
+      widget.onDirtyChanged?.call(true);
+    }
+    widget.onChanged?.call(document);
+  }
+
+  LessonEditorSaveSnapshot _snapshotForSave() {
+    return LessonEditorSaveSnapshot(
+      lessonId: _sessionLessonId,
+      sessionId: _sessionId,
+      revision: _revision,
+      document: _document,
+    );
+  }
+
+  bool _acknowledgeSave({
+    required LessonEditorSaveSnapshot snapshot,
+    required LessonDocument document,
+  }) {
+    if (snapshot.lessonId != _sessionLessonId ||
+        snapshot.sessionId != _sessionId ||
+        snapshot.revision > _revision) {
+      return false;
+    }
+    final hasInterveningEdits = snapshot.revision != _revision;
+    final wasDirty = _dirty;
+    if (hasInterveningEdits) {
+      setState(() {
+        _baseSavedDocument = document;
+        _savedRevision = snapshot.revision;
+        _dirty = true;
+      });
+      return true;
+    }
+    setState(() {
+      _document = document;
+      _baseSavedDocument = document;
+      _savedRevision = _revision;
+      _dirty = false;
+    });
+    _syncControllersFromDocument();
+    if (wasDirty) {
+      widget.onDirtyChanged?.call(false);
+    }
+    widget.onChanged?.call(document);
+    return true;
+  }
+
+  int _currentInsertionIndex() {
+    return _selectedTarget.insertionIndex(_document);
+  }
+
+  bool _insertMediaBlockFromController({
+    required String mediaType,
+    required String lessonMediaId,
+  }) {
+    if (!widget.enabled) return false;
+    const insertionIndex = 0;
+    final next = _document.insertMedia(
+      insertionIndex,
+      mediaType: mediaType,
+      lessonMediaId: lessonMediaId,
+    );
+    _emit(next);
+    widget.onInsertionIndexChanged?.call(1);
+    setState(() => _selectedTarget = const _EditorTarget.block(0));
+    return true;
+  }
+
+  bool _insertCtaFromController({
+    required String label,
+    required String targetUrl,
+  }) {
+    if (!widget.enabled) return false;
+    final next = _document.insertCta(
+      _document.blocks.length,
+      label: label,
+      targetUrl: targetUrl,
+    );
+    _emit(next);
+    return true;
+  }
+
+  bool _replaceMediaReferenceFromController({
+    required String fromLessonMediaId,
+    required String toLessonMediaId,
+    required String mediaType,
+  }) {
+    if (!widget.enabled) return false;
+    if (fromLessonMediaId.isEmpty || toLessonMediaId.isEmpty) return false;
+    var changed = false;
+    final nextBlocks = <LessonBlock>[];
+    for (final block in _document.blocks) {
+      if (block is LessonMediaBlock &&
+          block.lessonMediaId == fromLessonMediaId) {
+        nextBlocks.add(
+          LessonMediaBlock(
+            id: block.id,
+            mediaType: mediaType,
+            lessonMediaId: toLessonMediaId,
+          ),
+        );
+        changed = true;
+      } else {
+        nextBlocks.add(block);
+      }
+    }
+    if (!changed) return false;
+    _emit(LessonDocument(blocks: List<LessonBlock>.unmodifiable(nextBlocks)));
+    return true;
   }
 
   void _select(_EditorTarget target) {
     widget.onInsertionIndexChanged?.call(
-      target.insertionIndex(widget.document),
+      target.insertionIndex(_document),
     );
     if (_selectedTarget == target) return;
     setState(() => _selectedTarget = target);
@@ -159,11 +503,11 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
   void _replaceTargetText(_EditorTarget target, String text) {
     if (target.blockIndex < 0 ||
-        target.blockIndex >= widget.document.blocks.length) {
+        target.blockIndex >= _document.blocks.length) {
       return;
     }
     final normalizedText = text.replaceAll('\r\n', '\n');
-    final nextBlocks = List<LessonBlock>.from(widget.document.blocks);
+    final nextBlocks = List<LessonBlock>.from(_document.blocks);
     final block = nextBlocks[target.blockIndex];
     if (target.itemIndex case final itemIndex?) {
       if (block is! LessonListBlock) return;
@@ -193,13 +537,13 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final target = selection.target;
     _emit(
       target.itemIndex == null
-          ? widget.document.toggleBlockInlineMark(
+          ? _document.toggleBlockInlineMark(
               target.blockIndex,
               start: selection.start,
               end: selection.end,
               mark: mark,
             )
-          : widget.document.toggleListItemInlineMark(
+          : _document.toggleListItemInlineMark(
               target.blockIndex,
               itemIndex: target.itemIndex!,
               start: selection.start,
@@ -215,12 +559,12 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final target = selection.target;
     _emit(
       target.itemIndex == null
-          ? widget.document.clearBlockInlineFormatting(
+          ? _document.clearBlockInlineFormatting(
               target.blockIndex,
               start: selection.start,
               end: selection.end,
             )
-          : widget.document.clearListItemInlineFormatting(
+          : _document.clearListItemInlineFormatting(
               target.blockIndex,
               itemIndex: target.itemIndex!,
               start: selection.start,
@@ -231,10 +575,10 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
   List<LessonTextRun> _childrenForTarget(_EditorTarget target) {
     if (target.blockIndex < 0 ||
-        target.blockIndex >= widget.document.blocks.length) {
+        target.blockIndex >= _document.blocks.length) {
       return const <LessonTextRun>[];
     }
-    final block = widget.document.blocks[target.blockIndex];
+    final block = _document.blocks[target.blockIndex];
     if (target.itemIndex case final itemIndex?) {
       if (block is! LessonListBlock ||
           itemIndex < 0 ||
@@ -251,7 +595,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   void _convertSelectedBlock(_BlockConversion conversion) {
     final selection = _selectedTextRange();
     if (selection == null) return;
-    final sourceBlocks = widget.document.blocks;
+    final sourceBlocks = _document.blocks;
     final normalizedTarget = selection.target;
     final block = sourceBlocks[normalizedTarget.blockIndex];
     final split = _splitRunsByRange(
@@ -288,7 +632,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   void _toggleHeading() {
     final target = _activeTextTarget();
     if (target == null) return;
-    final sourceBlocks = widget.document.blocks;
+    final sourceBlocks = _document.blocks;
     final block = sourceBlocks[target.blockIndex];
     final nextBlocks = List<LessonBlock>.from(sourceBlocks);
     late final _EditorTarget nextTarget;
@@ -346,7 +690,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   _EditorTarget? _activeTextTarget() {
-    final target = _selectedTarget.normalized(widget.document);
+    final target = _selectedTarget.normalized(_document);
     if (target == null) return null;
     final selection = _controllers[target.key]?.selection;
     if (selection == null || !selection.isValid) {
@@ -376,8 +720,8 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _appendParagraph() {
-    final next = widget.document.insertParagraph(
-      widget.document.blocks.length,
+    final next = _document.insertParagraph(
+      _document.blocks.length,
       const <LessonTextRun>[LessonTextRun('')],
     );
     _emit(next);
@@ -388,12 +732,12 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
   void _moveBlock(int blockIndex, int targetIndex) {
     if (!widget.enabled) return;
-    if (blockIndex < 0 || blockIndex >= widget.document.blocks.length) return;
-    if (targetIndex < 0 || targetIndex >= widget.document.blocks.length) {
+    if (blockIndex < 0 || blockIndex >= _document.blocks.length) return;
+    if (targetIndex < 0 || targetIndex >= _document.blocks.length) {
       return;
     }
     if (blockIndex == targetIndex) return;
-    final next = widget.document.moveBlock(blockIndex, targetIndex);
+    final next = _document.moveBlock(blockIndex, targetIndex);
     _emit(next);
     final nextTarget = _EditorTarget.block(targetIndex);
     widget.onInsertionIndexChanged?.call(nextTarget.insertionIndex(next));
@@ -410,9 +754,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
   void _deleteBlock(int blockIndex) {
     if (!widget.enabled) return;
-    if (blockIndex < 0 || blockIndex >= widget.document.blocks.length) return;
+    if (blockIndex < 0 || blockIndex >= _document.blocks.length) return;
 
-    final next = widget.document.removeBlock(blockIndex);
+    final next = _document.removeBlock(blockIndex);
     final nextTarget = next.blocks.isEmpty
         ? const _EditorTarget.block(0)
         : _EditorTarget.block(
@@ -424,7 +768,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _deleteSelectedBlock() {
-    final target = _selectedTarget.normalized(widget.document);
+    final target = _selectedTarget.normalized(_document);
     if (target == null) return;
     _deleteBlock(target.blockIndex);
   }
@@ -432,10 +776,10 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   bool _isEmptyTextBlockTarget(_EditorTarget target) {
     if (target.itemIndex != null ||
         target.blockIndex < 0 ||
-        target.blockIndex >= widget.document.blocks.length) {
+        target.blockIndex >= _document.blocks.length) {
       return false;
     }
-    final block = widget.document.blocks[target.blockIndex];
+    final block = _document.blocks[target.blockIndex];
     if (block is LessonParagraphBlock) {
       return _plainText(block.children).isEmpty;
     }
@@ -450,14 +794,14 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     TextEditingController controller,
   ) {
     if (!widget.enabled || controller.text.isNotEmpty) return false;
-    final normalizedTarget = target.normalized(widget.document);
+    final normalizedTarget = target.normalized(_document);
     return normalizedTarget == target && _isEmptyTextBlockTarget(target);
   }
 
   void _insertFirstParagraphFromEmptyDocument(String text) {
     if (!widget.enabled) return;
     final normalizedText = text.replaceAll('\r\n', '\n');
-    if (normalizedText.isEmpty || widget.document.blocks.isNotEmpty) return;
+    if (normalizedText.isEmpty || _document.blocks.isNotEmpty) return;
     final next = LessonDocument(
       blocks: List<LessonBlock>.unmodifiable([
         LessonParagraphBlock(
@@ -471,9 +815,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _updateCtaBlock(int blockIndex, {String? label, String? targetUrl}) {
-    final block = widget.document.blocks[blockIndex];
+    final block = _document.blocks[blockIndex];
     if (block is! LessonCtaBlock) return;
-    final nextBlocks = List<LessonBlock>.from(widget.document.blocks);
+    final nextBlocks = List<LessonBlock>.from(_document.blocks);
     nextBlocks[blockIndex] = LessonCtaBlock(
       id: block.id,
       label: label ?? block.label,
@@ -484,7 +828,6 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
   @override
   Widget build(BuildContext context) {
-    _syncControllers();
     return Container(
       key: const ValueKey<String>('lesson_document_editor_shell'),
       constraints: BoxConstraints(minHeight: widget.minHeight),
@@ -519,7 +862,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                 'lesson_document_continuous_writing_surface',
               ),
               decoration: const BoxDecoration(color: Colors.white),
-              child: widget.document.blocks.isEmpty
+              child: _document.blocks.isEmpty
                   ? ListView(
                       padding: const EdgeInsets.fromLTRB(28, 22, 28, 28),
                       keyboardDismissBehavior:
@@ -530,9 +873,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                       padding: const EdgeInsets.fromLTRB(28, 22, 28, 28),
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
-                      itemCount: widget.document.blocks.length,
+                      itemCount: _document.blocks.length,
                       itemBuilder: (context, blockIndex) {
-                        final block = widget.document.blocks[blockIndex];
+                        final block = _document.blocks[blockIndex];
                         return _buildBlockEditor(context, block, blockIndex);
                       },
                     ),
@@ -742,7 +1085,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       final mediaTypeLabel = _mediaTypeLabel(block.mediaType);
       final canMoveUp = widget.enabled && blockIndex > 0;
       final canMoveDown =
-          widget.enabled && blockIndex < widget.document.blocks.length - 1;
+          widget.enabled && blockIndex < _document.blocks.length - 1;
       return _buildFlowingBlockPadding(
         block: block,
         blockIndex: blockIndex,

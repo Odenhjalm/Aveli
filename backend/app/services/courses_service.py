@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 from collections.abc import Sequence as SequenceABC
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
 from urllib.parse import quote
@@ -70,6 +71,12 @@ _STUDIO_COURSE_DRIP_MODES = frozenset(
     }
 )
 _STUDIO_COURSE_LOCK_REASON = "first_enrollment_exists"
+
+
+@dataclass(frozen=True)
+class CoursePublishReadiness:
+    requires_monetization: bool
+    amount_cents: int | None
 
 
 class CourseCreationError(Exception):
@@ -400,14 +407,19 @@ def reject_legacy_course_progression_output_fields(row: Mapping[str, Any]) -> No
 
 
 def _course_requires_stripe_mapping(course: Mapping[str, Any]) -> bool:
-    amount_cents = int(course.get("price_amount_cents") or 0)
-    return amount_cents > 0
+    try:
+        group_position = int(course.get("group_position"))
+    except (TypeError, ValueError):
+        return False
+    return group_position >= 1
 
 
 def _is_course_sellable_subject(course: Mapping[str, Any]) -> bool:
     teacher_id = str(course.get("teacher_id") or "").strip()
     visibility = str(course.get("visibility") or "").strip()
     content_ready = course.get("content_ready") is True
+    if not _course_requires_stripe_mapping(course):
+        return False
     try:
         amount_cents = int(course.get("price_amount_cents") or 0)
     except (TypeError, ValueError):
@@ -2059,7 +2071,7 @@ async def _validate_course_publish_readiness(
     course: Mapping[str, Any],
     *,
     teacher_id: str,
-) -> int:
+) -> CoursePublishReadiness:
     course_id = str(course.get("id") or "").strip()
     if not course_id:
         _publish_validation_error("Kursen hittades inte")
@@ -2109,15 +2121,21 @@ async def _validate_course_publish_readiness(
         except ValueError as exc:
             raise ValueError("Kursens omslagsbild är ogiltig") from exc
 
-    try:
-        amount_cents = int(course.get("price_amount_cents") or 0)
-    except (TypeError, ValueError):
-        _publish_validation_error("Kursen saknar giltigt pris")
-    if amount_cents <= 0:
-        _publish_validation_error("Kursen saknar giltigt pris")
+    requires_monetization = group_position >= 1
+    amount_cents: int | None = None
+    if requires_monetization:
+        try:
+            amount_cents = int(course.get("price_amount_cents") or 0)
+        except (TypeError, ValueError):
+            _publish_validation_error("Kursen saknar giltigt pris")
+        if amount_cents <= 0:
+            _publish_validation_error("Kursen saknar giltigt pris")
 
     await _derive_course_content_ready(course_id)
-    return amount_cents
+    return CoursePublishReadiness(
+        requires_monetization=requires_monetization,
+        amount_cents=amount_cents,
+    )
 
 
 def _validate_publish_stripe_product(
@@ -2230,20 +2248,26 @@ async def publish_course(
     if course is None:
         return None
 
-    amount_cents = await _validate_course_publish_readiness(
+    readiness = await _validate_course_publish_readiness(
         course,
         teacher_id=normalized_teacher_id,
     )
-    product_id, price_id = await _resolve_publish_stripe_mapping(
-        course,
-        teacher_id=normalized_teacher_id,
-        amount_cents=amount_cents,
-    )
+    product_id: str | None = None
+    price_id: str | None = None
+    if readiness.requires_monetization:
+        if readiness.amount_cents is None:
+            raise RuntimeError("Course publish monetization amount is unavailable")
+        product_id, price_id = await _resolve_publish_stripe_mapping(
+            course,
+            teacher_id=normalized_teacher_id,
+            amount_cents=readiness.amount_cents,
+        )
     try:
         updated = await courses_repo.publish_course_state(
             normalized_course_id,
             stripe_product_id=product_id,
             active_stripe_price_id=price_id,
+            requires_monetization=readiness.requires_monetization,
         )
     except Exception as exc:
         raise RuntimeError("Course publish state could not be persisted") from exc

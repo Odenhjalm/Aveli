@@ -310,7 +310,7 @@ const String _defaultCourseFamilyName = 'Course Family';
 
 String _courseStageLabel(int groupPosition) {
   if (groupPosition <= 0) {
-    return 'Introduction';
+    return 'Introduktion';
   }
   return 'Step $groupPosition';
 }
@@ -567,7 +567,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      const CourseIntroBadge(label: 'Introduction'),
+                      const CourseIntroBadge(label: 'Introduktion'),
                     ],
                   ),
                 ),

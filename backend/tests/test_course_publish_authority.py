@@ -124,18 +124,27 @@ async def _install_publish_fakes(
     async def fake_publish_course_state(
         course_id: str,
         *,
-        stripe_product_id: str,
-        active_stripe_price_id: str,
+        stripe_product_id: str | None,
+        active_stripe_price_id: str | None,
+        requires_monetization: bool,
     ):
         assert course_id == COURSE_ID
+        if requires_monetization:
+            assert stripe_product_id
+            assert active_stripe_price_id
+            required_enrollment_source = "purchase"
+        else:
+            assert stripe_product_id is None
+            assert active_stripe_price_id is None
+            required_enrollment_source = "intro_enrollment"
         published = {
             **state["course"],
             "content_ready": True,
             "visibility": "public",
             "stripe_product_id": stripe_product_id,
             "active_stripe_price_id": active_stripe_price_id,
-            "sellable": True,
-            "required_enrollment_source": "purchase",
+            "sellable": requires_monetization,
+            "required_enrollment_source": required_enrollment_source,
         }
         state["course"] = published
         state["published"] = published
@@ -245,11 +254,47 @@ async def test_publish_success_creates_mapping_and_public_sellable_state(monkeyp
     assert calls == {"product_create": 1, "price_create": 1}
 
 
+async def test_publish_intro_course_without_price_skips_stripe_and_is_not_sellable(
+    monkeypatch,
+):
+    await _install_publish_fakes(
+        monkeypatch,
+        course=_course(group_position=0, price_amount_cents=None),
+    )
+    _install_stripe_fail_fakes(monkeypatch)
+
+    course = await courses_service.publish_course(COURSE_ID, teacher_id=TEACHER_ID)
+
+    assert course is not None
+    assert course["content_ready"] is True
+    assert course["visibility"] == "public"
+    assert course["stripe_product_id"] is None
+    assert course["active_stripe_price_id"] is None
+    assert course["sellable"] is False
+    assert course["required_enrollment_source"] == "intro_enrollment"
+
+
 def test_publish_state_sets_purchase_access_classification():
     source = inspect.getsource(courses_repo.publish_course_state)
 
     assert "required_enrollment_source" in source
     assert "'purchase'::app.course_enrollment_source" in source
+    assert "'intro_enrollment'::app.course_enrollment_source" in source
+
+
+def test_publish_stripe_requirement_uses_group_position_not_price():
+    assert (
+        courses_service._course_requires_stripe_mapping(
+            _course(group_position=0, price_amount_cents=1900)
+        )
+        is False
+    )
+    assert (
+        courses_service._course_requires_stripe_mapping(
+            _course(group_position=1, price_amount_cents=None)
+        )
+        is True
+    )
 
 
 async def test_publish_fails_without_lessons_before_stripe(monkeypatch):
@@ -374,8 +419,8 @@ async def test_publish_fails_when_ready_media_is_not_runtime_resolvable(monkeypa
         await courses_service.publish_course(COURSE_ID, teacher_id=TEACHER_ID)
 
 
-async def test_publish_fails_with_invalid_price_before_stripe(monkeypatch):
-    await _install_publish_fakes(monkeypatch, course=_course(price_amount_cents=0))
+async def test_publish_premium_course_fails_without_price_before_stripe(monkeypatch):
+    await _install_publish_fakes(monkeypatch, course=_course(price_amount_cents=None))
     _install_stripe_fail_fakes(monkeypatch)
 
     with pytest.raises(ValueError, match="pris"):
@@ -391,10 +436,11 @@ async def test_publish_fails_closed_if_access_classification_cannot_persist(
     async def fail_publish_course_state(
         course_id: str,
         *,
-        stripe_product_id: str,
-        active_stripe_price_id: str,
+        stripe_product_id: str | None,
+        active_stripe_price_id: str | None,
+        requires_monetization: bool,
     ):
-        del course_id, stripe_product_id, active_stripe_price_id
+        del course_id, stripe_product_id, active_stripe_price_id, requires_monetization
         raise Exception("required_enrollment_source write failed")
 
     monkeypatch.setattr(

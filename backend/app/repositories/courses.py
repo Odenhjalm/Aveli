@@ -1065,8 +1065,9 @@ async def update_course_stripe_mapping(
 async def publish_course_state(
     course_id: str,
     *,
-    stripe_product_id: str,
-    active_stripe_price_id: str,
+    stripe_product_id: str | None,
+    active_stripe_price_id: str | None,
+    requires_monetization: bool,
 ) -> CourseRow | None:
     query = """
         update app.courses
@@ -1074,8 +1075,11 @@ async def publish_course_state(
             visibility = 'public'::app.course_visibility,
             stripe_product_id = %s,
             active_stripe_price_id = %s,
-            required_enrollment_source = 'purchase'::app.course_enrollment_source,
-            sellable = true
+            required_enrollment_source = case
+                when %s then 'purchase'::app.course_enrollment_source
+                else 'intro_enrollment'::app.course_enrollment_source
+            end,
+            sellable = %s
         where id = %s::uuid
         returning id
     """
@@ -1086,6 +1090,8 @@ async def publish_course_state(
                 (
                     stripe_product_id,
                     active_stripe_price_id,
+                    requires_monetization,
+                    requires_monetization,
                     course_id,
                 ),
             )

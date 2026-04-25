@@ -152,7 +152,7 @@ const String _defaultCourseFamilyName = 'Course Family';
 
 String _courseStepLabel(int groupPosition) {
   if (groupPosition <= 0) {
-    return 'Introduction';
+    return 'Introduktion';
   }
   return 'Step $groupPosition';
 }
@@ -742,6 +742,8 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   final ScrollController _panelScrollController = ScrollController();
   final TextEditingController _lessonTitleCtrl = TextEditingController();
+  final LessonDocumentEditorController _lessonEditorController =
+      LessonDocumentEditorController();
   static const Duration _lessonPreviewHydrationTimeout = Duration(seconds: 5);
   late final LessonMediaPreviewHydrationController _previewHydrationController;
   _LessonEditorBootPhase _lessonEditorBootPhase =
@@ -1042,6 +1044,21 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       setState(() {
         _lessonContentDirty = true;
       });
+    }
+  }
+
+  void _handleLessonDocumentDirtyChanged(bool dirty) {
+    if (!_isSelectedLessonDocumentReady()) {
+      return;
+    }
+    final titleDirty = _lessonTitleCtrl.text.trim() != _lastSavedLessonTitle;
+    final nextDirty = dirty || titleDirty;
+    if (!mounted) {
+      _lessonContentDirty = nextDirty;
+      return;
+    }
+    if (_lessonContentDirty != nextDirty) {
+      setState(() => _lessonContentDirty = nextDirty);
     }
   }
 
@@ -1406,6 +1423,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _lessonReorderDebounceTimer?.cancel();
     _lessonEditorTestIdRetryTimer?.cancel();
     _lessonEditorSemanticsHandle?.dispose();
+    _lessonEditorController.dispose();
     _previewHydrationController.dispose();
     super.dispose();
   }
@@ -2475,7 +2493,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   }
 
   Set<String> _currentLessonEmbeddedMediaIds() {
-    return _embeddedLessonMediaIdsFromDocument(_lessonDocument);
+    return _embeddedLessonMediaIdsFromDocument(
+      _lessonEditorController.currentDocument ?? _lessonDocument,
+    );
   }
 
   bool _lessonAlreadyContainsMediaId(String lessonMediaId) {
@@ -2782,9 +2802,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final title = _lessonTitleCtrl.text.trim().isEmpty
         ? 'Lektion'
         : _lessonTitleCtrl.text.trim();
+    late final LessonEditorSaveSnapshot saveSnapshot;
     late final LessonDocument contentDocument;
     try {
-      contentDocument = _lessonDocument.validate(
+      saveSnapshot = _lessonEditorController.snapshotForSave();
+      if (saveSnapshot.lessonId != lessonId) {
+        throw StateError('Lektionsinnehållet hör till fel redigeringssession.');
+      }
+      contentDocument = saveSnapshot.document.validate(
         mediaTypesByLessonMediaId: _lessonMediaTypesByIdForSelectedLesson(),
       );
     } catch (error, stackTrace) {
@@ -2831,6 +2856,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
       if (!mounted || !_isEditorTokenValid(token)) return false;
 
+      final canonicalContentDocument =
+          updatedContent?.contentDocument ?? _lastSavedLessonDocument;
+      final saveAcknowledged = _lessonEditorController.acknowledgeSave(
+        snapshot: saveSnapshot,
+        document: canonicalContentDocument,
+      );
+
       setState(() {
         _lessons = _lessons
             .map((lesson) => lesson.id == lessonId ? updatedStructure : lesson)
@@ -2847,7 +2879,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         if (updatedContent != null) {
           _lastSavedLessonContentEtag = updatedContent.etag;
         }
-        _lessonContentDirty = false;
+        _lessonContentDirty = saveAcknowledged
+            ? _lessonEditorController.dirty
+            : true;
       });
 
       if (mounted && context.mounted && showSuccessSnack) {
@@ -2967,14 +3001,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       return;
     }
 
-    setState(() {
-      _lessonDocument = _lessonDocument.insertCta(
-        _lessonDocument.blocks.length,
-        label: label,
-        targetUrl: url,
-      );
-    });
-    _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
+    final inserted = _lessonEditorController.insertCta(
+      label: label,
+      targetUrl: url,
+    );
+    if (!inserted && mounted && context.mounted) {
+      showSnack(context, 'Lektionsinnehållet är inte redo för CTA.');
+    }
   }
 
   Widget _buildLessonContentEditor(
@@ -3012,23 +3045,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final editorSurface = Container(
       key: const ValueKey<String>('lesson_editor_live_surface'),
       child: _wrapLessonEditorForWebTestIds(
-        LessonDocumentEditor(
+        LessonEditorSessionHost(
           key: const ValueKey<String>(_lessonEditorTestId),
+          lessonId: _selectedLessonId ?? '',
           document: _lessonDocument,
+          controller: _lessonEditorController,
+          rehydrationKey: _documentReadyRequestId,
           media: _editorDocumentMedia(),
           enabled: !_lessonPreviewMode && _isSelectedLessonDocumentReady(),
           minHeight: 280,
-          onChanged: (document) {
-            setState(() {
-              _lessonDocument = document;
-              _lessonDocumentInsertionIndex =
-                  _clampedLessonDocumentInsertionIndex(
-                    _lessonDocumentInsertionIndex,
-                    document,
-                  );
-            });
-            _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
-          },
+          onDirtyChanged: _handleLessonDocumentDirtyChanged,
           onInsertionIndexChanged: _rememberLessonDocumentInsertionIndex,
         ),
       ),
@@ -4398,7 +4424,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   void _rememberLessonDocumentInsertionIndex(int index) {
     _lessonDocumentInsertionIndex = _clampedLessonDocumentInsertionIndex(
       index,
-      _lessonDocument,
+      _lessonEditorController.currentDocument ?? _lessonDocument,
     );
   }
 
@@ -4406,17 +4432,13 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     required String mediaType,
     required String lessonMediaId,
   }) {
-    const insertionIndex = 0;
-    final nextDocument = _lessonDocument.insertMedia(
-      insertionIndex,
+    final inserted = _lessonEditorController.insertMediaBlock(
       mediaType: mediaType,
       lessonMediaId: lessonMediaId,
     );
-    setState(() {
-      _lessonDocument = nextDocument;
+    if (inserted) {
       _lessonDocumentInsertionIndex = 1;
-    });
-    _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
+    }
   }
 
   bool _insertImageIntoLesson({String? lessonMediaId}) {
@@ -5473,30 +5495,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final toId = replacementMedia.lessonMediaId;
     if (fromId.isEmpty || toId.isEmpty) return false;
 
-    var contentChanged = false;
-    final nextBlocks = <LessonBlock>[];
-    for (final block in _lessonDocument.blocks) {
-      if (block is LessonMediaBlock && block.lessonMediaId == fromId) {
-        nextBlocks.add(
-          LessonMediaBlock(
-            id: block.id,
-            mediaType: replacementMedia.mediaType,
-            lessonMediaId: toId,
-          ),
-        );
-        contentChanged = true;
-      } else {
-        nextBlocks.add(block);
-      }
-    }
+    final contentChanged = _lessonEditorController.replaceMediaReference(
+      fromLessonMediaId: fromId,
+      toLessonMediaId: toId,
+      mediaType: replacementMedia.mediaType,
+    );
     if (!contentChanged) return false;
-
-    setState(() {
-      _lessonDocument = LessonDocument(
-        blocks: List<LessonBlock>.unmodifiable(nextBlocks),
-      );
-    });
-    _markLessonContentDirty(refreshPreview: _lessonPreviewMode);
     _resetLessonPreviewHydrationValues(bumpRevision: true);
     return true;
   }

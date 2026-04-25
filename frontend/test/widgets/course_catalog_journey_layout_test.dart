@@ -118,7 +118,7 @@ void main() {
     );
 
     expect(find.text('Intro Start'), findsOneWidget);
-    expect(find.text('Introduction'), findsOneWidget);
+    expect(find.text('Introduktion'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('journey-family-row:series:solo')),
       findsNothing,
