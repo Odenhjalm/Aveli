@@ -10,38 +10,57 @@ import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/features/community/data/notifications_repository.dart';
 
 void main() {
-  test('myNotifications reads backend notification truth', () async {
+  test('myNotifications reads backend notification read model', () async {
     final harness = await _Harness.create();
     final repository = NotificationsRepository(harness.client);
 
-    final notifications = await repository.myNotifications();
+    final readModel = await repository.myNotifications();
 
-    expect(notifications, hasLength(1));
-    expect(notifications.single.id, 'notification-1');
-    expect(notifications.single.type, 'lesson_drip');
-    expect(notifications.single.payload['lesson_id'], 'lesson-1');
-    expect(notifications.single.isRead, isFalse);
-    expect(notifications.single.readAt, isNull);
+    expect(readModel.showNotificationsBar, isTrue);
+    expect(readModel.notifications, hasLength(1));
+    expect(readModel.notifications.single.id, 'notification-1');
+    expect(readModel.notifications.single.title, 'Ny lektion ar upplast');
+    expect(readModel.notifications.single.subtitle, 'Lesson one');
+    expect(readModel.notifications.single.ctaLabel, 'Oppna lektionen');
+    expect(readModel.notifications.single.ctaUrl, '/lesson/lesson-1');
     final requests = harness.adapter.requestsFor('/notifications');
     expect(requests, hasLength(1));
     expect(requests.single.method, 'GET');
   });
 
-  test('markRead sends read intent to backend and parses state', () async {
-    final harness = await _Harness.create();
-    final repository = NotificationsRepository(harness.client);
+  test(
+    'myNotifications reads hidden notification bar without placeholders',
+    () async {
+      final harness = await _Harness.create(emptyNotifications: true);
+      final repository = NotificationsRepository(harness.client);
 
-    final notification = await repository.markRead('notification-1');
+      final readModel = await repository.myNotifications();
 
-    expect(notification.id, 'notification-1');
-    expect(notification.isRead, isTrue);
-    expect(notification.readAt, DateTime.parse('2026-04-25T09:05:00Z'));
-    final requests = harness.adapter.requestsFor(
-      '/notifications/notification-1/read',
-    );
-    expect(requests, hasLength(1));
-    expect(requests.single.method, 'PATCH');
-  });
+      expect(readModel.showNotificationsBar, isFalse);
+      expect(readModel.notifications, isEmpty);
+    },
+  );
+
+  test(
+    'markRead sends read intent to backend and parses header item',
+    () async {
+      final harness = await _Harness.create();
+      final repository = NotificationsRepository(harness.client);
+
+      final notification = await repository.markRead('notification-1');
+
+      expect(notification.id, 'notification-1');
+      expect(notification.title, 'Ny lektion ar upplast');
+      expect(notification.subtitle, 'Lesson one');
+      expect(notification.ctaLabel, 'Oppna lektionen');
+      expect(notification.ctaUrl, '/lesson/lesson-1');
+      final requests = harness.adapter.requestsFor(
+        '/notifications/notification-1/read',
+      );
+      expect(requests, hasLength(1));
+      expect(requests.single.method, 'PATCH');
+    },
+  );
 
   test('registerDevice sends token and platform to backend', () async {
     final harness = await _Harness.create();
@@ -83,7 +102,7 @@ class _Harness {
   final ApiClient client;
   final _RecordingAdapter adapter;
 
-  static Future<_Harness> create() async {
+  static Future<_Harness> create({bool emptyNotifications = false}) async {
     final storage = _MemoryFlutterSecureStorage();
     final tokens = TokenStorage(storage: storage);
     await tokens.saveTokens(
@@ -95,30 +114,38 @@ class _Harness {
       baseUrl: 'http://127.0.0.1:1',
       tokenStorage: tokens,
     );
-    final adapter = _RecordingAdapter(_defaultHandler);
+    final adapter = _RecordingAdapter(
+      (options) =>
+          _defaultHandler(options, emptyNotifications: emptyNotifications),
+    );
     client.raw.httpClientAdapter = adapter;
     return _Harness(client: client, adapter: adapter);
   }
 }
 
-ResponseBody _defaultHandler(RequestOptions options) {
+ResponseBody _defaultHandler(
+  RequestOptions options, {
+  required bool emptyNotifications,
+}) {
   final method = options.method.toUpperCase();
   if (options.path == '/notifications' && method == 'GET') {
+    if (emptyNotifications) {
+      return _jsonResponse(
+        statusCode: 200,
+        body: {'show_notifications_bar': false, 'notifications': const []},
+      );
+    }
     return _jsonResponse(
       statusCode: 200,
       body: {
-        'items': [
+        'show_notifications_bar': true,
+        'notifications': [
           {
             'id': 'notification-1',
-            'type': 'lesson_drip',
-            'payload': {
-              'lesson_id': 'lesson-1',
-              'course_id': 'course-1',
-              'title': 'Lesson one',
-            },
-            'created_at': '2026-04-25T09:00:00Z',
-            'read_at': null,
-            'is_read': false,
+            'title': 'Ny lektion ar upplast',
+            'subtitle': 'Lesson one',
+            'cta_label': 'Oppna lektionen',
+            'cta_url': '/lesson/lesson-1',
           },
         ],
       },
@@ -130,15 +157,10 @@ ResponseBody _defaultHandler(RequestOptions options) {
       statusCode: 200,
       body: {
         'id': 'notification-1',
-        'type': 'lesson_drip',
-        'payload': {
-          'lesson_id': 'lesson-1',
-          'course_id': 'course-1',
-          'title': 'Lesson one',
-        },
-        'created_at': '2026-04-25T09:00:00Z',
-        'read_at': '2026-04-25T09:05:00Z',
-        'is_read': true,
+        'title': 'Ny lektion ar upplast',
+        'subtitle': 'Lesson one',
+        'cta_label': 'Oppna lektionen',
+        'cta_url': '/lesson/lesson-1',
       },
     );
   }

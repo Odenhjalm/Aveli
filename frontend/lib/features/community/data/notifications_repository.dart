@@ -1,33 +1,58 @@
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
 
-class NotificationItem {
-  const NotificationItem({
+class NotificationHeaderItem {
+  const NotificationHeaderItem({
     required this.id,
-    required this.type,
-    required this.payload,
-    required this.isRead,
-    required this.readAt,
-    required this.createdAt,
+    required this.title,
+    required this.subtitle,
+    required this.ctaLabel,
+    required this.ctaUrl,
   });
 
   final String id;
-  final String type;
-  final Map<String, dynamic> payload;
-  final bool isRead;
-  final DateTime? readAt;
-  final DateTime createdAt;
+  final String title;
+  final String? subtitle;
+  final String? ctaLabel;
+  final String? ctaUrl;
 
-  factory NotificationItem.fromJson(Map<String, dynamic> json) {
-    return NotificationItem(
-      id: json['id'] as String? ?? '',
-      type: json['type'] as String? ?? '',
-      payload: Map<String, dynamic>.from(json['payload'] as Map? ?? const {}),
-      isRead: json['is_read'] == true,
-      readAt: DateTime.tryParse(json['read_at'] as String? ?? ''),
-      createdAt:
-          DateTime.tryParse(json['created_at'] as String? ?? '') ??
-          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+  factory NotificationHeaderItem.fromJson(Map<String, dynamic> json) {
+    return NotificationHeaderItem(
+      id: _requiredString(json, 'id'),
+      title: _requiredString(json, 'title'),
+      subtitle: _optionalString(json, 'subtitle'),
+      ctaLabel: _optionalString(json, 'cta_label'),
+      ctaUrl: _optionalString(json, 'cta_url'),
+    );
+  }
+}
+
+class NotificationsReadModel {
+  const NotificationsReadModel({
+    required this.showNotificationsBar,
+    required this.notifications,
+  });
+
+  final bool showNotificationsBar;
+  final List<NotificationHeaderItem> notifications;
+
+  factory NotificationsReadModel.fromJson(Map<String, dynamic> json) {
+    final notifications = json['notifications'];
+    if (notifications is! List) {
+      throw StateError('notifications must be a list');
+    }
+    return NotificationsReadModel(
+      showNotificationsBar: _requiredBool(json, 'show_notifications_bar'),
+      notifications: notifications
+          .map((item) {
+            if (item is! Map) {
+              throw StateError('notification item must be an object');
+            }
+            return NotificationHeaderItem.fromJson(
+              Map<String, dynamic>.from(item),
+            );
+          })
+          .toList(growable: false),
     );
   }
 }
@@ -63,17 +88,11 @@ class NotificationsRepository {
 
   final ApiClient _client;
 
-  Future<List<NotificationItem>> myNotifications() async {
+  Future<NotificationsReadModel> myNotifications() async {
     final data = await _client.get<Map<String, dynamic>>(
       ApiPaths.notifications,
     );
-    final items = data['items'] as List? ?? const [];
-    return items
-        .whereType<Map>()
-        .map(
-          (item) => NotificationItem.fromJson(Map<String, dynamic>.from(item)),
-        )
-        .toList(growable: false);
+    return NotificationsReadModel.fromJson(data);
   }
 
   Future<DeviceRegistration> registerDevice({
@@ -91,10 +110,37 @@ class NotificationsRepository {
     await _client.delete<void>(ApiPaths.notificationDevice(id));
   }
 
-  Future<NotificationItem> markRead(String id) async {
+  Future<NotificationHeaderItem> markRead(String id) async {
     final data = await _client.patch<Map<String, dynamic>>(
       ApiPaths.notificationRead(id),
     );
-    return NotificationItem.fromJson(data ?? const <String, dynamic>{});
+    return NotificationHeaderItem.fromJson(data ?? const <String, dynamic>{});
   }
+}
+
+String _requiredString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! String || value.isEmpty) {
+    throw StateError('$key must be a non-empty string');
+  }
+  return value;
+}
+
+bool _requiredBool(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! bool) {
+    throw StateError('$key must be a boolean');
+  }
+  return value;
+}
+
+String? _optionalString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value == null) {
+    return null;
+  }
+  if (value is! String) {
+    throw StateError('$key must be a string or null');
+  }
+  return value;
 }

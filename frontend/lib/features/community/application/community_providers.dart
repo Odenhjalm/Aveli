@@ -41,7 +41,7 @@ final notificationsRepositoryProvider = Provider<NotificationsRepository>((
   return NotificationsRepository(client);
 });
 
-final notificationsProvider = AutoDisposeFutureProvider<List<NotificationItem>>(
+final notificationsProvider = AutoDisposeFutureProvider<NotificationsReadModel>(
   (ref) async {
     final repo = ref.watch(notificationsRepositoryProvider);
     return repo.myNotifications();

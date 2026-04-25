@@ -16,6 +16,8 @@ import 'package:aveli/core/auth/token_storage.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/data/models/profile.dart';
+import 'package:aveli/features/community/application/community_providers.dart';
+import 'package:aveli/features/community/data/notifications_repository.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/home/application/home_audio_controller.dart';
@@ -95,6 +97,10 @@ Future<ProviderContainer> _pumpDashboard(
   WidgetTester tester, {
   required HomeAudioRepository homeAudioRepository,
   required FakeHomeAudioEngineFactory engineFactory,
+  NotificationsReadModel notificationsReadModel = const NotificationsReadModel(
+    showNotificationsBar: false,
+    notifications: [],
+  ),
 }) async {
   final router = GoRouter(
     initialLocation: '/',
@@ -130,6 +136,7 @@ Future<ProviderContainer> _pumpDashboard(
       landing.popularCoursesProvider.overrideWith(
         (ref) async => const landing.LandingSection<CourseSummary>(items: []),
       ),
+      notificationsProvider.overrideWith((ref) async => notificationsReadModel),
       homeAudioRepositoryProvider.overrideWithValue(homeAudioRepository),
       homeAudioEngineFactoryProvider.overrideWithValue(engineFactory.create),
     ],
@@ -193,6 +200,10 @@ void main() {
     expect(find.text('Morgonandning'), findsNothing);
     expect(find.text('Andning del 1'), findsNothing);
     expect(find.text('Utforska kurser'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('notifications-header-strip')),
+      findsNothing,
+    );
     expect(find.text('Gemensam vägg'), findsNothing);
     expect(find.text('Tjänster'), findsNothing);
 
@@ -276,6 +287,81 @@ void main() {
     expect(find.text('Morgonandning'), findsNothing);
     expect(engineFactory.createCount, 1);
   });
+
+  testWidgets('home dashboard renders notifications only in the header slot', (
+    tester,
+  ) async {
+    final harness = await _Harness.create();
+    final repository = HomeAudioRepository(harness.client);
+    final engineFactory = FakeHomeAudioEngineFactory();
+
+    final container = await _pumpDashboard(
+      tester,
+      homeAudioRepository: repository,
+      engineFactory: engineFactory,
+      notificationsReadModel: const NotificationsReadModel(
+        showNotificationsBar: true,
+        notifications: [
+          NotificationHeaderItem(
+            id: 'notification-1',
+            title: 'Backend title',
+            subtitle: 'Backend subtitle',
+            ctaLabel: 'Backend CTA',
+            ctaUrl: '/lesson/backend-lesson',
+          ),
+        ],
+      ),
+    );
+    addTearDown(container.dispose);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      find.byKey(const ValueKey('notifications-header-strip')),
+      findsOneWidget,
+    );
+    expect(find.text('Backend title'), findsOneWidget);
+    expect(find.text('Backend subtitle'), findsOneWidget);
+    expect(find.text('Backend CTA'), findsOneWidget);
+  });
+
+  testWidgets(
+    'home dashboard renders no notification shell when backend hides it',
+    (tester) async {
+      final harness = await _Harness.create();
+      final repository = HomeAudioRepository(harness.client);
+      final engineFactory = FakeHomeAudioEngineFactory();
+
+      final container = await _pumpDashboard(
+        tester,
+        homeAudioRepository: repository,
+        engineFactory: engineFactory,
+        notificationsReadModel: const NotificationsReadModel(
+          showNotificationsBar: false,
+          notifications: [
+            NotificationHeaderItem(
+              id: 'notification-1',
+              title: 'Hidden backend title',
+              subtitle: 'Hidden backend subtitle',
+              ctaLabel: 'Hidden backend CTA',
+              ctaUrl: '/lesson/hidden-backend-lesson',
+            ),
+          ],
+        ),
+      );
+      addTearDown(container.dispose);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        find.byKey(const ValueKey('notifications-header-strip')),
+        findsNothing,
+      );
+      expect(find.text('Hidden backend title'), findsNothing);
+      expect(find.text('Hidden backend subtitle'), findsNothing);
+      expect(find.text('Hidden backend CTA'), findsNothing);
+    },
+  );
 
   testWidgets(
     'provider refresh stages a new candidate while the dashboard keeps rendering the frozen session list',
