@@ -44,7 +44,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from app.config import settings  # noqa: E402
 from app.db import get_conn, pool  # noqa: E402
 from app.repositories import courses as courses_repo  # noqa: E402
-from app.repositories import home_player_library as home_player_repo  # noqa: E402
+from app.repositories import home_audio_sources  # noqa: E402
 from app.repositories import media_assets as media_assets_repo  # noqa: E402
 from app.repositories import runtime_media as runtime_media_repo  # noqa: E402
 from app.services import courses_service  # noqa: E402
@@ -373,12 +373,10 @@ async def _ensure_home_player_upload(teacher_id: str) -> dict[str, Any]:
     )
     upload_action = "reused"
     if upload is None:
-        created = await home_player_repo.create_home_player_upload(
+        created = await home_audio_sources.create_home_player_upload(
             teacher_id=teacher_id,
-            media_id=None,
             media_asset_id=media_asset_id,
             title=HOME_UPLOAD_TITLE,
-            kind="audio",
             active=True,
         )
         if created is None:
@@ -388,7 +386,7 @@ async def _ensure_home_player_upload(teacher_id: str) -> dict[str, Any]:
     else:
         upload_id = str(upload["id"])
         if upload.get("active") is not True:
-            updated = await home_player_repo.update_home_player_upload(
+            updated = await home_audio_sources.update_home_player_upload(
                 upload_id=upload_id,
                 teacher_id=teacher_id,
                 fields={"active": True},

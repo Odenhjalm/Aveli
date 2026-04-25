@@ -1,0 +1,211 @@
+{
+  "input": {
+    "task": "Materialize deterministic DAG task tree for retrieval pipeline authority remediation",
+    "mode": "generate",
+    "scope": [
+      "Runtime must detect active build changes deterministically and refresh without requiring MCP restart",
+      "Observability surfaces must align to source-backed schemas and expose no phantom or null placeholder fields",
+      "Build execution results must prove CUDA execution truthfully and report fallback behavior truthfully",
+      "Vector integrity validation must cover every metadata field written by the builder",
+      "Historical task documents must not surface as current LAW or current-truth retrieval evidence",
+      "A deterministic test surface must cover runtime reload, observability parity, build truthfulness, integrity drift, and MCP versus CLI parity"
+    ],
+    "parent_dag": "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller",
+    "external_prerequisites": [
+      "actual_truth/DETERMINED_TASKS/retrieval_indexing_controller/T15_execution_result.md",
+      "actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/B01_controller_governed_index_build.md",
+      ".repo_index/index_manifest.json",
+      ".repo_index/promotion_result.json"
+    ],
+    "contracts": [
+      "codex/AVELI_OPERATING_SYSTEM.md",
+      "actual_truth/contracts/task_tree_execution_controller_contract.md",
+      "actual_truth/contracts/retrieval/determinism_contract.md",
+      "actual_truth/contracts/retrieval/evidence_contract.md",
+      "actual_truth/contracts/retrieval/index_structure_contract.md",
+      "actual_truth/contracts/retrieval/ingestion_contract.md",
+      "actual_truth/contracts/retrieval/retrieval_contract.md",
+      "actual_truth/contracts/retrieval/build_execution_result_contract.md"
+    ],
+    "audits": [
+      "tools/index/search_code.py",
+      "tools/mcp/semantic_search_server.py",
+      "tools/index/retrieval_observability.py",
+      "tools/index/dependency_authority.py",
+      "tools/index/build_vector_index.py",
+      "tools/index/index_artifact_integrity.py",
+      ".repo_index/observability/retrieval_last_build_status.json",
+      ".repo_index/observability/retrieval_dependency_health.json",
+      ".repo_index/observability/retrieval_model_health.json",
+      ".repo_index/promotion_result.json"
+    ]
+  },
+  "controller": {
+    "execution_mode": "full_chain",
+    "retrieval_contract": "actual_truth/contracts/retrieval/retrieval_contract.md",
+    "audit_cadence": "pre_task_and_post_task",
+    "strict_dag_enforcement": true,
+    "stop_on_contract_contradiction": true,
+    "stop_on_unverified_output": true,
+    "stop_on_runtime_cache_staleness": true,
+    "stop_on_schema_drift": true,
+    "stop_on_cross_slice_leakage": true
+  },
+  "strict_order": [
+    "RPAR-A01",
+    "RPAR-B01",
+    "RPAR-C01",
+    "RPAR-D01",
+    "RPAR-E01",
+    "RPAR-F01"
+  ],
+  "next_executable_task": "RPAR-A01",
+  "task_tree": [
+    {
+      "task_id": "RPAR-A01",
+      "slice": "A",
+      "status": "planned",
+      "type": "OWNER",
+      "task_type": "RUNTIME_AUTHORITY",
+      "canonical_owner": "runtime",
+      "description": "Lock deterministic active-build detection and runtime reload behavior so MCP and CLI serve the same promoted retrieval state without manual restart.",
+      "depends_on": [],
+      "target_files": [
+        "tools/index/search_code.py",
+        "tools/mcp/semantic_search_server.py",
+        ".repo_index/index_manifest.json",
+        ".repo_index/promotion_result.json",
+        ".repo_index/observability/retrieval_last_build_status.json"
+      ],
+      "retrieval_queries": [
+        "search_code _RUNTIME_STATE load_runtime_state active build promotion_result",
+        "semantic_search_server canonical retrieval runtime cache persistent process",
+        "retrieval runtime stale build after promotion mcp parity cli"
+      ],
+      "verification_requirement": "A promoted build becomes visible to both CLI and long-lived MCP retrieval immediately under the same active-build contract, with no manual restart and no stale runtime state."
+    },
+    {
+      "task_id": "RPAR-B01",
+      "slice": "B",
+      "status": "planned",
+      "type": "OWNER",
+      "task_type": "OBSERVABILITY_AUTHORITY",
+      "canonical_owner": "observability",
+      "description": "Align observability schemas to the real upstream artifact fields and remove null or phantom keys from retrieval status, dependency health, and model health surfaces.",
+      "depends_on": [
+        "RPAR-A01"
+      ],
+      "target_files": [
+        "tools/index/retrieval_observability.py",
+        "tools/index/dependency_authority.py",
+        "tools/index/build_vector_index.py",
+        ".repo_index/observability/retrieval_last_build_status.json",
+        ".repo_index/observability/retrieval_dependency_health.json",
+        ".repo_index/observability/retrieval_model_health.json",
+        ".repo_index/promotion_result.json"
+      ],
+      "retrieval_queries": [
+        "retrieval_observability promotion_result completed_at_utc promotion_completed_at_utc",
+        "serialize_dependency_authority_result retrieval_dependency_health fields",
+        "retrieval_model_health snapshot_hash model_snapshot_hash"
+      ],
+      "verification_requirement": "Every observability field is either backed by a single repo-visible source field or removed, and no active observability file emits null placeholders for authoritative values."
+    },
+    {
+      "task_id": "RPAR-C01",
+      "slice": "C",
+      "status": "planned",
+      "type": "OWNER",
+      "task_type": "BUILD_TRUTHFULNESS",
+      "canonical_owner": "build pipeline",
+      "description": "Make build results truthful about CUDA execution and fallback behavior so device and fallback PASS states are evidence-backed rather than synthetic.",
+      "depends_on": [
+        "RPAR-B01"
+      ],
+      "target_files": [
+        "tools/index/build_vector_index.py",
+        "actual_truth/contracts/retrieval/build_execution_result_contract.md",
+        "actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/B01_controller_governed_index_build.md"
+      ],
+      "retrieval_queries": [
+        "build_vector_index validate_build_device_runtime no_fallback_used device_check",
+        "build execution result cuda proof fallback reporting",
+        "staging verification device_check no_fallback_used retrieval build"
+      ],
+      "verification_requirement": "Build execution records prove actual CUDA execution or fail closed, and fallback reporting is derived from measured behavior rather than hard-coded PASS values."
+    },
+    {
+      "task_id": "RPAR-D01",
+      "slice": "D",
+      "status": "planned",
+      "type": "OWNER",
+      "task_type": "VECTOR_INTEGRITY_AUTHORITY",
+      "canonical_owner": "integrity system",
+      "description": "Define and enforce a canonical vector metadata contract so integrity validation covers every stored collection and record metadata field.",
+      "depends_on": [
+        "RPAR-C01"
+      ],
+      "target_files": [
+        "tools/index/build_vector_index.py",
+        "tools/index/index_artifact_integrity.py",
+        "actual_truth/contracts/retrieval/index_structure_contract.md",
+        "actual_truth/contracts/retrieval/build_execution_result_contract.md"
+      ],
+      "retrieval_queries": [
+        "index_artifact_integrity vector metadata parity collection metadata",
+        "build_vector_index embedding_model_snapshot_hash tokenizer_files_hash vector_export_hash",
+        "vector metadata contract integrity drift retrieval"
+      ],
+      "verification_requirement": "The builder-written metadata key set and the integrity-validated metadata key set are identical, and drift in any stored metadata field fails integrity verification."
+    },
+    {
+      "task_id": "RPAR-E01",
+      "slice": "E",
+      "status": "planned",
+      "type": "OWNER",
+      "task_type": "CORPUS_AUTHORITY",
+      "canonical_owner": "corpus authority",
+      "description": "Separate historical narrative from current authority so retrieval cannot surface stale task documents as current LAW or current-truth evidence.",
+      "depends_on": [
+        "RPAR-D01"
+      ],
+      "target_files": [
+        "tools/index/build_vector_index.py",
+        "tools/index/search_code.py",
+        "actual_truth/contracts/retrieval/ingestion_contract.md",
+        "actual_truth/contracts/retrieval/evidence_contract.md",
+        ".repo_index/index_manifest.json"
+      ],
+      "retrieval_queries": [
+        "build_vector_index classify actual_truth determined_tasks law source_type",
+        "search_code build_output_entry retrieval evidence stale narrative",
+        "historical task documents current truth retrieval authority"
+      ],
+      "verification_requirement": "Historical task documents are demoted, labeled, or excluded so retrieval evidence cannot present stale narrative as active LAW or active current truth."
+    },
+    {
+      "task_id": "RPAR-F01",
+      "slice": "F",
+      "status": "planned",
+      "type": "GATE",
+      "task_type": "TEST_SURFACE",
+      "canonical_owner": "test surface",
+      "description": "Add deterministic end-to-end and parity verification for runtime reload, observability alignment, build truthfulness, vector integrity drift, and MCP versus CLI behavior.",
+      "depends_on": [
+        "RPAR-E01"
+      ],
+      "target_files": [
+        "tools/index",
+        "backend/tests",
+        ".repo_index/observability",
+        "actual_truth/DETERMINED_TASKS/retrieval_pipeline_authority_remediation_tree"
+      ],
+      "retrieval_queries": [
+        "retrieval tests promotion reload parity integrity drift mcp cli",
+        "observability parity tests retrieval health schema",
+        "build truthfulness tests cuda fallback retrieval"
+      ],
+      "verification_requirement": "The deterministic test surface proves slices A through E under fresh-process and long-lived-process execution, including promotion reload, observability parity, integrity drift failure, and MCP versus CLI parity."
+    }
+  ]
+}

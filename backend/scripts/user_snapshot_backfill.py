@@ -1502,7 +1502,7 @@ def _verify_plan_against_db(plan: dict[str, Any], *, database_url: str, env_file
             expected_rows=_require_list(tables.get("media_assets"), "tables.media_assets"),
             key="id",
             query=f"""
-                select {", ".join(column + (\"::text as \" + column if column in {\"id\"} else \"\") for column in MEDIA_ASSET_COLUMNS)}
+                select {", ".join(column + ("::text as " + column if column in {"id"} else "") for column in MEDIA_ASSET_COLUMNS)}
                   from app.media_assets
                  order by id::text
             """,
