@@ -6509,7 +6509,15 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _courseDripIntervalCtrl.text = '7';
       }
     });
-    await _saveCourseDripAuthoring(reloadOnFailure: true);
+    if (_shouldPersistDripModeChangeImmediately(mode)) {
+      await _saveCourseDripAuthoring(reloadOnFailure: true);
+    }
+  }
+
+  bool _shouldPersistDripModeChangeImmediately(DripAuthoringMode mode) {
+    // Custom-mode controllers can contain local defaults; only the explicit
+    // save button may promote custom_schedule.rows to canonical backend state.
+    return mode != DripAuthoringMode.customLessonOffsets;
   }
 
   Widget _buildCustomScheduleSummaryChip(

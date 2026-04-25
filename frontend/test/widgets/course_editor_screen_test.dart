@@ -130,6 +130,102 @@ void main() {
       expect(source, contains('Välj en lektion för att hantera media.'));
     },
   );
+
+  group('custom drip schedule persistence', () {
+    test('switching into custom mode does not autosave generated offsets', () {
+      final source = _courseEditorSource();
+      final handler = _sourceSlice(
+        source,
+        '  Future<void> _handleCourseDripModeChanged(DripAuthoringMode? mode) async {',
+        '  Widget _buildCustomScheduleSummaryChip',
+      ).replaceAll('\r\n', '\n');
+
+      expect(
+        handler,
+        contains(
+          'if (mode == DripAuthoringMode.customLessonOffsets) {\n'
+          '      _ensureCourseCustomScheduleControllers();\n'
+          '    }',
+        ),
+      );
+      expect(
+        handler,
+        contains(
+          'if (_shouldPersistDripModeChangeImmediately(mode)) {\n'
+          '      await _saveCourseDripAuthoring(reloadOnFailure: true);\n'
+          '    }',
+        ),
+      );
+      expect(
+        handler,
+        contains('return mode != DripAuthoringMode.customLessonOffsets;'),
+      );
+    });
+
+    test('manual schedule save remains the custom rows persistence path', () {
+      final source = _courseEditorSource();
+      final rowsPayload = _sourceSlice(
+        source,
+        '  List<Map<String, Object?>>? _buildCustomScheduleRowsPayload() {',
+        '  Map<String, Object?>? _buildCourseDripAuthoringPayload() {',
+      );
+      final authoringPayload = _sourceSlice(
+        source,
+        '  Map<String, Object?>? _buildCourseDripAuthoringPayload() {',
+        '  bool _isCourseScheduleLockedError(Object error) {',
+      );
+      final scheduleSection = _sourceSlice(
+        source,
+        '  Widget _buildCourseScheduleAuthoring(BuildContext context) {',
+        '  Widget _buildCourseFamilyAuthoring(BuildContext context) {',
+      );
+
+      expect(rowsPayload, contains("'lesson_id': rowState.lesson.id"));
+      expect(rowsPayload, contains("'unlock_offset_days': unlockOffsetDays"));
+      expect(
+        authoringPayload,
+        contains("'custom_schedule': <String, Object?>{'rows': rows}"),
+      );
+      expect(
+        scheduleSection,
+        contains("key: const ValueKey<String>('course-schedule-save-button')"),
+      );
+      expect(
+        scheduleSection,
+        contains('unawaited(_saveCourseDripAuthoring());'),
+      );
+    });
+
+    test('backend custom schedule rows hydrate before local defaults render', () {
+      final source = _courseEditorSource();
+      final loadCourseMeta = _sourceSlice(
+        source,
+        '  Future<void> _loadCourseMeta() async {',
+        '  Future<void> _loadLessons({',
+      );
+      final hydrateControllers = _sourceSlice(
+        source,
+        '  void _hydrateCourseCustomScheduleControllers(Map<String, int> seededValues) {',
+        '  void _ensureCourseCustomScheduleControllers() {',
+      );
+
+      expect(
+        loadCourseMeta,
+        contains('for (final row in course.dripAuthoring.customScheduleRows)'),
+      );
+      expect(loadCourseMeta, contains('row.lessonId: row.unlockOffsetDays'));
+      expect(
+        hydrateControllers,
+        contains(
+          'seededValues[lesson.id] ?? (index == 0 ? 0 : previousOffsetDays)',
+        ),
+      );
+      expect(
+        hydrateControllers,
+        contains('_setTextControllerValue(controller, nextText);'),
+      );
+    });
+  });
 }
 
 String _courseEditorSource() {
