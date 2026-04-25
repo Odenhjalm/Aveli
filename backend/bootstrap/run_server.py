@@ -11,6 +11,8 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 BACKEND_DIR = ROOT_DIR / "backend"
 MCP_BOOTSTRAP_GATE_PATH = ROOT_DIR / "ops" / "mcp_bootstrap_gate.ps1"
 ROOT_ENV_PATH = ROOT_DIR / ".env"
+PRODUCTION_ENV_VALUES = {"prod", "production", "live"}
+CLOUD_RUNTIME_ENV_KEYS = ("FLY_APP_NAME", "K_SERVICE", "AWS_EXECUTION_ENV", "DYNO")
 
 from backend.bootstrap.baseline_v2 import BaselineV2Error, verify_v2_runtime
 from backend.scripts.bootstrap_gate import ensure_runtime_execution_ready
@@ -44,6 +46,16 @@ def _port() -> int:
 
 def _load_root_env_for_mcp_gate() -> None:
     load_dotenv(ROOT_ENV_PATH, override=False)
+
+
+def _cloud_runtime_active() -> bool:
+    app_env = str(os.environ.get("APP_ENV") or "").strip().lower()
+    mcp_mode = str(os.environ.get("MCP_MODE") or "").strip().lower()
+    if app_env == "local" and mcp_mode == "local":
+        return False
+    return app_env in PRODUCTION_ENV_VALUES or any(
+        os.environ.get(key) for key in CLOUD_RUNTIME_ENV_KEYS
+    )
 
 
 def _run_mcp_bootstrap_gate() -> None:
@@ -80,7 +92,10 @@ def _run_mcp_bootstrap_gate() -> None:
 def main() -> None:
     print("[AVELI] Bootstrapping backend...")
 
-    _run_mcp_bootstrap_gate()
+    if _cloud_runtime_active():
+        print("[AVELI] Skipping local MCP bootstrap gate in production/cloud runtime")
+    else:
+        _run_mcp_bootstrap_gate()
 
     # Ensure environment, DB reachability, and canonical V2 lock readiness.
     ensure_runtime_execution_ready()

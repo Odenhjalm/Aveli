@@ -15,6 +15,13 @@ def _load_run_server():
     return importlib.reload(run_server_module)
 
 
+def _set_local_runtime_env(monkeypatch: pytest.MonkeyPatch, run_server) -> None:
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("MCP_MODE", "local")
+    for key in run_server.CLOUD_RUNTIME_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
 def _configure_gate_fixture(
     monkeypatch: pytest.MonkeyPatch,
     run_server,
@@ -162,6 +169,7 @@ def test_main_does_not_start_backend_when_mcp_gate_fails(monkeypatch) -> None:
     run_server = _load_run_server()
     calls: list[tuple[str, object | None]] = []
 
+    _set_local_runtime_env(monkeypatch, run_server)
     monkeypatch.setattr(run_server, "_port", lambda: 8080)
 
     def fail_gate() -> None:
@@ -201,6 +209,7 @@ def test_main_starts_backend_after_mcp_gate_passes(monkeypatch) -> None:
     run_server = _load_run_server()
     calls: list[tuple[str, object | None]] = []
 
+    _set_local_runtime_env(monkeypatch, run_server)
     monkeypatch.setattr(run_server, "_port", lambda: 8080)
     monkeypatch.setattr(
         run_server,
@@ -248,3 +257,63 @@ def test_main_starts_backend_after_mcp_gate_passes(monkeypatch) -> None:
     assert calls[-1][1]["host"] == "0.0.0.0"
     assert calls[-1][1]["port"] == 8080
     assert calls[-1][1]["reload"] is False
+
+
+def test_main_skips_mcp_gate_in_production_but_keeps_runtime_verification(
+    monkeypatch,
+    capsys,
+) -> None:
+    run_server = _load_run_server()
+    calls: list[tuple[str, object | None]] = []
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("FLY_APP_NAME", "aveli")
+    monkeypatch.setenv("MCP_MODE", "local")
+    monkeypatch.setattr(run_server, "_port", lambda: 8080)
+    monkeypatch.setattr(
+        run_server,
+        "_run_mcp_bootstrap_gate",
+        lambda: calls.append(("mcp_gate", None)),
+    )
+    monkeypatch.setattr(
+        run_server,
+        "ensure_runtime_execution_ready",
+        lambda: calls.append(("runtime_gate", None)),
+    )
+
+    def fake_verify_v2_runtime():
+        calls.append(("baseline_verify", None))
+        return {
+            "mode": "runtime",
+            "profile": "hosted_supabase",
+            "state": "verified",
+            "schema_hash": "hash123",
+        }
+
+    monkeypatch.setattr(run_server, "verify_v2_runtime", fake_verify_v2_runtime)
+    monkeypatch.setattr(
+        run_server,
+        "_apply_windows_selector_policy",
+        lambda: calls.append(("selector_policy", None)),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "uvicorn",
+        SimpleNamespace(run=lambda *args, **kwargs: calls.append(("uvicorn", kwargs))),
+    )
+
+    run_server.main()
+
+    assert ("mcp_gate", None) not in calls
+    assert [name for name, _ in calls[:3]] == [
+        "runtime_gate",
+        "baseline_verify",
+        "selector_policy",
+    ]
+    assert calls[-1][0] == "uvicorn"
+    assert calls[-1][1]["host"] == "0.0.0.0"
+    assert calls[-1][1]["port"] == 8080
+    assert (
+        "[AVELI] Skipping local MCP bootstrap gate in production/cloud runtime"
+        in capsys.readouterr().out
+    )
