@@ -13,7 +13,6 @@ import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/presentation/teacher_home_page.dart';
-import 'package:aveli/features/teacher/application/bundle_providers.dart';
 
 class _FakeTokenStorage implements TokenStorage {
   @override
@@ -126,7 +125,7 @@ void main() {
           ),
           tokenStorageProvider.overrideWithValue(tokenStorage),
           studioRepositoryProvider.overrideWithValue(studioRepo),
-          myCoursesProvider.overrideWith(
+          studioCoursesProvider.overrideWith(
             (ref) async => [
               const CourseStudio(
                 id: 'course-1',
@@ -142,7 +141,9 @@ void main() {
               ),
             ],
           ),
-          teacherBundlesProvider.overrideWith((ref) async => []),
+          teacherSpecialOfferExecutionProvider.overrideWith(
+            (ref) async => null,
+          ),
         ],
         child: const MaterialApp(home: TeacherHomeScreen()),
       ),
@@ -237,8 +238,10 @@ void main() {
           ),
           tokenStorageProvider.overrideWithValue(tokenStorage),
           studioRepositoryProvider.overrideWithValue(studioRepo),
-          myCoursesProvider.overrideWith((ref) async => []),
-          teacherBundlesProvider.overrideWith((ref) async => []),
+          studioCoursesProvider.overrideWith((ref) async => []),
+          teacherSpecialOfferExecutionProvider.overrideWith(
+            (ref) async => null,
+          ),
         ],
         child: const MaterialApp(home: TeacherHomeScreen()),
       ),

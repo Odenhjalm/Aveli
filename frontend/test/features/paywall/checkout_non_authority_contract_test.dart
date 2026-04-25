@@ -18,7 +18,7 @@ import 'package:aveli/core/routing/app_router.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/paywall/application/checkout_flow.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
-import 'package:aveli/features/teacher/data/course_bundles_repository.dart';
+import 'package:aveli/features/studio/data/studio_repository.dart';
 
 class _FakeTokenStorage implements TokenStorage {
   @override
@@ -140,65 +140,70 @@ void main() {
       },
     );
 
-    test('bundle checkout uses the backend bundle session endpoint', () async {
-      final requests = <RequestOptions>[];
-      final repo = CourseBundlesRepository(
-        _recordingClient((options) async {
-          requests.add(options);
-          expect(options.path, '/api/course-bundles/bundle-1/checkout-session');
-          return _jsonResponse({
-            'url': 'https://checkout.test/bundle',
-            'session_id': 'cs_bundle',
-            'order_id': 'order_bundle',
-          });
-        }),
-      );
+    test(
+      'special offer creation uses the backend execution endpoint',
+      () async {
+        final requests = <RequestOptions>[];
+        final repo = StudioRepository(
+          client: _recordingClient((options) async {
+            requests.add(options);
+            expect(options.path, '/api/teachers/special-offers/execution');
+            return _jsonResponse(_specialOfferResponse());
+          }),
+        );
 
-      final checkout = await repo.createBundleCheckoutSession('bundle-1');
+        final offer = await repo.createSpecialOfferExecution(
+          courseIds: const ['course-1', 'course-2'],
+          priceAmountCents: 24900,
+        );
 
-      expect(requests, hasLength(1));
-      expect(
-        requests.single.path,
-        '/api/course-bundles/bundle-1/checkout-session',
-      );
-      expect(checkout['url'], 'https://checkout.test/bundle');
-      expect(checkout['session_id'], 'cs_bundle');
-      expect(checkout['order_id'], 'order_bundle');
-    });
+        expect(requests, hasLength(1));
+        expect(requests.single.path, '/api/teachers/special-offers/execution');
+        expect(requests.single.data, {
+          'course_ids': ['course-1', 'course-2'],
+          'price_amount_cents': 24900,
+        });
+        expect(
+          (requests.single.data as Map).containsKey('description'),
+          isFalse,
+        );
+        expect((requests.single.data as Map).containsKey('currency'), isFalse);
+        expect((requests.single.data as Map).containsKey('is_active'), isFalse);
+        expect(offer.specialOfferId, 'offer-1');
+        expect(offer.courseIds, ['course-1', 'course-2']);
+      },
+    );
 
-    test('bundle creation sends only canonical backend-owned fields', () async {
-      final requests = <RequestOptions>[];
-      final repo = CourseBundlesRepository(
-        _recordingClient((options) async {
-          requests.add(options);
-          expect(options.path, '/api/teachers/course-bundles');
-          return _jsonResponse({
-            'id': 'bundle-1',
-            'teacher_id': 'teacher-1',
-            'title': 'Paket',
-            'price_amount_cents': 24900,
-            'courses': const [],
-          });
-        }),
-      );
+    test(
+      'special offer image generation uses backend execution endpoints',
+      () async {
+        final requests = <RequestOptions>[];
+        final repo = StudioRepository(
+          client: _recordingClient((options) async {
+            requests.add(options);
+            return _jsonResponse(_specialOfferResponse());
+          }),
+        );
 
-      final bundle = await repo.createBundle(
-        title: 'Paket',
-        priceAmountCents: 24900,
-        courseIds: const ['course-1', 'course-2'],
-      );
+        await repo.generateSpecialOfferImage('offer-1');
+        await repo.regenerateSpecialOfferImage(
+          'offer-1',
+          confirmOverwrite: true,
+        );
 
-      expect(requests, hasLength(1));
-      expect(requests.single.data, {
-        'title': 'Paket',
-        'price_amount_cents': 24900,
-        'course_ids': ['course-1', 'course-2'],
-      });
-      expect((requests.single.data as Map).containsKey('description'), isFalse);
-      expect((requests.single.data as Map).containsKey('currency'), isFalse);
-      expect((requests.single.data as Map).containsKey('is_active'), isFalse);
-      expect(bundle['title'], 'Paket');
-    });
+        expect(requests, hasLength(2));
+        expect(
+          requests.first.path,
+          '/api/teachers/special-offers/offer-1/execution/generate',
+        );
+        expect(requests.first.data, isNull);
+        expect(
+          requests.last.path,
+          '/api/teachers/special-offers/offer-1/execution/regenerate',
+        );
+        expect(requests.last.data, {'confirm_overwrite': true});
+      },
+    );
   });
 
   group('COP-010 redirect handling contract', () {
@@ -480,57 +485,50 @@ void main() {
       },
     );
 
-    test(
-      'bundle checkout opens returned backend session without local entitlement',
-      () {
-        final source = _readFrontendSource(
-          'lib/features/teacher/presentation/course_bundle_page.dart',
-        );
+    test('special offer execution remains backend-owned and non-entitling', () {
+      final source = _readFrontendSource(
+        'lib/features/studio/presentation/teacher_home_page.dart',
+      );
 
-        expect(source, contains('createBundleCheckoutSession(bundleId)'));
-        expect(source, contains("checkout['url']"));
-        expect(source, contains("checkout['session_id']"));
-        expect(source, contains("checkout['order_id']"));
-        expect(
-          source,
-          contains('context.pushNamed(AppRoute.checkout, extra: url)'),
-        );
-        expect(source, isNot(contains("checkout['payment_link']")));
-        expect(source, isNot(contains('payment_link')));
-        expect(source, isNot(contains('app.memberships')));
-        expect(source, isNot(contains('membershipActive')));
-        expect(source, isNot(contains('canEnterApp')));
-        expect(source, isNot(contains('grantAccess')));
-      },
-    );
+      expect(source, contains('createSpecialOfferExecution('));
+      expect(source, contains('generateSpecialOfferImage('));
+      expect(source, contains('regenerateSpecialOfferImage('));
+      expect(source, isNot(contains('AppRoute.checkout')));
+      expect(source, isNot(contains("checkout['payment_link']")));
+      expect(source, isNot(contains('payment_link')));
+      expect(source, isNot(contains('app.memberships')));
+      expect(source, isNot(contains('membershipActive')));
+      expect(source, isNot(contains('canEnterApp')));
+      expect(source, isNot(contains('grantAccess')));
+    });
 
     test(
-      'bundle authoring UI does not expose forbidden bundle authority fields',
+      'special offer authoring UI does not expose removed bundle fields',
       () {
         final pageSource = _readFrontendSource(
-          'lib/features/teacher/presentation/course_bundle_page.dart',
+          'lib/features/studio/presentation/teacher_home_page.dart',
         );
         final repoSource = _readFrontendSource(
-          'lib/features/teacher/data/course_bundles_repository.dart',
+          'lib/features/studio/data/studio_repository.dart',
         );
 
         expect(pageSource, isNot(contains('_descriptionController')));
         expect(pageSource, isNot(contains('_isActive')));
         expect(pageSource, isNot(contains("bundle['description']")));
         expect(pageSource, isNot(contains("bundle['is_active']")));
+        expect(repoSource, isNot(contains('/api/teachers/course-bundles')));
         expect(repoSource, isNot(contains("'description'")));
         expect(repoSource, isNot(contains("'currency'")));
         expect(repoSource, isNot(contains("'is_active'")));
       },
     );
 
-    test('bundle save failures use Swedish safe non-technical text', () {
+    test('special offer failures do not expose technical exception text', () {
       final source = _readFrontendSource(
-        'lib/features/teacher/presentation/course_bundle_page.dart',
+        'lib/features/studio/presentation/teacher_home_page.dart',
       );
 
-      expect(source, contains('Paketet kunde inte sparas just nu.'));
-      expect(source, contains('Betalningen kunde inte startas just nu.'));
+      expect(source, contains('catch (_)'));
       expect(source, isNot(contains(r'Kunde inte spara paket: $e')));
       expect(source, isNot(contains(r'Kunde inte starta betalning: $e')));
       expect(source, isNot(contains(r'Kunde inte hämta kurser: $error')));
@@ -555,9 +553,8 @@ const _paymentSurfaceSourceFiles = [
   'lib/features/paywall/data/course_pricing_api.dart',
   'lib/features/paywall/presentation/checkout_result_page.dart',
   'lib/features/paywall/presentation/checkout_webview_page.dart',
-  'lib/features/teacher/application/bundle_providers.dart',
-  'lib/features/teacher/data/course_bundles_repository.dart',
-  'lib/features/teacher/presentation/course_bundle_page.dart',
+  'lib/features/studio/data/studio_repository.dart',
+  'lib/features/studio/presentation/teacher_home_page.dart',
   'lib/core/deeplinks/deep_link_service.dart',
 ];
 
@@ -580,6 +577,25 @@ ResponseBody _jsonResponse(Map<String, Object?> payload) {
       Headers.contentTypeHeader: ['application/json'],
     },
   );
+}
+
+Map<String, Object?> _specialOfferResponse() {
+  return {
+    'special_offer_id': 'offer-1',
+    'active_output_id': null,
+    'active_media_asset_id': null,
+    'state_hash': 'hash-1',
+    'attempt_id': null,
+    'status': 'draft',
+    'text_id': null,
+    'source_count': 2,
+    'overwrite_applied': false,
+    'image_current': false,
+    'image_required': true,
+    'price_amount_cents': 24900,
+    'course_ids': ['course-1', 'course-2'],
+    'image': null,
+  };
 }
 
 GoRouter _checkoutRouter() {

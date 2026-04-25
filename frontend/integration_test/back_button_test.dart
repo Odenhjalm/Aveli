@@ -10,12 +10,13 @@ import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/app_router.dart';
-import 'package:aveli/data/models/activity.dart';
 import 'package:aveli/data/models/profile.dart';
-import 'package:aveli/data/models/service.dart';
+import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/community/presentation/community_page.dart';
-import 'package:aveli/features/home/application/home_providers.dart';
+import 'package:aveli/features/courses/application/course_providers.dart';
+import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/home/application/home_audio_controller.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
@@ -27,7 +28,7 @@ class _FakeAuthController extends AuthController {
     : super(
         _FakeAuthRepository(
           profile: initialState.profile,
-          token: initialState.profile != null || initialState.claims != null
+          token: initialState.profile != null || initialState.entryState != null
               ? 'token'
               : null,
         ),
@@ -40,6 +41,11 @@ class _FakeAuthController extends AuthController {
   Future<void> loadSession({bool hydrateProfile = true}) async {}
 }
 
+class _FakeHomeAudioController extends HomeAudioController {
+  @override
+  Future<HomeAudioState> build() async => HomeAudioState.empty;
+}
+
 class _FakeAuthRepository implements AuthRepository {
   _FakeAuthRepository({this.profile, this.token});
 
@@ -47,28 +53,17 @@ class _FakeAuthRepository implements AuthRepository {
   final String? token;
 
   @override
-  Future<Profile> login({required String email, required String password}) {
+  Future<void> login({required String email, required String password}) {
     throw UnsupportedError('Not implemented for tests');
   }
 
   @override
-  Future<Profile> register({
-    required String email,
-    required String password,
-    required String displayName,
-    String? inviteToken,
-    String? referralCode,
-  }) {
+  Future<void> register({required String email, required String password}) {
     throw UnsupportedError('Not implemented for tests');
   }
 
   @override
   Future<void> sendVerificationEmail(String email) {
-    throw UnsupportedError('Not implemented for tests');
-  }
-
-  @override
-  Future<String> validateInvite(String token) {
     throw UnsupportedError('Not implemented for tests');
   }
 
@@ -84,9 +79,19 @@ class _FakeAuthRepository implements AuthRepository {
 
   @override
   Future<void> resetPassword({
-    required String newPassword,
     required String token,
+    required String newPassword,
   }) {
+    throw UnsupportedError('Not implemented for tests');
+  }
+
+  @override
+  Future<Profile> createProfile({required String displayName, String? bio}) {
+    throw UnsupportedError('Not implemented for tests');
+  }
+
+  @override
+  Future<void> redeemReferral({required String code}) {
     throw UnsupportedError('Not implemented for tests');
   }
 
@@ -120,13 +125,14 @@ List<Override> _commonOverrides(AuthState authState) {
         subscriptionsEnabled: false,
       ),
     ),
-    homeFeedProvider.overrideWith((ref) => Future.value(const <Activity>[])),
-    homeServicesProvider.overrideWith((ref) => Future.value(const <Service>[])),
+    homeAudioProvider.overrideWith(_FakeHomeAudioController.new),
+    coursesProvider.overrideWith((ref) async => const <CourseSummary>[]),
     landing.popularCoursesProvider.overrideWith(
-      (ref) => Future.value(const landing.LandingSectionState(items: [])),
+      (ref) async => const landing.LandingSection<CourseSummary>(items: []),
     ),
-    communityServicesProvider.overrideWith(
-      (ref) => Future.value(const <Service>[]),
+    notificationsProvider.overrideWith((ref) async => []),
+    teacherDirectoryProvider.overrideWith(
+      (ref) async => const TeacherDirectoryState(teachers: []),
     ),
   ];
 }
@@ -147,17 +153,30 @@ void main() {
     final profile = Profile(
       id: 'user-1',
       email: 'user@example.com',
-      userRole: UserRole.teacher,
-      isAdmin: false,
       createdAt: DateTime.utc(2024, 1, 1),
       updatedAt: DateTime.utc(2024, 1, 1),
       displayName: 'Test User',
+    );
+    const entryState = EntryState(
+      canEnterApp: true,
+      onboardingState: EntryOnboardingState.completed,
+      onboardingCompleted: true,
+      membershipActive: true,
+      needsOnboarding: false,
+      needsPayment: false,
+      role: 'teacher',
     );
 
     await tester.pumpWidget(
       wrapWithTestAssets(
         ProviderScope(
-          overrides: _commonOverrides(AuthState(profile: profile)),
+          overrides: _commonOverrides(
+            AuthState(
+              profile: profile,
+              entryState: entryState,
+              hasStoredToken: true,
+            ),
+          ),
           child: const AveliApp(),
         ),
       ),
