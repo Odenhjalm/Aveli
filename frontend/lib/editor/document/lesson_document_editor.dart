@@ -46,10 +46,7 @@ class LessonDocumentEditorController extends ChangeNotifier {
         false;
   }
 
-  void resetTo({
-    required LessonDocument document,
-    required String lessonId,
-  }) {
+  void resetTo({required LessonDocument document, required String lessonId}) {
     _state?._startNewSession(document: document, lessonId: lessonId);
   }
 
@@ -178,14 +175,18 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   static const int _defaultHeadingLevel = 2;
   static int _nextSessionIndex = 0;
 
-  final Map<String, _LessonTextEditingController> _controllers =
-      <String, _LessonTextEditingController>{};
-  final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
+  final Map<_EditorControlKey, _LessonTextEditingController> _controllers =
+      <_EditorControlKey, _LessonTextEditingController>{};
+  final Map<_EditorControlKey, FocusNode> _focusNodes =
+      <_EditorControlKey, FocusNode>{};
+  final Map<_EditorControlKey, _EditorTarget> _focusTargets =
+      <_EditorControlKey, _EditorTarget>{};
   final TextEditingController _emptyDocumentController =
       TextEditingController();
   final FocusNode _emptyDocumentFocusNode = FocusNode();
-  _EditorTarget _selectedTarget = const _EditorTarget.block(0);
+  _EditorTarget? _selectedTarget;
   late LessonDocument _document;
+  late _EditorIdentityRegistry _identityRegistry;
   late LessonDocument _baseSavedDocument;
   late String _sessionLessonId;
   late String _sessionId;
@@ -197,6 +198,8 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   void initState() {
     super.initState();
     _document = widget.document;
+    _identityRegistry = _EditorIdentityRegistry.fromDocument(_document);
+    _selectedTarget = _firstTargetForDocument();
     _baseSavedDocument = widget.document;
     _sessionLessonId = widget.lessonId;
     _sessionId = _newSessionId(widget.lessonId);
@@ -253,7 +256,8 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     _revision = 0;
     _savedRevision = 0;
     _dirty = false;
-    _selectedTarget = const _EditorTarget.block(0);
+    _identityRegistry = _EditorIdentityRegistry.fromDocument(document);
+    _selectedTarget = _firstTargetForDocument();
     _emptyDocumentController.clear();
     _syncControllersFromDocument();
     if (notifyDirty && wasDirty) {
@@ -262,74 +266,107 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _syncControllersFromDocument() {
-    final liveKeys = <String>{};
-    final blocks = _document.blocks;
-    for (var blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
-      final block = blocks[blockIndex];
-      if (block case LessonParagraphBlock(:final children)) {
-        final key = _EditorTarget.block(blockIndex).key;
-        liveKeys.add(key);
-        _syncControllerText(key, _plainText(children), children);
-      } else if (block case LessonHeadingBlock(:final children)) {
-        final key = _EditorTarget.block(blockIndex).key;
-        liveKeys.add(key);
-        _syncControllerText(key, _plainText(children), children);
-      } else if (block case LessonListBlock(:final items)) {
-        for (var itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
-          final key = _EditorTarget.listItem(blockIndex, itemIndex).key;
-          liveKeys.add(key);
-          _syncControllerText(
-            key,
-            _plainText(items[itemIndex].children),
-            items[itemIndex].children,
-          );
-        }
-      } else if (block case LessonCtaBlock(:final label, :final targetUrl)) {
-        final labelKey = 'cta_label_$blockIndex';
-        final urlKey = 'cta_url_$blockIndex';
-        liveKeys.add(labelKey);
-        liveKeys.add(urlKey);
-        _syncControllerText(labelKey, label);
-        _syncControllerText(urlKey, targetUrl);
-      }
-    }
-
-    final staleKeys = _controllers.keys
-        .where((key) => !liveKeys.contains(key))
-        .toList(growable: false);
-    for (final key in staleKeys) {
-      _controllers.remove(key)?.dispose();
-      _focusNodes.remove(key)?.dispose();
-    }
+    final liveKeys = _liveControlKeys(syncText: true);
+    if (liveKeys == null) return;
+    _disposeStaleControlKeys(liveKeys);
   }
 
   void _pruneControllers() {
-    final liveKeys = <String>{};
+    final liveKeys = _liveControlKeys();
+    if (liveKeys == null) return;
+    _disposeStaleControlKeys(liveKeys);
+  }
+
+  Set<_EditorControlKey>? _liveControlKeys({bool syncText = false}) {
+    if (_identityRegistry.blocks.length != _document.blocks.length) {
+      return null;
+    }
+    final liveKeys = <_EditorControlKey>{};
     final blocks = _document.blocks;
     for (var blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
       final block = blocks[blockIndex];
-      if (block is LessonParagraphBlock || block is LessonHeadingBlock) {
-        liveKeys.add(_EditorTarget.block(blockIndex).key);
-      } else if (block case LessonListBlock(:final items)) {
-        for (var itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
-          liveKeys.add(_EditorTarget.listItem(blockIndex, itemIndex).key);
+      final identity = _identityRegistry.blocks[blockIndex];
+      if (block case LessonParagraphBlock(:final children)) {
+        final key = _nodeControlKey(identity.blockId);
+        liveKeys.add(key);
+        if (syncText) {
+          _syncControllerText(key, _plainText(children), children);
         }
-      } else if (block is LessonCtaBlock) {
-        liveKeys.add('cta_label_$blockIndex');
-        liveKeys.add('cta_url_$blockIndex');
+      } else if (block case LessonHeadingBlock(:final children)) {
+        final key = _nodeControlKey(identity.blockId);
+        liveKeys.add(key);
+        if (syncText) {
+          _syncControllerText(key, _plainText(children), children);
+        }
+      } else if (block case LessonListBlock(:final items)) {
+        if (identity.listItemIds.length != items.length) return null;
+        for (var itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+          final key = _nodeControlKey(identity.listItemIds[itemIndex]);
+          liveKeys.add(key);
+          if (syncText) {
+            _syncControllerText(
+              key,
+              _plainText(items[itemIndex].children),
+              items[itemIndex].children,
+            );
+          }
+        }
+      } else if (block case LessonCtaBlock(:final label, :final targetUrl)) {
+        final labelKey = _ctaControlKey(identity.blockId, _CtaField.label);
+        final urlKey = _ctaControlKey(identity.blockId, _CtaField.url);
+        liveKeys.add(labelKey);
+        liveKeys.add(urlKey);
+        if (syncText) {
+          _syncControllerText(labelKey, label);
+          _syncControllerText(urlKey, targetUrl);
+        }
       }
     }
+    return liveKeys;
+  }
+
+  void _disposeStaleControlKeys(Set<_EditorControlKey> liveKeys) {
     final staleKeys = _controllers.keys
         .where((key) => !liveKeys.contains(key))
         .toList(growable: false);
     for (final key in staleKeys) {
-      _controllers.remove(key)?.dispose();
-      _focusNodes.remove(key)?.dispose();
+      _disposeControlKey(key);
     }
   }
 
+  void _disposeControlKey(_EditorControlKey key) {
+    _controllers.remove(key)?.dispose();
+    _focusNodes.remove(key)?.dispose();
+    _focusTargets.remove(key);
+  }
+
+  void _disposeRemovedIdentityKeys(
+    Iterable<_BlockIdentity> removedIdentities,
+    Iterable<_BlockIdentity> retainedIdentities,
+  ) {
+    final retainedKeys = <_EditorControlKey>{
+      for (final identity in retainedIdentities) ..._controlKeysFor(identity),
+    };
+    for (final identity in removedIdentities) {
+      for (final key in _controlKeysFor(identity)) {
+        if (!retainedKeys.contains(key)) {
+          _disposeControlKey(key);
+        }
+      }
+    }
+  }
+
+  Iterable<_EditorControlKey> _controlKeysFor(_BlockIdentity identity) sync* {
+    yield _nodeControlKey(identity.blockId);
+    for (final itemId in identity.listItemIds) {
+      yield _nodeControlKey(itemId);
+    }
+    yield _ctaControlKey(identity.blockId, _CtaField.label);
+    yield _ctaControlKey(identity.blockId, _CtaField.url);
+  }
+
   void _syncControllerText(
-    String key,
+    _EditorControlKey key,
     String text, [
     List<LessonTextRun> runs = const <LessonTextRun>[],
   ]) {
@@ -344,7 +381,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   _LessonTextEditingController _controllerFor(
-    String key,
+    _EditorControlKey key,
     String text, [
     List<LessonTextRun> runs = const <LessonTextRun>[],
   ]) {
@@ -356,16 +393,189 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     return controller;
   }
 
-  FocusNode _focusNodeFor(String key, _EditorTarget target) {
+  FocusNode _focusNodeFor(_EditorControlKey key, _EditorTarget target) {
+    _focusTargets[key] = target;
     return _focusNodes.putIfAbsent(key, () {
       final node = FocusNode();
       node.addListener(() {
         if (node.hasFocus && mounted) {
-          _select(target);
+          final currentTarget = _focusTargets[key];
+          if (currentTarget != null) {
+            _select(currentTarget);
+          }
         }
       });
       return node;
     });
+  }
+
+  _EditorControlKey _nodeControlKey(_EditorNodeId nodeId) {
+    return _EditorControlKey.node(nodeId);
+  }
+
+  _EditorControlKey _ctaControlKey(_EditorNodeId blockId, _CtaField field) {
+    return _EditorControlKey.cta(blockId, field);
+  }
+
+  _EditorControlKey? _controlKeyForTarget(_EditorTarget target) {
+    return switch (target) {
+      _BlockTextTarget(:final blockId) => _nodeControlKey(blockId),
+      _ListItemTextTarget(:final itemId) => _nodeControlKey(itemId),
+      _CtaFieldTarget(:final blockId, :final field) => _ctaControlKey(
+        blockId,
+        field,
+      ),
+      _BlockTarget() => null,
+    };
+  }
+
+  _BlockIdentity? _identityAtBlockIndex(int blockIndex) {
+    if (_identityRegistry.blocks.length != _document.blocks.length) {
+      return null;
+    }
+    if (blockIndex < 0 || blockIndex >= _identityRegistry.blocks.length) {
+      return null;
+    }
+    return _identityRegistry.blocks[blockIndex];
+  }
+
+  int? _blockIndexFor(_EditorNodeId blockId) {
+    if (_identityRegistry.blocks.length != _document.blocks.length) {
+      return null;
+    }
+    for (
+      var blockIndex = 0;
+      blockIndex < _identityRegistry.blocks.length;
+      blockIndex += 1
+    ) {
+      if (_identityRegistry.blocks[blockIndex].blockId == blockId) {
+        return blockIndex;
+      }
+    }
+    return null;
+  }
+
+  _ListItemLocation? _listItemLocationFor(_EditorNodeId itemId) {
+    if (_identityRegistry.blocks.length != _document.blocks.length) {
+      return null;
+    }
+    for (
+      var blockIndex = 0;
+      blockIndex < _identityRegistry.blocks.length;
+      blockIndex += 1
+    ) {
+      final identity = _identityRegistry.blocks[blockIndex];
+      final block = _document.blocks[blockIndex];
+      if (block is! LessonListBlock ||
+          identity.listItemIds.length != block.items.length) {
+        continue;
+      }
+      for (
+        var itemIndex = 0;
+        itemIndex < identity.listItemIds.length;
+        itemIndex += 1
+      ) {
+        if (identity.listItemIds[itemIndex] == itemId) {
+          return _ListItemLocation(
+            blockIndex: blockIndex,
+            itemIndex: itemIndex,
+            block: block,
+            blockIdentity: identity,
+          );
+        }
+      }
+    }
+    return null;
+  }
+
+  int? _insertionIndexForTarget(_EditorTarget target) {
+    final blockIndex = switch (target) {
+      _BlockTextTarget(:final blockId) ||
+      _BlockTarget(:final blockId) ||
+      _CtaFieldTarget(:final blockId) => _blockIndexFor(blockId),
+      _ListItemTextTarget(:final itemId) => _listItemLocationFor(
+        itemId,
+      )?.blockIndex,
+    };
+    if (blockIndex == null) return null;
+    return (blockIndex + 1).clamp(0, _document.blocks.length).toInt();
+  }
+
+  bool _targetExists(_EditorTarget target) {
+    return switch (target) {
+      _BlockTextTarget(:final blockId) => switch (_blockIndexFor(blockId)) {
+        final blockIndex? =>
+          _document.blocks[blockIndex] is LessonParagraphBlock ||
+              _document.blocks[blockIndex] is LessonHeadingBlock,
+        null => false,
+      },
+      _ListItemTextTarget(:final itemId) =>
+        _listItemLocationFor(itemId) != null,
+      _BlockTarget(:final blockId) => _blockIndexFor(blockId) != null,
+      _CtaFieldTarget(:final blockId) => switch (_blockIndexFor(blockId)) {
+        final blockIndex? => _document.blocks[blockIndex] is LessonCtaBlock,
+        null => false,
+      },
+    };
+  }
+
+  _EditorNodeId? _owningBlockIdForTarget(_EditorTarget target) {
+    return switch (target) {
+      _BlockTextTarget(:final blockId) ||
+      _BlockTarget(:final blockId) ||
+      _CtaFieldTarget(:final blockId) => blockId,
+      _ListItemTextTarget(:final itemId) => _listItemLocationFor(
+        itemId,
+      )?.blockIdentity.blockId,
+    };
+  }
+
+  bool _targetBelongsToIdentity(
+    _EditorTarget? target,
+    _BlockIdentity identity,
+  ) {
+    if (target == null) return false;
+    return switch (target) {
+      _BlockTextTarget(:final blockId) ||
+      _BlockTarget(:final blockId) ||
+      _CtaFieldTarget(:final blockId) => blockId == identity.blockId,
+      _ListItemTextTarget(:final itemId) => identity.listItemIds.contains(
+        itemId,
+      ),
+    };
+  }
+
+  _EditorTarget? _firstTargetForDocument() {
+    for (var index = 0; index < _document.blocks.length; index += 1) {
+      final target = _targetForBlockIndex(index);
+      if (target != null) return target;
+    }
+    return null;
+  }
+
+  _EditorTarget? _targetForBlockIndex(int blockIndex) {
+    final identity = _identityAtBlockIndex(blockIndex);
+    if (identity == null || blockIndex >= _document.blocks.length) {
+      return null;
+    }
+    return _targetForBlock(_document.blocks[blockIndex], identity);
+  }
+
+  _EditorTarget? _targetForBlock(LessonBlock block, _BlockIdentity identity) {
+    if (block is LessonParagraphBlock || block is LessonHeadingBlock) {
+      return _BlockTextTarget(identity.blockId);
+    }
+    if (block is LessonListBlock) {
+      if (identity.listItemIds.length != block.items.length ||
+          identity.listItemIds.isEmpty) {
+        return null;
+      }
+      return _ListItemTextTarget(identity.listItemIds.first);
+    }
+    if (block is LessonCtaBlock) {
+      return _CtaFieldTarget(identity.blockId, _CtaField.label);
+    }
+    return _BlockTarget(identity.blockId);
   }
 
   void _emit(LessonDocument document) {
@@ -373,10 +583,16 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     _applyDocument(document);
   }
 
-  void _applyDocument(LessonDocument document) {
+  void _applyDocument(
+    LessonDocument document, {
+    _EditorIdentityRegistry? identityRegistry,
+  }) {
     final wasDirty = _dirty;
     setState(() {
       _document = document;
+      if (identityRegistry != null) {
+        _identityRegistry = identityRegistry;
+      }
       _revision += 1;
       _dirty = true;
     });
@@ -430,7 +646,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   int _currentInsertionIndex() {
-    return _selectedTarget.insertionIndex(_document);
+    final target = _selectedTarget;
+    if (target == null) return _document.blocks.length;
+    return _insertionIndexForTarget(target) ?? _document.blocks.length;
   }
 
   bool _insertMediaBlockFromController({
@@ -438,15 +656,21 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     required String lessonMediaId,
   }) {
     if (!widget.enabled) return false;
-    const insertionIndex = 0;
-    final next = _document.insertMedia(
-      insertionIndex,
+    final insertionIndex = _currentInsertionIndex();
+    final block = LessonMediaBlock(
       mediaType: mediaType,
       lessonMediaId: lessonMediaId,
     );
-    _emit(next);
-    widget.onInsertionIndexChanged?.call(1);
-    setState(() => _selectedTarget = const _EditorTarget.block(0));
+    final next = _document.insertBlock(insertionIndex, block);
+    final nextRegistry = _identityRegistry.copy();
+    final identity = nextRegistry.createBlockIdentity(block);
+    nextRegistry.blocks.insert(insertionIndex, identity);
+    _applyDocument(next, identityRegistry: nextRegistry);
+    final nextTarget = _BlockTarget(identity.blockId);
+    widget.onInsertionIndexChanged?.call(
+      _insertionIndexForTarget(nextTarget) ?? insertionIndex + 1,
+    );
+    setState(() => _selectedTarget = nextTarget);
     return true;
   }
 
@@ -455,12 +679,18 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     required String targetUrl,
   }) {
     if (!widget.enabled) return false;
-    final next = _document.insertCta(
-      _document.blocks.length,
-      label: label,
-      targetUrl: targetUrl,
+    final insertionIndex = _currentInsertionIndex();
+    final block = LessonCtaBlock(label: label, targetUrl: targetUrl);
+    final next = _document.insertBlock(insertionIndex, block);
+    final nextRegistry = _identityRegistry.copy();
+    final identity = nextRegistry.createBlockIdentity(block);
+    nextRegistry.blocks.insert(insertionIndex, identity);
+    _applyDocument(next, identityRegistry: nextRegistry);
+    final nextTarget = _CtaFieldTarget(identity.blockId, _CtaField.label);
+    widget.onInsertionIndexChanged?.call(
+      _insertionIndexForTarget(nextTarget) ?? insertionIndex + 1,
     );
-    _emit(next);
+    setState(() => _selectedTarget = nextTarget);
     return true;
   }
 
@@ -494,37 +724,41 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _select(_EditorTarget target) {
-    widget.onInsertionIndexChanged?.call(
-      target.insertionIndex(_document),
-    );
+    final insertionIndex = _insertionIndexForTarget(target);
+    if (insertionIndex == null) return;
+    widget.onInsertionIndexChanged?.call(insertionIndex);
     if (_selectedTarget == target) return;
     setState(() => _selectedTarget = target);
   }
 
   void _replaceTargetText(_EditorTarget target, String text) {
-    if (target.blockIndex < 0 ||
-        target.blockIndex >= _document.blocks.length) {
-      return;
-    }
     final normalizedText = text.replaceAll('\r\n', '\n');
     final nextBlocks = List<LessonBlock>.from(_document.blocks);
-    final block = nextBlocks[target.blockIndex];
-    if (target.itemIndex case final itemIndex?) {
-      if (block is! LessonListBlock) return;
+    if (target case _ListItemTextTarget(:final itemId)) {
+      final location = _listItemLocationFor(itemId);
+      if (location == null) return;
+      final block = location.block;
       final nextItems = List<LessonListItem>.from(block.items);
-      final item = nextItems[itemIndex];
-      nextItems[itemIndex] = item.copyWith(
+      final item = nextItems[location.itemIndex];
+      nextItems[location.itemIndex] = item.copyWith(
         children: _textRunsForReplacement(item.children, normalizedText),
       );
-      nextBlocks[target.blockIndex] = block.copyWith(items: nextItems);
-    } else if (block is LessonParagraphBlock) {
-      nextBlocks[target.blockIndex] = block.copyWith(
-        children: _textRunsForReplacement(block.children, normalizedText),
-      );
-    } else if (block is LessonHeadingBlock) {
-      nextBlocks[target.blockIndex] = block.copyWith(
-        children: _textRunsForReplacement(block.children, normalizedText),
-      );
+      nextBlocks[location.blockIndex] = block.copyWith(items: nextItems);
+    } else if (target case _BlockTextTarget(:final blockId)) {
+      final blockIndex = _blockIndexFor(blockId);
+      if (blockIndex == null) return;
+      final block = nextBlocks[blockIndex];
+      if (block is LessonParagraphBlock) {
+        nextBlocks[blockIndex] = block.copyWith(
+          children: _textRunsForReplacement(block.children, normalizedText),
+        );
+      } else if (block is LessonHeadingBlock) {
+        nextBlocks[blockIndex] = block.copyWith(
+          children: _textRunsForReplacement(block.children, normalizedText),
+        );
+      } else {
+        return;
+      }
     } else {
       return;
     }
@@ -535,60 +769,73 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final selection = _selectedTextRange();
     if (selection == null) return;
     final target = selection.target;
-    _emit(
-      target.itemIndex == null
-          ? _document.toggleBlockInlineMark(
-              target.blockIndex,
-              start: selection.start,
-              end: selection.end,
-              mark: mark,
-            )
-          : _document.toggleListItemInlineMark(
-              target.blockIndex,
-              itemIndex: target.itemIndex!,
-              start: selection.start,
-              end: selection.end,
-              mark: mark,
-            ),
-    );
+    if (target case _BlockTextTarget(:final blockId)) {
+      final blockIndex = _blockIndexFor(blockId);
+      if (blockIndex == null) return;
+      _emit(
+        _document.toggleBlockInlineMark(
+          blockIndex,
+          start: selection.start,
+          end: selection.end,
+          mark: mark,
+        ),
+      );
+    } else if (target case _ListItemTextTarget(:final itemId)) {
+      final location = _listItemLocationFor(itemId);
+      if (location == null) return;
+      _emit(
+        _document.toggleListItemInlineMark(
+          location.blockIndex,
+          itemIndex: location.itemIndex,
+          start: selection.start,
+          end: selection.end,
+          mark: mark,
+        ),
+      );
+    }
   }
 
   void _clearFormatting() {
     final selection = _selectedTextRange();
     if (selection == null) return;
     final target = selection.target;
-    _emit(
-      target.itemIndex == null
-          ? _document.clearBlockInlineFormatting(
-              target.blockIndex,
-              start: selection.start,
-              end: selection.end,
-            )
-          : _document.clearListItemInlineFormatting(
-              target.blockIndex,
-              itemIndex: target.itemIndex!,
-              start: selection.start,
-              end: selection.end,
-            ),
-    );
+    if (target case _BlockTextTarget(:final blockId)) {
+      final blockIndex = _blockIndexFor(blockId);
+      if (blockIndex == null) return;
+      _emit(
+        _document.clearBlockInlineFormatting(
+          blockIndex,
+          start: selection.start,
+          end: selection.end,
+        ),
+      );
+    } else if (target case _ListItemTextTarget(:final itemId)) {
+      final location = _listItemLocationFor(itemId);
+      if (location == null) return;
+      _emit(
+        _document.clearListItemInlineFormatting(
+          location.blockIndex,
+          itemIndex: location.itemIndex,
+          start: selection.start,
+          end: selection.end,
+        ),
+      );
+    }
   }
 
   List<LessonTextRun> _childrenForTarget(_EditorTarget target) {
-    if (target.blockIndex < 0 ||
-        target.blockIndex >= _document.blocks.length) {
-      return const <LessonTextRun>[];
+    if (target case _ListItemTextTarget(:final itemId)) {
+      final location = _listItemLocationFor(itemId);
+      if (location == null) return const <LessonTextRun>[];
+      return location.block.items[location.itemIndex].children;
     }
-    final block = _document.blocks[target.blockIndex];
-    if (target.itemIndex case final itemIndex?) {
-      if (block is! LessonListBlock ||
-          itemIndex < 0 ||
-          itemIndex >= block.items.length) {
-        return const <LessonTextRun>[];
-      }
-      return (block as LessonListBlock).items[itemIndex].children;
+    if (target case _BlockTextTarget(:final blockId)) {
+      final blockIndex = _blockIndexFor(blockId);
+      if (blockIndex == null) return const <LessonTextRun>[];
+      final block = _document.blocks[blockIndex];
+      if (block is LessonParagraphBlock) return block.children;
+      if (block is LessonHeadingBlock) return block.children;
     }
-    if (block is LessonParagraphBlock) return block.children;
-    if (block is LessonHeadingBlock) return block.children;
     return const <LessonTextRun>[];
   }
 
@@ -596,69 +843,263 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final selection = _selectedTextRange();
     if (selection == null) return;
     final sourceBlocks = _document.blocks;
-    final normalizedTarget = selection.target;
-    final block = sourceBlocks[normalizedTarget.blockIndex];
+    final target = selection.target;
     final split = _splitRunsByRange(
-      _childrenForTarget(normalizedTarget),
+      _childrenForTarget(target),
       start: selection.start,
       end: selection.end,
     );
     final nextBlocks = List<LessonBlock>.from(sourceBlocks);
+    final nextRegistry = _identityRegistry.copy();
+    late final int blockIndex;
+    late final _BlockIdentity removedIdentity;
+    late final List<LessonBlock> replacement;
+    late final List<_BlockIdentity> replacementIdentities;
+    late final _EditorTarget nextTarget;
 
-    if (normalizedTarget.itemIndex case final itemIndex?) {
-      if (block is! LessonListBlock) return;
-      final replacement = _splitListItemSelectionIntoBlocks(
-        block,
-        itemIndex: itemIndex,
+    if (target case _ListItemTextTarget(:final itemId)) {
+      final location = _listItemLocationFor(itemId);
+      if (location == null) return;
+      blockIndex = location.blockIndex;
+      removedIdentity = location.blockIdentity;
+      replacement = _splitListItemSelectionIntoBlocks(
+        location.block,
+        itemIndex: location.itemIndex,
         split: split,
         conversion: conversion,
       );
-      nextBlocks
-        ..removeAt(normalizedTarget.blockIndex)
-        ..insertAll(normalizedTarget.blockIndex, replacement);
+      replacementIdentities = _splitListItemSelectionIdentities(
+        sourceIdentity: removedIdentity,
+        itemIndex: location.itemIndex,
+        split: split,
+        conversion: conversion,
+        replacement: replacement,
+        selectedItemId: itemId,
+        registry: nextRegistry,
+      );
+      nextTarget = _targetForConvertedSelection(
+        replacement: replacement,
+        identities: replacementIdentities,
+        selectedNodeId: itemId,
+      );
+    } else if (target case _BlockTextTarget(:final blockId)) {
+      final resolvedBlockIndex = _blockIndexFor(blockId);
+      if (resolvedBlockIndex == null) return;
+      final identity = _identityAtBlockIndex(resolvedBlockIndex);
+      if (identity == null) return;
+      final block = sourceBlocks[resolvedBlockIndex];
+      if (block is! LessonParagraphBlock && block is! LessonHeadingBlock) {
+        return;
+      }
+      blockIndex = resolvedBlockIndex;
+      removedIdentity = identity;
+      replacement = _splitTextBlockSelectionIntoBlocks(
+        block,
+        split: split,
+        conversion: conversion,
+      );
+      replacementIdentities = _splitTextBlockSelectionIdentities(
+        split: split,
+        conversion: conversion,
+        replacement: replacement,
+        selectedNodeId: blockId,
+        registry: nextRegistry,
+      );
+      nextTarget = _targetForConvertedSelection(
+        replacement: replacement,
+        identities: replacementIdentities,
+        selectedNodeId: blockId,
+      );
     } else {
-      final replacement = _splitTextBlockSelectionIntoBlocks(
-        block,
-        split: split,
-        conversion: conversion,
-      );
-      nextBlocks
-        ..removeAt(normalizedTarget.blockIndex)
-        ..insertAll(normalizedTarget.blockIndex, replacement);
+      return;
     }
-    _emit(LessonDocument(blocks: List<LessonBlock>.unmodifiable(nextBlocks)));
+
+    nextBlocks
+      ..removeAt(blockIndex)
+      ..insertAll(blockIndex, replacement);
+    nextRegistry.blocks
+      ..removeAt(blockIndex)
+      ..insertAll(blockIndex, replacementIdentities);
+    _disposeRemovedIdentityKeys([removedIdentity], replacementIdentities);
+    final next = LessonDocument(
+      blocks: List<LessonBlock>.unmodifiable(nextBlocks),
+    );
+    _applyDocument(next, identityRegistry: nextRegistry);
+    widget.onInsertionIndexChanged?.call(
+      _insertionIndexForTarget(nextTarget) ?? blockIndex + 1,
+    );
+    setState(() => _selectedTarget = nextTarget);
+  }
+
+  List<_BlockIdentity> _splitTextBlockSelectionIdentities({
+    required _RunRangeSplit split,
+    required _BlockConversion conversion,
+    required List<LessonBlock> replacement,
+    required _EditorNodeId selectedNodeId,
+    required _EditorIdentityRegistry registry,
+  }) {
+    final identities = <_BlockIdentity>[];
+    var replacementIndex = 0;
+    if (_hasText(split.before)) {
+      identities.add(
+        registry.createBlockIdentity(replacement[replacementIndex]),
+      );
+      replacementIndex += 1;
+    }
+    identities.add(
+      _identityForConvertedSelectionBlock(
+        replacement[replacementIndex],
+        selectedNodeId: selectedNodeId,
+        registry: registry,
+      ),
+    );
+    replacementIndex += 1;
+    if (_hasText(split.after)) {
+      identities.add(
+        registry.createBlockIdentity(replacement[replacementIndex]),
+      );
+    }
+    return identities;
+  }
+
+  List<_BlockIdentity> _splitListItemSelectionIdentities({
+    required _BlockIdentity sourceIdentity,
+    required int itemIndex,
+    required _RunRangeSplit split,
+    required _BlockConversion conversion,
+    required List<LessonBlock> replacement,
+    required _EditorNodeId selectedItemId,
+    required _EditorIdentityRegistry registry,
+  }) {
+    final identities = <_BlockIdentity>[];
+    final beforeItemIds = <_EditorNodeId>[
+      ...sourceIdentity.listItemIds.take(itemIndex),
+      if (_hasText(split.before)) registry.nextNodeId(),
+    ];
+    final afterItemIds = <_EditorNodeId>[
+      if (_hasText(split.after)) registry.nextNodeId(),
+      ...sourceIdentity.listItemIds.skip(itemIndex + 1),
+    ];
+    var replacementIndex = 0;
+    if (beforeItemIds.isNotEmpty) {
+      identities.add(
+        _BlockIdentity(
+          blockId: sourceIdentity.blockId,
+          listItemIds: beforeItemIds,
+        ),
+      );
+      replacementIndex += 1;
+    }
+    identities.add(
+      _identityForConvertedSelectionBlock(
+        replacement[replacementIndex],
+        selectedNodeId: selectedItemId,
+        registry: registry,
+      ),
+    );
+    replacementIndex += 1;
+    if (afterItemIds.isNotEmpty) {
+      identities.add(
+        _BlockIdentity(
+          blockId: beforeItemIds.isEmpty
+              ? sourceIdentity.blockId
+              : registry.nextNodeId(),
+          listItemIds: afterItemIds,
+        ),
+      );
+    }
+    return identities;
+  }
+
+  _BlockIdentity _identityForConvertedSelectionBlock(
+    LessonBlock block, {
+    required _EditorNodeId selectedNodeId,
+    required _EditorIdentityRegistry registry,
+  }) {
+    if (block is LessonListBlock) {
+      return _BlockIdentity(
+        blockId: registry.nextNodeId(),
+        listItemIds: [
+          selectedNodeId,
+          for (var index = 1; index < block.items.length; index += 1)
+            registry.nextNodeId(),
+        ],
+      );
+    }
+    return _BlockIdentity(blockId: selectedNodeId);
+  }
+
+  _EditorTarget _targetForConvertedSelection({
+    required List<LessonBlock> replacement,
+    required List<_BlockIdentity> identities,
+    required _EditorNodeId selectedNodeId,
+  }) {
+    for (var index = 0; index < identities.length; index += 1) {
+      final identity = identities[index];
+      final block = replacement[index];
+      if (identity.blockId == selectedNodeId &&
+          (block is LessonParagraphBlock || block is LessonHeadingBlock)) {
+        return _BlockTextTarget(selectedNodeId);
+      }
+      if (block is LessonListBlock &&
+          identity.listItemIds.contains(selectedNodeId)) {
+        return _ListItemTextTarget(selectedNodeId);
+      }
+    }
+    return _BlockTextTarget(selectedNodeId);
   }
 
   void _toggleHeading() {
     final target = _activeTextTarget();
     if (target == null) return;
     final sourceBlocks = _document.blocks;
-    final block = sourceBlocks[target.blockIndex];
     final nextBlocks = List<LessonBlock>.from(sourceBlocks);
+    final nextRegistry = _identityRegistry.copy();
     late final _EditorTarget nextTarget;
 
-    if (target.itemIndex case final itemIndex?) {
-      if (block is! LessonListBlock) return;
-      final replacement = _toggleHeadingForListItem(block, itemIndex);
+    if (target case _ListItemTextTarget(:final itemId)) {
+      final location = _listItemLocationFor(itemId);
+      if (location == null) return;
+      final replacement = _toggleHeadingForListItem(
+        location.block,
+        location.itemIndex,
+      );
+      final replacementIdentities = _toggleHeadingListItemIdentities(
+        sourceIdentity: location.blockIdentity,
+        itemIndex: location.itemIndex,
+        selectedItemId: itemId,
+        registry: nextRegistry,
+      );
       nextBlocks
-        ..removeAt(target.blockIndex)
-        ..insertAll(target.blockIndex, replacement);
-      nextTarget = _EditorTarget.block(
-        target.blockIndex + (itemIndex > 0 ? 1 : 0),
-      );
-    } else if (block is LessonHeadingBlock) {
-      nextBlocks[target.blockIndex] = LessonParagraphBlock(
-        id: block.id,
-        children: block.children,
-      );
-      nextTarget = _EditorTarget.block(target.blockIndex);
-    } else if (block is LessonParagraphBlock) {
-      nextBlocks[target.blockIndex] = LessonHeadingBlock(
-        id: block.id,
-        level: _defaultHeadingLevel,
-        children: block.children,
-      );
-      nextTarget = _EditorTarget.block(target.blockIndex);
+        ..removeAt(location.blockIndex)
+        ..insertAll(location.blockIndex, replacement);
+      nextRegistry.blocks
+        ..removeAt(location.blockIndex)
+        ..insertAll(location.blockIndex, replacementIdentities);
+      _disposeRemovedIdentityKeys([
+        location.blockIdentity,
+      ], replacementIdentities);
+      nextTarget = _BlockTextTarget(itemId);
+    } else if (target case _BlockTextTarget(:final blockId)) {
+      final blockIndex = _blockIndexFor(blockId);
+      if (blockIndex == null) return;
+      final block = sourceBlocks[blockIndex];
+      if (block is LessonHeadingBlock) {
+        nextBlocks[blockIndex] = LessonParagraphBlock(
+          id: block.id,
+          children: block.children,
+        );
+        nextTarget = _BlockTextTarget(blockId);
+      } else if (block is LessonParagraphBlock) {
+        nextBlocks[blockIndex] = LessonHeadingBlock(
+          id: block.id,
+          level: _defaultHeadingLevel,
+          children: block.children,
+        );
+        nextTarget = _BlockTextTarget(blockId);
+      } else {
+        return;
+      }
     } else {
       return;
     }
@@ -666,9 +1107,46 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final next = LessonDocument(
       blocks: List<LessonBlock>.unmodifiable(nextBlocks),
     );
-    _emit(next);
-    widget.onInsertionIndexChanged?.call(nextTarget.insertionIndex(next));
+    _applyDocument(next, identityRegistry: nextRegistry);
+    widget.onInsertionIndexChanged?.call(
+      _insertionIndexForTarget(nextTarget) ?? _currentInsertionIndex(),
+    );
     setState(() => _selectedTarget = nextTarget);
+  }
+
+  List<_BlockIdentity> _toggleHeadingListItemIdentities({
+    required _BlockIdentity sourceIdentity,
+    required int itemIndex,
+    required _EditorNodeId selectedItemId,
+    required _EditorIdentityRegistry registry,
+  }) {
+    final identities = <_BlockIdentity>[];
+    final beforeItemIds = sourceIdentity.listItemIds
+        .take(itemIndex)
+        .toList(growable: false);
+    final afterItemIds = sourceIdentity.listItemIds
+        .skip(itemIndex + 1)
+        .toList(growable: false);
+    if (beforeItemIds.isNotEmpty) {
+      identities.add(
+        _BlockIdentity(
+          blockId: sourceIdentity.blockId,
+          listItemIds: beforeItemIds,
+        ),
+      );
+    }
+    identities.add(_BlockIdentity(blockId: selectedItemId));
+    if (afterItemIds.isNotEmpty) {
+      identities.add(
+        _BlockIdentity(
+          blockId: beforeItemIds.isEmpty
+              ? sourceIdentity.blockId
+              : registry.nextNodeId(),
+          listItemIds: afterItemIds,
+        ),
+      );
+    }
+    return identities;
   }
 
   List<LessonBlock> _toggleHeadingForListItem(
@@ -690,9 +1168,15 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   _EditorTarget? _activeTextTarget() {
-    final target = _selectedTarget.normalized(_document);
+    final target = _selectedTarget;
     if (target == null) return null;
-    final selection = _controllers[target.key]?.selection;
+    if (target is! _BlockTextTarget && target is! _ListItemTextTarget) {
+      return null;
+    }
+    if (!_targetExists(target)) return null;
+    final key = _controlKeyForTarget(target);
+    if (key == null) return null;
+    final selection = _controllers[key]?.selection;
     if (selection == null || !selection.isValid) {
       return null;
     }
@@ -705,7 +1189,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final children = _childrenForTarget(target);
     final length = _plainText(children).length;
     if (length == 0) return null;
-    final selection = _controllers[target.key]?.selection;
+    final key = _controlKeyForTarget(target);
+    if (key == null) return null;
+    final selection = _controllers[key]?.selection;
     if (selection == null || selection.isCollapsed) {
       return null;
     }
@@ -720,66 +1206,96 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _appendParagraph() {
-    final next = _document.insertParagraph(
-      _document.blocks.length,
-      const <LessonTextRun>[LessonTextRun('')],
+    final insertionIndex = _document.blocks.length;
+    const block = LessonParagraphBlock(
+      children: <LessonTextRun>[LessonTextRun('')],
     );
-    _emit(next);
-    setState(
-      () => _selectedTarget = _EditorTarget.block(next.blocks.length - 1),
+    final next = _document.insertBlock(insertionIndex, block);
+    final nextRegistry = _identityRegistry.copy();
+    final identity = nextRegistry.createBlockIdentity(block);
+    nextRegistry.blocks.insert(insertionIndex, identity);
+    _applyDocument(next, identityRegistry: nextRegistry);
+    final nextTarget = _BlockTextTarget(identity.blockId);
+    widget.onInsertionIndexChanged?.call(
+      _insertionIndexForTarget(nextTarget) ?? next.blocks.length,
     );
+    setState(() => _selectedTarget = nextTarget);
   }
 
-  void _moveBlock(int blockIndex, int targetIndex) {
+  void _moveBlock(_EditorNodeId blockId, int targetIndex) {
     if (!widget.enabled) return;
-    if (blockIndex < 0 || blockIndex >= _document.blocks.length) return;
+    final blockIndex = _blockIndexFor(blockId);
+    if (blockIndex == null) return;
     if (targetIndex < 0 || targetIndex >= _document.blocks.length) {
       return;
     }
     if (blockIndex == targetIndex) return;
     final next = _document.moveBlock(blockIndex, targetIndex);
-    _emit(next);
-    final nextTarget = _EditorTarget.block(targetIndex);
-    widget.onInsertionIndexChanged?.call(nextTarget.insertionIndex(next));
+    final nextRegistry = _identityRegistry.copy();
+    final identity = nextRegistry.blocks.removeAt(blockIndex);
+    nextRegistry.blocks.insert(targetIndex, identity);
+    _applyDocument(next, identityRegistry: nextRegistry);
+    final nextTarget = _BlockTarget(blockId);
+    widget.onInsertionIndexChanged?.call(
+      _insertionIndexForTarget(nextTarget) ?? targetIndex + 1,
+    );
     setState(() => _selectedTarget = nextTarget);
   }
 
-  void _moveBlockUp(int blockIndex) {
-    _moveBlock(blockIndex, blockIndex - 1);
+  void _moveBlockUp(_EditorNodeId blockId) {
+    final blockIndex = _blockIndexFor(blockId);
+    if (blockIndex == null) return;
+    _moveBlock(blockId, blockIndex - 1);
   }
 
-  void _moveBlockDown(int blockIndex) {
-    _moveBlock(blockIndex, blockIndex + 1);
+  void _moveBlockDown(_EditorNodeId blockId) {
+    final blockIndex = _blockIndexFor(blockId);
+    if (blockIndex == null) return;
+    _moveBlock(blockId, blockIndex + 1);
   }
 
-  void _deleteBlock(int blockIndex) {
+  void _deleteBlock(_EditorNodeId blockId) {
     if (!widget.enabled) return;
-    if (blockIndex < 0 || blockIndex >= _document.blocks.length) return;
+    final blockIndex = _blockIndexFor(blockId);
+    if (blockIndex == null) return;
+    final removedIdentity = _identityRegistry.blocks[blockIndex];
+    final selectedWasRemoved = _targetBelongsToIdentity(
+      _selectedTarget,
+      removedIdentity,
+    );
 
     final next = _document.removeBlock(blockIndex);
+    final nextRegistry = _identityRegistry.copy();
+    final removed = nextRegistry.blocks.removeAt(blockIndex);
+    _disposeRemovedIdentityKeys([removed], const <_BlockIdentity>[]);
+    _applyDocument(next, identityRegistry: nextRegistry);
+    if (!selectedWasRemoved) return;
+
     final nextTarget = next.blocks.isEmpty
-        ? const _EditorTarget.block(0)
-        : _EditorTarget.block(
+        ? null
+        : _targetForBlockIndex(
             blockIndex.clamp(0, next.blocks.length - 1).toInt(),
           );
-    _emit(next);
-    widget.onInsertionIndexChanged?.call(nextTarget.insertionIndex(next));
+    widget.onInsertionIndexChanged?.call(
+      nextTarget == null ? 0 : _insertionIndexForTarget(nextTarget) ?? 0,
+    );
     setState(() => _selectedTarget = nextTarget);
   }
 
   void _deleteSelectedBlock() {
-    final target = _selectedTarget.normalized(_document);
+    final target = _selectedTarget;
     if (target == null) return;
-    _deleteBlock(target.blockIndex);
+    final blockId = _owningBlockIdForTarget(target);
+    if (blockId == null) return;
+    _deleteBlock(blockId);
   }
 
   bool _isEmptyTextBlockTarget(_EditorTarget target) {
-    if (target.itemIndex != null ||
-        target.blockIndex < 0 ||
-        target.blockIndex >= _document.blocks.length) {
-      return false;
-    }
-    final block = _document.blocks[target.blockIndex];
+    if (target is! _BlockTextTarget) return false;
+    final blockId = target.blockId;
+    final blockIndex = _blockIndexFor(blockId);
+    if (blockIndex == null) return false;
+    final block = _document.blocks[blockIndex];
     if (block is LessonParagraphBlock) {
       return _plainText(block.children).isEmpty;
     }
@@ -794,27 +1310,34 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     TextEditingController controller,
   ) {
     if (!widget.enabled || controller.text.isNotEmpty) return false;
-    final normalizedTarget = target.normalized(_document);
-    return normalizedTarget == target && _isEmptyTextBlockTarget(target);
+    return _targetExists(target) && _isEmptyTextBlockTarget(target);
   }
 
   void _insertFirstParagraphFromEmptyDocument(String text) {
     if (!widget.enabled) return;
     final normalizedText = text.replaceAll('\r\n', '\n');
     if (normalizedText.isEmpty || _document.blocks.isNotEmpty) return;
-    final next = LessonDocument(
-      blocks: List<LessonBlock>.unmodifiable([
-        LessonParagraphBlock(
-          children: <LessonTextRun>[LessonTextRun(normalizedText)],
-        ),
-      ]),
+    final block = LessonParagraphBlock(
+      children: <LessonTextRun>[LessonTextRun(normalizedText)],
     );
-    _emit(next);
+    final next = LessonDocument(
+      blocks: List<LessonBlock>.unmodifiable([block]),
+    );
+    final nextRegistry = _identityRegistry.copy();
+    final identity = nextRegistry.createBlockIdentity(block);
+    nextRegistry.blocks.add(identity);
+    _applyDocument(next, identityRegistry: nextRegistry);
     widget.onInsertionIndexChanged?.call(1);
-    setState(() => _selectedTarget = const _EditorTarget.block(0));
+    setState(() => _selectedTarget = _BlockTextTarget(identity.blockId));
   }
 
-  void _updateCtaBlock(int blockIndex, {String? label, String? targetUrl}) {
+  void _updateCtaBlock(
+    _EditorNodeId blockId, {
+    String? label,
+    String? targetUrl,
+  }) {
+    final blockIndex = _blockIndexFor(blockId);
+    if (blockIndex == null) return;
     final block = _document.blocks[blockIndex];
     if (block is! LessonCtaBlock) return;
     final nextBlocks = List<LessonBlock>.from(_document.blocks);
@@ -876,7 +1399,14 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                       itemCount: _document.blocks.length,
                       itemBuilder: (context, blockIndex) {
                         final block = _document.blocks[blockIndex];
-                        return _buildBlockEditor(context, block, blockIndex);
+                        final identity = _identityAtBlockIndex(blockIndex);
+                        if (identity == null) return const SizedBox.shrink();
+                        return _buildBlockEditor(
+                          context,
+                          block,
+                          blockIndex,
+                          identity,
+                        );
                       },
                     ),
             ),
@@ -964,9 +1494,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         ),
         onTap: () {
           widget.onInsertionIndexChanged?.call(0);
-          if (_selectedTarget != const _EditorTarget.block(0)) {
-            setState(() => _selectedTarget = const _EditorTarget.block(0));
-          }
+          if (_selectedTarget != null) setState(() => _selectedTarget = null);
         },
         onChanged: _insertFirstParagraphFromEmptyDocument,
       ),
@@ -1003,6 +1531,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     BuildContext context,
     LessonBlock block,
     int blockIndex,
+    _BlockIdentity identity,
   ) {
     if (block is LessonParagraphBlock) {
       return _buildFlowingBlockPadding(
@@ -1010,7 +1539,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         blockIndex: blockIndex,
         child: _buildTextField(
           context,
-          target: _EditorTarget.block(blockIndex),
+          target: _BlockTextTarget(identity.blockId),
           semanticsLabel: 'Stycke',
           children: block.children,
           textStyle: _paragraphStyle(context),
@@ -1023,7 +1552,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         blockIndex: blockIndex,
         child: _buildTextField(
           context,
-          target: _EditorTarget.block(blockIndex),
+          target: _BlockTextTarget(identity.blockId),
           semanticsLabel: 'Rubrik H${block.level}',
           children: block.children,
           textStyle: _headingStyle(context, block.level),
@@ -1031,6 +1560,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       );
     }
     if (block is LessonListBlock) {
+      if (identity.listItemIds.length != block.items.length) {
+        return const SizedBox.shrink();
+      }
       final ordered = block.type == 'ordered_list';
       return _buildFlowingBlockPadding(
         block: block,
@@ -1063,7 +1595,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                     Expanded(
                       child: _buildTextField(
                         context,
-                        target: _EditorTarget.listItem(blockIndex, itemIndex),
+                        target: _ListItemTextTarget(
+                          identity.listItemIds[itemIndex],
+                        ),
                         semanticsLabel: ordered
                             ? 'Numrerad listpunkt ${itemIndex + 1}'
                             : 'Punktlista listpunkt ${itemIndex + 1}',
@@ -1090,7 +1624,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         block: block,
         blockIndex: blockIndex,
         child: Padding(
-          key: ValueKey<String>('lesson_document_media_$blockIndex'),
+          key: ValueKey<String>(
+            'lesson_document_media_${identity.blockId.keyValue}',
+          ),
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1128,21 +1664,21 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                 children: [
                   IconButton(
                     key: ValueKey<String>(
-                      'lesson_document_media_move_up_$blockIndex',
+                      'lesson_document_media_move_up_${identity.blockId.keyValue}',
                     ),
                     tooltip: 'Flytta media upp',
                     onPressed: canMoveUp
-                        ? () => _moveBlockUp(blockIndex)
+                        ? () => _moveBlockUp(identity.blockId)
                         : null,
                     icon: const Icon(Icons.keyboard_arrow_up),
                   ),
                   IconButton(
                     key: ValueKey<String>(
-                      'lesson_document_media_move_down_$blockIndex',
+                      'lesson_document_media_move_down_${identity.blockId.keyValue}',
                     ),
                     tooltip: 'Flytta media ned',
                     onPressed: canMoveDown
-                        ? () => _moveBlockDown(blockIndex)
+                        ? () => _moveBlockDown(identity.blockId)
                         : null,
                     icon: const Icon(Icons.keyboard_arrow_down),
                   ),
@@ -1155,6 +1691,10 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     }
     if (block is LessonCtaBlock) {
       final theme = Theme.of(context);
+      final labelTarget = _CtaFieldTarget(identity.blockId, _CtaField.label);
+      final urlTarget = _CtaFieldTarget(identity.blockId, _CtaField.url);
+      final labelKey = _ctaControlKey(identity.blockId, _CtaField.label);
+      final urlKey = _ctaControlKey(identity.blockId, _CtaField.url);
       return _buildFlowingBlockPadding(
         block: block,
         blockIndex: blockIndex,
@@ -1171,12 +1711,10 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                 ),
               ),
               TextField(
-                key: ValueKey<String>('lesson_document_cta_label_$blockIndex'),
+                key: ValueKey<String>('lesson_document_${labelKey.value}'),
                 enabled: widget.enabled,
-                controller: _controllerFor(
-                  'cta_label_$blockIndex',
-                  block.label,
-                ),
+                controller: _controllerFor(labelKey, block.label),
+                focusNode: _focusNodeFor(labelKey, labelTarget),
                 style: _paragraphStyle(context),
                 decoration: const InputDecoration(
                   hintText: 'CTA text',
@@ -1186,15 +1724,15 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                   disabledBorder: InputBorder.none,
                   contentPadding: EdgeInsets.zero,
                 ),
-                onChanged: (value) => _updateCtaBlock(blockIndex, label: value),
+                onTap: () => _select(labelTarget),
+                onChanged: (value) =>
+                    _updateCtaBlock(identity.blockId, label: value),
               ),
               TextField(
-                key: ValueKey<String>('lesson_document_cta_url_$blockIndex'),
+                key: ValueKey<String>('lesson_document_${urlKey.value}'),
                 enabled: widget.enabled,
-                controller: _controllerFor(
-                  'cta_url_$blockIndex',
-                  block.targetUrl,
-                ),
+                controller: _controllerFor(urlKey, block.targetUrl),
+                focusNode: _focusNodeFor(urlKey, urlTarget),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
@@ -1206,8 +1744,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                   disabledBorder: InputBorder.none,
                   contentPadding: EdgeInsets.zero,
                 ),
+                onTap: () => _select(urlTarget),
                 onChanged: (value) =>
-                    _updateCtaBlock(blockIndex, targetUrl: value),
+                    _updateCtaBlock(identity.blockId, targetUrl: value),
               ),
             ],
           ),
@@ -1224,16 +1763,17 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     required List<LessonTextRun> children,
     required TextStyle textStyle,
   }) {
-    final key = target.key;
+    final key = _controlKeyForTarget(target);
+    if (key == null) return const SizedBox.shrink();
     final controller = _controllerFor(key, _plainText(children), children);
     final focusNode = _focusNodeFor(key, target);
     final deleteEmptyBlockShortcuts =
         _shouldDeleteEmptyBlockFromKey(target, controller)
         ? <ShortcutActivator, VoidCallback>{
             const SingleActivator(LogicalKeyboardKey.backspace): () =>
-                _deleteBlock(target.blockIndex),
+                _deleteTextBlockTarget(target),
             const SingleActivator(LogicalKeyboardKey.delete): () =>
-                _deleteBlock(target.blockIndex),
+                _deleteTextBlockTarget(target),
           }
         : const <ShortcutActivator, VoidCallback>{};
     return Semantics(
@@ -1242,7 +1782,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       child: CallbackShortcuts(
         bindings: deleteEmptyBlockShortcuts,
         child: TextField(
-          key: ValueKey<String>('lesson_document_editor_$key'),
+          key: ValueKey<String>('lesson_document_editor_${key.value}'),
           enabled: widget.enabled,
           controller: controller,
           focusNode: focusNode,
@@ -1267,6 +1807,12 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         ),
       ),
     );
+  }
+
+  void _deleteTextBlockTarget(_EditorTarget target) {
+    final blockId = _owningBlockIdForTarget(target);
+    if (blockId == null) return;
+    _deleteBlock(blockId);
   }
 }
 
@@ -1436,55 +1982,185 @@ class _SelectedTextRange {
   final int end;
 }
 
-class _EditorTarget {
-  const _EditorTarget.block(this.blockIndex) : itemIndex = null;
-  const _EditorTarget.listItem(this.blockIndex, this.itemIndex);
+final class _EditorNodeId {
+  const _EditorNodeId(this.value);
 
-  final int blockIndex;
-  final int? itemIndex;
+  final int value;
 
-  String get key => itemIndex == null
-      ? 'block_$blockIndex'
-      : 'block_${blockIndex}_item_$itemIndex';
-
-  _EditorTarget? normalized(LessonDocument document) {
-    if (document.blocks.isEmpty) {
-      return null;
-    }
-    if (blockIndex < 0 || blockIndex >= document.blocks.length) {
-      return null;
-    }
-    final itemIndex = this.itemIndex;
-    if (itemIndex == null) return this;
-    final block = document.blocks[blockIndex];
-    if (block is! LessonListBlock ||
-        itemIndex < 0 ||
-        itemIndex >= block.items.length) {
-      return null;
-    }
-    return this;
-  }
-
-  int insertionIndex(LessonDocument document) {
-    if (document.blocks.isEmpty) {
-      return 0;
-    }
-    final target = normalized(document);
-    if (target == null) {
-      return document.blocks.length;
-    }
-    return (target.blockIndex + 1).clamp(0, document.blocks.length).toInt();
-  }
+  String get keyValue => 'node_$value';
 
   @override
   bool operator ==(Object other) {
-    return other is _EditorTarget &&
-        other.blockIndex == blockIndex &&
-        other.itemIndex == itemIndex;
+    return other is _EditorNodeId && other.value == value;
   }
 
   @override
-  int get hashCode => Object.hash(blockIndex, itemIndex);
+  int get hashCode => value.hashCode;
+}
+
+final class _BlockIdentity {
+  const _BlockIdentity({
+    required this.blockId,
+    this.listItemIds = const <_EditorNodeId>[],
+  });
+
+  final _EditorNodeId blockId;
+  final List<_EditorNodeId> listItemIds;
+
+  _BlockIdentity copy() {
+    return _BlockIdentity(
+      blockId: blockId,
+      listItemIds: List<_EditorNodeId>.unmodifiable(listItemIds),
+    );
+  }
+}
+
+final class _EditorIdentityRegistry {
+  _EditorIdentityRegistry._({
+    required List<_BlockIdentity> blocks,
+    required int nextValue,
+  }) : blocks = List<_BlockIdentity>.of(blocks),
+       _nextValue = nextValue;
+
+  factory _EditorIdentityRegistry.fromDocument(LessonDocument document) {
+    final registry = _EditorIdentityRegistry._(
+      blocks: const <_BlockIdentity>[],
+      nextValue: 0,
+    );
+    for (final block in document.blocks) {
+      registry.blocks.add(registry.createBlockIdentity(block));
+    }
+    return registry;
+  }
+
+  final List<_BlockIdentity> blocks;
+  int _nextValue;
+
+  _EditorIdentityRegistry copy() {
+    return _EditorIdentityRegistry._(
+      blocks: [for (final block in blocks) block.copy()],
+      nextValue: _nextValue,
+    );
+  }
+
+  _EditorNodeId nextNodeId() {
+    final nodeId = _EditorNodeId(_nextValue);
+    _nextValue += 1;
+    return nodeId;
+  }
+
+  _BlockIdentity createBlockIdentity(LessonBlock block) {
+    return _BlockIdentity(
+      blockId: nextNodeId(),
+      listItemIds: block is LessonListBlock
+          ? [
+              for (var index = 0; index < block.items.length; index += 1)
+                nextNodeId(),
+            ]
+          : const <_EditorNodeId>[],
+    );
+  }
+}
+
+final class _EditorControlKey {
+  const _EditorControlKey._(this.value);
+
+  factory _EditorControlKey.node(_EditorNodeId nodeId) {
+    return _EditorControlKey._(nodeId.keyValue);
+  }
+
+  factory _EditorControlKey.cta(_EditorNodeId blockId, _CtaField field) {
+    return _EditorControlKey._('cta:${blockId.keyValue}:${field.name}');
+  }
+
+  final String value;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _EditorControlKey && other.value == value;
+  }
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
+enum _CtaField { label, url }
+
+sealed class _EditorTarget {
+  const _EditorTarget();
+}
+
+final class _BlockTextTarget extends _EditorTarget {
+  const _BlockTextTarget(this.blockId);
+
+  final _EditorNodeId blockId;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _BlockTextTarget && other.blockId == blockId;
+  }
+
+  @override
+  int get hashCode => Object.hash(_BlockTextTarget, blockId);
+}
+
+final class _ListItemTextTarget extends _EditorTarget {
+  const _ListItemTextTarget(this.itemId);
+
+  final _EditorNodeId itemId;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ListItemTextTarget && other.itemId == itemId;
+  }
+
+  @override
+  int get hashCode => Object.hash(_ListItemTextTarget, itemId);
+}
+
+final class _BlockTarget extends _EditorTarget {
+  const _BlockTarget(this.blockId);
+
+  final _EditorNodeId blockId;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _BlockTarget && other.blockId == blockId;
+  }
+
+  @override
+  int get hashCode => Object.hash(_BlockTarget, blockId);
+}
+
+final class _CtaFieldTarget extends _EditorTarget {
+  const _CtaFieldTarget(this.blockId, this.field);
+
+  final _EditorNodeId blockId;
+  final _CtaField field;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _CtaFieldTarget &&
+        other.blockId == blockId &&
+        other.field == field;
+  }
+
+  @override
+  int get hashCode => Object.hash(_CtaFieldTarget, blockId, field);
+}
+
+final class _ListItemLocation {
+  const _ListItemLocation({
+    required this.blockIndex,
+    required this.itemIndex,
+    required this.block,
+    required this.blockIdentity,
+  });
+
+  final int blockIndex;
+  final int itemIndex;
+  final LessonListBlock block;
+  final _BlockIdentity blockIdentity;
 }
 
 class _RunRangeSplit {

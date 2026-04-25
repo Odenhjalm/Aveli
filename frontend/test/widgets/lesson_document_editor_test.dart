@@ -599,23 +599,23 @@ void main() {
 
       final theme = Theme.of(tester.element(find.byType(LessonDocumentEditor)));
       expect(
-        _textFieldFontSize(tester, 'lesson_document_editor_block_0'),
+        _textFieldFontSize(tester, 'lesson_document_editor_node_0'),
         closeTo(theme.textTheme.bodyLarge?.fontSize ?? 0, 0.001),
       );
       expect(
-        _textFieldFontSize(tester, 'lesson_document_editor_block_1'),
+        _textFieldFontSize(tester, 'lesson_document_editor_node_1'),
         closeTo((theme.textTheme.headlineMedium?.fontSize ?? 24) * 1.6, 0.001),
       );
       expect(
-        _textFieldFontSize(tester, 'lesson_document_editor_block_2'),
+        _textFieldFontSize(tester, 'lesson_document_editor_node_2'),
         closeTo((theme.textTheme.headlineSmall?.fontSize ?? 24) * 1.6, 0.001),
       );
       expect(
-        _textFieldFontSize(tester, 'lesson_document_editor_block_3'),
+        _textFieldFontSize(tester, 'lesson_document_editor_node_3'),
         closeTo((theme.textTheme.titleLarge?.fontSize ?? 20) * 1.6, 0.001),
       );
       expect(
-        _textFieldFontSize(tester, 'lesson_document_editor_block_4'),
+        _textFieldFontSize(tester, 'lesson_document_editor_node_4'),
         closeTo((theme.textTheme.titleMedium?.fontSize ?? 20) * 1.6, 0.001),
       );
     },
@@ -648,10 +648,10 @@ void main() {
       ),
     );
 
-    const fieldKey = ValueKey('lesson_document_editor_block_0');
+    const fieldKey = ValueKey('lesson_document_editor_node_0');
     await _selectTextRange(
       tester,
-      const ValueKey('lesson_document_editor_block_0'),
+      const ValueKey('lesson_document_editor_node_0'),
       text: 'Alpha Beta Gamma',
       start: 6,
       end: 10,
@@ -732,7 +732,7 @@ void main() {
         ),
       );
 
-      const fieldKey = ValueKey('lesson_document_editor_block_0');
+      const fieldKey = ValueKey('lesson_document_editor_node_0');
       await _selectTextRange(
         tester,
         fieldKey,
@@ -804,7 +804,7 @@ void main() {
     );
 
     await tester.tap(
-      find.byKey(const ValueKey('lesson_document_editor_block_0')),
+      find.byKey(const ValueKey('lesson_document_editor_node_0')),
     );
     await tester.pump();
     await _tapToolbar(tester, const Key('lesson_document_toolbar_bold'));
@@ -847,7 +847,7 @@ void main() {
 
       await _selectTextRange(
         tester,
-        const ValueKey('lesson_document_editor_block_0_item_1'),
+        const ValueKey('lesson_document_editor_node_2'),
         text: 'Beta',
         start: 0,
         end: 4,
@@ -905,7 +905,7 @@ void main() {
 
     await _selectTextRange(
       tester,
-      const ValueKey('lesson_document_editor_block_0'),
+      const ValueKey('lesson_document_editor_node_0'),
       text: 'Alpha Beta Gamma',
       start: 6,
       end: 10,
@@ -975,7 +975,7 @@ void main() {
         ),
       );
 
-      const targetKey = ValueKey<String>('lesson_document_editor_block_8');
+      const targetKey = ValueKey<String>('lesson_document_editor_node_8');
       await _expectEditorKeyVisible(tester, targetKey);
       await tester.tap(find.byKey(targetKey));
       await tester.pump();
@@ -1005,10 +1005,10 @@ void main() {
 
       await _expectEditorKeyVisible(
         tester,
-        const ValueKey<String>('lesson_document_editor_block_13'),
+        const ValueKey<String>('lesson_document_editor_node_13'),
       );
       await tester.tap(
-        find.byKey(const ValueKey<String>('lesson_document_editor_block_13')),
+        find.byKey(const ValueKey<String>('lesson_document_editor_node_13')),
         warnIfMissed: false,
       );
       await tester.pump();
@@ -1057,7 +1057,7 @@ void main() {
         ),
       );
 
-      const fieldKey = ValueKey<String>('lesson_document_editor_block_0');
+      const fieldKey = ValueKey<String>('lesson_document_editor_node_0');
       await tester.tap(find.byKey(fieldKey));
       await tester.pump();
       tester.testTextInput.updateEditingValue(
@@ -1141,7 +1141,7 @@ void main() {
         ),
       );
 
-      const fieldKey = ValueKey<String>('lesson_document_editor_block_0');
+      const fieldKey = ValueKey<String>('lesson_document_editor_node_0');
       await tester.tap(find.byKey(fieldKey));
       await tester.pump();
       tester.testTextInput.updateEditingValue(
@@ -1211,7 +1211,7 @@ void main() {
       ),
     );
 
-    const fieldKey = ValueKey<String>('lesson_document_editor_block_0');
+    const fieldKey = ValueKey<String>('lesson_document_editor_node_0');
     await _selectTextRange(
       tester,
       fieldKey,
@@ -1255,6 +1255,7 @@ void main() {
         LessonParagraphBlock(children: [LessonTextRun('Outro')]),
       ],
     );
+    final controller = LessonDocumentEditorController();
     int? insertionIndex;
 
     await tester.pumpWidget(
@@ -1262,24 +1263,13 @@ void main() {
         home: Scaffold(
           body: StatefulBuilder(
             builder: (context, setState) {
-              void insertMedia(String mediaType, String lessonMediaId) {
-                final index = insertionIndex ?? document.blocks.length;
-                setState(() {
-                  document = document.insertMedia(
-                    index,
-                    mediaType: mediaType,
-                    lessonMediaId: lessonMediaId,
-                  );
-                  insertionIndex = index + 1;
-                });
-              }
-
               return Column(
                 children: [
                   SizedBox(
                     height: 520,
                     child: LessonDocumentEditor(
                       document: document,
+                      controller: controller,
                       onChanged: (next) => setState(() => document = next),
                       onInsertionIndexChanged: (index) {
                         insertionIndex = index;
@@ -1288,17 +1278,17 @@ void main() {
                   ),
                   ElevatedButton(
                     key: const Key('insert_image_at_editor_position'),
-                    onPressed: () => insertMedia(
-                      'image',
-                      '55555555-5555-4555-8555-555555555555',
+                    onPressed: () => controller.insertMediaBlock(
+                      mediaType: 'image',
+                      lessonMediaId: '55555555-5555-4555-8555-555555555555',
                     ),
                     child: const Text('Insert image'),
                   ),
                   ElevatedButton(
                     key: const Key('insert_audio_at_editor_position'),
-                    onPressed: () => insertMedia(
-                      'audio',
-                      '66666666-6666-4666-8666-666666666666',
+                    onPressed: () => controller.insertMediaBlock(
+                      mediaType: 'audio',
+                      lessonMediaId: '66666666-6666-4666-8666-666666666666',
                     ),
                     child: const Text('Insert audio'),
                   ),
@@ -1318,7 +1308,7 @@ void main() {
 
     await _selectTextRange(
       tester,
-      const ValueKey('lesson_document_editor_block_0'),
+      const ValueKey('lesson_document_editor_node_0'),
       text: 'Intro',
       start: 0,
       end: 5,
@@ -1327,6 +1317,7 @@ void main() {
     await tester.pump();
 
     expect(_blockTypes(document), ['paragraph', 'media', 'paragraph']);
+    expect(insertionIndex, 2);
     expect(
       (document.blocks[0] as LessonParagraphBlock).children.single.text,
       'Intro',
@@ -1344,13 +1335,14 @@ void main() {
     expect(preview.document.toJson(), document.toJson());
 
     await tester.tap(
-      find.byKey(const ValueKey('lesson_document_editor_block_2')),
+      find.byKey(const ValueKey('lesson_document_editor_node_1')),
     );
     await tester.pump();
     await tester.tap(find.byKey(const Key('insert_audio_at_editor_position')));
     await tester.pump();
 
     expect(_blockTypes(document), ['paragraph', 'media', 'paragraph', 'media']);
+    expect(insertionIndex, 4);
     expect(
       (document.blocks[2] as LessonParagraphBlock).children.single.text,
       'Outro',
@@ -1413,28 +1405,34 @@ void main() {
       ),
     );
 
-    IconButton moveUpButton(int index) {
+    IconButton moveUpButton() {
       return tester.widget<IconButton>(
-        find.byKey(ValueKey<String>('lesson_document_media_move_up_$index')),
+        find.byKey(
+          const ValueKey<String>('lesson_document_media_move_up_node_1'),
+        ),
       );
     }
 
-    IconButton moveDownButton(int index) {
+    IconButton moveDownButton() {
       return tester.widget<IconButton>(
-        find.byKey(ValueKey<String>('lesson_document_media_move_down_$index')),
+        find.byKey(
+          const ValueKey<String>('lesson_document_media_move_down_node_1'),
+        ),
       );
     }
 
     expect(_blockTypes(document), ['paragraph', 'media', 'paragraph']);
-    expect(moveUpButton(1).onPressed, isNotNull);
-    expect(moveDownButton(1).onPressed, isNotNull);
-    expect(moveUpButton(1).tooltip, 'Flytta media upp');
-    expect(moveDownButton(1).tooltip, 'Flytta media ned');
-    expect(moveUpButton(1).tooltip, isNot(contains('image')));
-    expect(moveDownButton(1).tooltip, isNot(contains('77777777')));
+    expect(moveUpButton().onPressed, isNotNull);
+    expect(moveDownButton().onPressed, isNotNull);
+    expect(moveUpButton().tooltip, 'Flytta media upp');
+    expect(moveDownButton().tooltip, 'Flytta media ned');
+    expect(moveUpButton().tooltip, isNot(contains('image')));
+    expect(moveDownButton().tooltip, isNot(contains('77777777')));
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('lesson_document_media_move_up_1')),
+      find.byKey(
+        const ValueKey<String>('lesson_document_media_move_up_node_1'),
+      ),
     );
     await tester.pump();
 
@@ -1442,12 +1440,14 @@ void main() {
     final movedToTop = document.blocks[0] as LessonMediaBlock;
     expect(movedToTop.mediaType, 'image');
     expect(movedToTop.lessonMediaId, '77777777-7777-4777-8777-777777777777');
-    expect(moveUpButton(0).onPressed, isNull);
-    expect(moveDownButton(0).onPressed, isNotNull);
+    expect(moveUpButton().onPressed, isNull);
+    expect(moveDownButton().onPressed, isNotNull);
     expect(insertionIndex, 1);
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('lesson_document_media_move_down_0')),
+      find.byKey(
+        const ValueKey<String>('lesson_document_media_move_down_node_1'),
+      ),
     );
     await tester.pump();
 
@@ -1458,13 +1458,15 @@ void main() {
     expect(insertionIndex, 2);
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('lesson_document_media_move_down_1')),
+      find.byKey(
+        const ValueKey<String>('lesson_document_media_move_down_node_1'),
+      ),
     );
     await tester.pump();
 
     expect(_blockTypes(document), ['paragraph', 'paragraph', 'media']);
-    expect(moveUpButton(2).onPressed, isNotNull);
-    expect(moveDownButton(2).onPressed, isNull);
+    expect(moveUpButton().onPressed, isNotNull);
+    expect(moveDownButton().onPressed, isNull);
     final preview = tester.widget<LessonDocumentPreview>(
       find.byKey(const ValueKey<String>('moved_media_preview')),
     );
@@ -1544,44 +1546,44 @@ void main() {
     );
 
     expect(
-      find.byKey(const ValueKey('lesson_document_editor_block_0')),
+      find.byKey(const ValueKey('lesson_document_editor_node_0')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('lesson_document_editor_block_1')),
+      find.byKey(const ValueKey('lesson_document_editor_node_1')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('lesson_document_editor_block_2_item_0')),
+      find.byKey(const ValueKey('lesson_document_editor_node_3')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('lesson_document_editor_block_3_item_0')),
+      find.byKey(const ValueKey('lesson_document_editor_node_6')),
       findsOneWidget,
     );
     await _expectEditorKeyVisible(
       tester,
-      const ValueKey('lesson_document_media_4'),
+      const ValueKey('lesson_document_media_node_8'),
     );
     await _expectEditorKeyVisible(
       tester,
-      const ValueKey('lesson_document_media_5'),
+      const ValueKey('lesson_document_media_node_9'),
     );
     await _expectEditorKeyVisible(
       tester,
-      const ValueKey('lesson_document_media_6'),
+      const ValueKey('lesson_document_media_node_10'),
     );
     await _expectEditorKeyVisible(
       tester,
-      const ValueKey('lesson_document_media_7'),
+      const ValueKey('lesson_document_media_node_11'),
     );
     await _expectEditorKeyVisible(
       tester,
-      const ValueKey('lesson_document_cta_label_8'),
+      const ValueKey('lesson_document_cta:node_12:label'),
     );
     await _expectEditorKeyVisible(
       tester,
-      const ValueKey('lesson_document_cta_url_8'),
+      const ValueKey('lesson_document_cta:node_12:url'),
     );
     expect(tester.takeException(), isNull);
   });
@@ -1738,7 +1740,7 @@ void main() {
 
     await _selectTextRange(
       tester,
-      const ValueKey('lesson_document_editor_block_0'),
+      const ValueKey('lesson_document_editor_node_0'),
       text: 'Save me',
       start: 0,
       end: 4,
@@ -1789,7 +1791,7 @@ void main() {
     );
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('lesson_document_editor_block_0')),
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_0')),
     );
     await tester.pump();
     await _tapToolbar(
@@ -1800,6 +1802,280 @@ void main() {
     expect(document.blocks, hasLength(1));
     final paragraph = document.blocks.single as LessonParagraphBlock;
     expect(paragraph.children.single.text, 'Second');
+  });
+
+  testWidgets('node identity edits the same block after deleting above it', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('A')]),
+        LessonParagraphBlock(children: [LessonTextRun('B')]),
+        LessonParagraphBlock(children: [LessonTextRun('C')]),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 420,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_1')),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_0')),
+    );
+    await tester.pump();
+    await _tapToolbar(
+      tester,
+      const Key('lesson_document_toolbar_delete_block'),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_1')),
+      'B edited',
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['paragraph', 'paragraph']);
+    expect(
+      (document.blocks[0] as LessonParagraphBlock).children.single.text,
+      'B edited',
+    );
+    expect(
+      (document.blocks[1] as LessonParagraphBlock).children.single.text,
+      'C',
+    );
+  });
+
+  testWidgets('node identity edits the same block after inserting above it', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('A')]),
+        LessonParagraphBlock(children: [LessonTextRun('B')]),
+      ],
+    );
+    final controller = LessonDocumentEditorController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 420,
+                child: LessonDocumentEditor(
+                  document: document,
+                  controller: controller,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_0')),
+    );
+    await tester.pump();
+    expect(
+      controller.insertMediaBlock(
+        mediaType: 'image',
+        lessonMediaId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      ),
+      isTrue,
+    );
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_1')),
+      'B edited',
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['paragraph', 'media', 'paragraph']);
+    expect(
+      (document.blocks[2] as LessonParagraphBlock).children.single.text,
+      'B edited',
+    );
+  });
+
+  testWidgets('node identity edits the same block after reorder', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('A')]),
+        LessonMediaBlock(
+          mediaType: 'image',
+          lessonMediaId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        ),
+        LessonParagraphBlock(children: [LessonTextRun('B')]),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 420,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('lesson_document_media_move_down_node_1'),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_2')),
+      'B edited',
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['paragraph', 'paragraph', 'media']);
+    expect(
+      (document.blocks[1] as LessonParagraphBlock).children.single.text,
+      'B edited',
+    );
+  });
+
+  testWidgets('node identity edits the same list item after deleting above', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('A')]),
+        LessonListBlock.bullet(
+          items: [
+            LessonListItem(children: [LessonTextRun('B')]),
+            LessonListItem(children: [LessonTextRun('C')]),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 420,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_0')),
+    );
+    await tester.pump();
+    await _tapToolbar(
+      tester,
+      const Key('lesson_document_toolbar_delete_block'),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_3')),
+      'C edited',
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['bullet_list']);
+    final list = document.blocks.single as LessonListBlock;
+    expect(list.items[0].children.single.text, 'B');
+    expect(list.items[1].children.single.text, 'C edited');
+  });
+
+  testWidgets('node identity edits CTA fields after deleting above', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('A')]),
+        LessonCtaBlock(label: 'Book', targetUrl: '/book'),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 420,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_editor_node_0')),
+    );
+    await tester.pump();
+    await _tapToolbar(
+      tester,
+      const Key('lesson_document_toolbar_delete_block'),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('lesson_document_cta:node_1:label')),
+      'Join now',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('lesson_document_cta:node_1:url')),
+      '/join',
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['cta']);
+    final cta = document.blocks.single as LessonCtaBlock;
+    expect(cta.label, 'Join now');
+    expect(cta.targetUrl, '/join');
   });
 
   testWidgets('backspace on an empty final block removes it', (tester) async {
@@ -1832,7 +2108,7 @@ void main() {
     );
 
     final finder = find.byKey(
-      const ValueKey<String>('lesson_document_editor_block_0'),
+      const ValueKey<String>('lesson_document_editor_node_0'),
     );
     await tester.tap(finder);
     await tester.pump();
