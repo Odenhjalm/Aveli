@@ -32,22 +32,21 @@ class DeviceRecord(BaseModel):
     created_at: datetime
 
 
-class NotificationRecord(BaseModel):
+class NotificationHeaderItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: UUID
-    user_id: UUID
-    type: str
-    payload: dict[str, object]
-    read_at: datetime | None
-    is_read: bool
-    created_at: datetime
+    id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    subtitle: str | None = None
+    cta_label: str | None = None
+    cta_url: str | None = None
 
 
 class NotificationListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    items: list[NotificationRecord]
+    show_notifications_bar: bool
+    notifications: list[NotificationHeaderItem]
 
 
 class NotificationPreferenceRecord(BaseModel):

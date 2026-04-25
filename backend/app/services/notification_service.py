@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
+from urllib.parse import quote
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -37,6 +38,12 @@ class NotificationPreferenceResult:
     preference: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class NotificationHeaderReadModel:
+    show_notifications_bar: bool
+    notifications: list[dict[str, Any]]
+
+
 def _required_text(value: str, field_name: str) -> str:
     normalized = str(value or "").strip()
     if not normalized:
@@ -55,6 +62,72 @@ def _normalize_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         raise ValueError("payload must be a mapping")
     return dict(payload)
+
+
+def _optional_payload_text(payload: Mapping[str, Any], field_name: str) -> str | None:
+    value = payload.get(field_name)
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _route_path(*parts: str) -> str:
+    encoded_parts = [
+        quote(str(part).strip(), safe="")
+        for part in parts
+        if str(part).strip()
+    ]
+    return "/" + "/".join(encoded_parts) if encoded_parts else "/"
+
+
+def _notification_header_item(row: Mapping[str, Any]) -> dict[str, Any]:
+    notification_type = _normalize_type(str(row.get("type") or ""))
+    raw_payload = row.get("payload")
+    if raw_payload is None:
+        raw_payload = row.get("payload_json")
+    payload = _normalize_payload(raw_payload if isinstance(raw_payload, Mapping) else {})
+    notification_id = _required_text(str(row.get("id") or ""), "id")
+
+    if notification_type == "lesson_drip":
+        lesson_id = _optional_payload_text(payload, "lesson_id")
+        return {
+            "id": notification_id,
+            "title": "Ny lektion är upplåst",
+            "subtitle": _optional_payload_text(payload, "title"),
+            "cta_label": "Öppna lektionen" if lesson_id else None,
+            "cta_url": _route_path("lesson", lesson_id) if lesson_id else None,
+        }
+
+    if notification_type == "purchase":
+        return {
+            "id": notification_id,
+            "title": "Köpet är klart",
+            "subtitle": "Din åtkomst är aktiverad.",
+            "cta_label": "Visa kurser",
+            "cta_url": "/courses",
+        }
+
+    if notification_type == "message":
+        return {
+            "id": notification_id,
+            "title": "Nytt meddelande",
+            "subtitle": _optional_payload_text(payload, "message_preview"),
+            "cta_label": "Öppna meddelanden",
+            "cta_url": "/messages",
+        }
+
+    raise ValueError(f"unsupported notification type: {notification_type}")
+
+
+def _notification_header_read_model(
+    rows: Sequence[Mapping[str, Any]],
+) -> NotificationHeaderReadModel:
+    notifications = [_notification_header_item(row) for row in rows]
+    return NotificationHeaderReadModel(
+        show_notifications_bar=bool(notifications),
+        notifications=notifications,
+    )
 
 
 async def _hydrate_purchase_payload_from_order(
@@ -466,6 +539,22 @@ async def mark_notification_read(
         return result
 
 
+async def mark_notification_read_for_header(
+    *,
+    user_id: str,
+    notification_id: str,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    row = await mark_notification_read(
+        user_id=user_id,
+        notification_id=notification_id,
+        conn=conn,
+    )
+    if row is None:
+        return None
+    return _notification_header_item(row)
+
+
 async def list_notifications_for_user(
     *,
     user_id: str,
@@ -506,6 +595,20 @@ async def list_notifications_for_user(
 
     async with pool.connection() as active_conn:  # type: ignore[attr-defined]
         return await _execute(active_conn)
+
+
+async def list_notification_header_read_model(
+    *,
+    user_id: str,
+    limit: int = 50,
+    conn: Any | None = None,
+) -> NotificationHeaderReadModel:
+    rows = await list_notifications_for_user(
+        user_id=user_id,
+        limit=limit,
+        conn=conn,
+    )
+    return _notification_header_read_model(rows)
 
 
 async def list_notification_preferences(
@@ -611,13 +714,16 @@ __all__ = [
     "DEFAULT_NOTIFICATION_CHANNELS",
     "DeviceRegistrationResult",
     "NotificationCreateResult",
+    "NotificationHeaderReadModel",
     "NotificationPreferenceResult",
     "SUPPORTED_NOTIFICATION_CHANNELS",
     "create_notification",
     "deactivate_device",
+    "list_notification_header_read_model",
     "list_notifications_for_user",
     "list_notification_preferences",
     "mark_notification_read",
+    "mark_notification_read_for_header",
     "register_device",
     "resolve_notification_channels",
     "set_notification_preference",

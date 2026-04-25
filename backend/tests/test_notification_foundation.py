@@ -437,6 +437,105 @@ async def test_notification_preferences_default_and_user_override_channels():
             await _close_worker_pool(worker_pool, originals)
 
 
+async def test_notification_header_read_model_maps_supported_types_without_raw_payload():
+    with _baseline_v2_connection() as (conn, database_conninfo):
+        _apply_baseline_v2_slots(conn)
+        user_id = str(uuid4())
+        _insert_auth_subject(conn, user_id, role="learner")
+
+        worker_pool, originals = await _with_worker_pool(
+            database_conninfo,
+            notification_service,
+        )
+        try:
+            lesson_id = str(uuid4())
+            await notification_service.create_notification(
+                user_id,
+                "lesson_drip",
+                {
+                    "course_id": str(uuid4()),
+                    "lesson_id": lesson_id,
+                },
+                "lesson-drip:header-model",
+            )
+            await notification_service.create_notification(
+                user_id,
+                "purchase",
+                {
+                    "product_id": "membership",
+                    "amount": 1000,
+                    "currency": "sek",
+                },
+                "purchase:header-model",
+            )
+            await notification_service.create_notification(
+                user_id,
+                "message",
+                {
+                    "thread_id": "thread-header-model",
+                    "message_preview": "Nytt svar i tråden",
+                },
+                "message:header-model",
+            )
+
+            read_model = await notification_service.list_notification_header_read_model(
+                user_id=user_id,
+            )
+
+            assert read_model.show_notifications_bar is True
+            assert len(read_model.notifications) == 3
+            by_title = {
+                notification["title"]: notification
+                for notification in read_model.notifications
+            }
+            assert set(by_title) == {
+                "Ny lektion är upplåst",
+                "Köpet är klart",
+                "Nytt meddelande",
+            }
+            assert by_title["Ny lektion är upplåst"] == {
+                "id": by_title["Ny lektion är upplåst"]["id"],
+                "title": "Ny lektion är upplåst",
+                "subtitle": None,
+                "cta_label": "Öppna lektionen",
+                "cta_url": f"/lesson/{lesson_id}",
+            }
+            assert by_title["Köpet är klart"] == {
+                "id": by_title["Köpet är klart"]["id"],
+                "title": "Köpet är klart",
+                "subtitle": "Din åtkomst är aktiverad.",
+                "cta_label": "Visa kurser",
+                "cta_url": "/courses",
+            }
+            assert by_title["Nytt meddelande"] == {
+                "id": by_title["Nytt meddelande"]["id"],
+                "title": "Nytt meddelande",
+                "subtitle": "Nytt svar i tråden",
+                "cta_label": "Öppna meddelanden",
+                "cta_url": "/messages",
+            }
+            for notification in read_model.notifications:
+                assert set(notification) == {
+                    "id",
+                    "title",
+                    "subtitle",
+                    "cta_label",
+                    "cta_url",
+                }
+                assert "type" not in notification
+                assert "payload" not in notification
+                assert str(notification["id"]).strip()
+                assert notification["title"].strip()
+                if notification["subtitle"] is not None:
+                    assert notification["subtitle"].strip()
+                if notification["cta_label"] is not None:
+                    assert notification["cta_label"].strip()
+                    assert notification["cta_url"] is not None
+                    assert notification["cta_url"].strip()
+        finally:
+            await _close_worker_pool(worker_pool, originals)
+
+
 async def test_device_registration_is_idempotent_and_deactivation_is_scoped():
     with _baseline_v2_connection() as (conn, database_conninfo):
         _apply_baseline_v2_slots(conn)
@@ -514,12 +613,20 @@ async def test_notification_routes_register_device_and_list_backend_truth():
                 assert registered_payload["push_token"] == "route-token"
                 assert registered_payload["active"] is True
 
+                empty_list = await client.get("/notifications")
+                assert empty_list.status_code == 200, empty_list.text
+                assert empty_list.json() == {
+                    "show_notifications_bar": False,
+                    "notifications": [],
+                }
+
+                lesson_id = str(uuid4())
                 await notification_service.create_notification(
                     user_id,
                     "lesson_drip",
                     {
                         "course_id": str(uuid4()),
-                        "lesson_id": str(uuid4()),
+                        "lesson_id": lesson_id,
                         "title": "Route lesson",
                     },
                     "lesson-drip:route-list",
@@ -527,30 +634,48 @@ async def test_notification_routes_register_device_and_list_backend_truth():
 
                 listed = await client.get("/notifications")
                 assert listed.status_code == 200, listed.text
-                items = listed.json()["items"]
-                assert len(items) == 1
-                assert items[0]["type"] == "lesson_drip"
-                assert items[0]["payload"]["title"] == "Route lesson"
-                assert items[0]["is_read"] is False
-                assert items[0]["read_at"] is None
+                listed_payload = listed.json()
+                assert listed_payload["show_notifications_bar"] is True
+                assert "items" not in listed_payload
+                notifications = listed_payload["notifications"]
+                assert len(notifications) == 1
+                assert notifications[0] == {
+                    "id": notifications[0]["id"],
+                    "title": "Ny lektion är upplåst",
+                    "subtitle": "Route lesson",
+                    "cta_label": "Öppna lektionen",
+                    "cta_url": f"/lesson/{lesson_id}",
+                }
+                assert "type" not in notifications[0]
+                assert "payload" not in notifications[0]
+                assert notifications[0]["title"].strip()
+                assert notifications[0]["subtitle"].strip()
+                assert notifications[0]["cta_label"].strip()
+                assert notifications[0]["cta_url"].strip()
 
                 marked = await client.patch(
-                    f"/notifications/{items[0]['id']}/read"
+                    f"/notifications/{notifications[0]['id']}/read"
                 )
                 assert marked.status_code == 200, marked.text
                 marked_payload = marked.json()
-                assert marked_payload["is_read"] is True
-                assert marked_payload["read_at"] is not None
+                assert marked_payload == notifications[0]
+                assert "type" not in marked_payload
+                assert "payload" not in marked_payload
+                read_at = _notification_rows(conn)[0]["read_at"]
+                assert read_at is not None
 
                 duplicate_marked = await client.patch(
-                    f"/notifications/{items[0]['id']}/read"
+                    f"/notifications/{notifications[0]['id']}/read"
                 )
                 assert duplicate_marked.status_code == 200, duplicate_marked.text
-                assert duplicate_marked.json()["read_at"] == marked_payload["read_at"]
+                assert duplicate_marked.json() == notifications[0]
+                assert _notification_rows(conn)[0]["read_at"] == read_at
 
                 relisted = await client.get("/notifications")
                 assert relisted.status_code == 200, relisted.text
-                assert relisted.json()["items"][0]["is_read"] is True
+                relisted_payload = relisted.json()
+                assert relisted_payload["show_notifications_bar"] is True
+                assert relisted_payload["notifications"][0] == notifications[0]
 
                 default_preferences = await client.get("/notifications/preferences")
                 assert default_preferences.status_code == 200, default_preferences.text

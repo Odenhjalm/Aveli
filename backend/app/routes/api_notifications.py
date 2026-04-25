@@ -81,10 +81,10 @@ async def update_preference(
 
 @router.patch(
     "/{notification_id}/read",
-    response_model=notification_schemas.NotificationRecord,
+    response_model=notification_schemas.NotificationHeaderItem,
 )
 async def mark_read(notification_id: str, current: CurrentUser):
-    notification = await notification_service.mark_notification_read(
+    notification = await notification_service.mark_notification_read_for_header(
         user_id=str(current["id"]),
         notification_id=notification_id,
     )
@@ -101,8 +101,11 @@ async def list_notifications(
     current: CurrentUser,
     limit: int = Query(default=50, ge=1, le=100),
 ):
-    items = await notification_service.list_notifications_for_user(
+    read_model = await notification_service.list_notification_header_read_model(
         user_id=str(current["id"]),
         limit=limit,
     )
-    return {"items": items}
+    return {
+        "show_notifications_bar": read_model.show_notifications_bar,
+        "notifications": read_model.notifications,
+    }
