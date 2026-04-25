@@ -169,7 +169,8 @@ async def run_once(*, now: datetime | None = None) -> int:
                 from app.course_enrollments as ce
                 join app.courses as c
                   on c.id = ce.course_id
-                where c.required_enrollment_source = 'intro_enrollment'::app.course_enrollment_source
+                where c.required_enrollment_source = 'intro'::app.course_enrollment_source
+                  and ce.source = c.required_enrollment_source
                   and app.resolve_course_drip_mode(ce.course_id) in (
                     'legacy_uniform_drip',
                     'custom_lesson_offsets',

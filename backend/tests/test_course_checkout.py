@@ -2,6 +2,7 @@ import json
 import uuid
 
 import pytest
+from fastapi import HTTPException, status
 
 from app import db, repositories
 from app.config import settings
@@ -179,6 +180,167 @@ def _captured_course_checkout_metadata(captured_session: dict[str, object]) -> d
     metadata = captured_session.get("metadata")
     assert isinstance(metadata, dict)
     return dict(metadata)
+
+
+async def test_course_checkout_rejects_intro_before_stripe_or_order(monkeypatch):
+    course = {
+        "id": "course-intro",
+        "slug": "intro-course",
+        "group_position": 0,
+        "sellable": False,
+        "price_amount_cents": None,
+        "stripe_product_id": None,
+        "active_stripe_price_id": None,
+        "required_enrollment_source": "intro",
+    }
+    calls = {"stripe": 0, "customer": 0, "order": 0, "session": 0}
+
+    async def fake_get_course_by_slug(slug: str):
+        assert slug == "intro-course"
+        return dict(course)
+
+    def fail_require_stripe():
+        calls["stripe"] += 1
+        raise AssertionError("intro checkout must not require Stripe")
+
+    async def fail_customer(*args, **kwargs):
+        calls["customer"] += 1
+        raise AssertionError("intro checkout must not create Stripe customer")
+
+    async def fail_order(*args, **kwargs):
+        calls["order"] += 1
+        raise AssertionError("intro checkout must not create order")
+
+    def fail_session(*args, **kwargs):
+        calls["session"] += 1
+        raise AssertionError("intro checkout must not create Stripe session")
+
+    monkeypatch.setattr(
+        checkout_service.courses_repo,
+        "get_course_by_slug",
+        fake_get_course_by_slug,
+        raising=True,
+    )
+    monkeypatch.setattr(checkout_service, "_require_stripe", fail_require_stripe)
+    monkeypatch.setattr(
+        checkout_service.stripe_customers_service,
+        "ensure_customer_id",
+        fail_customer,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        checkout_service.repositories,
+        "create_order",
+        fail_order,
+        raising=True,
+    )
+    monkeypatch.setattr("stripe.checkout.Session.create", fail_session)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await checkout_service.create_course_checkout(
+            {"id": "learner-1"},
+            "intro-course",
+        )
+
+    assert excinfo.value.status_code == status.HTTP_403_FORBIDDEN
+    assert excinfo.value.detail == "Introduction courses cannot be purchased"
+    assert calls == {"stripe": 0, "customer": 0, "order": 0, "session": 0}
+
+
+async def test_course_checkout_allows_premium_course_with_stripe(monkeypatch):
+    course = {
+        "id": "course-premium",
+        "slug": "premium-course",
+        "group_position": 1,
+        "sellable": True,
+        "price_amount_cents": 1500,
+        "stripe_product_id": "prod_premium",
+        "active_stripe_price_id": "price_premium",
+        "required_enrollment_source": "purchase",
+    }
+    calls = {"stripe": 0, "customer": 0, "order": 0, "session": 0, "reference": 0}
+
+    async def fake_get_course_by_slug(slug: str):
+        assert slug == "premium-course"
+        return dict(course)
+
+    def fake_require_stripe():
+        calls["stripe"] += 1
+
+    async def fake_customer(user):
+        calls["customer"] += 1
+        assert user["id"] == "learner-1"
+        return "cus_premium"
+
+    async def fake_order(**kwargs):
+        calls["order"] += 1
+        assert kwargs["course_id"] == "course-premium"
+        assert kwargs["amount_cents"] == 1500
+        assert kwargs["metadata"]["checkout_type"] == "course"
+        return {"id": "order-premium"}
+
+    async def fake_reference(**kwargs):
+        calls["reference"] += 1
+        assert kwargs["order_id"] == "order-premium"
+        assert kwargs["checkout_id"] == "cs_premium"
+        assert kwargs["payment_intent"] == "pi_premium"
+
+    async def fake_run_in_threadpool(func):
+        return func()
+
+    def fake_session_create(**kwargs):
+        calls["session"] += 1
+        assert kwargs["line_items"] == [{"price": "price_premium", "quantity": 1}]
+        assert kwargs["metadata"]["order_id"] == "order-premium"
+        return {
+            "id": "cs_premium",
+            "url": "https://stripe.test/cs_premium",
+            "payment_intent": "pi_premium",
+        }
+
+    monkeypatch.setattr(
+        checkout_service.courses_repo,
+        "get_course_by_slug",
+        fake_get_course_by_slug,
+        raising=True,
+    )
+    monkeypatch.setattr(checkout_service, "_require_stripe", fake_require_stripe)
+    monkeypatch.setattr(
+        checkout_service.stripe_customers_service,
+        "ensure_customer_id",
+        fake_customer,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        checkout_service.repositories,
+        "create_order",
+        fake_order,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        checkout_service.repositories,
+        "set_order_checkout_reference",
+        fake_reference,
+        raising=True,
+    )
+    monkeypatch.setattr(checkout_service, "run_in_threadpool", fake_run_in_threadpool)
+    monkeypatch.setattr("stripe.checkout.Session.create", fake_session_create)
+
+    response = await checkout_service.create_course_checkout(
+        {"id": "learner-1"},
+        "premium-course",
+    )
+
+    assert response.url == "https://stripe.test/cs_premium"
+    assert response.session_id == "cs_premium"
+    assert response.order_id == "order-premium"
+    assert calls == {
+        "stripe": 1,
+        "customer": 1,
+        "order": 1,
+        "session": 1,
+        "reference": 1,
+    }
 
 
 async def _paid_payment_count(order_id: str) -> int:
@@ -775,7 +937,7 @@ async def test_course_checkout_webhook_conflicting_enrollment_source_fails_close
                         %s,
                         %s,
                         %s,
-                        'intro_enrollment',
+                        'intro',
                         now(),
                         now(),
                         0
@@ -827,7 +989,7 @@ async def test_course_checkout_webhook_conflicting_enrollment_source_fails_close
             course_id,
         )
         assert enrollment is not None
-        assert enrollment["source"] == "intro_enrollment"
+        assert enrollment["source"] == "intro"
     finally:
         if course_id:
             await _cleanup_course(course_id)

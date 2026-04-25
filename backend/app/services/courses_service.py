@@ -36,6 +36,8 @@ from . import intro_selection_state
 
 logger = logging.getLogger(__name__)
 _CANONICAL_COURSE_STRIPE_CURRENCY = "sek"
+_COURSE_ENROLLMENT_SOURCE_PURCHASE = "purchase"
+_COURSE_ENROLLMENT_SOURCE_INTRO = "intro"
 _COURSE_DELETE_BLOCKED_DETAIL = "Course delete blocked by dependent rows"
 COURSE_CREATE_SLUG_CONFLICT_DETAIL = "Kursens identifierare är redan upptagen"
 COURSE_CREATE_INVALID_DATA_DETAIL = "Kursen kunde inte skapas"
@@ -236,7 +238,10 @@ def _course_required_enrollment_source(course: Mapping[str, Any] | None) -> str 
     required_source = (
         str(course.get("required_enrollment_source") or "").strip().lower()
     )
-    if required_source in {"purchase", "intro_enrollment"}:
+    if required_source in {
+        _COURSE_ENROLLMENT_SOURCE_PURCHASE,
+        _COURSE_ENROLLMENT_SOURCE_INTRO,
+    }:
         return required_source
     return None
 
@@ -245,8 +250,8 @@ def build_course_access_model(course: Mapping[str, Any] | None) -> dict[str, Any
     required_source = _course_required_enrollment_source(course)
     return {
         "required_enrollment_source": required_source,
-        "enrollable": required_source == "intro_enrollment",
-        "purchasable": required_source == "purchase",
+        "enrollable": required_source == _COURSE_ENROLLMENT_SOURCE_INTRO,
+        "purchasable": required_source == _COURSE_ENROLLMENT_SOURCE_PURCHASE,
     }
 
 
@@ -434,7 +439,7 @@ def _is_course_sellable_subject(course: Mapping[str, Any]) -> bool:
         and amount_cents > 0
         and bool(stripe_product_id)
         and bool(active_price_id)
-        and required_source == "purchase"
+        and required_source == _COURSE_ENROLLMENT_SOURCE_PURCHASE
     )
 
 
@@ -2571,7 +2576,7 @@ async def read_canonical_course_access(
         else None
     )
     required_enrollment_source = _course_required_enrollment_source(course)
-    is_intro_course = required_enrollment_source == "intro_enrollment"
+    is_intro_course = required_enrollment_source == _COURSE_ENROLLMENT_SOURCE_INTRO
     selection_locked = False
     if is_intro_course and normalized_user_id:
         lock_state = await intro_selection_state.read_intro_selection_lock(
@@ -2694,7 +2699,7 @@ async def create_intro_course_enrollment(
         enrollment = await courses_repo.create_course_enrollment(
             user_id=normalized_user_id,
             course_id=str(course_id),
-            source="intro_enrollment",
+            source=_COURSE_ENROLLMENT_SOURCE_INTRO,
         )
     except PsycopgError as exc:
         mapped = _map_intro_selection_lock_error(exc)
@@ -2710,7 +2715,7 @@ async def create_intro_course_enrollment(
     return _canonical_course_state_payload(
         course=course,
         enrollment=enrollment,
-        required_enrollment_source="intro_enrollment",
+        required_enrollment_source=_COURSE_ENROLLMENT_SOURCE_INTRO,
         is_intro_course=True,
         selection_locked=selection_locked,
         can_access=True,

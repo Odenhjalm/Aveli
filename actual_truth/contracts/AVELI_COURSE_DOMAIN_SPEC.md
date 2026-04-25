@@ -128,14 +128,23 @@ active course monetization and commerce contracts.
 
 Accepted baseline course-access classification metadata on `app.courses` is:
 
-- `required_enrollment_source`: `purchase | intro_enrollment | null`.
+- `required_enrollment_source`: `purchase | intro | null`.
 
 `required_enrollment_source` is the only canonical course-owned metadata that
 classifies whether protected course content requires a `purchase` enrollment or
-an `intro_enrollment` enrollment. `null` means the course is not classified for
+an `intro` enrollment. `null` means the course is not classified for
 protected content access and protected access MUST fail closed. This field MUST
-NOT be derived from `sellable`, `price_amount_cents`, `group_position`, Stripe
-state, order state, payment state, or frontend state.
+NOT be derived from `sellable`, `price_amount_cents`, Stripe state, order
+state, payment state, or frontend state.
+
+Publish-time course classification derives `required_enrollment_source` from
+`app.courses.group_position` only:
+
+- `group_position = 0` -> `required_enrollment_source = intro`
+- `group_position >= 1` -> `required_enrollment_source = purchase`
+
+Protected access checks still use the persisted `required_enrollment_source`
+and require `app.course_enrollments.source` to match it.
 
 Public course read composition may project teacher display data as:
 
@@ -222,7 +231,7 @@ only authority allowed to produce frontend-facing governed media output.
 - `id`: canonical course-enrollment identity.
 - `user_id`: protected access subject identity.
 - `course_id`: protected access course identity.
-- `source`: `purchase | intro_enrollment`.
+- `source`: `purchase | intro`.
 - `granted_at`: canonical access grant timestamp.
 - `drip_started_at`: canonical drip start timestamp; equal to `granted_at`.
 - `current_unlock_position`: canonical highest accessible lesson position.
@@ -418,7 +427,7 @@ Position `0` law:
 - exactly one course may occupy position `0` in a family
 - position `0` means only "first course in the family sequence"
 - position `0` MUST NOT mean free access, paid access, public visibility,
-  enrollability, purchasability, `intro_enrollment`, `purchase`, sellability,
+  enrollability, purchasability, `intro`, `purchase`, sellability,
   or bundle membership
 
 Within a `course_group_id`, family order is strictly defined by
@@ -484,14 +493,14 @@ Canonical family transitions are:
 Cross-domain alignment rules:
 
 - `group_position` MUST NOT grant access
-- `group_position` MUST NOT define free vs paid
-- `group_position` MUST NOT define enrollable vs non-enrollable
-- `group_position` MUST NOT define purchasable vs non-purchasable
-- `group_position` MUST NOT override `required_enrollment_source`
+- `group_position` defines course monetization class at publish time:
+  `0` means introduction/non-sellable; `>= 1` means premium/purchase-required
+- `group_position` MUST NOT grant protected content access by itself
+- `group_position` MUST NOT replace persisted `required_enrollment_source`
 - `group_position` MUST NOT replace
   `app.course_enrollments.current_unlock_position`
-- `course_group_id` and `group_position` MUST NOT define sellability, order
-  state, payment state, membership state, bundle composition, or bundle order
+- `course_group_id` and `group_position` MUST NOT define order state, payment
+  state, membership state, bundle composition, or bundle order
 - bundle composition and bundle order are not course-family authority and MUST
   NOT be inferred from course-family order
 
@@ -561,8 +570,8 @@ not governed by course enrollment.
 - `app.course_enrollments.source = app.courses.required_enrollment_source`
 - `app.lessons.position <= app.course_enrollments.current_unlock_position`
 
-Courses classified with `required_enrollment_source = intro_enrollment` require
-explicit enrollment with `source = intro_enrollment` before protected lesson
+Courses classified with `required_enrollment_source = intro` require
+explicit enrollment with `source = intro` before protected lesson
 content can be accessed.
 
 Courses classified with `required_enrollment_source = purchase` require
@@ -696,7 +705,7 @@ The following patterns are forbidden:
   `app.courses`
 - using `app.course_bundles`, `app.course_bundle_courses`, or
   `app.bundle_order_courses` as course-family authority
-- using `group_position` as access, monetization, bundle, order, payment, or
+- using `group_position` as protected-access, bundle, order, payment, or
   membership authority
 - treating `course_discovery_surface` as enrollment-gated
 - treating `lesson_structure_surface` as `lesson_content_surface`

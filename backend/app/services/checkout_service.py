@@ -20,6 +20,10 @@ RETURN_DEEP_LINK = f"aveliapp://{RETURN_PATH}"
 CANCEL_DEEP_LINK = "aveliapp://checkout/cancel"
 
 
+class NotPurchasableError(RuntimeError):
+    pass
+
+
 def _default_checkout_urls() -> tuple[str, str]:
     base = (settings.frontend_base_url or "").rstrip("/")
     success_http = f"{base}/{RETURN_PATH}" if base else None
@@ -40,6 +44,18 @@ def _require_stripe() -> None:
     stripe.api_key = context.secret_key
 
 
+def _course_group_position(course: Mapping[str, Any]) -> int | None:
+    try:
+        return int(course.get("group_position"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _ensure_course_checkout_allowed(course: Mapping[str, Any]) -> None:
+    if _course_group_position(course) == 0:
+        raise NotPurchasableError("Introduction courses cannot be purchased")
+
+
 async def can_purchase_course(
     user: Mapping[str, Any],
     course: Mapping[str, Any],
@@ -47,6 +63,9 @@ async def can_purchase_course(
     user_id = str(user.get("id") or "").strip()
     if not user_id:
         return False, "Användar-id saknas"
+
+    if _course_group_position(course) == 0:
+        return False, "Introduction courses cannot be purchased"
 
     amount_cents = int(course.get("price_amount_cents") or 0)
     if not bool(course.get("sellable")) or amount_cents <= 0:
@@ -58,9 +77,22 @@ async def create_course_checkout(
     user: Mapping[str, Any],
     slug: str,
 ) -> schemas.CheckoutCreateResponse:
-    _require_stripe()
     course = await courses_repo.get_course_by_slug(slug)
-    if not course or not bool(course.get("sellable")):
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Kursen hittades inte",
+        )
+    try:
+        _ensure_course_checkout_allowed(course)
+    except NotPurchasableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    _require_stripe()
+    if not bool(course.get("sellable")):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Kursen hittades inte",

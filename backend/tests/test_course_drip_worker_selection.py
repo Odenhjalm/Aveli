@@ -239,7 +239,8 @@ def _create_enrollment(
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT (app.canonical_create_course_enrollment(%s, %s, %s, %s, %s)).*
+            SELECT ce.*
+            FROM app.canonical_create_course_enrollment(%s, %s, %s, %s, %s) AS ce
             """,
             (enrollment_id, user_id, course_id, source, granted_at),
         )

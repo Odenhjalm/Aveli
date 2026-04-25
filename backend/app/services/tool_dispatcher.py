@@ -178,7 +178,7 @@ def _list_intro_courses(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
                updated_at
           FROM app.courses
          WHERE visibility = 'public'::app.course_visibility
-           AND required_enrollment_source = 'intro_enrollment'::app.course_enrollment_source
+           AND required_enrollment_source = 'intro'::app.course_enrollment_source
          ORDER BY updated_at DESC
          LIMIT %s
     """

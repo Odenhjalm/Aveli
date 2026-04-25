@@ -33,7 +33,7 @@ async def read_intro_selection_state(
             limit=None,
             group_position=None,
         )
-        if str(row.get("required_enrollment_source") or "").strip() == "intro_enrollment"
+        if str(row.get("required_enrollment_source") or "").strip() == "intro"
         and str(row.get("id") or "").strip() not in enrolled_intro_course_ids
     ]
 

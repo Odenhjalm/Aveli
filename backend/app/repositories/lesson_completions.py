@@ -192,7 +192,8 @@ async def get_intro_final_lesson_auto_completion_candidate(
         join app.lessons as fl
           on fl.course_id = ce.course_id
         where ce.id = %s::uuid
-          and c.required_enrollment_source = 'intro_enrollment'::app.course_enrollment_source
+          and c.required_enrollment_source = 'intro'::app.course_enrollment_source
+          and ce.source = c.required_enrollment_source
           and fl.position = (
             select max(l2.position)
             from app.lessons as l2

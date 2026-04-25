@@ -88,7 +88,7 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "ffd509cbb0964fbf7a4bf4ae51385ae2ca1576f5f787fa870ee2b4147682b4ee",
+    "expected_schema_hash": "ceb6b02245fd10b8848f471d39890122c535e63982b864740b867861ac3a1191",
     "expected_counts": {
       "enums": 13,
       "tables": 43,
@@ -705,6 +705,22 @@
       "path": "backend/supabase/baseline_v2_slots/V2_0033_notification_read_state_preferences.sql",
       "sha256": "a820d2319873864739a1f3cd156b9a5e8dd9b130f3c00f23cd9e3e5ccc173f87",
       "post_state_hash": "6b59bb477c499fca054ba4a1263da7a561f6a58b02cfe7029ce6d1e8fe4ca6a8",
+      "post_counts": {
+        "enums": 13,
+        "tables": 43,
+        "views": 5,
+        "fks": 62,
+        "constraints": 227,
+        "triggers": 36,
+        "functions": 54
+      }
+    },
+    {
+      "slot": 34,
+      "filename": "V2_0034_intro_source_canonicalization.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0034_intro_source_canonicalization.sql",
+      "sha256": "3aab0a4ac070e2bd6c044054d80763765ef2f4320f221b5093150ec99a4e11fb",
+      "post_state_hash": "3612570e5b519844c7c39963bdb1ed22946c4bcc1ea64449d2b365399d115856",
       "post_counts": {
         "enums": 13,
         "tables": 43,

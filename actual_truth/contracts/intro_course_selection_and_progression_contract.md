@@ -64,19 +64,25 @@ This contract exists to eliminate ambiguity between:
 ## 3. INTRO COURSE CLASSIFICATION
 
 - A course is an intro course if and only if
-  `app.courses.required_enrollment_source = 'intro_enrollment'`.
+  `app.courses.required_enrollment_source = 'intro'`.
 - An intro enrollment is a canonical `app.course_enrollments` row for a course
   classified as an intro course, with enrollment source
-  `intro_enrollment` under the existing access law.
+  `intro` under the existing access law.
 - Intro-course classification is owned only by
   `app.courses.required_enrollment_source`.
-- The structural intro slot of a course family is not intro-course authority.
-- `app.courses.group_position = 0` does not classify an intro course.
+- Publish-time course classification MUST persist
+  `app.courses.required_enrollment_source = 'intro'` for
+  `app.courses.group_position = 0`.
+- Runtime intro-course selection uses the persisted
+  `app.courses.required_enrollment_source`, which must match the publish-time
+  group-position authority.
+- The structural intro slot of a course family is not course-access authority
+  unless publish has persisted `required_enrollment_source = 'intro'`.
 
 The following are forbidden as intro-course classification authority:
 
 - price-based inference
-- `group_position` inference
+- frontend-only `group_position` inference without persisted backend classification
 - frontend flags
 - naming inference
 - tagging inference

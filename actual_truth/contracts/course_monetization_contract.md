@@ -30,7 +30,17 @@ This contract operates under `SYSTEM_LAWS.md`,
 - A course MUST NOT become sellable from frontend form state alone.
 - A course MUST NOT become sellable from Stripe dashboard/runtime state alone.
 - Canonical course monetization state is backend-owned.
-- A course is canonically sellable IF AND ONLY IF:
+- Course monetization class is determined only by `app.courses.group_position`.
+- A course with `group_position = 0` is an introduction course:
+  - no price is required
+  - no Stripe product or Stripe price may be created
+  - `course.sellable` must be `false`
+  - `required_enrollment_source` must be `intro`
+- A course with `group_position >= 1` is a premium course:
+  - a valid price is required before publish
+  - a valid Stripe product and active Stripe price are required before it becomes sellable
+  - `required_enrollment_source` must be `purchase`
+- A premium course is canonically sellable IF AND ONLY IF:
   - backend validates teacher ownership
   - backend validates pricing
   - backend validates Stripe mapping consistency
@@ -61,15 +71,17 @@ This contract operates under `SYSTEM_LAWS.md`,
   - valid pricing
   - valid Stripe mapping
   - backend approval
+- Introduction courses are explicitly non-sellable and are excluded from course Stripe mapping.
 - A course or bundle with invalid or inconsistent monetization state MUST NOT be sellable.
 - Frontend MAY display sellable state only as backend-projected truth.
-- Fellable is a backend-computed state derived from validated teacher intent and system readiness conditions.
+- Sellability is a backend-computed state derived from validated teacher intent and system readiness conditions.
 
 ## 5. STRIPE PRODUCT MODEL
 
 - Each sellable course maps to:
   - one Stripe product
   - one or more Stripe prices over time
+- Introduction courses are not sellable courses and must not map to any Stripe product or Stripe price.
 - Each sellable bundle maps to:
   - one Stripe product
   - one or more Stripe prices over time
@@ -113,8 +125,8 @@ This contract operates under `SYSTEM_LAWS.md`,
   2. teacher submits course pricing intent
   3. backend validates ownership and pricing
   4. backend persists canonical course monetization state
-  5. backend creates or updates course Stripe product/price mapping
-  6. backend marks the course sellable only after canonical requirements are met
+  5. for premium courses, backend creates or updates course Stripe product/price mapping
+  6. for premium courses, backend marks the course sellable only after canonical requirements are met
   7. teacher creates a bundle from eligible same-teacher courses
   8. teacher submits bundle title, composition, and pricing intent
   9. backend validates bundle composition and pricing
@@ -128,13 +140,14 @@ This contract operates under `SYSTEM_LAWS.md`,
 
 - Canonical paid course flow is:
   1. student initiates course purchase
-  2. backend validates sellable course and current canonical price
-  3. backend creates pending order in `app.orders`
-  4. backend creates Stripe checkout/payment collection
-  5. Stripe webhook confirms payment to backend
-  6. backend marks the order as paid
-  7. backend records payment in `app.payments`
-  8. backend grants course entitlement in `course_enrollments`
+  2. backend rejects introduction courses by `group_position = 0`
+  3. backend validates sellable premium course and current canonical price
+  4. backend creates pending order in `app.orders`
+  5. backend creates Stripe checkout/payment collection
+  6. Stripe webhook confirms payment to backend
+  7. backend marks the order as paid
+  8. backend records payment in `app.payments`
+  9. backend grants course entitlement in `course_enrollments`
 - Canonical paid bundle flow is:
   1. student initiates bundle purchase
   2. backend validates sellable bundle and current canonical bundle price

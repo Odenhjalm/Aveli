@@ -928,7 +928,7 @@ class Course(BaseModel):
     price_amount_cents: int | None = None
     drip_enabled: bool
     drip_interval_days: Optional[int]
-    required_enrollment_source: Literal["purchase", "intro_enrollment"] | None
+    required_enrollment_source: Literal["purchase", "intro"] | None
     enrollable: bool
     purchasable: bool
 
@@ -987,7 +987,7 @@ class StudioCourseSummary(BaseModel):
     cover_media_id: UUID | None = None
     cover: CourseCoverMedia | None = None
     price_amount_cents: int | None = None
-    required_enrollment_source: Literal["purchase", "intro_enrollment"] | None
+    required_enrollment_source: Literal["purchase", "intro"] | None
     enrollable: bool
     purchasable: bool
     drip_authoring: StudioCourseDripAuthoringSummary
@@ -1005,7 +1005,7 @@ class StudioCourseDetail(BaseModel):
     cover_media_id: UUID | None = None
     cover: CourseCoverMedia | None = None
     price_amount_cents: int | None = None
-    required_enrollment_source: Literal["purchase", "intro_enrollment"] | None
+    required_enrollment_source: Literal["purchase", "intro"] | None
     enrollable: bool
     purchasable: bool
     drip_authoring: StudioCourseDripAuthoringDetail
@@ -1145,7 +1145,7 @@ class CourseEnrollmentRecord(BaseModel):
     id: UUID
     user_id: UUID
     course_id: UUID
-    source: str
+    source: Literal["purchase", "intro"]
     granted_at: datetime
     drip_started_at: datetime
     current_unlock_position: int
@@ -1156,7 +1156,7 @@ class CourseAccessStateResponse(BaseModel):
 
     course_id: UUID
     group_position: int
-    required_enrollment_source: Literal["purchase", "intro_enrollment"] | None = None
+    required_enrollment_source: Literal["purchase", "intro"] | None = None
     is_intro_course: bool
     selection_locked: bool
     enrollable: bool

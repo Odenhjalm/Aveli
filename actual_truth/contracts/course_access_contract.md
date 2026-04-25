@@ -43,6 +43,8 @@ No purchase flow may bypass that order/payment trail and create course access as
 - Purchase authority does not replace `app.course_enrollments` as protected course-access state.
 - Course-access state must remain explicit and non-implicit.
 - Course access classification is owned by `app.courses.required_enrollment_source`.
+- Valid course enrollment sources are `purchase` and `intro`.
+- `intro` is the dedicated canonical source for introduction-course enrollments.
 - A course enrollment grants protected course access only when `app.course_enrollments.source` matches `app.courses.required_enrollment_source`.
 - If `app.courses.required_enrollment_source` is `null`, protected course access fails closed.
 - `sellable`, `price_amount_cents`, `group_position`, Stripe state, order state, payment state, and frontend state MUST NOT classify protected course access.
@@ -59,13 +61,21 @@ No purchase flow may bypass that order/payment trail and create course access as
 - Protected course access without canonical course-enrollment state.
 - Fallback protected access derived from membership state alone.
 - Fallback protected access derived from order/payment state without course-enrollment state.
+- Intro course enrollment using `purchase`, `referral`, `coupon`, or any source other than `intro`.
 
-## 6. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
+## 6. INTRO ACCESS LAW
+
+- Introduction courses use `app.courses.required_enrollment_source = intro`.
+- Introduction course protected access requires `app.course_enrollments.source = intro`.
+- Introduction courses are not purchased and must not receive purchase-source enrollments.
+- Publish-time course classification derives the persisted required enrollment source from `app.courses.group_position`; protected access checks use the persisted `required_enrollment_source` and matching enrollment source.
+
+## 7. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
 
 - Current webhook implementation does not yet fully align purchase settlement with canonical course-access creation in all branches.
 - Current repo code may still mix purchase and access reasoning in the same runtime paths.
 
-## 7. ACCESS REVOCATION LAW
+## 8. ACCESS REVOCATION LAW
 
 - Canonical one-off digital product access revocation is owned only by backend mutation of `app.course_enrollments`.
 - A valid withdrawal outcome for a paid course or paid bundle within the legally applicable withdrawal window MUST revoke the resulting protected course access immediately.
@@ -75,7 +85,7 @@ No purchase flow may bypass that order/payment trail and create course access as
 - Orders and payments remain purchase substrate, but they do not revoke access by themselves without backend-owned course-access mutation.
 - Membership cancellation, membership withdrawal, or membership refund does not rewrite protected course access unless backend separately resolves a one-off product remedy path that canonically mutates `app.course_enrollments`.
 
-## 8. FINAL ASSERTION
+## 9. FINAL ASSERTION
 
 - This contract is the canonical protected course-access truth.
 - It is lockable as a contract artifact.

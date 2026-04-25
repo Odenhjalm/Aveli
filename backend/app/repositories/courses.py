@@ -1077,7 +1077,7 @@ async def publish_course_state(
             active_stripe_price_id = %s,
             required_enrollment_source = case
                 when %s then 'purchase'::app.course_enrollment_source
-                else 'intro_enrollment'::app.course_enrollment_source
+                else 'intro'::app.course_enrollment_source
             end,
             sellable = %s
         where id = %s::uuid
@@ -1309,7 +1309,8 @@ async def list_intro_selection_progress_rows(
          and lc.course_id = ce.course_id
          and lc.lesson_id = l.id
         where ce.user_id = %s::uuid
-          and c.required_enrollment_source = 'intro_enrollment'::app.course_enrollment_source
+          and c.required_enrollment_source = 'intro'::app.course_enrollment_source
+          and ce.source = c.required_enrollment_source
         group by
             ce.id,
             ce.course_id,

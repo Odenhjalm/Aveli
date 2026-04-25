@@ -241,7 +241,8 @@ def _create_enrollment(
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT (app.canonical_create_course_enrollment(%s, %s, %s, %s, %s)).*
+            SELECT ce.*
+            FROM app.canonical_create_course_enrollment(%s, %s, %s, %s, %s) AS ce
             """,
             (enrollment_id, user_id, course_id, source, granted_at),
         )
@@ -303,7 +304,7 @@ async def test_enrollment_initialization_uses_required_source_authority():
             course_id=intro_course_id,
             slug="intro-drip",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=True,
             drip_interval_days=7,
             sellable=False,
@@ -327,7 +328,7 @@ async def test_enrollment_initialization_uses_required_source_authority():
             enrollment_id=str(uuid4()),
             user_id=user_id,
             course_id=intro_course_id,
-            source="intro_enrollment",
+            source="intro",
             granted_at=granted_at,
         )
         paid = _create_enrollment(
@@ -356,7 +357,7 @@ async def test_enrollment_creation_enforces_canonical_boundary_and_source_alignm
             course_id=course_id,
             slug="intro-source-check",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=True,
             drip_interval_days=7,
             sellable=False,
@@ -379,14 +380,14 @@ async def test_enrollment_creation_enforces_canonical_boundary_and_source_alignm
                       drip_started_at,
                       current_unlock_position
                     )
-                    VALUES (%s, %s, %s, 'intro_enrollment', %s, %s, 1)
+                    VALUES (%s, %s, %s, 'intro', %s, %s, 1)
                     """,
                     (str(uuid4()), user_id, course_id, granted_at, granted_at),
                 )
 
         with pytest.raises(
             psycopg.Error,
-            match="requires enrollment source intro_enrollment",
+            match="requires enrollment source intro",
         ):
             _create_enrollment(
                 conn,
@@ -447,7 +448,7 @@ async def test_custom_drip_substrate_rejects_incomplete_schedule_commits():
             course_id=course_id,
             slug="custom-incomplete-schedule",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -492,7 +493,7 @@ async def test_custom_drip_substrate_rejects_negative_offsets_and_mismatched_les
             course_id=course_id,
             slug="custom-negative-offset",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -502,7 +503,7 @@ async def test_custom_drip_substrate_rejects_negative_offsets_and_mismatched_les
             course_id=other_course_id,
             slug="custom-mismatched-lesson",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -573,7 +574,7 @@ async def test_custom_drip_substrate_rejects_duplicate_lesson_rows():
             course_id=course_id,
             slug="custom-duplicate-row",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -631,7 +632,7 @@ async def test_custom_drip_enrollment_initialization_and_worker_advancement():
             course_id=course_id,
             slug="custom-drip-advancement",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -648,7 +649,7 @@ async def test_custom_drip_enrollment_initialization_and_worker_advancement():
             enrollment_id=str(uuid4()),
             user_id=user_id,
             course_id=course_id,
-            source="intro_enrollment",
+            source="intro",
             granted_at=granted_at,
         )
         assert enrollment["current_unlock_position"] == 1
@@ -695,7 +696,7 @@ async def test_custom_drip_initialization_unlocks_all_zero_offset_lessons():
             course_id=course_id,
             slug="custom-drip-zero-offset-range",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -712,7 +713,7 @@ async def test_custom_drip_initialization_unlocks_all_zero_offset_lessons():
             enrollment_id=str(uuid4()),
             user_id=user_id,
             course_id=course_id,
-            source="intro_enrollment",
+            source="intro",
             granted_at=granted_at,
         )
 
@@ -732,7 +733,7 @@ async def test_legacy_drip_next_unlock_projection_matches_worker_schedule():
             course_id=course_id,
             slug="legacy-next-unlock",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=True,
             drip_interval_days=7,
             sellable=False,
@@ -744,7 +745,7 @@ async def test_legacy_drip_next_unlock_projection_matches_worker_schedule():
             enrollment_id=str(uuid4()),
             user_id=user_id,
             course_id=course_id,
-            source="intro_enrollment",
+            source="intro",
             granted_at=granted_at,
         )
 
@@ -784,7 +785,7 @@ async def test_custom_drip_next_unlock_projection_matches_canonical_offsets():
             course_id=course_id,
             slug="custom-next-unlock",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -801,7 +802,7 @@ async def test_custom_drip_next_unlock_projection_matches_canonical_offsets():
             enrollment_id=str(uuid4()),
             user_id=user_id,
             course_id=course_id,
-            source="intro_enrollment",
+            source="intro",
             granted_at=granted_at,
         )
 
@@ -841,7 +842,7 @@ async def test_no_drip_next_unlock_projection_returns_null():
             course_id=course_id,
             slug="no-drip-next-unlock",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -853,7 +854,7 @@ async def test_no_drip_next_unlock_projection_returns_null():
             enrollment_id=str(uuid4()),
             user_id=user_id,
             course_id=course_id,
-            source="intro_enrollment",
+            source="intro",
             granted_at=granted_at,
         )
 
@@ -882,7 +883,7 @@ async def test_custom_drip_schedule_locks_after_first_enrollment():
             course_id=course_id,
             slug="custom-drip-locks",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -900,7 +901,7 @@ async def test_custom_drip_schedule_locks_after_first_enrollment():
             enrollment_id=str(uuid4()),
             user_id=user_id,
             course_id=course_id,
-            source="intro_enrollment",
+            source="intro",
             granted_at=granted_at,
         )
 
@@ -946,7 +947,7 @@ async def test_invalid_custom_drip_state_fails_closed_without_fallback():
             course_id=course_id,
             slug="custom-drip-fail-closed",
             group_position=0,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             drip_enabled=False,
             drip_interval_days=None,
             sellable=False,
@@ -990,6 +991,6 @@ async def test_invalid_custom_drip_state_fails_closed_without_fallback():
                 enrollment_id=str(uuid4()),
                 user_id=user_id,
                 course_id=course_id,
-                source="intro_enrollment",
+                source="intro",
                 granted_at=granted_at,
             )
