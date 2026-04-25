@@ -933,6 +933,12 @@ class Course(BaseModel):
     purchasable: bool
 
 
+class CourseListItem(Course):
+    model_config = ConfigDict(extra="forbid")
+
+    short_description: str | None = None
+
+
 StudioCourseDripMode = Literal[
     "custom_lesson_offsets",
     "legacy_uniform_drip",
@@ -1129,7 +1135,7 @@ class LessonContentResponse(BaseModel):
 class CourseListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    items: List[Course]
+    items: List[CourseListItem]
 
 
 class CoursePublicContent(BaseModel):
@@ -1174,7 +1180,7 @@ class IntroSelectionStateResponse(BaseModel):
         "incomplete_drip",
         "incomplete_lesson_completion",
     ] | None = None
-    eligible_courses: List[Course]
+    eligible_courses: List[CourseListItem]
 
 
 class LessonCompletionRecord(BaseModel):

@@ -71,6 +71,7 @@ _PUBLIC_DISCOVERY_COLUMNS = """
     cds.drip_interval_days,
     cds.cover_media_id,
     cds.required_enrollment_source::text as required_enrollment_source,
+    cpc.short_description,
     c.sellable
 """
 
@@ -649,8 +650,12 @@ async def list_courses(
         params.append(int(limit))
 
     query = f"""
-        select {_COURSE_COLUMNS}
+        select
+            {_COURSE_COLUMNS},
+            cpc.short_description
         from app.courses as c
+        left join app.course_public_content as cpc
+          on cpc.course_id = c.id
         {where_sql}
         order by c.slug asc
         {limit_sql}
@@ -773,6 +778,8 @@ async def list_public_course_discovery(
           on c.id = cds.id
         left join app.profiles as p
           on p.user_id = c.teacher_id
+        left join app.course_public_content as cpc
+          on cpc.course_id = cds.id
         where {_PUBLIC_DISCOVERABLE_COURSE_SQL}
         {"and " + " and ".join(clauses) if clauses else ""}
         order by cds.slug asc
@@ -1272,10 +1279,13 @@ async def upsert_course_public_content(
 async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
     query = f"""
         select distinct on (c.id)
-            {_COURSE_COLUMNS}
+            {_COURSE_COLUMNS},
+            cpc.short_description
         from app.course_enrollments as ce
         join app.courses as c
           on c.id = ce.course_id
+        left join app.course_public_content as cpc
+          on cpc.course_id = c.id
         where ce.user_id = %s
         order by c.id, ce.granted_at desc
     """

@@ -33,6 +33,10 @@ _CANONICAL_COURSE_FIELDS = (
     "enrollable",
     "purchasable",
 )
+_CANONICAL_COURSE_LIST_FIELDS = (
+    *_CANONICAL_COURSE_FIELDS,
+    "short_description",
+)
 
 _COURSE_NOT_FOUND_DETAIL = "Kursen kunde inte hittas."
 _COURSE_PUBLIC_CONTENT_NOT_FOUND_DETAIL = "Kursinnehållet kunde inte hittas."
@@ -56,10 +60,23 @@ def _course_response(course: Mapping[str, Any]) -> schemas.Course:
     return schemas.Course(**_canonical_course_payload(course))
 
 
+def _course_list_item_response(course: Mapping[str, Any]) -> schemas.CourseListItem:
+    normalized = dict(course)
+    courses_service.reject_legacy_course_cover_output_fields(normalized)
+    courses_service.reject_legacy_course_progression_output_fields(normalized)
+    courses_service.attach_course_access_model(normalized)
+    courses_service.attach_course_teacher_read_contract(normalized)
+    return schemas.CourseListItem(
+        **{field: normalized.get(field) for field in _CANONICAL_COURSE_LIST_FIELDS}
+    )
+
+
 def _course_list_response(
     rows: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...],
 ) -> schemas.CourseListResponse:
-    return schemas.CourseListResponse(items=[_course_response(row) for row in rows])
+    return schemas.CourseListResponse(
+        items=[_course_list_item_response(row) for row in rows]
+    )
 
 
 def _lesson_content_unavailable() -> HTTPException:
@@ -288,7 +305,9 @@ async def intro_selection_state(current: AppEntryUser):
     return schemas.IntroSelectionStateResponse(
         selection_locked=state["selection_locked"],
         selection_lock_reason=state["selection_lock_reason"],
-        eligible_courses=[_course_response(row) for row in state["eligible_courses"]],
+        eligible_courses=[
+            _course_list_item_response(row) for row in state["eligible_courses"]
+        ],
     )
 
 

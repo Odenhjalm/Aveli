@@ -21,6 +21,7 @@ _CANONICAL_COURSE_FIELDS = (
     "required_enrollment_source",
     "enrollable",
     "purchasable",
+    "short_description",
 )
 
 
@@ -30,7 +31,7 @@ def _course_list_response(rows) -> schemas.CourseListResponse:
     courses_service.attach_course_teacher_read_contract(normalized_rows)
     return schemas.CourseListResponse(
         items=[
-            schemas.Course(
+            schemas.CourseListItem(
                 **{field: row.get(field) for field in _CANONICAL_COURSE_FIELDS}
             )
             for row in normalized_rows
