@@ -770,6 +770,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   final TextEditingController _courseTitleCtrl = TextEditingController();
   final TextEditingController _courseSlugCtrl = TextEditingController();
+  final TextEditingController _courseDescriptionCtrl = TextEditingController();
   final TextEditingController _coursePriceCtrl = TextEditingController();
   final TextEditingController _courseDripIntervalCtrl = TextEditingController();
   final Map<String, TextEditingController> _courseCustomScheduleCtrls =
@@ -780,6 +781,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
 
   bool _courseMetaLoading = false;
   bool _savingCourseMeta = false;
+  bool _savingCoursePublicContent = false;
   bool _savingCourseDripAuthoring = false;
   bool _creatingCourse = false;
   bool _creatingCourseFamily = false;
@@ -806,6 +808,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
   int _lessonContentRequestId = 0;
   int _lessonPreviewRequestId = 0;
   int _saveCourseRequestId = 0;
+  int _saveCoursePublicContentRequestId = 0;
   int _saveCourseDripRequestId = 0;
   int _publishCourseRequestId = 0;
 
@@ -1030,21 +1033,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         token.contentRequestId == _documentReadyRequestId &&
         token.contentRequestId == _lessonContentRequestId &&
         _lessonContentLoadError == null;
-  }
-
-  void _markLessonContentDirty({bool refreshPreview = false}) {
-    if (!_isSelectedLessonDocumentReady()) {
-      return;
-    }
-    if (!mounted) {
-      _lessonContentDirty = true;
-      return;
-    }
-    if (!_lessonContentDirty || refreshPreview) {
-      setState(() {
-        _lessonContentDirty = true;
-      });
-    }
   }
 
   void _handleLessonDocumentDirtyChanged(bool dirty) {
@@ -1410,6 +1398,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _uploadSubscription?.close();
     _courseTitleCtrl.dispose();
     _courseSlugCtrl.dispose();
+    _courseDescriptionCtrl.dispose();
     _coursePriceCtrl.dispose();
     _courseDripIntervalCtrl.dispose();
     for (final controller in _courseCustomScheduleCtrls.values) {
@@ -1518,6 +1507,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _logCourseMetaReloadResponse(courseId: courseId, response: course);
       _courseTitleCtrl.text = course.title;
       _courseSlugCtrl.text = course.slug;
+      _courseDescriptionCtrl.text = course.shortDescription ?? '';
       final priceOre = course.priceAmountCents;
       _coursePriceCtrl.text = priceOre == null
           ? ''
@@ -3704,16 +3694,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-            ] else if (hasCover) ...[
-              Chip(
-                label: const Text('Aktiv kursbild'),
-                visualDensity: VisualDensity.compact,
-                avatar: Icon(
-                  Icons.star,
-                  color: theme.colorScheme.primary,
-                  size: 16,
-                ),
-              ),
             ],
           ],
         ),
@@ -3747,6 +3727,67 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildCourseDescriptionEditor(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _courseDescriptionCtrl,
+          readOnly: _lessonPreviewMode,
+          minLines: 6,
+          maxLines: 8,
+          decoration: const InputDecoration(
+            labelText: 'Kort beskrivning',
+            alignLabelWithHint: true,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerRight,
+          child: OutlinedButton.icon(
+            key: const ValueKey<String>('course-public-content-save-button'),
+            onPressed: _savingCoursePublicContent || _lessonPreviewMode
+                ? null
+                : _saveCoursePublicContent,
+            icon: _savingCoursePublicContent
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined),
+            label: Text(
+              _savingCoursePublicContent ? 'Sparar...' : 'Spara beskrivning',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCourseCoverAndDescriptionEditor(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final coverPicker = _buildCourseCoverPicker(context);
+        final descriptionEditor = _buildCourseDescriptionEditor(context);
+        if (constraints.maxWidth < 620) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [coverPicker, gap12, descriptionEditor],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 280, child: coverPicker),
+            gap16,
+            Expanded(child: descriptionEditor),
+          ],
+        );
+      },
     );
   }
 
@@ -6348,6 +6389,62 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
   }
 
+  Future<void> _saveCoursePublicContent() async {
+    if (!_requireEditModeForMutation()) {
+      return;
+    }
+    final courseId = _selectedCourseId;
+    if (courseId == null || _savingCoursePublicContent) return;
+    final shortDescription = _courseDescriptionCtrl.text.trim();
+
+    final requestId = ++_saveCoursePublicContentRequestId;
+    setState(() => _savingCoursePublicContent = true);
+    try {
+      final updated = await _studioRepo.upsertCoursePublicContent(
+        courseId,
+        shortDescription: shortDescription,
+      );
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _saveCoursePublicContentRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
+      setState(() {
+        _setTextControllerValue(
+          _courseDescriptionCtrl,
+          updated.shortDescription,
+        );
+        final current = _courseById(courseId);
+        if (current != null) {
+          _courses = _adoptCourseById(
+            _courses,
+            current.copyWith(shortDescription: updated.shortDescription),
+          );
+        }
+      });
+      _invalidateCourseReadProviders();
+      if (!mounted || !context.mounted) return;
+      showSnack(context, 'Kursbeskrivning sparad.');
+    } catch (e, stackTrace) {
+      if (_isStaleRequest(
+        requestId: requestId,
+        currentId: _saveCoursePublicContentRequestId,
+        courseId: courseId,
+      )) {
+        return;
+      }
+      _showFriendlyErrorSnack(
+        'Kunde inte spara kursbeskrivning',
+        e,
+        stackTrace,
+      );
+    } finally {
+      if (mounted) setState(() => _savingCoursePublicContent = false);
+    }
+  }
+
   Future<bool> _saveCourseDripAuthoring({bool reloadOnFailure = false}) async {
     if (!_requireEditModeForMutation()) {
       return false;
@@ -6451,6 +6548,9 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _courses = _adoptCourseById(_courses, published);
         _courseTitleCtrl.text = published.title;
         _courseSlugCtrl.text = published.slug;
+        if (published.shortDescription != null) {
+          _courseDescriptionCtrl.text = published.shortDescription!;
+        }
         final priceOre = published.priceAmountCents;
         _coursePriceCtrl.text = priceOre == null
             ? ''
@@ -7388,8 +7488,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                                 ),
                               ),
                               gap12,
-                              const SizedBox.shrink(),
-                              _buildCourseCoverPicker(context),
+                              _buildCourseCoverAndDescriptionEditor(context),
                               gap12,
                               TextField(
                                 controller: _coursePriceCtrl,

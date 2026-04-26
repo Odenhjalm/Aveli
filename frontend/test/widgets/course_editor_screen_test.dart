@@ -131,6 +131,75 @@ void main() {
     },
   );
 
+  group('course public description editing', () {
+    test(
+      'description hydrates from studio course detail and saves via public endpoint',
+      () {
+        final source = _courseEditorSource();
+        final loadCourseMeta = _sourceSlice(
+          source,
+          '  Future<void> _loadCourseMeta() async {',
+          '  Future<void> _loadLessons({',
+        );
+        final savePublicContent = _sourceSlice(
+          source,
+          '  Future<void> _saveCoursePublicContent() async {',
+          '  Future<bool> _saveCourseDripAuthoring',
+        );
+        final saveCourseMeta = _sourceSlice(
+          source,
+          '  Future<void> _saveCourseMeta() async {',
+          '  Future<void> _saveCoursePublicContent() async {',
+        );
+
+        expect(
+          loadCourseMeta,
+          contains('_courseDescriptionCtrl.text = course.shortDescription ??'),
+        );
+        expect(
+          savePublicContent,
+          contains('_studioRepo.upsertCoursePublicContent('),
+        );
+        expect(
+          savePublicContent,
+          contains('shortDescription: shortDescription'),
+        );
+        expect(saveCourseMeta, isNot(contains('short_description')));
+      },
+    );
+
+    test('description textarea renders beside the course image editor', () {
+      final source = _courseEditorSource();
+      final coverAndDescription = _sourceSlice(
+        source,
+        '  Widget _buildCourseDescriptionEditor(BuildContext context) {',
+        '  Widget _buildInvalidVideoPlaceholder',
+      );
+
+      expect(coverAndDescription, contains('_buildCourseCoverPicker(context)'));
+      expect(
+        coverAndDescription,
+        contains('_buildCourseDescriptionEditor(context)'),
+      );
+      expect(
+        coverAndDescription,
+        contains('Expanded(child: descriptionEditor)'),
+      );
+      expect(coverAndDescription, contains("labelText: 'Kort beskrivning'"));
+      expect(
+        coverAndDescription,
+        contains("ValueKey<String>('course-public-content-save-button')"),
+      );
+    });
+
+    test('active course cover artifact is removed', () {
+      final source = _courseEditorSource();
+      final removedLabel = ['Aktiv kurs', 'bild'].join();
+
+      expect(source, isNot(contains(removedLabel)));
+    });
+  });
+
   group('custom drip schedule persistence', () {
     test('switching into custom mode does not autosave generated offsets', () {
       final source = _courseEditorSource();

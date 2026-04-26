@@ -91,6 +91,15 @@ class StudioRepository {
     );
   }
 
+  static void _rejectCoursePublicContentPatch(Map<String, Object?> patch) {
+    if (!patch.containsKey('short_description')) {
+      return;
+    }
+    throw UnsupportedError(
+      'Use upsertCoursePublicContent for short_description changes',
+    );
+  }
+
   static void _validateCourseDripAuthoringPayload(
     Map<String, Object?> payload,
   ) {
@@ -315,6 +324,7 @@ class StudioRepository {
       );
     }
     _rejectCourseDripAuthoringPatch(patch);
+    _rejectCoursePublicContentPatch(patch);
     final response = await _client.raw.patch<Object?>(
       '/studio/courses/$courseId',
       data: patch,
@@ -322,6 +332,20 @@ class StudioRepository {
     return CourseStudio.fromResponse(
       response.data,
       label: 'Updated studio course',
+    );
+  }
+
+  Future<StudioCoursePublicContent> upsertCoursePublicContent(
+    String courseId, {
+    required String shortDescription,
+  }) async {
+    final response = await _client.raw.post<Object?>(
+      '/studio/courses/$courseId/public',
+      data: <String, Object?>{'short_description': shortDescription},
+    );
+    return StudioCoursePublicContent.fromResponse(
+      response.data,
+      label: 'Studio course public content',
     );
   }
 
@@ -351,6 +375,20 @@ class StudioRepository {
     return CourseStudio.fromResponse(
       response.data,
       label: 'Reordered studio course',
+    );
+  }
+
+  Future<CourseStudio> moveCourseToFamily(
+    String courseId, {
+    required String courseGroupId,
+  }) async {
+    final response = await _client.raw.post<Object?>(
+      '/studio/courses/$courseId/move-family',
+      data: <String, Object?>{'course_group_id': courseGroupId},
+    );
+    return CourseStudio.fromResponse(
+      response.data,
+      label: 'Moved studio course',
     );
   }
 

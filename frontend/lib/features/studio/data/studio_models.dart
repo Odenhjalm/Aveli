@@ -23,6 +23,14 @@ String _requiredResponseString(Object? payload, String key, String label) {
   throw StateError('$label field "$key" must be a non-empty string');
 }
 
+String _requiredResponseText(Object? payload, String key, String label) {
+  final value = _requireResponseField(payload, key, label);
+  if (value is String) {
+    return value;
+  }
+  throw StateError('$label field "$key" must be a string');
+}
+
 String? _nullableResponseString(Object? payload, String key, String label) {
   final value = _requireResponseField(payload, key, label);
   if (value == null) {
@@ -32,6 +40,24 @@ String? _nullableResponseString(Object? payload, String key, String label) {
     return value;
   }
   throw StateError('$label field "$key" must be a string or null');
+}
+
+String? _optionalResponseString(Object? payload, String key, String label) {
+  switch (payload) {
+    case final Map data when data.containsKey(key):
+      final value = data[key];
+      if (value == null) {
+        return null;
+      }
+      if (value is String) {
+        return value;
+      }
+      throw StateError('$label field "$key" must be a string or null');
+    case final Map _:
+      return null;
+    default:
+      throw StateError('$label returned a non-object payload');
+  }
 }
 
 int _requiredResponseInt(Object? payload, String key, String label) {
@@ -465,6 +491,7 @@ class CourseCore {
     required this.id,
     required this.title,
     required this.slug,
+    this.shortDescription,
     required this.courseGroupId,
     required this.groupPosition,
     DripAuthoring? dripAuthoring,
@@ -483,6 +510,7 @@ class CourseCore {
   final String id;
   final String title;
   final String slug;
+  final String? shortDescription;
   final String courseGroupId;
   final int groupPosition;
   final DripAuthoring? _dripAuthoring;
@@ -538,6 +566,7 @@ class CourseStudio extends CourseCore {
     required super.id,
     required super.title,
     required super.slug,
+    super.shortDescription,
     required super.courseGroupId,
     required super.groupPosition,
     super.dripAuthoring,
@@ -559,6 +588,11 @@ class CourseStudio extends CourseCore {
       id: _requiredResponseString(payload, 'id', label),
       title: _requiredResponseString(payload, 'title', label),
       slug: _requiredResponseString(payload, 'slug', label),
+      shortDescription: _optionalResponseString(
+        payload,
+        'short_description',
+        label,
+      ),
       courseGroupId: _requiredResponseString(payload, 'course_group_id', label),
       groupPosition: _requiredResponseInt(payload, 'group_position', label),
       dripAuthoring: dripAuthoring,
@@ -585,6 +619,7 @@ class CourseStudio extends CourseCore {
     String? id,
     String? title,
     String? slug,
+    String? shortDescription,
     String? courseGroupId,
     int? groupPosition,
     DripAuthoring? dripAuthoring,
@@ -594,6 +629,7 @@ class CourseStudio extends CourseCore {
     CourseCoverData? cover,
     int? priceAmountCents,
     bool clearCourseGroupId = false,
+    bool clearShortDescription = false,
     bool clearDripIntervalDays = false,
     bool clearCoverMediaId = false,
     bool clearCover = false,
@@ -611,6 +647,9 @@ class CourseStudio extends CourseCore {
       id: id ?? this.id,
       title: title ?? this.title,
       slug: slug ?? this.slug,
+      shortDescription: clearShortDescription
+          ? null
+          : (shortDescription ?? this.shortDescription),
       courseGroupId: clearCourseGroupId
           ? ''
           : (courseGroupId ?? this.courseGroupId),
@@ -623,6 +662,31 @@ class CourseStudio extends CourseCore {
       priceAmountCents: clearPriceAmountCents
           ? null
           : (priceAmountCents ?? this.priceAmountCents),
+    );
+  }
+}
+
+@immutable
+class StudioCoursePublicContent {
+  const StudioCoursePublicContent({
+    required this.courseId,
+    required this.shortDescription,
+  });
+
+  final String courseId;
+  final String shortDescription;
+
+  factory StudioCoursePublicContent.fromResponse(
+    Object? payload, {
+    String label = 'StudioCoursePublicContent',
+  }) {
+    return StudioCoursePublicContent(
+      courseId: _requiredResponseString(payload, 'course_id', label),
+      shortDescription: _requiredResponseText(
+        payload,
+        'short_description',
+        label,
+      ),
     );
   }
 }

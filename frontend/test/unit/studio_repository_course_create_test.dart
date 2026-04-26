@@ -268,9 +268,51 @@ void main() {
     );
 
     expect(course.dripAuthoring.mode.apiValue, 'custom_lesson_offsets');
+    expect(course.shortDescription, 'Backend public description');
     expect(course.dripAuthoring.customScheduleRows, hasLength(2));
     expect(course.dripAuthoring.customScheduleRows.first.lessonId, 'lesson-1');
     expect(course.dripAuthoring.customScheduleRows.last.unlockOffsetDays, 3);
+  });
+
+  test('upsertCoursePublicContent posts canonical public payload', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    final publicContent = await repo.upsertCoursePublicContent(
+      '99999999-9999-9999-9999-999999999999',
+      shortDescription: 'Edited public description',
+    );
+
+    expect(publicContent.courseId, '99999999-9999-9999-9999-999999999999');
+    expect(publicContent.shortDescription, 'Edited public description');
+
+    final requests = harness.adapter.requestsFor(
+      '/studio/courses/99999999-9999-9999-9999-999999999999/public',
+    );
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'POST');
+    expect(Map<String, dynamic>.from(requests.single.data as Map), {
+      'short_description': 'Edited public description',
+    });
+  });
+
+  test('updateCourse rejects public description patch fields', () async {
+    final harness = await _Harness.create();
+    final repo = StudioRepository(client: harness.client);
+
+    await expectLater(
+      repo.updateCourse('44444444-4444-4444-4444-444444444444', {
+        'short_description': 'Do not patch here',
+      }),
+      throwsA(isA<UnsupportedError>()),
+    );
+
+    expect(
+      harness.adapter.requestsFor(
+        '/studio/courses/44444444-4444-4444-4444-444444444444',
+      ),
+      isEmpty,
+    );
   });
 
   test('updateCourse rejects drip authoring patch fields', () async {
@@ -406,6 +448,7 @@ class _Harness {
             'id': '99999999-9999-9999-9999-999999999999',
             'slug': 'backend-detail',
             'title': 'Backend detail',
+            'short_description': 'Backend public description',
             'course_group_id': '11111111-1111-1111-1111-111111111111',
             'group_position': 1,
             'cover_media_id': null,
@@ -427,6 +470,18 @@ class _Harness {
                 ],
               },
             },
+          },
+        );
+      }
+      if (options.path ==
+              '/studio/courses/99999999-9999-9999-9999-999999999999/public' &&
+          options.method.toUpperCase() == 'POST') {
+        final payload = Map<String, dynamic>.from(options.data as Map);
+        return _jsonResponse(
+          statusCode: 200,
+          body: {
+            'course_id': '99999999-9999-9999-9999-999999999999',
+            'short_description': payload['short_description'],
           },
         );
       }
