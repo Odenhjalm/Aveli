@@ -45,7 +45,15 @@ No purchase flow may bypass that order/payment trail and create course access as
 - Course access classification is owned by `app.courses.required_enrollment_source`.
 - Valid course enrollment sources are `purchase` and `intro`.
 - `intro` is the dedicated canonical source for introduction-course enrollments.
-- A course enrollment grants protected course access only when `app.course_enrollments.source` matches `app.courses.required_enrollment_source`.
+- A course enrollment grants protected course access when
+  `app.course_enrollments.source` matches
+  `app.courses.required_enrollment_source`.
+- A backend-validated purchase or package entitlement MAY grant protected course
+  access as an explicit purchase-entitlement override only when backend access
+  state in `app.course_enrollments` proves the entitlement. This override MUST
+  use purchase-source access state, MUST NOT create a fake `intro` enrollment,
+  and MUST NOT be inferred from frontend, Stripe runtime, checkout return
+  state, or payment state alone.
 - If `app.courses.required_enrollment_source` is `null`, protected course access fails closed.
 - `sellable`, `price_amount_cents`, `group_position`, Stripe state, order state, payment state, and frontend state MUST NOT classify protected course access.
 - `/courses/{course_id}/access` MUST expose backend-authored `can_access`.
@@ -53,6 +61,8 @@ No purchase flow may bypass that order/payment trail and create course access as
 - `next_unlock_at` must be computed only from canonical backend scheduling authority and MUST NOT expose custom-drip rows, offsets, mode flags, or any frontend-reconstructed schedule.
 - Frontend course gates MUST use backend-authored `can_access` and MUST NOT infer protected course access from enrollment presence, checkout success, order state, payment state, or Stripe state.
 - Frontend learner timing UX MUST use backend-authored `next_unlock_at` and MUST NOT reconstruct drip timing from legacy intervals, custom rows, or authored schedule structures.
+- Frontend MUST NOT compare lesson positions to compute locked/unlocked,
+  current, upcoming, completed, previous, or next lesson state.
 
 ## 5. FORBIDDEN PATTERNS
 
@@ -62,13 +72,71 @@ No purchase flow may bypass that order/payment trail and create course access as
 - Fallback protected access derived from membership state alone.
 - Fallback protected access derived from order/payment state without course-enrollment state.
 - Intro course enrollment using `purchase`, `referral`, `coupon`, or any source other than `intro`.
+- Fake intro enrollment created from purchase or package entitlement.
+- Frontend-authored CTA, price, intro restriction, or lesson-lock decisions.
 
 ## 6. INTRO ACCESS LAW
 
 - Introduction courses use `app.courses.required_enrollment_source = intro`.
 - Introduction course protected access requires `app.course_enrollments.source = intro`.
-- Introduction courses are not purchased and must not receive purchase-source enrollments.
-- Publish-time course classification derives the persisted required enrollment source from `app.courses.group_position`; protected access checks use the persisted `required_enrollment_source` and matching enrollment source.
+- Introduction course selection and enrollment use only source `intro`.
+- If a user is already in an active intro drip state in another intro course,
+  a new intro-course enrollment CTA MUST be backend-authored as `blocked`.
+- A valid purchase or package entitlement may grant access and produce a
+  backend-authored `continue` CTA, but it MUST NOT create or masquerade as an
+  intro enrollment and MUST NOT satisfy intro-selection progression.
+- Publish-time workflows may use `app.courses.group_position` only as
+  structural/defaulting input before persisting
+  `app.courses.required_enrollment_source`; runtime protected access checks use
+  persisted backend-owned access state.
+
+## 6A. COURSE ENTRY CTA AND PROGRESSION PROJECTION LAW
+
+`GET /courses/{course_id_or_slug}/entry-view` is the canonical backend Course
+Entry/Gateway read surface for learner course-entry decisions.
+
+The backend owns the CTA decision. Allowed CTA types are:
+
+- `enroll`
+- `buy`
+- `continue`
+- `blocked`
+- `unavailable`
+
+Every CTA object MUST include:
+
+- `type`
+- `label`
+- `enabled`
+- `reason_code`
+- `reason_text`
+- `price` when relevant
+- `action` when relevant
+
+CTA rules:
+
+- intro courses show an enrollment CTA only when backend selection state allows
+  creating a new intro enrollment
+- intro courses with another active intro drip state return `blocked`
+- valid purchase/package entitlement returns `continue` when access is granted
+- premium courses return `buy` only from backend-owned purchasability and price
+  state
+- already enrolled users return `continue` with a backend-authored action
+  target
+- ambiguous or incomplete authority returns `unavailable`
+
+The backend owns lesson progression projection for Course Entry/Gateway.
+Per-lesson projection MUST include:
+
+- locked/unlocked availability
+- current/upcoming/completed state
+- `next_unlock_at`
+- previous/next navigation state
+- locked reason
+
+Frontend MUST render the projection only. Frontend MUST NOT infer lesson
+availability from `position`, `current_unlock_position`, local enrollment
+presence, checkout return state, Stripe state, or route state.
 
 ## 7. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
 

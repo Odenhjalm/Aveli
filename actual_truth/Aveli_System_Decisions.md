@@ -100,7 +100,7 @@
 
 ## System Definition
 
-- Aveli is the documented system for social learning, course/editor workflows, media delivery, checkout/onboarding support, membership-gated app access, course catalog and lesson structure exposed via explicit read surface, course content accessible through defined API surface only when `course_enrollments` AND `lesson.position <= current_unlock_position`, home-player curation, and marketplace expansion with dedicated API governance, auth/security controls, and control-plane/observability surfaces.
+- Aveli is the documented system for social learning, course/editor workflows, media delivery, checkout/onboarding support, membership-gated app access, course catalog and lesson structure exposed via explicit read surface, course content accessible through defined API surface only when `course_enrollments` and `lesson.position <= current_unlock_position` allow it, home-player curation, and marketplace expansion with dedicated API governance, auth/security controls, and control-plane/observability surfaces.
 - Evidence:
   - docs/README.md
   - docs/architecture/aveli_editor_architecture_v2.md
@@ -290,12 +290,16 @@ Frontend must render only and must not resolve or construct media.
 - `course_enrollments` is the only canonical authority for `canonical_protected_course_content_access`.
 - `canonical_protected_course_content_access` means a lesson is accessible if and only if:
   - a `course_enrollments` row exists for `(user_id, course_id)`
+  - the row source matches required course access source, or is a backend-validated purchase/package entitlement override using purchase-source access state
   - `lesson.position <= current_unlock_position`
 - `current_unlock_position` is stored on `course_enrollments`.
 - `lesson_content_surface` allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`.
 - `lesson_content_surface` maps to `lessons` + `lesson_contents` + `lesson_media`.
 - For learner/public surfaces, `lesson_media` exists only inside `lesson_content_surface`.
-- Intro courses require `course_enrollments` rows with `source = intro_enrollment`, and `lesson_content_surface` still requires `lesson.position <= current_unlock_position`.
+- Intro courses require `course_enrollments` rows with `source = intro`, unless
+  a backend-validated purchase/package entitlement override grants access
+  without creating a fake intro enrollment. `lesson_content_surface` still
+  requires `lesson.position <= current_unlock_position`.
 - No lesson content or lesson media access exists outside `course_enrollments` AND `lesson.position <= current_unlock_position`.
 - `media_assets` never defines access.
 - No rule referring to visibility may be interpreted as permission for raw table access.
@@ -311,6 +315,16 @@ Frontend must render only and must not resolve or construct media.
 - `GET /courses/{course_id}` is a course-detail endpoint composed of `course_discovery_surface` and `lesson_structure_surface` and must not require enrollment.
 - `GET /courses/by-slug/{slug}` is a course-detail endpoint composed of `course_discovery_surface` and `lesson_structure_surface` and must not require enrollment.
 - Course-detail endpoints may return lessons only as `LessonSummary[]` on `lesson_structure_surface`.
+- `GET /courses/{course_id_or_slug}/entry-view` is the canonical Course
+  Entry/Gateway read surface.
+- Course Entry/Gateway is backend-owned and must return course identity, full
+  course description payload, lesson structure, user access/enrollment state,
+  per-lesson availability/progression state, next recommended lesson,
+  backend-authored CTA decision, and backend-authored pricing payload when
+  relevant.
+- Frontend must render Course Entry/Gateway state only and must not decide CTA
+  type, intro eligibility, purchase eligibility, price display, lesson
+  availability, progression state, or next recommended lesson.
 - `LessonSummary` is the `lesson_structure_surface` shape and allows only:
   - `lesson_identity`
   - `lesson_structure`
@@ -352,7 +366,10 @@ Frontend must render only and must not resolve or construct media.
   - `drip_enabled`
   - `drip_interval_days`
 - `course_enrollments` is the only source of `canonical_protected_course_content_access` truth.
-- Intro courses require explicit enrollment with `source = intro_enrollment`, and `lesson_content_surface` access still requires `lesson.position <= current_unlock_position`.
+- Intro courses require explicit enrollment with `source = intro`, unless a
+  backend-validated purchase/package entitlement override grants access without
+  creating a fake intro enrollment. `lesson_content_surface` access still
+  requires `lesson.position <= current_unlock_position`.
 - Paid courses require explicit enrollment with `source = purchase`, and `lesson_content_surface` access still requires `lesson.position <= current_unlock_position`.
 - Enrollment stores state only.
 - Enrollment always stores `drip_started_at` and `current_unlock_position`.
@@ -554,7 +571,7 @@ Frontend must render only and must not resolve or construct media.
 - progression-position-based ownership logic
 - runtime-derived progression
 - runtime-derived unlock state
-- drip logic tied to `intro_enrollment` vs `purchase`
+- drip logic tied to enrollment source or course type
 - hardcoded drip defaults
 - fallback drip behavior
 - implicit unlock strategies

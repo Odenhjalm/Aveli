@@ -292,6 +292,14 @@ Preview Mode must use the same `lesson_document_v1` renderer path as learner
 lesson content rendering, with presentation differences only where explicitly
 allowed by the editor surface.
 
+The shared path MUST be the learner lesson rendering surface, not a lower-level
+preview primitive. Editor Preview Mode may add editor chrome around the learner
+renderer, but it MUST NOT call the lower-level preview primitive directly when
+Learner Lesson View uses a higher-level renderer.
+
+Content block rendering, media rendering, spacing, link handling, and fallback
+behavior MUST be identical between Editor Preview Mode and Learner Lesson View.
+
 Preview Mode MUST NOT use:
 
 - unsaved editor controller state

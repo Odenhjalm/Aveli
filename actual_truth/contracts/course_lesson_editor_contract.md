@@ -317,7 +317,7 @@ Response:
         "resolved_url": "string | null"
       },
       "price_amount_cents": 123,
-      "required_enrollment_source": "purchase | intro_enrollment | null",
+      "required_enrollment_source": "purchase | intro | null",
       "enrollable": true,
       "purchasable": false,
       "drip_authoring": {
@@ -365,7 +365,7 @@ Response:
     "resolved_url": "string | null"
   },
   "price_amount_cents": 123,
-  "required_enrollment_source": "purchase | intro_enrollment | null",
+  "required_enrollment_source": "purchase | intro | null",
   "enrollable": true,
   "purchasable": false,
   "drip_authoring": {
@@ -849,6 +849,17 @@ Preview Mode must not become an alternate media authority.
 Preview Mode must not become an alternate course-cover authority.
 
 Differences between Preview Mode UI and Learner UI must be presentation-only and must not change canonical truth.
+
+Preview Mode and Learner Lesson View MUST use the same learner rendering
+surface for lesson body rendering. Editor preview may wrap that learner
+renderer in editor chrome, but it MUST NOT bypass the learner renderer by
+calling a lower-level preview primitive directly.
+
+Content block rendering, media rendering, spacing, link handling, and fallback
+behavior MUST be identical between Preview Mode and Learner Lesson View.
+
+Lesson navigation, enrollment/access gating, and course-entry CTA composition
+MUST live outside the shared lesson body renderer.
 
 Draft preview is not allowed as Preview Mode authority.
 

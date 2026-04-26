@@ -30,16 +30,22 @@ This contract operates under `SYSTEM_LAWS.md`,
 - A course MUST NOT become sellable from frontend form state alone.
 - A course MUST NOT become sellable from Stripe dashboard/runtime state alone.
 - Canonical course monetization state is backend-owned.
-- Course monetization class is determined only by `app.courses.group_position`.
-- A course with `group_position = 0` is an introduction course:
+- Course monetization class is determined only by backend-owned persisted
+  monetization/access classification, including
+  `app.courses.required_enrollment_source`.
+- `app.courses.group_position` may be structural/defaulting input at publish
+  time only. It MUST NOT be runtime monetization, sellability, intro, premium,
+  purchase, or price-display authority.
+- A course with `required_enrollment_source = intro` is an introduction course:
   - no price is required
   - no Stripe product or Stripe price may be created
   - `course.sellable` must be `false`
-  - `required_enrollment_source` must be `intro`
-- A course with `group_position >= 1` is a premium course:
+- A course with `required_enrollment_source = purchase` is a premium course:
   - a valid price is required before publish
   - a valid Stripe product and active Stripe price are required before it becomes sellable
-  - `required_enrollment_source` must be `purchase`
+- A course with `required_enrollment_source = null` is not sellable and must
+  fail closed for purchase and protected access until backend persists a
+  canonical classification.
 - A premium course is canonically sellable IF AND ONLY IF:
   - backend validates teacher ownership
   - backend validates pricing
@@ -75,6 +81,9 @@ This contract operates under `SYSTEM_LAWS.md`,
 - A course or bundle with invalid or inconsistent monetization state MUST NOT be sellable.
 - Frontend MAY display sellable state only as backend-projected truth.
 - Sellability is a backend-computed state derived from validated teacher intent and system readiness conditions.
+- Learner-facing price display is backend-authored. Frontend MUST NOT format,
+  hide, or infer price display from intro/premium, sellable, Stripe, or
+  position-based logic.
 
 ## 5. STRIPE PRODUCT MODEL
 
@@ -140,7 +149,8 @@ This contract operates under `SYSTEM_LAWS.md`,
 
 - Canonical paid course flow is:
   1. student initiates course purchase
-  2. backend rejects introduction courses by `group_position = 0`
+  2. backend rejects non-purchasable courses by backend-owned persisted
+     monetization/access classification
   3. backend validates sellable premium course and current canonical price
   4. backend creates pending order in `app.orders`
   5. backend creates Stripe checkout/payment collection
@@ -204,6 +214,7 @@ This contract operates under `SYSTEM_LAWS.md`,
 
 - Frontend pricing authority.
 - Frontend sellability authority.
+- Frontend price formatting, hiding, or intro/premium inference.
 - Teacher UI as final monetization authority.
 - Stripe as pricing, sellability, purchase, or entitlement authority.
 - Implicit sellability without backend validation and approval.

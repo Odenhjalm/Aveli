@@ -52,7 +52,7 @@ This contract exists to eliminate ambiguity between:
 ## 2. SYSTEM POSITIONING
 
 - Membership in `app.memberships` controls app access only.
-- Course access is controlled only by `app.course_enrollments`.
+- Course access is controlled only by `course_access_contract.md` authority.
 - Intro-course logic does not override or bypass membership authority,
   app-entry authority, or course-access authority.
 - Intro-course logic is a progression and selection layer on top of existing
@@ -70,12 +70,11 @@ This contract exists to eliminate ambiguity between:
   `intro` under the existing access law.
 - Intro-course classification is owned only by
   `app.courses.required_enrollment_source`.
-- Publish-time course classification MUST persist
-  `app.courses.required_enrollment_source = 'intro'` for
-  `app.courses.group_position = 0`.
+- Publish-time workflows may use `app.courses.group_position` only as
+  structural/defaulting input before persisting
+  `app.courses.required_enrollment_source`.
 - Runtime intro-course selection uses the persisted
-  `app.courses.required_enrollment_source`, which must match the publish-time
-  group-position authority.
+  `app.courses.required_enrollment_source`.
 - The structural intro slot of a course family is not course-access authority
   unless publish has persisted `required_enrollment_source = 'intro'`.
 
@@ -83,15 +82,19 @@ The following are forbidden as intro-course classification authority:
 
 - price-based inference
 - frontend-only `group_position` inference without persisted backend classification
+- runtime `group_position` inference
 - frontend flags
 - naming inference
 - tagging inference
 
 ## 4. ACCESS MODEL (NON-NEGOTIABLE)
 
-- A user may consume an intro course if and only if both are true:
+- A user may consume an intro course if and only if app entry is valid and
+  backend course-access authority grants access:
   - the user has valid membership and app entry is allowed
-  - a valid `app.course_enrollments` row exists for that course
+  - either a valid intro `app.course_enrollments` row exists for that course,
+    or a backend-validated purchase/package entitlement override grants access
+    under `course_access_contract.md`
 - Course access remains owned by `course_access_contract.md`.
 - App entry remains owned by `onboarding_entry_authority_contract.md` and
   `commerce_membership_contract.md`.
@@ -162,10 +165,18 @@ For this contract, "incomplete drip" means:
 - Selection lock does not affect course access.
 - Selection lock does not revoke, suspend, hide, or deactivate previously
   enrolled intro courses.
+- Course Entry/Gateway CTA state for intro courses is backend-authored:
+  - `enroll` only when creating a new intro enrollment is allowed
+  - `blocked` when another active intro drip state blocks selection
+  - `continue` when existing valid access or valid purchase/package entitlement
+    allows consumption
+- Purchase/package entitlement MUST NOT create a fake intro enrollment and MUST
+  NOT satisfy intro-selection progression.
 
 ## 9. UI/CLIENT IMPLICATIONS (NON-AUTHORITATIVE)
 
-- UI may disable `Anmäl dig` buttons when selection is locked.
+- UI may render disabled `Anmäl dig` buttons only from backend-authored Course
+  Entry/Gateway CTA state.
 - UI may display locked or unlocked selection state only as a projection of
   backend authority.
 - UI must not enforce intro-course selection rules independently.

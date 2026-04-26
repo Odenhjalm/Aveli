@@ -57,6 +57,10 @@ Lesson content read context may additionally include:
 - `GET /courses/{course_id}`
 - `GET /courses/by-slug/{slug}`
 
+### Learner Course Entry / Gateway Read
+
+- `GET /courses/{course_id_or_slug}/entry-view`
+
 ### Learner Content Read
 
 - `GET /courses/lessons/{lesson_id}`
@@ -123,6 +127,95 @@ Rules:
 - `group_position` is the only canonical course progression field
 - The legacy progression field `step` MUST NOT be emitted or consumed
 
+### 5.2 Learner Course Entry / Gateway Read
+
+`GET /courses/{course_id_or_slug}/entry-view` is the canonical backend-owned
+Course Entry/Gateway read model for learner course-entry decisions.
+
+Response:
+
+~~~json
+{
+  "course": {
+    "id": "uuid",
+    "slug": "string",
+    "title": "string",
+    "teacher": {
+      "user_id": "uuid",
+      "display_name": "string | null"
+    },
+    "course_group_id": "uuid",
+    "group_position": 0,
+    "cover_media_id": "uuid | null",
+    "cover": {
+      "media_id": "string",
+      "state": "ready",
+      "resolved_url": "string"
+    },
+    "short_description": "string | null",
+    "description": "string | null",
+    "required_enrollment_source": "intro | purchase | null"
+  },
+  "access": {
+    "can_access": true,
+    "required_enrollment_source": "intro | purchase | null",
+    "selection_locked": false,
+    "selection_lock_reason": "string | null",
+    "enrollment": "object | null"
+  },
+  "lessons": [
+    {
+      "id": "uuid",
+      "lesson_title": "string",
+      "position": 1,
+      "availability": {
+        "state": "unlocked | locked",
+        "can_open": true,
+        "reason_code": "string | null",
+        "reason_text": "string | null",
+        "next_unlock_at": "timestamp | null"
+      },
+      "progression": {
+        "state": "current | upcoming | completed",
+        "completed_at": "timestamp | null",
+        "is_next_recommended": false
+      },
+      "navigation": {
+        "previous": "object | null",
+        "next": "object | null"
+      }
+    }
+  ],
+  "next_recommended_lesson": "object | null",
+  "cta": {
+    "type": "enroll | buy | continue | blocked | unavailable",
+    "label": "string",
+    "enabled": true,
+    "reason_code": "string | null",
+    "reason_text": "string | null",
+    "price": "object | null",
+    "action": "object | null"
+  },
+  "pricing": "object | null"
+}
+~~~
+
+Rules:
+
+- this endpoint is the only Course Entry/Gateway authority
+- backend owns all CTA, pricing, access, selection, progression, and navigation
+  decisions in this response
+- frontend MUST render this response only and MUST NOT reconstruct the decision
+- `lessons` on this endpoint remain structure/progression objects and MUST NOT
+  contain `content_document`, legacy `content_markdown`, or `lesson_media`
+- full course description payload is backend-owned public course content; if
+  clean baseline substrate cannot materialize the full description field,
+  implementation MUST fail closed and create a baseline-owner task before this
+  endpoint is implemented
+- price display MUST come from backend-authored `pricing` or `cta.price`
+- `reason_text`, `label`, and rendered price text must follow
+  `system_text_authority_contract.md`
+
 ## 6. CONTENT READ CONTRACT
 
 Endpoint:
@@ -174,7 +267,8 @@ Rules:
 - this endpoint is the canonical `lesson_content_surface`
 - it may expose lesson identity, lesson structure, lesson content, and lesson media only
 - rebuilt lesson content is exposed as `content_document`
-- access requires `course_enrollments` and `lesson.position <= current_unlock_position`
+- access requires `course_enrollments` and
+  `lesson.position <= current_unlock_position`
 - `media` must use backend-authored media objects only
 - structure context inside this response does not authorize structure surfaces to expose content
 
@@ -193,6 +287,7 @@ Learner frontend may use only these canonical read surfaces:
 - `GET /courses`
 - `GET /courses/{course_id}`
 - `GET /courses/by-slug/{slug}`
+- `GET /courses/{course_id_or_slug}/entry-view`
 - `GET /courses/lessons/{lesson_id}`
 
 Frontend model separation law:
@@ -205,6 +300,9 @@ Frontend model separation law:
 - frontend must not invent lesson semantics
 - frontend must not use `title` as lesson authority
 - frontend must not use `is_intro` as lesson authority
+- frontend must not decide Course Entry/Gateway CTA type, price visibility,
+  price formatting, intro eligibility, lesson availability, lesson progression,
+  or next recommended lesson
 
 Sibling public-content rule:
 

@@ -404,6 +404,12 @@ Home, course, lesson, Studio, and Editor:
   states are `contract_text`, `backend_status_text`, or `backend_error_text`.
 - Course titles, short descriptions, lesson titles, lesson markdown, home
   player titles, and bundle titles are `db_domain_content`.
+- Course Entry/Gateway CTA labels, disabled/blocked reason text, continuation
+  labels, enrollment labels, purchase labels, and rendered price text are
+  backend-owned payload text under `backend_status_text` or
+  `backend_stripe_text` as appropriate.
+- Frontend may render Course Entry/Gateway CTA and price text, but MUST NOT
+  originate, translate, format, hide, or infer that text locally.
 
 ### Home Player Exact-Copy Failure Surfaces
 

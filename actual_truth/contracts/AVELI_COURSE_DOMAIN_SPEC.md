@@ -75,11 +75,18 @@ The canonical learner/public surfaces are:
 
 - `course_discovery_surface`
 - `lesson_structure_surface`
+- `course_entry_gateway_surface`
 - `lesson_content_surface`
 
 `course_discovery_surface` and `lesson_structure_surface` are not protected by
 course enrollment. `lesson_content_surface` is protected by course enrollment
 and lesson unlock position.
+
+`course_entry_gateway_surface` is a backend-composed learner decision surface.
+It may include course structure, user access/enrollment state, per-lesson
+availability/progression state, next recommended lesson, backend-authored CTA
+state, and backend-authored pricing display payloads. It MUST NOT expose
+lesson content or lesson media.
 
 ## 3. CANONICAL FIELD DEFINITIONS
 
@@ -137,14 +144,20 @@ protected content access and protected access MUST fail closed. This field MUST
 NOT be derived from `sellable`, `price_amount_cents`, Stripe state, order
 state, payment state, or frontend state.
 
-Publish-time course classification derives `required_enrollment_source` from
-`app.courses.group_position` only:
+Canonical values are:
 
-- `group_position = 0` -> `required_enrollment_source = intro`
-- `group_position >= 1` -> `required_enrollment_source = purchase`
+- `intro`
+- `purchase`
+- `null`
 
-Protected access checks still use the persisted `required_enrollment_source`
-and require `app.course_enrollments.source` to match it.
+`intro_enrollment` is legacy/migration-only language. It MUST NOT appear in
+new runtime contracts, new API payloads, new frontend branching, or new
+baseline-owned canonical truth.
+
+Publish-time workflows may use `app.courses.group_position` only as structural
+or defaulting input before persisting `required_enrollment_source`. Runtime
+intro/purchase/sellability/access authority MUST use persisted backend-owned
+state, not course position.
 
 Public course read composition may project teacher display data as:
 
@@ -493,8 +506,7 @@ Canonical family transitions are:
 Cross-domain alignment rules:
 
 - `group_position` MUST NOT grant access
-- `group_position` defines course monetization class at publish time:
-  `0` means introduction/non-sellable; `>= 1` means premium/purchase-required
+- `group_position` may be structural/defaulting input at publish time only
 - `group_position` MUST NOT grant protected content access by itself
 - `group_position` MUST NOT replace persisted `required_enrollment_source`
 - `group_position` MUST NOT replace
@@ -567,7 +579,11 @@ not governed by course enrollment.
 `lesson_content_surface` is protected and requires all of:
 
 - a canonical `app.course_enrollments` row for `(user_id, course_id)`
-- `app.course_enrollments.source = app.courses.required_enrollment_source`
+- either:
+  - `app.course_enrollments.source = app.courses.required_enrollment_source`
+  - `app.course_enrollments.source = purchase` with backend-validated
+    purchase/package entitlement override that does not create a fake intro
+    enrollment
 - `app.lessons.position <= app.course_enrollments.current_unlock_position`
 
 Courses classified with `required_enrollment_source = intro` require
@@ -581,6 +597,64 @@ be accessed.
 No endpoint, view, frontend model, token claim, membership state, purchase state,
 or media state may provide protected lesson content or lesson media without the
 required `lesson_content_surface` conditions.
+
+## 8A. COURSE ENTRY / GATEWAY MODEL
+
+Backend read composition owns canonical Course Entry/Gateway state.
+
+Canonical endpoint:
+
+```text
+GET /courses/{course_id_or_slug}/entry-view
+```
+
+The Course Entry/Gateway response MUST include backend-authored:
+
+- course identity
+- full course description payload
+- lesson structure
+- user access and enrollment state
+- per-lesson availability and progression state
+- next recommended lesson
+- CTA decision
+- pricing payload when relevant
+
+The frontend MUST render only this response for Course Entry/Gateway decisions.
+Frontend MUST NOT decide CTA type, intro eligibility, purchase eligibility,
+price visibility, price formatting, lesson lock state, current/upcoming/
+completed state, or next recommended lesson.
+
+The backend-authored CTA decision MUST use only:
+
+- `enroll`
+- `buy`
+- `continue`
+- `blocked`
+- `unavailable`
+
+Every CTA decision MUST include:
+
+- `type`
+- `label`
+- `enabled`
+- `reason_code`
+- `reason_text`
+- `price` when relevant
+- `action` when relevant
+
+Backend lesson progression projection MUST author:
+
+- locked/unlocked availability
+- current/upcoming/completed state
+- `next_unlock_at`
+- previous/next navigation state
+- locked reason
+
+Frontend MUST NOT compare lesson positions or reconstruct drip state.
+
+Backend pricing payloads are the only learner-facing course price authority.
+Frontend MUST NOT hide, format, repair, or infer price display from intro,
+premium, sellable, Stripe, or position-based logic.
 
 ## 9. FRONTEND CONTRACT (strict media shape)
 

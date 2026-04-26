@@ -190,7 +190,10 @@
                 "lesson_identity": "stable lesson identifiers and parent-course linkage",
                 "lesson_structure": "lesson ordering and structural metadata",
                 "lesson_content": "gated lesson body content",
-                "lesson_media": "gated lesson-linked media references delivered with lesson content"
+                "lesson_media": "gated lesson-linked media references delivered with lesson content",
+                "lesson_progression": "backend-authored lesson availability and learner progression projection",
+                "course_entry_cta": "backend-authored Course Entry/Gateway CTA decision",
+                "course_entry_pricing": "backend-authored Course Entry/Gateway pricing display payload"
             },
             "lesson_storage_model": {
                 "lessons": "lesson_identity_and_lesson_structure_only",
@@ -228,6 +231,37 @@
                     ],
                     "requires_course_enrollments": false
                 },
+                "course_entry_gateway_surface": {
+                    "endpoint": "GET /courses/{course_id_or_slug}/entry-view",
+                    "allowed_categories": [
+                        "course_identity",
+                        "course_display",
+                        "course_grouping",
+                        "course_pricing",
+                        "lesson_identity",
+                        "lesson_structure",
+                        "enrollment_state",
+                        "unlock_state",
+                        "lesson_progression",
+                        "course_entry_cta",
+                        "course_entry_pricing"
+                    ],
+                    "forbidden_categories": [
+                        "lesson_content",
+                        "lesson_media"
+                    ],
+                    "backend_owned_decisions": [
+                        "cta",
+                        "pricing_payload",
+                        "intro_eligibility",
+                        "purchase_eligibility",
+                        "lesson_availability",
+                        "lesson_progression",
+                        "next_recommended_lesson",
+                        "previous_next_navigation"
+                    ],
+                    "frontend_role": "render_only"
+                },
                 "lesson_content_surface": {
                     "allowed_categories": [
                         "lesson_identity",
@@ -258,10 +292,11 @@
             "lesson_media_only_inside_lesson_content_surface": true,
             "independent_lesson_media_surface": false,
             "media_assets_never_defines_access": true,
-            "intro_lesson_content_surface_access_rule": "requires source = intro_enrollment AND course_enrollments AND lesson.position <= current_unlock_position",
+            "intro_lesson_content_surface_access_rule": "requires course_enrollments AND (source = intro OR purchase_source_backend_validated_purchase_package_entitlement_override) AND lesson.position <= current_unlock_position",
             "purchase_lesson_content_surface_access_rule": "requires source = purchase AND course_enrollments AND lesson.position <= current_unlock_position",
             "membership_alone_never_grants_canonical_protected_course_content_access": true,
-            "intro_enrollment_source": "intro_enrollment",
+            "intro_source": "intro",
+            "legacy_intro_enrollment_source": "intro_enrollment_migration_only",
             "purchase_enrollment_source": "purchase",
             "implicit_canonical_protected_course_content_access": false,
             "no_visibility_rule_implies_raw_table_access": true,
@@ -435,7 +470,10 @@
             "lesson_identity": "stable lesson identifiers and parent-course linkage",
             "lesson_structure": "lesson ordering and structural metadata",
             "lesson_content": "gated lesson body content",
-            "lesson_media": "gated lesson-linked media references delivered with lesson content"
+            "lesson_media": "gated lesson-linked media references delivered with lesson content",
+            "lesson_progression": "backend-authored lesson availability and learner progression projection",
+            "course_entry_cta": "backend-authored Course Entry/Gateway CTA decision",
+            "course_entry_pricing": "backend-authored Course Entry/Gateway pricing display payload"
         },
         "canonical_protected_course_content_access": {
             "authority": "course_enrollments",
@@ -470,6 +508,24 @@
                 "unlock_state"
             ]
         },
+        "course_entry_gateway_surface": {
+            "endpoint": "GET /courses/{course_id_or_slug}/entry-view",
+            "backend_owned_decisions": [
+                "cta",
+                "pricing_payload",
+                "intro_eligibility",
+                "purchase_eligibility",
+                "lesson_availability",
+                "lesson_progression",
+                "next_recommended_lesson",
+                "previous_next_navigation"
+            ],
+            "frontend_role": "render_only",
+            "forbidden_categories": [
+                "lesson_content",
+                "lesson_media"
+            ]
+        },
         "lesson_content_surface": {
             "allowed_categories": [
                 "lesson_identity",
@@ -497,6 +553,11 @@
             "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface": [
                 "GET /courses/{course_id}",
                 "GET /courses/by-slug/{slug}"
+            ]
+        },
+        "course_entry_gateway_endpoints": {
+            "course_entry_gateway_surface": [
+                "GET /courses/{course_id_or_slug}/entry-view"
             ]
         },
         "lesson_content_surface_endpoints": {
@@ -534,9 +595,34 @@
                     "lesson_content",
                     "lesson_media"
                 ],
-                "requires": [
-                    "course_enrollments",
-                    "lesson.position <= current_unlock_position"
+                    "requires": [
+                        "course_enrollments",
+                        "lesson.position <= current_unlock_position"
+                    ]
+            },
+            "CourseEntryGateway": {
+                "surface": "course_entry_gateway_surface",
+                "must_include": [
+                    "course_identity",
+                    "full_course_description_payload",
+                    "lesson_structure",
+                    "user_access_enrollment_state",
+                    "per_lesson_availability_progression",
+                    "next_recommended_lesson",
+                    "backend_authored_cta_decision",
+                    "backend_authored_pricing_payload_when_relevant"
+                ],
+                "cta_types": [
+                    "enroll",
+                    "buy",
+                    "continue",
+                    "blocked",
+                    "unavailable"
+                ],
+                "frontend_role": "render_only",
+                "forbidden_categories": [
+                    "lesson_content",
+                    "lesson_media"
                 ]
             }
         },
@@ -544,6 +630,8 @@
             "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface_does_not_require_enrollment": true,
             "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface_returns_only_lesson_summary_array": true,
             "lesson_content_or_lesson_media_never_appear_on_course_discovery_surface_or_lesson_structure_surface": true,
+            "course_entry_gateway_backend_owns_cta_pricing_progression_and_navigation": true,
+            "frontend_course_entry_decision_logic": "forbidden",
             "lesson_media_only_on_lesson_content_surface": true,
             "media_assets_never_defines_access": true,
             "lessons_structure_only_storage": true,
@@ -649,8 +737,20 @@
         "lesson_media_only_inside_lesson_content_surface": true,
         "independent_lesson_media_surface": false,
         "media_assets_never_defines_access": true,
-        "intro_lesson_content_surface_access_rule": "requires source = intro_enrollment AND course_enrollments AND lesson.position <= current_unlock_position",
+        "intro_lesson_content_surface_access_rule": "requires course_enrollments AND (source = intro OR purchase_source_backend_validated_purchase_package_entitlement_override) AND lesson.position <= current_unlock_position",
         "paid_lesson_content_surface_access_rule": "requires source = purchase AND course_enrollments AND lesson.position <= current_unlock_position",
+        "course_entry_gateway_endpoint": "GET /courses/{course_id_or_slug}/entry-view",
+        "course_entry_gateway_backend_decision_authority": true,
+        "course_entry_gateway_cta_types": [
+            "enroll",
+            "buy",
+            "continue",
+            "blocked",
+            "unavailable"
+        ],
+        "course_entry_frontend_render_only": true,
+        "frontend_price_display_logic": "forbidden",
+        "frontend_lesson_lock_computation": "forbidden",
         "course_discovery_surface_must_not_be_conflated_with_lesson_content_surface": true,
         "lesson_structure_surface_must_not_be_conflated_with_lesson_content_surface": true,
         "lesson_content_or_lesson_media_on_course_discovery_surface_or_lesson_structure_surface": "forbidden",
