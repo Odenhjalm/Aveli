@@ -761,6 +761,52 @@ void main() {
     );
   });
 
+  testWidgets('document editor applies heading to a full-block selection', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Full block')]),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _selectTextRange(
+      tester,
+      const ValueKey('lesson_document_editor_node_0'),
+      text: 'Full block',
+      start: 0,
+      end: 10,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+    expect(_blockTypes(document), ['heading']);
+    final heading = document.blocks.single as LessonHeadingBlock;
+    expect(heading.level, 2);
+    expect(heading.children.single.text, 'Full block');
+    expect(
+      LessonDocument.fromJson(document.toJson()).toCanonicalJsonString(),
+      document.toCanonicalJsonString(),
+    );
+  });
+
   testWidgets('document editor heading is a no-op for collapsed cursor', (
     tester,
   ) async {

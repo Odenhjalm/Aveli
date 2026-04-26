@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'lesson_document.dart';
 import 'lesson_document_renderer.dart';
+import 'lesson_document_selection_splitter.dart';
 
 class LessonEditorSaveSnapshot {
   const LessonEditorSaveSnapshot({
@@ -931,6 +932,180 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     setState(() => _selectedTarget = nextTarget);
   }
 
+  void _convertSelectedHeading() {
+    final selection = _selectedTextRange();
+    if (selection == null) return;
+
+    late final int blockIndex;
+    late final _BlockIdentity sourceIdentity;
+    late final LessonSelectionSplitTarget splitTarget;
+
+    if (selection.target case _BlockTextTarget(:final blockId)) {
+      final resolvedBlockIndex = _blockIndexFor(blockId);
+      if (resolvedBlockIndex == null) return;
+      final identity = _identityAtBlockIndex(resolvedBlockIndex);
+      if (identity == null) return;
+      blockIndex = resolvedBlockIndex;
+      sourceIdentity = identity;
+      splitTarget = LessonTextBlockSelectionTarget(blockIndex: blockIndex);
+    } else if (selection.target case _ListItemTextTarget(:final itemId)) {
+      final location = _listItemLocationFor(itemId);
+      if (location == null) return;
+      blockIndex = location.blockIndex;
+      sourceIdentity = location.blockIdentity;
+      splitTarget = LessonListItemSelectionTarget(
+        blockIndex: blockIndex,
+        itemIndex: location.itemIndex,
+      );
+    } else {
+      return;
+    }
+
+    final result = splitLessonDocumentSelection(
+      document: _document,
+      target: splitTarget,
+      start: selection.start,
+      end: selection.end,
+      conversion: const LessonSelectionHeadingConversion(
+        level: _defaultHeadingLevel,
+      ),
+    );
+    final metadata = result.metadata;
+    if (!result.applied || metadata == null) return;
+
+    final replacement = result.document.blocks
+        .skip(blockIndex)
+        .take(metadata.replacementCount)
+        .toList(growable: false);
+    final nextRegistry = _identityRegistry.copy();
+    final replacementIdentities = _identityRemapForSplit(
+      metadata: metadata,
+      replacement: replacement,
+      sourceIdentity: sourceIdentity,
+      registry: nextRegistry,
+    );
+    if (replacementIdentities == null) return;
+
+    nextRegistry.blocks
+      ..removeAt(blockIndex)
+      ..insertAll(blockIndex, replacementIdentities);
+    _disposeRemovedIdentityKeys([sourceIdentity], replacementIdentities);
+    final nextTarget = _targetForSplitSelection(
+      metadata: metadata,
+      replacementIdentities: replacementIdentities,
+    );
+    if (nextTarget == null) return;
+
+    _applyDocument(result.document, identityRegistry: nextRegistry);
+    widget.onInsertionIndexChanged?.call(
+      _insertionIndexForTarget(nextTarget) ?? blockIndex + 1,
+    );
+    setState(() => _selectedTarget = nextTarget);
+  }
+
+  List<_BlockIdentity>? _identityRemapForSplit({
+    required LessonSelectionSplitMetadata metadata,
+    required List<LessonBlock> replacement,
+    required _BlockIdentity sourceIdentity,
+    required _EditorIdentityRegistry registry,
+  }) {
+    if (replacement.length != metadata.identityRemapHints.length) return null;
+    final identities = <_BlockIdentity>[];
+    for (var index = 0; index < replacement.length; index += 1) {
+      final hint = metadata.identityRemapHints[index];
+      if (hint.replacementIndex != index) return null;
+      final identity = _identityForSplitHint(
+        block: replacement[index],
+        hint: hint,
+        sourceIdentity: sourceIdentity,
+        registry: registry,
+      );
+      if (identity == null) return null;
+      identities.add(identity);
+    }
+    return identities;
+  }
+
+  _BlockIdentity? _identityForSplitHint({
+    required LessonBlock block,
+    required LessonSelectionSplitReplacementIdentityHint hint,
+    required _BlockIdentity sourceIdentity,
+    required _EditorIdentityRegistry registry,
+  }) {
+    final blockId = _nodeIdForSplitAction(
+      hint.blockIdentityAction,
+      sourceIdentity: sourceIdentity,
+      sourceListItemIndex: hint.sourceListItemIndex,
+      registry: registry,
+    );
+    if (blockId == null) return null;
+    if (block is! LessonListBlock) {
+      return _BlockIdentity(blockId: blockId);
+    }
+    if (hint.listItemIdentityHints.length != block.items.length) return null;
+    final itemIds = <_EditorNodeId>[];
+    for (final itemHint in hint.listItemIdentityHints) {
+      if (itemHint.itemIndex != itemIds.length) return null;
+      final itemId = _nodeIdForSplitAction(
+        itemHint.action,
+        sourceIdentity: sourceIdentity,
+        sourceListItemIndex: itemHint.sourceListItemIndex,
+        registry: registry,
+      );
+      if (itemId == null) return null;
+      itemIds.add(itemId);
+    }
+    return _BlockIdentity(blockId: blockId, listItemIds: itemIds);
+  }
+
+  _EditorNodeId? _nodeIdForSplitAction(
+    LessonSelectionSplitIdentityAction action, {
+    required _BlockIdentity sourceIdentity,
+    required int? sourceListItemIndex,
+    required _EditorIdentityRegistry registry,
+  }) {
+    return switch (action) {
+      LessonSelectionSplitIdentityAction.createRuntimeIdentity =>
+        registry.nextNodeId(),
+      LessonSelectionSplitIdentityAction.reuseSourceBlockRuntimeIdentity =>
+        sourceIdentity.blockId,
+      LessonSelectionSplitIdentityAction.reuseSourceListItemRuntimeIdentity =>
+        _sourceListItemNodeId(sourceIdentity, sourceListItemIndex),
+    };
+  }
+
+  _EditorNodeId? _sourceListItemNodeId(
+    _BlockIdentity sourceIdentity,
+    int? sourceListItemIndex,
+  ) {
+    if (sourceListItemIndex == null ||
+        sourceListItemIndex < 0 ||
+        sourceListItemIndex >= sourceIdentity.listItemIds.length) {
+      return null;
+    }
+    return sourceIdentity.listItemIds[sourceListItemIndex];
+  }
+
+  _EditorTarget? _targetForSplitSelection({
+    required LessonSelectionSplitMetadata metadata,
+    required List<_BlockIdentity> replacementIdentities,
+  }) {
+    if (metadata.selectedReplacementIndex < 0 ||
+        metadata.selectedReplacementIndex >= replacementIdentities.length) {
+      return null;
+    }
+    final identity = replacementIdentities[metadata.selectedReplacementIndex];
+    return switch (metadata.selectedOutputTargetType) {
+      LessonSelectionSplitOutputTargetType.blockText => _BlockTextTarget(
+        identity.blockId,
+      ),
+      LessonSelectionSplitOutputTargetType.listItemText =>
+        identity.listItemIds.isEmpty
+            ? null
+            : _ListItemTextTarget(identity.listItemIds.first),
+    };
+  }
+
   List<_BlockIdentity> _splitTextBlockSelectionIdentities({
     required _RunRangeSplit split,
     required _BlockConversion conversion,
@@ -1370,7 +1545,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
             onClearFormatting: _clearFormatting,
             onParagraph: () =>
                 _convertSelectedBlock(_BlockConversion.paragraph),
-            onHeading: () => _convertSelectedBlock(_BlockConversion.heading),
+            onHeading: _convertSelectedHeading,
             onBulletList: () =>
                 _convertSelectedBlock(_BlockConversion.bulletList),
             onOrderedList: () =>
