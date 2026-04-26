@@ -60,7 +60,6 @@ FRONTEND_DOCUMENT_AUTHORITY_FORBIDDEN = (
     "FlutterQuillEmbeds",
     "QuillController",
     "quill.Document",
-    "EditorSession",
     "EditorOperationQuillController",
     "editor_test_bridge",
     "markdown_to_editor",
@@ -74,6 +73,8 @@ FRONTEND_DOCUMENT_AUTHORITY_FORBIDDEN = (
     "!video(",
     "!document(",
 )
+
+FRONTEND_DOCUMENT_AUTHORITY_FORBIDDEN_PATTERNS = (r"\bEditorSession\b",)
 
 BACKEND_DOCUMENT_AUTHORITY_FORBIDDEN = (
     "lesson_markdown_validator",
@@ -421,7 +422,7 @@ def test_frontend_authoring_preview_learner_and_transport_are_document_model() -
         course_editor, "Widget _buildLessonPreviewMode(BuildContext context)"
     )
     media_insert_block = dart_source_block(
-        course_editor, "void _insertMediaBlockIntoDocument({"
+        document_editor, "bool _insertMediaBlockFromController({"
     )
     cta_insert_block = dart_source_block(
         course_editor, "Future<void> _insertMagicLink()"
@@ -448,7 +449,7 @@ def test_frontend_authoring_preview_learner_and_transport_are_document_model() -
             save_block,
             scope="CourseEditor._saveLessonContent",
             tokens=(
-                "contentDocument = _lessonDocument.validate",
+                "contentDocument = saveSnapshot.document.validate",
                 "contentDocument.toCanonicalJsonString()",
                 "updateLessonContent",
                 "contentDocument: contentDocument",
@@ -456,14 +457,21 @@ def test_frontend_authoring_preview_learner_and_transport_are_document_model() -
             ),
         )
     )
-    assert "LessonDocumentEditor(" in course_editor
+    assert "LessonEditorSessionHost(" in course_editor
+    assert "LessonDocumentEditor(" in document_editor
     assert "LessonDocumentPreview(" in course_editor
-    assert "insertMedia(" in media_insert_block
     assert "const insertionIndex = 0;" in media_insert_block
+    assert "_document.insertBlock(insertionIndex, block)" in media_insert_block
     assert "insertionIndex," in media_insert_block
     assert "lessonMediaId: lessonMediaId" in media_insert_block
     assert "_lessonDocument.blocks.length," not in media_insert_block
     assert "_resolvedLessonDocumentInsertionIndex();" not in media_insert_block
+    assert "_currentInsertionIndex();" not in media_insert_block
+    assert (
+        "onHeading: () => _convertSelectedBlock(_BlockConversion.heading)"
+        in document_editor
+    )
+    assert "onHeading: _toggleHeading" not in document_editor
     assert "insertCta(" in cta_insert_block
     assert "targetUrl: url" in cta_insert_block
 
@@ -541,7 +549,7 @@ def test_frontend_authoring_preview_learner_and_transport_are_document_model() -
                 "class LessonPageRenderer extends StatelessWidget",
                 "LessonDocumentPreview",
                 "document: document",
-                "mediaBuilder:",
+                "media: previewMedia",
             ),
         )
     )
@@ -550,6 +558,13 @@ def test_frontend_authoring_preview_learner_and_transport_are_document_model() -
             document_model + "\n" + document_editor,
             scope="frontend_document_runtime",
             tokens=FRONTEND_DOCUMENT_AUTHORITY_FORBIDDEN,
+        )
+    )
+    assert_no_findings(
+        forbidden_regex_findings(
+            document_model + "\n" + document_editor,
+            scope="frontend_document_runtime",
+            patterns=FRONTEND_DOCUMENT_AUTHORITY_FORBIDDEN_PATTERNS,
         )
     )
 
@@ -568,6 +583,9 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
     learner_page = read_repo_text(
         REPO_ROOT, "frontend/lib/features/courses/presentation/lesson_page.dart"
     )
+    document_renderer = read_repo_text(
+        REPO_ROOT, "frontend/lib/editor/document/lesson_document_renderer.dart"
+    )
     model_tests = read_repo_text(
         REPO_ROOT, "frontend/test/unit/lesson_document_model_test.dart"
     )
@@ -585,7 +603,7 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
     )
 
     media_insert_block = dart_source_block(
-        course_editor, "void _insertMediaBlockIntoDocument({"
+        document_editor, "bool _insertMediaBlockFromController({"
     )
     editor_move_block = dart_source_block(document_editor, "void _moveBlock(")
 
@@ -608,8 +626,9 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
             scope="final_gate.top_media_insert",
             tokens=(
                 "const insertionIndex = 0;",
+                "_document.insertBlock(insertionIndex, block)",
                 "insertionIndex,",
-                "_lessonDocumentInsertionIndex = 1;",
+                "setState(() => _selectedTarget = nextTarget)",
             ),
         )
     )
@@ -617,7 +636,37 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
         missing_token_findings(
             editor_move_block,
             scope="final_gate.editor_media_movement",
-            tokens=("widget.document.moveBlock(blockIndex, targetIndex)",),
+            tokens=(
+                "_document.moveBlock(blockIndex, targetIndex)",
+                "_insertionIndexForTarget(nextTarget)",
+            ),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            document_editor,
+            scope="final_gate.editor_text_movement",
+            tokens=(
+                "_buildBlockMoveControls",
+                "keyPrefix: 'lesson_document_media'",
+                "keyPrefix: 'lesson_document_text'",
+                "Flytta text upp",
+                "Flytta text ned",
+            ),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            document_editor,
+            scope="final_gate.selection_aware_heading_toolbar",
+            tokens=("onHeading: () => _convertSelectedBlock(_BlockConversion.heading)",),
+        )
+    )
+    assert_no_findings(
+        forbidden_token_findings(
+            document_editor,
+            scope="final_gate.heading_toolbar_not_block_toggle",
+            tokens=("onHeading: _toggleHeading",),
         )
     )
     assert_no_findings(
@@ -627,6 +676,7 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
             tokens=(
                 "_lessonDocument.blocks.length,",
                 "_resolvedLessonDocumentInsertionIndex();",
+                "_currentInsertionIndex();",
             ),
         )
     )
@@ -648,7 +698,13 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
     )
     assert_no_findings(
         missing_token_findings(
-            document_editor + "\n" + course_editor + "\n" + learner_page,
+            document_editor
+            + "\n"
+            + course_editor
+            + "\n"
+            + learner_page
+            + "\n"
+            + document_renderer,
             scope="final_gate.safe_media_user_copy",
             tokens=(
                 "_mediaFileName",
@@ -669,10 +725,13 @@ def test_media_block_regression_gates_are_locked_in_final_aggregate() -> None:
     for required_test_marker in (
         "inserts media before, between, and after text blocks",
         "moves media blocks by changing only document order",
-        "document editor exposes active position for media insertion",
+        "document editor inserts media at document top",
+        "document editor applies heading only to selected range",
+        "document editor heading is a no-op for collapsed cursor",
         "document editor moves media blocks deterministically",
+        "document editor moves paragraph heading and list blocks",
         "document editor media blocks hide internal metadata",
-        "document preview fallback hides media metadata",
+        "document preview fallback renders video player without metadata",
         "lesson renders inline document tokens without trailing fallback duplication",
     ):
         assert required_test_marker in regression_test_text

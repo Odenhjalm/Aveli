@@ -23,7 +23,6 @@ FRONTEND_EDITOR_FORBIDDEN_TOKENS = (
     "FlutterQuillEmbeds",
     "QuillController",
     "quill.Document",
-    "EditorSession",
     "EditorOperationQuillController",
     "editor_test_bridge",
     "markdown_to_editor",
@@ -37,6 +36,8 @@ FRONTEND_EDITOR_FORBIDDEN_TOKENS = (
     "!video(",
     "!document(",
 )
+
+FRONTEND_EDITOR_FORBIDDEN_PATTERNS = (r"\bEditorSession\b",)
 
 BACKEND_VALIDATION_FORBIDDEN_TOKENS = (
     "lesson_markdown_validator",
@@ -164,6 +165,7 @@ def test_seeded_gate_detects_media_block_regressions() -> None:
           lessonMediaId: lessonMediaId,
         );
         final legacyIndex = _resolvedLessonDocumentInsertionIndex();
+        final cursorIndex = _currentInsertionIndex();
       }
 
       Text('Media: ${block.mediaType}\\n${block.lessonMediaId}');
@@ -178,6 +180,7 @@ def test_seeded_gate_detects_media_block_regressions() -> None:
         tokens=(
             "_lessonDocument.blocks.length,",
             "_resolvedLessonDocumentInsertionIndex();",
+            "_currentInsertionIndex();",
             "Media: ${block.mediaType}",
             "${block.lessonMediaId}",
             "Media saknas: ${block.mediaType}",
@@ -189,6 +192,7 @@ def test_seeded_gate_detects_media_block_regressions() -> None:
     detected = {finding.token for finding in findings}
     assert "_lessonDocument.blocks.length," in detected
     assert "_resolvedLessonDocumentInsertionIndex();" in detected
+    assert "_currentInsertionIndex();" in detected
     assert "Media: ${block.mediaType}" in detected
     assert "${block.lessonMediaId}" in detected
     assert "media.originalName ?? media.mediaAssetId" in detected
@@ -231,6 +235,13 @@ def test_rebuilt_editor_authoring_paths_have_no_legacy_authority_tokens() -> Non
                 read_repo_text(REPO_ROOT, path),
                 scope=path,
                 tokens=FRONTEND_EDITOR_FORBIDDEN_TOKENS,
+            )
+        )
+        findings.extend(
+            forbidden_regex_findings(
+                read_repo_text(REPO_ROOT, path),
+                scope=path,
+                patterns=FRONTEND_EDITOR_FORBIDDEN_PATTERNS,
             )
         )
 
@@ -428,31 +439,47 @@ def test_media_block_editor_regression_gate_is_top_inserted_and_document_ordered
         "frontend/lib/editor/document/lesson_document.dart",
     )
 
-    insert_block = dart_source_block(
-        course_editor, "void _insertMediaBlockIntoDocument({"
+    media_insert_block = dart_source_block(
+        document_editor, "bool _insertMediaBlockFromController({"
     )
     move_block = dart_source_block(document_editor, "void _moveBlock(")
+    toolbar_block = document_editor
 
     assert_no_findings(
         missing_token_findings(
-            insert_block,
-            scope="CourseEditor._insertMediaBlockIntoDocument",
+            media_insert_block,
+            scope="LessonDocumentEditor._insertMediaBlockFromController",
             tokens=(
                 "const insertionIndex = 0;",
-                "_lessonDocument.insertMedia(",
+                "_document.insertBlock(insertionIndex, block)",
                 "insertionIndex,",
-                "_lessonDocumentInsertionIndex = 1;",
+                "setState(() => _selectedTarget = nextTarget)",
             ),
         )
     )
     assert_no_findings(
         forbidden_token_findings(
-            insert_block,
-            scope="CourseEditor.media_insert_not_top",
+            media_insert_block,
+            scope="LessonDocumentEditor.media_insert_not_top",
             tokens=(
                 "_lessonDocument.blocks.length,",
                 "_resolvedLessonDocumentInsertionIndex();",
+                "_currentInsertionIndex();",
             ),
+        )
+    )
+    assert_no_findings(
+        missing_token_findings(
+            toolbar_block,
+            scope="LessonDocumentEditor.selection_aware_heading_toolbar",
+            tokens=("onHeading: () => _convertSelectedBlock(_BlockConversion.heading)",),
+        )
+    )
+    assert_no_findings(
+        forbidden_token_findings(
+            toolbar_block,
+            scope="LessonDocumentEditor.heading_toolbar_not_block_toggle",
+            tokens=("onHeading: _toggleHeading",),
         )
     )
     assert_no_findings(
@@ -466,11 +493,15 @@ def test_media_block_editor_regression_gate_is_top_inserted_and_document_ordered
                 "fileName,",
                 "mediaTypeLabel,",
                 "onInsertionIndexChanged",
-                "int insertionIndex(LessonDocument document)",
-                "lesson_document_media_move_up_",
-                "lesson_document_media_move_down_",
+                "_buildBlockMoveControls",
+                "keyPrefix: 'lesson_document_media'",
+                "keyPrefix: 'lesson_document_text'",
+                "_moveBlockUp(blockId)",
+                "_moveBlockDown(blockId)",
                 "Flytta media upp",
                 "Flytta media ned",
+                "Flytta text upp",
+                "Flytta text ned",
             ),
         )
     )
@@ -479,8 +510,8 @@ def test_media_block_editor_regression_gate_is_top_inserted_and_document_ordered
             move_block,
             scope="LessonDocumentEditor._moveBlock",
             tokens=(
-                "widget.document.moveBlock(blockIndex, targetIndex)",
-                "nextTarget.insertionIndex(next)",
+                "_document.moveBlock(blockIndex, targetIndex)",
+                "_insertionIndexForTarget(nextTarget)",
             ),
         )
     )
@@ -510,6 +541,10 @@ def test_media_block_user_facing_no_leak_regression_gate() -> None:
         REPO_ROOT,
         "frontend/lib/features/courses/presentation/lesson_page.dart",
     )
+    document_renderer = read_repo_text(
+        REPO_ROOT,
+        "frontend/lib/editor/document/lesson_document_renderer.dart",
+    )
 
     assert_no_findings(
         missing_token_findings(
@@ -527,7 +562,7 @@ def test_media_block_user_facing_no_leak_regression_gate() -> None:
     )
     assert_no_findings(
         missing_token_findings(
-            learner_page,
+            learner_page + "\n" + document_renderer,
             scope="Learner.safe_media_labels",
             tokens=("Lektionsljud", "Lektionsvideo", "Lektionsfil"),
         )

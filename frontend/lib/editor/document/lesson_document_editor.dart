@@ -656,7 +656,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     required String lessonMediaId,
   }) {
     if (!widget.enabled) return false;
-    final insertionIndex = _currentInsertionIndex();
+    const insertionIndex = 0;
     final block = LessonMediaBlock(
       mediaType: mediaType,
       lessonMediaId: lessonMediaId,
@@ -1370,7 +1370,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
             onClearFormatting: _clearFormatting,
             onParagraph: () =>
                 _convertSelectedBlock(_BlockConversion.paragraph),
-            onHeading: _toggleHeading,
+            onHeading: () => _convertSelectedBlock(_BlockConversion.heading),
             onBulletList: () =>
                 _convertSelectedBlock(_BlockConversion.bulletList),
             onOrderedList: () =>
@@ -1527,6 +1527,35 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     };
   }
 
+  Widget _buildBlockMoveControls({
+    required _EditorNodeId blockId,
+    required int blockIndex,
+    required String keyPrefix,
+    required String upTooltip,
+    required String downTooltip,
+  }) {
+    final canMoveUp = widget.enabled && blockIndex > 0;
+    final canMoveDown =
+        widget.enabled && blockIndex < _document.blocks.length - 1;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          key: ValueKey<String>('${keyPrefix}_move_up_${blockId.keyValue}'),
+          tooltip: upTooltip,
+          onPressed: canMoveUp ? () => _moveBlockUp(blockId) : null,
+          icon: const Icon(Icons.keyboard_arrow_up),
+        ),
+        IconButton(
+          key: ValueKey<String>('${keyPrefix}_move_down_${blockId.keyValue}'),
+          tooltip: downTooltip,
+          onPressed: canMoveDown ? () => _moveBlockDown(blockId) : null,
+          icon: const Icon(Icons.keyboard_arrow_down),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBlockEditor(
     BuildContext context,
     LessonBlock block,
@@ -1537,12 +1566,27 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       return _buildFlowingBlockPadding(
         block: block,
         blockIndex: blockIndex,
-        child: _buildTextField(
-          context,
-          target: _BlockTextTarget(identity.blockId),
-          semanticsLabel: 'Stycke',
-          children: block.children,
-          textStyle: _paragraphStyle(context),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _buildTextField(
+                context,
+                target: _BlockTextTarget(identity.blockId),
+                semanticsLabel: 'Stycke',
+                children: block.children,
+                textStyle: _paragraphStyle(context),
+              ),
+            ),
+            const SizedBox(width: 8),
+            _buildBlockMoveControls(
+              blockId: identity.blockId,
+              blockIndex: blockIndex,
+              keyPrefix: 'lesson_document_text',
+              upTooltip: 'Flytta text upp',
+              downTooltip: 'Flytta text ned',
+            ),
+          ],
         ),
       );
     }
@@ -1550,12 +1594,27 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       return _buildFlowingBlockPadding(
         block: block,
         blockIndex: blockIndex,
-        child: _buildTextField(
-          context,
-          target: _BlockTextTarget(identity.blockId),
-          semanticsLabel: 'Rubrik H${block.level}',
-          children: block.children,
-          textStyle: _headingStyle(context, block.level),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _buildTextField(
+                context,
+                target: _BlockTextTarget(identity.blockId),
+                semanticsLabel: 'Rubrik H${block.level}',
+                children: block.children,
+                textStyle: _headingStyle(context, block.level),
+              ),
+            ),
+            const SizedBox(width: 8),
+            _buildBlockMoveControls(
+              blockId: identity.blockId,
+              blockIndex: blockIndex,
+              keyPrefix: 'lesson_document_text',
+              upTooltip: 'Flytta text upp',
+              downTooltip: 'Flytta text ned',
+            ),
+          ],
         ),
       );
     }
@@ -1567,47 +1626,64 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       return _buildFlowingBlockPadding(
         block: block,
         blockIndex: blockIndex,
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (
-              var itemIndex = 0;
-              itemIndex < block.items.length;
-              itemIndex += 1
-            )
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 34,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          ordered ? '${itemIndex + (block.start ?? 1)}.' : '-',
-                          textAlign: TextAlign.right,
-                          style: _listMarkerStyle(context),
-                        ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (
+                    var itemIndex = 0;
+                    itemIndex < block.items.length;
+                    itemIndex += 1
+                  )
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 34,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                ordered
+                                    ? '${itemIndex + (block.start ?? 1)}.'
+                                    : '-',
+                                textAlign: TextAlign.right,
+                                style: _listMarkerStyle(context),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildTextField(
+                              context,
+                              target: _ListItemTextTarget(
+                                identity.listItemIds[itemIndex],
+                              ),
+                              semanticsLabel: ordered
+                                  ? 'Numrerad listpunkt ${itemIndex + 1}'
+                                  : 'Punktlista listpunkt ${itemIndex + 1}',
+                              children: block.items[itemIndex].children,
+                              textStyle: _paragraphStyle(context),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildTextField(
-                        context,
-                        target: _ListItemTextTarget(
-                          identity.listItemIds[itemIndex],
-                        ),
-                        semanticsLabel: ordered
-                            ? 'Numrerad listpunkt ${itemIndex + 1}'
-                            : 'Punktlista listpunkt ${itemIndex + 1}',
-                        children: block.items[itemIndex].children,
-                        textStyle: _paragraphStyle(context),
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
+            ),
+            const SizedBox(width: 8),
+            _buildBlockMoveControls(
+              blockId: identity.blockId,
+              blockIndex: blockIndex,
+              keyPrefix: 'lesson_document_text',
+              upTooltip: 'Flytta text upp',
+              downTooltip: 'Flytta text ned',
+            ),
           ],
         ),
       );
@@ -1617,9 +1693,6 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       final media = _mediaForBlock(block);
       final fileName = _mediaFileName(media);
       final mediaTypeLabel = _mediaTypeLabel(block.mediaType);
-      final canMoveUp = widget.enabled && blockIndex > 0;
-      final canMoveDown =
-          widget.enabled && blockIndex < _document.blocks.length - 1;
       return _buildFlowingBlockPadding(
         block: block,
         blockIndex: blockIndex,
@@ -1659,30 +1732,12 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
                 ),
               ),
               const SizedBox(width: 8),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    key: ValueKey<String>(
-                      'lesson_document_media_move_up_${identity.blockId.keyValue}',
-                    ),
-                    tooltip: 'Flytta media upp',
-                    onPressed: canMoveUp
-                        ? () => _moveBlockUp(identity.blockId)
-                        : null,
-                    icon: const Icon(Icons.keyboard_arrow_up),
-                  ),
-                  IconButton(
-                    key: ValueKey<String>(
-                      'lesson_document_media_move_down_${identity.blockId.keyValue}',
-                    ),
-                    tooltip: 'Flytta media ned',
-                    onPressed: canMoveDown
-                        ? () => _moveBlockDown(identity.blockId)
-                        : null,
-                    icon: const Icon(Icons.keyboard_arrow_down),
-                  ),
-                ],
+              _buildBlockMoveControls(
+                blockId: identity.blockId,
+                blockIndex: blockIndex,
+                keyPrefix: 'lesson_document_media',
+                upTooltip: 'Flytta media upp',
+                downTooltip: 'Flytta media ned',
               ),
             ],
           ),

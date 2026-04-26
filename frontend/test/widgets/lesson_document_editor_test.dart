@@ -705,75 +705,102 @@ void main() {
     expect(paragraph.children.single.marks, isEmpty);
   });
 
-  testWidgets(
-    'document editor heading toggles the active block for selection and cursor',
-    (tester) async {
-      var document = const LessonDocument(
-        blocks: [
-          LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
-        ],
-      );
+  testWidgets('document editor applies heading only to selected range', (
+    tester,
+  ) async {
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+      ],
+    );
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: StatefulBuilder(
-              builder: (context, setState) {
-                return SizedBox(
-                  height: 520,
-                  child: LessonDocumentEditor(
-                    document: document,
-                    onChanged: (next) => setState(() => document = next),
-                  ),
-                );
-              },
-            ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
           ),
         ),
-      );
+      ),
+    );
 
-      const fieldKey = ValueKey('lesson_document_editor_node_0');
-      await _selectTextRange(
-        tester,
-        fieldKey,
-        text: 'Alpha Beta Gamma',
-        start: 6,
-        end: 10,
-      );
-      await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+    const fieldKey = ValueKey('lesson_document_editor_node_0');
+    await _selectTextRange(
+      tester,
+      fieldKey,
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 10,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
 
-      expect(document.blocks, hasLength(1));
-      expect(document.blocks.single, isA<LessonHeadingBlock>());
-      expect(
-        (document.blocks.single as LessonHeadingBlock).children.single.text,
-        'Alpha Beta Gamma',
-      );
-      expect(
-        LessonDocument.fromJson(document.toJson()).toCanonicalJsonString(),
-        document.toCanonicalJsonString(),
-      );
+    expect(_blockTypes(document), ['paragraph', 'heading', 'paragraph']);
+    expect(
+      (document.blocks[0] as LessonParagraphBlock).children.single.text,
+      'Alpha ',
+    );
+    expect(
+      (document.blocks[1] as LessonHeadingBlock).children.single.text,
+      'Beta',
+    );
+    expect(
+      (document.blocks[2] as LessonParagraphBlock).children.single.text,
+      ' Gamma',
+    );
+    expect(
+      LessonDocument.fromJson(document.toJson()).toCanonicalJsonString(),
+      document.toCanonicalJsonString(),
+    );
+  });
 
-      await _selectTextRange(
-        tester,
-        fieldKey,
-        text: 'Alpha Beta Gamma',
-        start: 6,
-        end: 6,
-      );
-      await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+  testWidgets('document editor heading is a no-op for collapsed cursor', (
+    tester,
+  ) async {
+    const initial = LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+      ],
+    );
+    var document = initial;
 
-      expect(document.blocks, hasLength(1));
-      expect(document.blocks.single, isA<LessonParagraphBlock>());
-      expect(
-        (document.blocks.single as LessonParagraphBlock).children.single.text,
-        'Alpha Beta Gamma',
-      );
-      expect(
-        LessonDocument.fromJson(document.toJson()).toCanonicalJsonString(),
-        document.toCanonicalJsonString(),
-      );
-    },
-  );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    const fieldKey = ValueKey('lesson_document_editor_node_0');
+    await _selectTextRange(
+      tester,
+      fieldKey,
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 6,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+    expect(document.toJson(), initial.toJson());
+  });
 
   testWidgets('document editor ignores inline formatting without selection', (
     tester,
@@ -1239,9 +1266,7 @@ void main() {
     expect(paragraph.children.single.marks, isEmpty);
   });
 
-  testWidgets('document editor exposes active position for media insertion', (
-    tester,
-  ) async {
+  testWidgets('document editor inserts media at document top', (tester) async {
     tester.view.physicalSize = const Size(1200, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
@@ -1316,17 +1341,17 @@ void main() {
     await tester.tap(find.byKey(const Key('insert_image_at_editor_position')));
     await tester.pump();
 
-    expect(_blockTypes(document), ['paragraph', 'media', 'paragraph']);
-    expect(insertionIndex, 2);
+    expect(_blockTypes(document), ['media', 'paragraph', 'paragraph']);
+    expect(insertionIndex, 1);
     expect(
-      (document.blocks[0] as LessonParagraphBlock).children.single.text,
+      (document.blocks[1] as LessonParagraphBlock).children.single.text,
       'Intro',
     );
     expect(
       (document.blocks[2] as LessonParagraphBlock).children.single.text,
       'Outro',
     );
-    final imageBlock = document.blocks[1] as LessonMediaBlock;
+    final imageBlock = document.blocks[0] as LessonMediaBlock;
     expect(imageBlock.mediaType, 'image');
     expect(imageBlock.lessonMediaId, '55555555-5555-4555-8555-555555555555');
     final preview = tester.widget<LessonDocumentPreview>(
@@ -1341,15 +1366,21 @@ void main() {
     await tester.tap(find.byKey(const Key('insert_audio_at_editor_position')));
     await tester.pump();
 
-    expect(_blockTypes(document), ['paragraph', 'media', 'paragraph', 'media']);
-    expect(insertionIndex, 4);
+    expect(_blockTypes(document), ['media', 'media', 'paragraph', 'paragraph']);
+    expect(insertionIndex, 1);
     expect(
-      (document.blocks[2] as LessonParagraphBlock).children.single.text,
+      (document.blocks[3] as LessonParagraphBlock).children.single.text,
       'Outro',
     );
-    final audioBlock = document.blocks[3] as LessonMediaBlock;
+    final audioBlock = document.blocks[0] as LessonMediaBlock;
     expect(audioBlock.mediaType, 'audio');
     expect(audioBlock.lessonMediaId, '66666666-6666-4666-8666-666666666666');
+    final retainedImageBlock = document.blocks[1] as LessonMediaBlock;
+    expect(retainedImageBlock.mediaType, 'image');
+    expect(
+      retainedImageBlock.lessonMediaId,
+      '55555555-5555-4555-8555-555555555555',
+    );
   });
 
   testWidgets('document editor moves media blocks deterministically', (
@@ -1471,6 +1502,106 @@ void main() {
       find.byKey(const ValueKey<String>('moved_media_preview')),
     );
     expect(preview.document.toJson(), document.toJson());
+  });
+
+  testWidgets('document editor moves paragraph heading and list blocks', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Paragraph')]),
+        LessonHeadingBlock(level: 2, children: [LessonTextRun('Heading')]),
+        LessonListBlock.bullet(
+          items: [
+            LessonListItem(children: [LessonTextRun('List item')]),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    IconButton textMoveUp(String nodeId) {
+      return tester.widget<IconButton>(
+        find.byKey(ValueKey<String>('lesson_document_text_move_up_$nodeId')),
+      );
+    }
+
+    IconButton textMoveDown(String nodeId) {
+      return tester.widget<IconButton>(
+        find.byKey(ValueKey<String>('lesson_document_text_move_down_$nodeId')),
+      );
+    }
+
+    expect(textMoveUp('node_0').onPressed, isNull);
+    expect(textMoveDown('node_0').onPressed, isNotNull);
+    expect(textMoveUp('node_1').onPressed, isNotNull);
+    expect(textMoveDown('node_1').onPressed, isNotNull);
+    expect(textMoveUp('node_2').onPressed, isNotNull);
+    expect(textMoveDown('node_2').onPressed, isNull);
+    expect(textMoveUp('node_1').tooltip, 'Flytta text upp');
+    expect(textMoveDown('node_1').tooltip, 'Flytta text ned');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lesson_document_text_move_up_node_1')),
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['heading', 'paragraph', 'bullet_list']);
+    expect(
+      (document.blocks[0] as LessonHeadingBlock).children.single.text,
+      'Heading',
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('lesson_document_text_move_down_node_0'),
+      ),
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['heading', 'bullet_list', 'paragraph']);
+    expect(
+      ((document.blocks[1] as LessonListBlock).items.single.children.single)
+          .text,
+      'List item',
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('lesson_document_text_move_down_node_2'),
+      ),
+    );
+    await tester.pump();
+
+    expect(_blockTypes(document), ['heading', 'paragraph', 'bullet_list']);
+    expect(
+      (document.blocks[1] as LessonParagraphBlock).children.single.text,
+      'Paragraph',
+    );
   });
 
   testWidgets('document editor media blocks hide internal metadata', (
@@ -1912,7 +2043,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(_blockTypes(document), ['paragraph', 'media', 'paragraph']);
+    expect(_blockTypes(document), ['media', 'paragraph', 'paragraph']);
     expect(
       (document.blocks[2] as LessonParagraphBlock).children.single.text,
       'B edited',
@@ -2210,20 +2341,55 @@ Future<void> _tapToolbar(WidgetTester tester, Key key) async {
 
 Future<void> _expectEditorKeyVisible(WidgetTester tester, Key key) async {
   final finder = find.byKey(key);
+  if (finder.evaluate().isNotEmpty) {
+    await tester.ensureVisible(finder);
+    await tester.pump();
+    expect(finder, findsOneWidget);
+    return;
+  }
+  final editorScrollable = find
+      .descendant(
+        of: find.byType(LessonDocumentEditor),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              widget.axisDirection == AxisDirection.down,
+        ),
+      )
+      .first;
+  await _scrollEditorUntilVisible(tester, finder, editorScrollable, delta: 240);
   if (finder.evaluate().isEmpty) {
-    await tester.scrollUntilVisible(
+    await _scrollEditorUntilVisible(
+      tester,
       finder,
-      240,
-      scrollable: find
-          .descendant(
-            of: find.byType(LessonDocumentEditor),
-            matching: find.byType(Scrollable),
-          )
-          .last,
-      maxScrolls: 20,
+      editorScrollable,
+      delta: -240,
     );
   }
+  if (finder.evaluate().isNotEmpty) {
+    await tester.ensureVisible(finder);
+    await tester.pump();
+  }
   expect(finder, findsOneWidget);
+}
+
+Future<void> _scrollEditorUntilVisible(
+  WidgetTester tester,
+  Finder finder,
+  Finder scrollable, {
+  required double delta,
+}) async {
+  try {
+    await tester.scrollUntilVisible(
+      finder,
+      delta,
+      scrollable: scrollable,
+      maxScrolls: 20,
+    );
+  } on StateError {
+    // The target may be above the current lazy-list window; callers retry in
+    // the opposite direction before asserting.
+  }
 }
 
 List<_TextSegment> _editorTextSegments(
