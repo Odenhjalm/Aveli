@@ -198,6 +198,13 @@ def _parse_content_range(
 ) -> tuple[int, int, int]:
     total_bytes = int(session["total_bytes"])
     chunk_size = int(session["chunk_size"])
+    expected_chunks = int(session["expected_chunks"])
+    normalized_chunk_index = int(chunk_index)
+    if normalized_chunk_index < 0:
+        raise UploadChunkRangeError("chunk index must be non-negative")
+    if normalized_chunk_index >= expected_chunks:
+        raise UploadChunkRangeError("chunk index exceeds expected chunk count")
+
     raw = _text(value)
     if raw:
         match = _CONTENT_RANGE_RE.match(raw)
@@ -209,23 +216,26 @@ def _parse_content_range(
     else:
         if content_length is None:
             raise UploadChunkRangeError("content length is required")
-        byte_start = int(chunk_index) * chunk_size
+        byte_start = normalized_chunk_index * chunk_size
         byte_end = byte_start + int(content_length) - 1
         declared_total = total_bytes
 
     size_bytes = byte_end - byte_start + 1
+    expected_start = normalized_chunk_index * chunk_size
+    is_final_chunk = normalized_chunk_index == expected_chunks - 1
+    expected_end = (
+        total_bytes - 1 if is_final_chunk else expected_start + chunk_size - 1
+    )
     if declared_total != total_bytes:
         raise UploadChunkRangeError("content range total does not match session total")
     if byte_start < 0 or byte_end < byte_start or size_bytes <= 0:
         raise UploadChunkRangeError("content range is invalid")
     if content_length is not None and size_bytes != int(content_length):
         raise UploadChunkRangeError("content range does not match content length")
-    if byte_start != int(chunk_index) * chunk_size:
+    if byte_start != expected_start:
         raise UploadChunkRangeError("content range does not match chunk index")
-    if byte_end >= total_bytes:
-        raise UploadChunkRangeError("content range exceeds session total")
-    if int(chunk_index) >= int(session["expected_chunks"]):
-        raise UploadChunkRangeError("chunk index exceeds expected chunk count")
+    if byte_end != expected_end:
+        raise UploadChunkRangeError("content range does not match expected chunk end")
     return byte_start, byte_end, size_bytes
 
 
@@ -236,6 +246,30 @@ def _same_chunk(existing: dict[str, Any], expected: dict[str, Any]) -> bool:
         and int(existing["size_bytes"]) == int(expected["size_bytes"])
         and str(existing["sha256"]).lower() == str(expected["sha256"]).lower()
     )
+
+
+async def _idempotent_chunk_response_or_raise(
+    *,
+    upload_session_id: str,
+    media_asset_id: str,
+    owner_user_id: str,
+    chunk_index: int,
+    expected: dict[str, Any],
+) -> dict[str, Any]:
+    existing = await upload_sessions_repo.get_upload_chunk(
+        upload_session_id=upload_session_id,
+        chunk_index=chunk_index,
+    )
+    if existing is None or not _same_chunk(existing, expected):
+        raise UploadChunkConflictError("chunk already exists with different metadata")
+    session = await _load_open_session(
+        media_asset_id=media_asset_id,
+        upload_session_id=upload_session_id,
+        owner_user_id=owner_user_id,
+    )
+    row = dict(existing)
+    row["received_bytes"] = session["received_bytes"]
+    return _chunk_response(row)
 
 
 async def receive_home_player_upload_chunk(
@@ -265,21 +299,21 @@ async def receive_home_player_upload_chunk(
         content_length=content_length,
         session=session,
     )
-    expected_digest = _text(chunk_sha256).lower() or None
-    if expected_digest is not None and not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+    expected_digest = _text(chunk_sha256).lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
         raise UploadChunkChecksumError("chunk checksum is invalid")
+    expected = {
+        "byte_start": byte_start,
+        "byte_end": byte_end,
+        "size_bytes": size_bytes,
+        "sha256": expected_digest,
+    }
 
     existing = await upload_sessions_repo.get_upload_chunk(
         upload_session_id=upload_session_id,
         chunk_index=normalized_chunk_index,
     )
     if existing is not None:
-        expected = {
-            "byte_start": byte_start,
-            "byte_end": byte_end,
-            "size_bytes": size_bytes,
-            "sha256": expected_digest or existing["sha256"],
-        }
         if _same_chunk(existing, expected):
             row = dict(existing)
             row["received_bytes"] = session["received_bytes"]
@@ -299,6 +333,8 @@ async def receive_home_player_upload_chunk(
         raise UploadChunkChecksumError(str(exc)) from exc
     except media_upload_spool.SpoolSizeMismatchError as exc:
         raise UploadChunkRangeError(str(exc)) from exc
+    except media_upload_spool.SpoolChunkConflictError as exc:
+        raise UploadChunkConflictError(str(exc)) from exc
 
     try:
         created = await upload_sessions_repo.create_upload_chunk(
@@ -312,7 +348,18 @@ async def receive_home_player_upload_chunk(
             spool_object_path=str(spool["spool_object_path"]),
         )
     except upload_sessions_repo.UploadChunkAlreadyExistsError as exc:
-        raise UploadChunkConflictError("chunk already exists") from exc
+        return await _idempotent_chunk_response_or_raise(
+            upload_session_id=upload_session_id,
+            media_asset_id=media_asset_id,
+            owner_user_id=owner_user_id,
+            chunk_index=normalized_chunk_index,
+            expected={
+                "byte_start": byte_start,
+                "byte_end": byte_end,
+                "size_bytes": size_bytes,
+                "sha256": str(spool["sha256"]),
+            },
+        )
     return _chunk_response(created)
 
 
@@ -439,6 +486,31 @@ async def finalize_home_player_upload_session(
         "media_asset_id": media_asset_id,
         "asset_state": updated["state"],
     }
+
+
+async def finalize_active_home_player_upload_session(
+    *,
+    media_asset: dict[str, Any],
+    media_asset_id: str,
+    owner_user_id: str,
+) -> dict[str, Any]:
+    _validate_home_player_asset(
+        media_asset,
+        owner_user_id=owner_user_id,
+        require_pending_upload=True,
+    )
+    session = await upload_sessions_repo.get_active_upload_session_for_owner_media_asset(
+        media_asset_id=media_asset_id,
+        owner_user_id=owner_user_id,
+    )
+    if not session:
+        raise UploadSessionNotFoundError("active upload session was not found")
+    return await finalize_home_player_upload_session(
+        media_asset=media_asset,
+        media_asset_id=media_asset_id,
+        upload_session_id=str(session["id"]),
+        owner_user_id=owner_user_id,
+    )
 
 
 async def cleanup_abandoned_upload_sessions() -> int:

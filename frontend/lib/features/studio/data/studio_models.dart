@@ -491,7 +491,6 @@ class CourseCore {
     required this.id,
     required this.title,
     required this.slug,
-    this.shortDescription,
     required this.courseGroupId,
     required this.groupPosition,
     DripAuthoring? dripAuthoring,
@@ -510,7 +509,6 @@ class CourseCore {
   final String id;
   final String title;
   final String slug;
-  final String? shortDescription;
   final String courseGroupId;
   final int groupPosition;
   final DripAuthoring? _dripAuthoring;
@@ -566,7 +564,6 @@ class CourseStudio extends CourseCore {
     required super.id,
     required super.title,
     required super.slug,
-    super.shortDescription,
     required super.courseGroupId,
     required super.groupPosition,
     super.dripAuthoring,
@@ -588,11 +585,6 @@ class CourseStudio extends CourseCore {
       id: _requiredResponseString(payload, 'id', label),
       title: _requiredResponseString(payload, 'title', label),
       slug: _requiredResponseString(payload, 'slug', label),
-      shortDescription: _optionalResponseString(
-        payload,
-        'short_description',
-        label,
-      ),
       courseGroupId: _requiredResponseString(payload, 'course_group_id', label),
       groupPosition: _requiredResponseInt(payload, 'group_position', label),
       dripAuthoring: dripAuthoring,
@@ -619,7 +611,6 @@ class CourseStudio extends CourseCore {
     String? id,
     String? title,
     String? slug,
-    String? shortDescription,
     String? courseGroupId,
     int? groupPosition,
     DripAuthoring? dripAuthoring,
@@ -629,7 +620,6 @@ class CourseStudio extends CourseCore {
     CourseCoverData? cover,
     int? priceAmountCents,
     bool clearCourseGroupId = false,
-    bool clearShortDescription = false,
     bool clearDripIntervalDays = false,
     bool clearCoverMediaId = false,
     bool clearCover = false,
@@ -647,9 +637,6 @@ class CourseStudio extends CourseCore {
       id: id ?? this.id,
       title: title ?? this.title,
       slug: slug ?? this.slug,
-      shortDescription: clearShortDescription
-          ? null
-          : (shortDescription ?? this.shortDescription),
       courseGroupId: clearCourseGroupId
           ? ''
           : (courseGroupId ?? this.courseGroupId),

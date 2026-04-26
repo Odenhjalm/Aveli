@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 LOCK_PATH = ROOT / "backend" / "supabase" / "baseline_v2_slots.lock.json"
 LEGACY_LOCK_PATH = ROOT / "backend" / "supabase" / "baseline_slots.lock.json"
+HOME_PLAYER_UPLOAD_SESSION_BASELINE_FLOOR = 35
 
 
 def _sha256_lf(path: Path) -> str:
@@ -23,6 +24,30 @@ def _load_lock() -> dict:
 
 def _load_manifest() -> dict:
     return json.loads((ROOT / "actual_truth" / "aveli_system_manifest.json").read_text(encoding="utf-8"))
+
+
+def _slot_source(entry: dict) -> str:
+    return (ROOT / entry["path"]).read_text(encoding="utf-8").lower()
+
+
+def _require_v2_slot_creating_table(table_name: str) -> tuple[dict, str]:
+    lock = _load_lock()
+    pattern = re.compile(
+        rf"\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?{re.escape(table_name.lower())}\b"
+    )
+    for entry in lock["slots"]:
+        source = _slot_source(entry)
+        if pattern.search(source):
+            return entry, source
+    raise AssertionError(
+        f"Expected append-only Baseline V2 slot creating {table_name}; "
+        f"add a new slot after V2_{HOME_PLAYER_UPLOAD_SESSION_BASELINE_FLOOR:04d}."
+    )
+
+
+def _assert_sql_contains_all(source: str, required_tokens: set[str]) -> None:
+    missing = sorted(token for token in required_tokens if token not in source)
+    assert missing == []
 
 
 def test_baseline_v2_lock_is_complete_ordered_and_lf_hashed() -> None:
@@ -76,6 +101,59 @@ def test_baseline_v2_lock_is_complete_ordered_and_lf_hashed() -> None:
     ]
     for entry in local_substrate_files:
         assert _sha256_lf(ROOT / entry["path"]) == entry["sha256"]
+
+
+def test_home_player_chunk_upload_session_table_contract_requires_append_only_slot() -> None:
+    entry, source = _require_v2_slot_creating_table("app.media_upload_sessions")
+
+    assert entry["slot"] > HOME_PLAYER_UPLOAD_SESSION_BASELINE_FLOOR
+    _assert_sql_contains_all(
+        source,
+        {
+            "media_asset_id",
+            "owner_user_id",
+            "state",
+            "total_bytes",
+            "content_type",
+            "chunk_size",
+            "expected_chunks",
+            "received_bytes",
+            "expires_at",
+            "app.media_assets",
+        },
+    )
+    assert "alter table app.media_assets" not in source
+
+
+def test_home_player_chunk_upload_chunks_table_contract_requires_append_only_slot() -> None:
+    entry, source = _require_v2_slot_creating_table("app.media_upload_chunks")
+
+    assert entry["slot"] > HOME_PLAYER_UPLOAD_SESSION_BASELINE_FLOOR
+    _assert_sql_contains_all(
+        source,
+        {
+            "upload_session_id",
+            "media_asset_id",
+            "chunk_index",
+            "byte_start",
+            "byte_end",
+            "size_bytes",
+            "sha256",
+            "spool_object_path",
+            "app.media_upload_sessions",
+            "app.media_assets",
+        },
+    )
+    assert re.search(
+        r"\bunique\s*\(\s*upload_session_id\s*,\s*chunk_index\s*\)",
+        source,
+        re.DOTALL,
+    )
+    assert not re.search(
+        r"update\s+app\.media_assets\s+set\s+state\s*=\s*'uploaded'",
+        source,
+        re.DOTALL,
+    )
 
 
 def test_manifest_declares_destructive_reset_guard_policy() -> None:

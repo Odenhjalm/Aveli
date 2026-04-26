@@ -342,7 +342,6 @@ async def test_course_list_http_shape_uses_description(async_client, monkeypatch
     assert response.status_code == 200, response.text
     item = response.json()["items"][0]
     assert item["description"] == "Backend-authored list description"
-    assert "short_description" not in item
 
 
 async def test_landing_course_http_shape_uses_description(async_client, monkeypatch):
@@ -365,7 +364,6 @@ async def test_landing_course_http_shape_uses_description(async_client, monkeypa
     assert response.status_code == 200, response.text
     item = response.json()["items"][0]
     assert item["description"] == "Backend-authored landing description"
-    assert "short_description" not in item
 
 
 def test_course_schemas_reject_legacy_step_field():

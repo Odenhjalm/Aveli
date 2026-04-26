@@ -85,8 +85,18 @@ void main() {
       expect(uploadUrl['asset_state'], 'pending_upload');
       expect(
         uploadUrl['upload_endpoint'],
-        '/api/media-assets/media-1/upload-bytes',
+        '/api/media-assets/media-1/upload-sessions/upload-session-1/chunks',
       );
+      expect(
+        uploadUrl['session_status_endpoint'],
+        '/api/media-assets/media-1/upload-sessions/upload-session-1/status',
+      );
+      expect(
+        uploadUrl['finalize_endpoint'],
+        '/api/media-assets/media-1/upload-sessions/upload-session-1/finalize',
+      );
+      expect(uploadUrl['chunk_size'], 8 * 1024 * 1024);
+      expect(uploadUrl['expected_chunks'], 1);
 
       expect(created.id, 'upload-1');
       expect(created.mediaAssetId, 'media-1');
@@ -284,7 +294,8 @@ class _Harness {
             'text_bundle': {
               'studio_editor.profile_media.home_player_library_title': {
                 'surface_id': 'TXT-SURF-071',
-                'text_id': 'studio_editor.profile_media.home_player_library_title',
+                'text_id':
+                    'studio_editor.profile_media.home_player_library_title',
                 'authority_class': 'contract_text',
                 'canonical_owner': 'backend_text_catalog',
                 'source_contract':
@@ -310,8 +321,15 @@ class _Harness {
           body: {
             'media_asset_id': 'media-1',
             'asset_state': 'pending_upload',
-            'upload_session_id': 'media-1',
-            'upload_endpoint': '/api/media-assets/media-1/upload-bytes',
+            'upload_session_id': 'upload-session-1',
+            'upload_endpoint':
+                '/api/media-assets/media-1/upload-sessions/upload-session-1/chunks',
+            'session_status_endpoint':
+                '/api/media-assets/media-1/upload-sessions/upload-session-1/status',
+            'finalize_endpoint':
+                '/api/media-assets/media-1/upload-sessions/upload-session-1/finalize',
+            'chunk_size': 8 * 1024 * 1024,
+            'expected_chunks': 1,
             'expires_at': '2026-04-21T12:00:00Z',
           },
         );

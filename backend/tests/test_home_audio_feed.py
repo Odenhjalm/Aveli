@@ -146,17 +146,6 @@ async def _insert_published_course(*, owner_id: str, slug: str, title: str) -> s
                 ),
             )
             row = await cur.fetchone()
-            await cur.execute(
-                """
-                INSERT INTO app.course_public_content (
-                  course_id,
-                  short_description
-                )
-                VALUES (%s::uuid, %s)
-                ON CONFLICT (course_id) DO NOTHING
-                """,
-                (course_id, "Public course"),
-            )
             await conn.commit()
     return str(row[0])
 

@@ -1254,42 +1254,10 @@ async def upsert_course_public_content(
     description: str,
 ) -> dict[str, Any]:
     normalized_description = str(description)
-    if not normalized_description.strip():
-        update_query = """
-            update app.course_public_content
-            set description = %s
-            where course_id = %s::uuid
-            returning
-                course_id,
-                description
-        """
-        async with pool.connection() as conn:  # type: ignore
-            async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-                await cur.execute(update_query, (normalized_description, course_id))
-                row = await cur.fetchone()
-                await conn.commit()
-        return (
-            dict(row)
-            if row
-            else {
-                "course_id": course_id,
-                "description": normalized_description,
-            }
-        )
-
     query = """
-        insert into app.course_public_content (
-            course_id,
-            short_description,
-            description
-        )
-        values (
-            %s::uuid,
-            %s,
-            %s
-        )
-        on conflict (course_id) do update
-        set description = excluded.description
+        update app.course_public_content
+        set description = %s
+        where course_id = %s::uuid
         returning
             course_id,
             description
@@ -1298,12 +1266,16 @@ async def upsert_course_public_content(
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 query,
-                (course_id, normalized_description, normalized_description),
+                (normalized_description, course_id),
             )
             row = await cur.fetchone()
             await conn.commit()
     if row is None:
-        raise RuntimeError("course public content was not returned")
+        raise RuntimeError(
+            "course public content row is missing; description-only writes "
+            "require retiring the legacy database column before inserts can "
+            "be supported"
+        )
     return dict(row)
 
 

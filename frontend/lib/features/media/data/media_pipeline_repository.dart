@@ -91,12 +91,22 @@ class MediaUploadTarget {
     required this.uploadSessionId,
     required this.uploadEndpoint,
     required this.expiresAt,
+    this.sessionStatusEndpoint,
+    this.finalizeEndpoint,
+    this.chunkUploadUrlTemplate,
+    this.chunkSize,
+    this.expectedChunks,
   });
 
   final String mediaId;
   final String uploadSessionId;
   final String uploadEndpoint;
   final DateTime expiresAt;
+  final String? sessionStatusEndpoint;
+  final String? finalizeEndpoint;
+  final String? chunkUploadUrlTemplate;
+  final int? chunkSize;
+  final int? expectedChunks;
 
   factory MediaUploadTarget.fromResponse(Object? payload) => MediaUploadTarget(
     mediaId: _requiredResponseString(payload, 'media_id', 'MediaUploadTarget'),
@@ -115,31 +125,116 @@ class MediaUploadTarget {
       'expires_at',
       'MediaUploadTarget',
     ),
+    sessionStatusEndpoint: _optionalResponseString(
+      payload,
+      'session_status_endpoint',
+      'MediaUploadTarget',
+    ),
+    finalizeEndpoint: _optionalResponseString(
+      payload,
+      'finalize_endpoint',
+      'MediaUploadTarget',
+    ),
+    chunkUploadUrlTemplate: _optionalResponseString(
+      payload,
+      'chunk_upload_url_template',
+      'MediaUploadTarget',
+    ),
+    chunkSize: _optionalResponseInt(payload, 'chunk_size', 'MediaUploadTarget'),
+    expectedChunks: _optionalResponseInt(
+      payload,
+      'expected_chunks',
+      'MediaUploadTarget',
+    ),
   );
 
-  factory MediaUploadTarget.fromCanonicalMediaAssetResponse(Object? payload) =>
-      MediaUploadTarget(
-        mediaId: _requiredResponseString(
-          payload,
-          'media_asset_id',
-          'MediaUploadTarget',
-        ),
-        uploadSessionId: _requiredResponseString(
-          payload,
-          'upload_session_id',
-          'MediaUploadTarget',
-        ),
-        uploadEndpoint: _requiredResponseString(
-          payload,
-          'upload_endpoint',
-          'MediaUploadTarget',
-        ),
-        expiresAt: _requiredResponseUtcDateTime(
-          payload,
-          'expires_at',
-          'MediaUploadTarget',
-        ),
-      );
+  factory MediaUploadTarget.fromCanonicalMediaAssetResponse(Object? payload) {
+    final uploadEndpoint = _requiredResponseStringFrom(
+      payload,
+      const ['upload_endpoint', 'chunk_upload_url_template'],
+      'MediaUploadTarget',
+      'upload_endpoint/chunk_upload_url_template',
+    );
+    final explicitTemplate = _optionalResponseString(
+      payload,
+      'chunk_upload_url_template',
+      'MediaUploadTarget',
+    );
+    return MediaUploadTarget(
+      mediaId: _requiredResponseString(
+        payload,
+        'media_asset_id',
+        'MediaUploadTarget',
+      ),
+      uploadSessionId: _requiredResponseString(
+        payload,
+        'upload_session_id',
+        'MediaUploadTarget',
+      ),
+      uploadEndpoint: uploadEndpoint,
+      expiresAt: _requiredResponseUtcDateTime(
+        payload,
+        'expires_at',
+        'MediaUploadTarget',
+      ),
+      sessionStatusEndpoint: _optionalResponseString(
+        payload,
+        'session_status_endpoint',
+        'MediaUploadTarget',
+      ),
+      finalizeEndpoint: _optionalResponseString(
+        payload,
+        'finalize_endpoint',
+        'MediaUploadTarget',
+      ),
+      chunkUploadUrlTemplate:
+          explicitTemplate ??
+          (uploadEndpoint.contains('{') ? uploadEndpoint : null),
+      chunkSize: _optionalResponseInt(
+        payload,
+        'chunk_size',
+        'MediaUploadTarget',
+      ),
+      expectedChunks: _optionalResponseInt(
+        payload,
+        'expected_chunks',
+        'MediaUploadTarget',
+      ),
+    );
+  }
+
+  bool get hasHomePlayerChunkSession {
+    final endpoint = uploadEndpoint.trim();
+    final finalize = finalizeEndpoint?.trim() ?? '';
+    return uploadSessionId.trim().isNotEmpty &&
+        endpoint.isNotEmpty &&
+        finalize.isNotEmpty &&
+        (chunkSize ?? 0) > 0 &&
+        (expectedChunks ?? 0) > 0 &&
+        !endpoint.endsWith('/upload-bytes');
+  }
+
+  String chunkUploadEndpoint(int chunkIndex) {
+    if (chunkIndex < 0) {
+      throw RangeError.value(chunkIndex, 'chunkIndex');
+    }
+    final template = chunkUploadUrlTemplate?.trim();
+    if (template != null && template.isNotEmpty) {
+      if (template.contains('{chunk_index}')) {
+        return template.replaceAll('{chunk_index}', '$chunkIndex');
+      }
+      if (template.contains('{index}')) {
+        return template.replaceAll('{index}', '$chunkIndex');
+      }
+      if (template.endsWith('/$chunkIndex')) {
+        return template;
+      }
+    }
+    final base = uploadEndpoint.endsWith('/')
+        ? uploadEndpoint.substring(0, uploadEndpoint.length - 1)
+        : uploadEndpoint;
+    return '$base/$chunkIndex';
+  }
 }
 
 class MediaStatus {
@@ -312,14 +407,45 @@ class MediaPipelineRepository {
     return _client.resolveUri(target.uploadEndpoint);
   }
 
+  Uri resolveEndpoint(String endpoint) {
+    return _client.resolveUri(endpoint);
+  }
+
   Future<Map<String, String>> uploadHeaders(MediaUploadTarget target) {
+    return uploadSessionHeaders(
+      endpoint: target.uploadEndpoint,
+      uploadSessionId: target.uploadSessionId,
+    );
+  }
+
+  Future<Map<String, String>> uploadSessionHeaders({
+    required String endpoint,
+    required String uploadSessionId,
+    String method = 'PUT',
+    Map<String, String> headers = const <String, String>{},
+  }) {
     return _client.authenticatedHeadersFor(
-      target.uploadEndpoint,
-      method: 'PUT',
+      endpoint,
+      method: method,
       headers: <String, String>{
-        'X-Aveli-Upload-Session': target.uploadSessionId,
+        ...headers,
+        'X-Aveli-Upload-Session': uploadSessionId,
       },
     );
+  }
+
+  Future<MediaStatus> finalizeHomePlayerUpload({
+    required MediaUploadTarget target,
+  }) async {
+    final endpoint = target.finalizeEndpoint?.trim();
+    if (endpoint == null || endpoint.isEmpty) {
+      throw StateError('home_player_upload_finalize_endpoint_missing');
+    }
+    final response = await _client.raw.post<Object?>(
+      endpoint,
+      data: const <String, Object?>{},
+    );
+    return MediaStatus.fromResponse(response.data);
   }
 }
 

@@ -16,7 +16,7 @@ class WavUploadFile {
   String? get mimeType => file.type.isEmpty ? null : file.type;
   int? get lastModified => file.lastModified;
 
-  Future<Uint8List> readAsBytes() async {
+  Future<Uint8List> _readBlobBytes(Blob blob) async {
     final reader = FileReader();
     final completer = Completer<Uint8List>();
 
@@ -35,9 +35,18 @@ class WavUploadFile {
     reader.onError.listen((_) {
       completer.completeError(StateError('Failed to read upload bytes'));
     });
-    reader.readAsArrayBuffer(file);
+    reader.readAsArrayBuffer(blob);
 
     return completer.future;
+  }
+
+  Future<Uint8List> readAsBytes() async => _readBlobBytes(file);
+
+  Future<Uint8List> readRangeBytes(int start, int endExclusive) async {
+    if (start < 0 || endExclusive < start) {
+      throw RangeError.range(start, 0, endExclusive, 'start');
+    }
+    return _readBlobBytes(file.slice(start, endExclusive));
   }
 }
 
@@ -120,6 +129,10 @@ Future<void> uploadWavFile({
   Map<String, String> headers = const <String, String>{},
   required void Function(int sent, int total) onProgress,
   WavUploadCancelToken? cancelToken,
+  int? byteStart,
+  int? byteEndExclusive,
+  int? totalBytes,
+  Uint8List? bodyBytes,
 }) async {
   if (cancelToken?.isCancelled == true) {
     throw const WavUploadFailure(WavUploadFailureKind.cancelled);
@@ -139,11 +152,17 @@ Future<void> uploadWavFile({
 
   cancelToken?.onCancel(request.abort);
 
+  final start = byteStart;
+  final end = byteEndExclusive;
+  final payloadSize =
+      bodyBytes?.length ??
+      ((start != null && end != null) ? end - start : file.size);
+
   request.upload.onProgress.listen((event) {
     final loaded = (event.loaded ?? 0).toInt();
     final total = (event.total ?? 0).toInt();
-    final totalBytes = total > 0 ? total : file.size;
-    onProgress(loaded, totalBytes);
+    final resolvedTotal = total > 0 ? total : payloadSize;
+    onProgress(loaded, resolvedTotal);
   });
 
   request.onAbort.listen((_) {
@@ -172,6 +191,11 @@ Future<void> uploadWavFile({
     );
   });
 
-  request.send(file.file);
+  request.send(
+    bodyBytes ??
+        ((start != null && end != null)
+            ? file.file.slice(start, end)
+            : file.file),
+  );
   return completer.future;
 }

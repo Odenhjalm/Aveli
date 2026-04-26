@@ -231,7 +231,7 @@ void main() {
       _setLargeSurface(tester);
       addTearDown(() => _resetSurface(tester));
 
-      const shortDescription = 'Kort kursbeskrivning.';
+      const compactDescription = 'Kort kursbeskrivning.';
       const longDescription =
           'En lang kursbeskrivning fran backend som ska fa plats i kortets '
           'fasta beskrivningsyta med exakt tva rader och ellips utan att '
@@ -250,7 +250,7 @@ void main() {
             requiredEnrollmentSource: 'intro',
             enrollable: true,
             purchasable: false,
-            description: shortDescription,
+            description: compactDescription,
           ),
           _course(
             id: 'journey-long',
@@ -274,7 +274,7 @@ void main() {
       );
 
       for (final description in [
-        shortDescription,
+        compactDescription,
         longDescription,
         exactDescription,
       ]) {

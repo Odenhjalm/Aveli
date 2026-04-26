@@ -133,18 +133,6 @@ async def insert_course(
                 ),
             )
             row = await cur.fetchone()
-            if is_published:
-                await cur.execute(
-                    """
-                    INSERT INTO app.course_public_content (
-                      course_id,
-                      short_description
-                    )
-                    VALUES (%s::uuid, %s)
-                    ON CONFLICT (course_id) DO NOTHING
-                    """,
-                    (course_id, "Public course"),
-                )
             await conn.commit()
     assert row
     return str(row[0])

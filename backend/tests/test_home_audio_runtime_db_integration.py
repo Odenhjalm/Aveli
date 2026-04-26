@@ -676,20 +676,6 @@ async def test_home_audio_db_course_link_respects_enabled_and_canonical_lesson_a
             title="Draft Home Audio Course",
             is_published=False,
         )
-        async with db.pool.connection() as conn:  # type: ignore[attr-defined]
-            async with conn.cursor() as cur:  # type: ignore[attr-defined]
-                await cur.execute(
-                    """
-                    insert into app.course_public_content (
-                      course_id,
-                      short_description
-                    )
-                    values (%s::uuid, %s)
-                    on conflict (course_id) do nothing
-                    """,
-                    (non_public_course_id, "Draft course public content"),
-                )
-                await conn.commit()
         await _insert_lesson(
             lesson_id=non_public_lesson_id,
             course_id=non_public_course_id,

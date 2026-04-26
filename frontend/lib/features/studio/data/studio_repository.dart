@@ -92,8 +92,7 @@ class StudioRepository {
   }
 
   static void _rejectCoursePublicContentPatch(Map<String, Object?> patch) {
-    if (!patch.containsKey('description') &&
-        !patch.containsKey('short_description')) {
+    if (!patch.containsKey('description')) {
       return;
     }
     throw UnsupportedError(

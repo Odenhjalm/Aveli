@@ -15,6 +15,17 @@ class WavUploadFile {
   String get name => file.name;
 
   Future<Uint8List> readAsBytes() => file.readAsBytes();
+
+  Future<Uint8List> readRangeBytes(int start, int endExclusive) async {
+    if (start < 0 || endExclusive < start) {
+      throw RangeError.range(start, 0, endExclusive, 'start');
+    }
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in file.openRead(start, endExclusive)) {
+      builder.add(chunk);
+    }
+    return builder.takeBytes();
+  }
 }
 
 String _mimeTypeForAudioSource(String filename) {
@@ -66,6 +77,10 @@ Future<void> uploadWavFile({
   Map<String, String> headers = const <String, String>{},
   required void Function(int sent, int total) onProgress,
   WavUploadCancelToken? cancelToken,
+  int? byteStart,
+  int? byteEndExclusive,
+  int? totalBytes,
+  Uint8List? bodyBytes,
 }) async {
   if (cancelToken?.isCancelled == true) {
     throw const WavUploadFailure(WavUploadFailureKind.cancelled);
@@ -76,14 +91,23 @@ Future<void> uploadWavFile({
   cancelToken?.onCancel(dioCancel.cancel);
 
   try {
-    final stream = file.file.openRead();
+    final start = byteStart;
+    final end = byteEndExclusive;
+    final data = bodyBytes ?? file.file.openRead(start, end);
+    final payloadSize =
+        bodyBytes?.length ??
+        ((start != null && end != null) ? end - start : file.size);
+    final requestHeaders = Map<String, String>.from(headers);
+    if (bodyBytes != null) {
+      requestHeaders[Headers.contentLengthHeader] = '${bodyBytes.length}';
+    }
     await dio.putUri<void>(
       uploadEndpoint,
-      data: stream,
-      options: Options(contentType: contentType, headers: headers),
+      data: data,
+      options: Options(contentType: contentType, headers: requestHeaders),
       cancelToken: dioCancel,
       onSendProgress: (sent, total) {
-        final resolvedTotal = total > 0 ? total : file.size;
+        final resolvedTotal = total > 0 ? total : payloadSize;
         onProgress(sent, resolvedTotal);
       },
     );

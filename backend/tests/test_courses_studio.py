@@ -325,7 +325,6 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
             "course_id": course_id,
             "description": "Full public course description",
         }
-        assert "short_description" not in save_public_content.json()
 
         read_public_content = await async_client.get(
             f"/studio/courses/{course_id}/public",
@@ -341,17 +340,14 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
             async with conn.cursor() as cur:  # type: ignore[attr-defined]
                 await cur.execute(
                     """
-                    select description, short_description
+                    select description
                     from app.course_public_content
                     where course_id = %s::uuid
                     """,
                     (course_id,),
                 )
                 persisted_public_content = await cur.fetchone()
-        assert persisted_public_content == (
-            "Full public course description",
-            "Full public course description",
-        )
+        assert persisted_public_content == ("Full public course description",)
 
         cover_media_id = str(uuid.uuid4())
         await media_assets_repo.create_media_asset(

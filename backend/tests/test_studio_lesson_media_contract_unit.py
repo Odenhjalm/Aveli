@@ -12,6 +12,8 @@ LESSON_MEDIA_ID = "11111111-1111-1111-1111-111111111111"
 LESSON_MEDIA_ID_2 = "11111111-1111-1111-1111-111111111112"
 MEDIA_ASSET_ID = "33333333-3333-3333-3333-333333333333"
 MEDIA_ASSET_ID_2 = "33333333-3333-3333-3333-333333333334"
+UPLOAD_SESSION_ID = "55555555-5555-5555-5555-555555555555"
+UPLOAD_SESSION_ID_2 = "55555555-5555-5555-5555-555555555556"
 TEACHER_ID = "44444444-4444-4444-4444-444444444444"
 FORBIDDEN_MEDIA_FIELDS = {
     "upload_url",
@@ -537,6 +539,11 @@ async def test_canonical_upload_completion_rejects_missing_storage_object(
         assert list(pairs) == [(expected_bucket, expected_path)]
         return {(expected_bucket, expected_path): False}, True
 
+    async def fake_finalize_active_home_player_upload_session(**kwargs):
+        raise studio.media_upload_sessions_service.UploadSessionNotFoundError(
+            "active upload session was not found"
+        )
+
     async def fail_mark_uploaded(*, media_id: str):
         completed.append(media_id)
         raise AssertionError("missing source object must not mark uploaded")
@@ -551,6 +558,12 @@ async def test_canonical_upload_completion_rejects_missing_storage_object(
         studio.storage_objects,
         "fetch_storage_object_existence",
         fake_fetch_storage_object_existence,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.media_upload_sessions_service,
+        "finalize_active_home_player_upload_session",
+        fake_finalize_active_home_player_upload_session,
         raising=True,
     )
     monkeypatch.setattr(
@@ -572,33 +585,29 @@ async def test_canonical_upload_completion_rejects_missing_storage_object(
     assert completed == []
 
 
-async def test_large_home_player_wav_upload_bytes_then_completion_succeeds(
+async def test_home_player_chunk_receipt_does_not_mark_media_asset_uploaded(
     monkeypatch,
 ):
-    large_content_length = 200 * 1024 * 1024
-    expected_bucket = studio.storage_service.settings.media_source_bucket
-    expected_path = f"media/{MEDIA_ASSET_ID}/source"
-    uploaded_chunks: list[bytes] = []
-    completed: list[str] = []
+    chunk_route = getattr(studio, "canonical_upload_home_player_media_chunk", None)
+    assert chunk_route is not None, (
+        "Home Player WAV uploads must use the backend chunk/spool receipt route."
+    )
+    session_service = getattr(studio, "media_upload_sessions_service", None)
+    assert session_service is not None, (
+        "Home Player chunk routes must delegate to the upload-session service."
+    )
+    chunk_calls: list[dict[str, object]] = []
 
     class DummyRequest:
         headers = {
-            "content-length": str(large_content_length),
+            "content-length": "10",
+            "content-range": "bytes 0-9/10",
             "content-type": "audio/wav",
+            "x-aveli-chunk-sha256": "a" * 64,
         }
 
         async def stream(self):
             yield b"wav-header"
-            yield b"wav-body"
-
-    class SuccessfulStorage:
-        async def upload_object(self, object_path, **kwargs):
-            assert object_path == expected_path
-            assert kwargs["content_type"] == "audio/wav"
-            assert kwargs["content_length"] == large_content_length
-            assert kwargs["media_asset_id"] == MEDIA_ASSET_ID
-            async for chunk in kwargs["content"]:
-                uploaded_chunks.append(chunk)
 
     async def fake_authorize_media_asset(**kwargs):
         assert kwargs["media_asset_id"] == MEDIA_ASSET_ID
@@ -608,16 +617,24 @@ async def test_large_home_player_wav_upload_bytes_then_completion_succeeds(
             "purpose": "home_player_audio",
             "media_type": "audio",
             "ingest_format": "wav",
-            "original_object_path": expected_path,
+            "original_object_path": f"media/{MEDIA_ASSET_ID}/source",
         }
 
-    async def fake_fetch_storage_object_existence(pairs):
-        assert list(pairs) == [(expected_bucket, expected_path)]
-        return {(expected_bucket, expected_path): True}, True
+    async def fake_receive_home_player_upload_chunk(**kwargs):
+        chunk_calls.append(dict(kwargs))
+        return {
+            "upload_session_id": UPLOAD_SESSION_ID,
+            "media_asset_id": MEDIA_ASSET_ID,
+            "chunk_index": 0,
+            "byte_start": 0,
+            "byte_end": 9,
+            "size_bytes": 10,
+            "sha256": "a" * 64,
+            "received_bytes": 10,
+        }
 
-    async def fake_mark_uploaded(*, media_id: str):
-        completed.append(media_id)
-        return {"id": media_id, "state": "uploaded"}
+    async def fail_mark_uploaded(*args, **kwargs):
+        raise AssertionError("chunk receipt alone must not mark media_assets uploaded")
 
     monkeypatch.setattr(
         studio,
@@ -626,42 +643,109 @@ async def test_large_home_player_wav_upload_bytes_then_completion_succeeds(
         raising=True,
     )
     monkeypatch.setattr(
-        studio.storage_service,
-        "get_storage_service",
-        lambda bucket: SuccessfulStorage(),
-        raising=True,
-    )
-    monkeypatch.setattr(
-        studio.storage_objects,
-        "fetch_storage_object_existence",
-        fake_fetch_storage_object_existence,
+        session_service,
+        "receive_home_player_upload_chunk",
+        fake_receive_home_player_upload_chunk,
         raising=True,
     )
     monkeypatch.setattr(
         studio.media_assets_repo,
         "mark_lesson_media_pipeline_asset_uploaded",
-        fake_mark_uploaded,
+        fail_mark_uploaded,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.media_assets_repo,
+        "mark_media_asset_uploaded",
+        fail_mark_uploaded,
         raising=True,
     )
 
-    upload_response = await studio.canonical_upload_media_asset_bytes(
+    response = await chunk_route(
         media_asset_id=studio.UUID(MEDIA_ASSET_ID),
+        upload_session_id=studio.UUID(UPLOAD_SESSION_ID),
+        chunk_index=0,
         request=DummyRequest(),
         current={"id": TEACHER_ID},
     )
 
-    completion_response = await studio.canonical_complete_lesson_media_upload(
+    assert str(response.media_asset_id) == MEDIA_ASSET_ID
+    assert str(response.upload_session_id) == UPLOAD_SESSION_ID
+    assert response.chunk_index == 0
+    assert chunk_calls[0]["media_asset_id"] == MEDIA_ASSET_ID
+    assert chunk_calls[0]["upload_session_id"] == UPLOAD_SESSION_ID
+    assert chunk_calls[0]["owner_user_id"] == TEACHER_ID
+
+
+async def test_home_player_upload_completion_delegates_to_active_session_finalize(
+    monkeypatch,
+):
+    session_service = getattr(studio, "media_upload_sessions_service", None)
+    assert session_service is not None
+    finalize_calls: list[dict[str, object]] = []
+
+    async def fake_authorize_media_asset(**kwargs):
+        assert kwargs["media_asset_id"] == MEDIA_ASSET_ID
+        return {
+            "id": MEDIA_ASSET_ID,
+            "state": "pending_upload",
+            "purpose": "home_player_audio",
+            "media_type": "audio",
+            "owner_user_id": TEACHER_ID,
+            "original_object_path": f"media/{MEDIA_ASSET_ID}/source",
+        }
+
+    async def fake_finalize_active_home_player_upload_session(**kwargs):
+        finalize_calls.append(dict(kwargs))
+        return {
+            "upload_session_id": UPLOAD_SESSION_ID,
+            "media_asset_id": MEDIA_ASSET_ID,
+            "asset_state": "uploaded",
+        }
+
+    async def fail_storage_assert(*args, **kwargs):
+        raise AssertionError(
+            "active Home Player upload-completion must finalize the upload session"
+        )
+
+    async def fail_mark_uploaded(*args, **kwargs):
+        raise AssertionError("active session finalization owns the uploaded transition")
+
+    monkeypatch.setattr(
+        studio,
+        "_authorize_canonical_media_upload_asset",
+        fake_authorize_media_asset,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        session_service,
+        "finalize_active_home_player_upload_session",
+        fake_finalize_active_home_player_upload_session,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio,
+        "_assert_canonical_media_storage_write",
+        fail_storage_assert,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.media_assets_repo,
+        "mark_lesson_media_pipeline_asset_uploaded",
+        fail_mark_uploaded,
+        raising=True,
+    )
+
+    response = await studio.canonical_complete_lesson_media_upload(
         media_asset_id=studio.UUID(MEDIA_ASSET_ID),
         payload=schemas.CanonicalMediaAssetUploadCompletionRequest(),
         current={"id": TEACHER_ID},
     )
 
-    assert str(upload_response.media_asset_id) == MEDIA_ASSET_ID
-    assert upload_response.uploaded is True
-    assert uploaded_chunks == [b"wav-header", b"wav-body"]
-    assert str(completion_response.media_asset_id) == MEDIA_ASSET_ID
-    assert completion_response.asset_state == "uploaded"
-    assert completed == [MEDIA_ASSET_ID]
+    assert str(response.media_asset_id) == MEDIA_ASSET_ID
+    assert response.asset_state == "uploaded"
+    assert finalize_calls[0]["media_asset_id"] == MEDIA_ASSET_ID
+    assert finalize_calls[0]["owner_user_id"] == TEACHER_ID
 
 
 async def test_course_cover_upload_url_persists_metadata_without_exposing_storage(
@@ -724,10 +808,31 @@ async def test_home_player_upload_url_persists_owner_metadata_without_exposing_s
     monkeypatch,
 ) -> None:
     created: dict[str, object] = {}
+    session_calls: list[dict[str, object]] = []
+    expires_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    session_service = getattr(studio, "media_upload_sessions_service", None)
+    assert session_service is not None, (
+        "Home Player upload-url must create a DB-backed chunk upload session."
+    )
 
     async def fake_create_media_asset(**kwargs):
         created.update(kwargs)
         return {"id": MEDIA_ASSET_ID, "state": "pending_upload"}
+
+    async def fake_create_home_player_upload_session(**kwargs):
+        session_calls.append(dict(kwargs))
+        return {
+            "id": UPLOAD_SESSION_ID,
+            "media_asset_id": MEDIA_ASSET_ID,
+            "owner_user_id": TEACHER_ID,
+            "state": "open",
+            "total_bytes": 12,
+            "content_type": "audio/wav",
+            "chunk_size": 8 * 1024 * 1024,
+            "expected_chunks": 1,
+            "received_bytes": 0,
+            "expires_at": expires_at,
+        }
 
     monkeypatch.setattr(
         studio.media_assets_repo,
@@ -741,27 +846,55 @@ async def test_home_player_upload_url_persists_owner_metadata_without_exposing_s
         lambda: studio.UUID(MEDIA_ASSET_ID),
         raising=True,
     )
+    monkeypatch.setattr(
+        session_service,
+        "create_home_player_upload_session",
+        fake_create_home_player_upload_session,
+        raising=True,
+    )
 
     response = await studio.canonical_issue_home_player_upload_url(
         payload=schemas.CanonicalHomePlayerMediaUploadUrlRequest(
-            filename="focus mix.m4a",
-            mime_type="audio/mp4",
+            filename="focus mix.wav",
+            mime_type="audio/wav",
             size_bytes=12,
         ),
         current={"id": TEACHER_ID},
     )
 
     assert str(response.media_asset_id) == MEDIA_ASSET_ID
-    assert response.upload_endpoint == f"/api/media-assets/{MEDIA_ASSET_ID}/upload-bytes"
+    assert str(response.upload_session_id) == UPLOAD_SESSION_ID
+    assert response.upload_endpoint == (
+        f"/api/media-assets/{MEDIA_ASSET_ID}/upload-sessions/"
+        f"{UPLOAD_SESSION_ID}/chunks/0"
+    )
+    assert response.chunk_upload_url_template == (
+        f"/api/media-assets/{MEDIA_ASSET_ID}/upload-sessions/"
+        f"{UPLOAD_SESSION_ID}/chunks/{{chunk_index}}"
+    )
+    assert response.session_status_endpoint == (
+        f"/api/media-assets/{MEDIA_ASSET_ID}/upload-sessions/"
+        f"{UPLOAD_SESSION_ID}/status"
+    )
+    assert response.finalize_endpoint == (
+        f"/api/media-assets/{MEDIA_ASSET_ID}/upload-sessions/"
+        f"{UPLOAD_SESSION_ID}/finalize"
+    )
+    assert response.chunk_size == 8 * 1024 * 1024
+    assert response.expected_chunks == 1
     assert _payload_keys(response.model_dump(mode="json")).isdisjoint(
         FORBIDDEN_MEDIA_FIELDS | {"headers", "storage_bucket"}
     )
     assert created["purpose"] == "home_player_audio"
     assert created["media_asset_id"] == MEDIA_ASSET_ID
-    assert created["original_filename"] == "focus mix.m4a"
+    assert created["original_filename"] == "focus mix.wav"
     assert created["owner_user_id"] == TEACHER_ID
     assert created["original_object_path"] == f"media/{MEDIA_ASSET_ID}/source"
-    assert "focus mix.m4a" not in str(created["original_object_path"])
+    assert "focus mix.wav" not in str(created["original_object_path"])
+    assert session_calls[0]["media_asset"]["id"] == MEDIA_ASSET_ID
+    assert session_calls[0]["owner_user_id"] == TEACHER_ID
+    assert session_calls[0]["total_bytes"] == 12
+    assert session_calls[0]["content_type"] == "audio/wav"
 
 
 async def test_home_player_upload_url_uses_media_asset_id_paths_for_duplicate_filenames(
@@ -769,10 +902,30 @@ async def test_home_player_upload_url_uses_media_asset_id_paths_for_duplicate_fi
 ) -> None:
     created: list[dict[str, object]] = []
     media_asset_ids = iter((MEDIA_ASSET_ID, MEDIA_ASSET_ID_2))
+    upload_session_ids = iter((UPLOAD_SESSION_ID, UPLOAD_SESSION_ID_2))
+    session_service = getattr(studio, "media_upload_sessions_service", None)
+    assert session_service is not None, (
+        "Home Player upload-url must create one upload session per media asset."
+    )
 
     async def fake_create_media_asset(**kwargs):
         created.append(dict(kwargs))
         return {"id": kwargs["media_asset_id"], "state": "pending_upload"}
+
+    async def fake_create_home_player_upload_session(**kwargs):
+        media_asset = kwargs["media_asset"]
+        return {
+            "id": next(upload_session_ids),
+            "media_asset_id": media_asset["id"],
+            "owner_user_id": TEACHER_ID,
+            "state": "open",
+            "total_bytes": kwargs["total_bytes"],
+            "content_type": kwargs["content_type"],
+            "chunk_size": 8 * 1024 * 1024,
+            "expected_chunks": 1,
+            "received_bytes": 0,
+            "expires_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        }
 
     monkeypatch.setattr(
         studio.media_assets_repo,
@@ -784,6 +937,12 @@ async def test_home_player_upload_url_uses_media_asset_id_paths_for_duplicate_fi
         studio,
         "uuid4",
         lambda: studio.UUID(next(media_asset_ids)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        session_service,
+        "create_home_player_upload_session",
+        fake_create_home_player_upload_session,
         raising=True,
     )
 
@@ -806,6 +965,8 @@ async def test_home_player_upload_url_uses_media_asset_id_paths_for_duplicate_fi
 
     assert str(first.media_asset_id) == MEDIA_ASSET_ID
     assert str(second.media_asset_id) == MEDIA_ASSET_ID_2
+    assert str(first.upload_session_id) == UPLOAD_SESSION_ID
+    assert str(second.upload_session_id) == UPLOAD_SESSION_ID_2
     assert created[0]["original_object_path"] == f"media/{MEDIA_ASSET_ID}/source"
     assert created[1]["original_object_path"] == f"media/{MEDIA_ASSET_ID_2}/source"
     assert created[0]["original_object_path"] != created[1]["original_object_path"]

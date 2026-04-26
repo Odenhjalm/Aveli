@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:crypto/crypto.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/data/models/home_player_library.dart';
@@ -24,6 +27,9 @@ typedef HomePlayerStreamingUpload =
       required Map<String, String> headers,
       required void Function(int sent, int total) onProgress,
       WavUploadCancelToken? cancelToken,
+      int? byteStart,
+      int? byteEndExclusive,
+      Uint8List? bodyBytes,
     });
 
 class HomePlayerUploadDialog extends ConsumerStatefulWidget {
@@ -164,12 +170,10 @@ class _HomePlayerUploadDialogState
       final upload = MediaUploadTarget.fromCanonicalMediaAssetResponse(
         uploadPayload,
       );
-      if (upload.uploadEndpoint.isEmpty || upload.uploadSessionId.isEmpty) {
+      if (!upload.hasHomePlayerChunkSession) {
         throw StateError('home_player_upload_session_missing');
       }
       mediaId = upload.mediaId;
-      final uploadEndpoint = pipelineRepo.resolveUploadEndpoint(upload);
-      final uploadHeaders = await pipelineRepo.uploadHeaders(upload);
 
       if (mounted) {
         setState(
@@ -180,19 +184,14 @@ class _HomePlayerUploadDialogState
       }
 
       final uploadFile = widget.uploadFileOverride ?? uploadWavFile;
-      await uploadFile(
-        uploadEndpoint: uploadEndpoint,
-        file: widget.file,
-        contentType: normalizedMime,
-        headers: uploadHeaders,
-        cancelToken: uploadCancel,
-        onProgress: (sent, total) {
-          if (!mounted) return;
-          final resolvedTotal = total > 0 ? total : widget.file.size;
-          final fraction = resolvedTotal <= 0 ? 0.0 : sent / resolvedTotal;
-          setState(() => _progress = fraction.clamp(0.0, 1.0));
-        },
+      await _uploadChunkSession(
+        upload: upload,
+        pipelineRepo: pipelineRepo,
+        uploadFile: uploadFile,
+        normalizedMime: normalizedMime,
+        uploadCancel: uploadCancel,
       );
+      await pipelineRepo.finalizeHomePlayerUpload(target: upload);
     } on WavUploadFailure catch (error, stackTrace) {
       if (error.kind == WavUploadFailureKind.cancelled) {
         _showUploadFailure(
@@ -230,7 +229,6 @@ class _HomePlayerUploadDialogState
     });
 
     try {
-      await pipelineRepo.completeUpload(mediaId: mediaId);
       await studioRepo.uploadHomePlayerUpload(
         title: widget.title,
         mediaAssetId: mediaId,
@@ -257,6 +255,85 @@ class _HomePlayerUploadDialogState
         _error = message;
         _status = message;
       });
+    }
+  }
+
+  Future<void> _uploadChunkSession({
+    required MediaUploadTarget upload,
+    required MediaPipelineRepository pipelineRepo,
+    required HomePlayerStreamingUpload uploadFile,
+    required String normalizedMime,
+    required WavUploadCancelToken uploadCancel,
+  }) async {
+    final chunkSize = upload.chunkSize;
+    final expectedChunks = upload.expectedChunks;
+    if (chunkSize == null || chunkSize <= 0) {
+      throw StateError('home_player_upload_chunk_size_missing');
+    }
+    if (expectedChunks == null || expectedChunks <= 0) {
+      throw StateError('home_player_upload_expected_chunks_missing');
+    }
+
+    final totalBytes = widget.file.size;
+    final computedChunks = (totalBytes + chunkSize - 1) ~/ chunkSize;
+    if (computedChunks != expectedChunks) {
+      throw StateError('home_player_upload_expected_chunks_mismatch');
+    }
+
+    var committedBytes = 0;
+    for (var chunkIndex = 0; chunkIndex < expectedChunks; chunkIndex += 1) {
+      if (uploadCancel.isCancelled) {
+        throw const WavUploadFailure(WavUploadFailureKind.cancelled);
+      }
+
+      final byteStart = chunkIndex * chunkSize;
+      final byteEndExclusive = math.min(byteStart + chunkSize, totalBytes);
+      if (byteStart >= byteEndExclusive) {
+        throw StateError('home_player_upload_empty_chunk');
+      }
+
+      final chunkBytes = await widget.file.readRangeBytes(
+        byteStart,
+        byteEndExclusive,
+      );
+      final expectedChunkBytes = byteEndExclusive - byteStart;
+      if (chunkBytes.length != expectedChunkBytes) {
+        throw StateError('home_player_upload_chunk_range_short_read');
+      }
+
+      final chunkPath = upload.chunkUploadEndpoint(chunkIndex);
+      final headers = await pipelineRepo.uploadSessionHeaders(
+        endpoint: chunkPath,
+        uploadSessionId: upload.uploadSessionId,
+        headers: <String, String>{
+          'Content-Range':
+              'bytes $byteStart-${byteEndExclusive - 1}/$totalBytes',
+          'X-Aveli-Chunk-Sha256': sha256.convert(chunkBytes).toString(),
+        },
+      );
+
+      await uploadFile(
+        uploadEndpoint: pipelineRepo.resolveEndpoint(chunkPath),
+        file: widget.file,
+        contentType: normalizedMime,
+        headers: headers,
+        cancelToken: uploadCancel,
+        byteStart: byteStart,
+        byteEndExclusive: byteEndExclusive,
+        bodyBytes: chunkBytes,
+        onProgress: (sent, total) {
+          if (!mounted) return;
+          final sentInChunk = sent.clamp(0, expectedChunkBytes);
+          final aggregateSent = committedBytes + sentInChunk;
+          final fraction = totalBytes <= 0 ? 0.0 : aggregateSent / totalBytes;
+          setState(() => _progress = fraction.clamp(0.0, 1.0));
+        },
+      );
+      committedBytes = byteEndExclusive;
+      if (mounted) {
+        final fraction = totalBytes <= 0 ? 0.0 : committedBytes / totalBytes;
+        setState(() => _progress = fraction.clamp(0.0, 1.0));
+      }
     }
   }
 

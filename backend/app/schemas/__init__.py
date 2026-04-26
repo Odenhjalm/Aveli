@@ -1663,6 +1663,7 @@ class CanonicalHomePlayerMediaUploadUrlResponse(BaseModel):
     asset_state: Literal["pending_upload"]
     upload_session_id: UUID
     upload_endpoint: str
+    chunk_upload_url_template: str
     session_status_endpoint: str
     finalize_endpoint: str
     chunk_size: int

@@ -653,8 +653,23 @@ def _canonical_home_player_chunk_upload_endpoint(
     *,
     media_asset_id: str,
     upload_session_id: str,
+    chunk_index: int,
 ) -> str:
-    return f"/api/media-assets/{media_asset_id}/upload-sessions/{upload_session_id}/chunks"
+    return (
+        f"/api/media-assets/{media_asset_id}/upload-sessions/"
+        f"{upload_session_id}/chunks/{chunk_index}"
+    )
+
+
+def _canonical_home_player_chunk_upload_url_template(
+    *,
+    media_asset_id: str,
+    upload_session_id: str,
+) -> str:
+    return (
+        f"/api/media-assets/{media_asset_id}/upload-sessions/"
+        f"{upload_session_id}/chunks/{{chunk_index}}"
+    )
 
 
 def _canonical_home_player_session_status_endpoint(
@@ -692,6 +707,11 @@ def _home_player_upload_session_response(
         asset_state="pending_upload",
         upload_session_id=upload_session_id,
         upload_endpoint=_canonical_home_player_chunk_upload_endpoint(
+            media_asset_id=media_asset_id_str,
+            upload_session_id=upload_session_id_str,
+            chunk_index=0,
+        ),
+        chunk_upload_url_template=_canonical_home_player_chunk_upload_url_template(
             media_asset_id=media_asset_id_str,
             upload_session_id=upload_session_id_str,
         ),
@@ -732,7 +752,7 @@ def _raise_upload_session_http_error(exc: Exception) -> NoReturn:
     if isinstance(exc, media_upload_sessions_service.UploadSessionNotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, media_upload_sessions_service.UploadChunkRangeError):
-        raise HTTPException(status_code=416, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if isinstance(exc, media_upload_sessions_service.UploadChunkChecksumError):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if isinstance(exc, media_upload_sessions_service.UploadSessionIncompleteError):
@@ -1443,8 +1463,24 @@ async def canonical_complete_lesson_media_upload(
         media_asset_id=media_asset_id_str,
         current=current,
     )
-    await _assert_canonical_media_storage_write(media_asset)
     purpose = str(media_asset.get("purpose") or "").strip().lower()
+    if purpose == "home_player_audio":
+        try:
+            result = await media_upload_sessions_service.finalize_active_home_player_upload_session(
+                media_asset=media_asset,
+                media_asset_id=media_asset_id_str,
+                owner_user_id=str(current["id"]),
+            )
+        except media_upload_sessions_service.UploadSessionNotFoundError:
+            pass
+        except Exception as exc:
+            _raise_upload_session_http_error(exc)
+        else:
+            return schemas.CanonicalMediaAssetUploadCompletionResponse(
+                media_asset_id=UUID(str(result["media_asset_id"])),
+                asset_state=result["asset_state"],
+            )
+    await _assert_canonical_media_storage_write(media_asset)
     if purpose in {"course_cover", "profile_media"}:
         updated = await media_assets_repo.mark_media_asset_uploaded(
             media_id=media_asset_id_str,

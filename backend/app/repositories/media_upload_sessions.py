@@ -120,6 +120,28 @@ async def get_upload_session_for_owner_media_asset(
     return _row(row)
 
 
+async def get_active_upload_session_for_owner_media_asset(
+    *,
+    media_asset_id: str,
+    owner_user_id: str,
+) -> dict[str, Any] | None:
+    query = f"""
+        select {_SESSION_COLUMNS}
+          from app.media_upload_sessions
+         where media_asset_id = %s::uuid
+           and owner_user_id = %s::uuid
+           and state = 'open'
+           and expires_at > now()
+         order by created_at desc
+         limit 1
+    """
+    async with pool.connection() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (media_asset_id, owner_user_id))
+            row = await cur.fetchone()
+    return _row(row)
+
+
 async def get_upload_chunk(
     *,
     upload_session_id: str,

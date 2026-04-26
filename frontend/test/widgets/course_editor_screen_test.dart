@@ -170,7 +170,6 @@ void main() {
           contains('_studioRepo.upsertCoursePublicContent('),
         );
         expect(saveCourseMeta, contains('description: description'));
-        expect(saveCourseMeta, isNot(contains('short_description')));
         expect(saveCourseMeta, isNot(contains("'description'")));
       },
     );

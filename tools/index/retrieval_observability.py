@@ -63,6 +63,36 @@ def canonical_json_dumps(data: object) -> str:
     return json.dumps(json_safe_value(data), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
+def compact_dict(data: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in data.items() if value is not None}
+
+
+def require_nonempty_string(container: dict[str, Any], field_name: str, owner: str) -> str:
+    value = container.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise RetrievalObservabilityError(f"FEL: {owner}.{field_name} saknas")
+    return value.strip()
+
+
+def require_object(container: dict[str, Any], field_name: str, owner: str) -> dict[str, Any]:
+    value = container.get(field_name)
+    if not isinstance(value, dict):
+        raise RetrievalObservabilityError(f"FEL: {owner}.{field_name} maste vara ett JSON-objekt")
+    return value
+
+
+def require_bool(container: dict[str, Any], field_name: str, owner: str) -> bool:
+    value = container.get(field_name)
+    if not isinstance(value, bool):
+        raise RetrievalObservabilityError(f"FEL: {owner}.{field_name} maste vara boolean")
+    return value
+
+
+def status_from_object(container: dict[str, Any], field_name: str, owner: str) -> str:
+    value = require_object(container, field_name, owner)
+    return require_nonempty_string(value, "status", f"{owner}.{field_name}")
+
+
 def normalize_repo_relative_path(path_text: str, field_name: str = "path") -> str:
     if not isinstance(path_text, str) or not path_text.strip():
         raise RetrievalObservabilityError(f"FEL: {field_name} maste vara en icke-tom repo-relativ sokvag")
@@ -246,18 +276,25 @@ def _manifest_summary(manifest: dict[str, Any]) -> dict[str, Any]:
 
 def _model_binding_summary(binding: dict[str, Any]) -> dict[str, Any]:
     tokenizer_files = binding.get("tokenizer_files")
-    return {
-        "model_id": binding.get("model_id"),
-        "model_revision": binding.get("model_revision"),
-        "local_path": binding.get("local_path"),
-        "snapshot_hash": binding.get("snapshot_hash"),
-        "tokenizer_id": binding.get("tokenizer_id"),
-        "tokenizer_revision": binding.get("tokenizer_revision"),
-        "tokenizer_files_hash": binding.get("tokenizer_files_hash"),
+    local_path = binding.get("local_path_text", binding.get("local_path"))
+    if local_path is None:
+        raise RetrievalObservabilityError("FEL: model_authority.models.local_path saknas")
+    return compact_dict({
+        "model_id": require_nonempty_string(binding, "model_id", "model_authority.models"),
+        "model_revision": require_nonempty_string(binding, "model_revision", "model_authority.models"),
+        "local_path": local_path,
+        "model_snapshot_hash": require_nonempty_string(
+            binding,
+            "model_snapshot_hash",
+            "model_authority.models",
+        ),
+        "tokenizer_id": require_nonempty_string(binding, "tokenizer_id", "model_authority.models"),
+        "tokenizer_revision": require_nonempty_string(binding, "tokenizer_revision", "model_authority.models"),
+        "tokenizer_files_hash": require_nonempty_string(binding, "tokenizer_files_hash", "model_authority.models"),
         "tokenizer_file_count": len(tokenizer_files) if isinstance(tokenizer_files, dict) else 0,
         "local_files_only": binding.get("local_files_only"),
         "trust_remote_code": binding.get("trust_remote_code"),
-    }
+    })
 
 
 def write_retrieval_runtime_health(runtime_state: dict[str, Any]) -> dict[str, Any]:
@@ -302,11 +339,14 @@ def write_retrieval_model_health(runtime_state: dict[str, Any]) -> dict[str, Any
     models = model_authority.get("models") if isinstance(model_authority.get("models"), dict) else {}
     embedding = models.get("embedding") if isinstance(models.get("embedding"), dict) else {}
     rerank = models.get("rerank") if isinstance(models.get("rerank"), dict) else {}
+    authority_root = model_authority.get("authority_root_text", model_authority.get("authority_root"))
+    if not isinstance(authority_root, str) or not authority_root.strip():
+        raise RetrievalObservabilityError("FEL: model_authority.authority_root_text saknas")
     payload = base_surface("retrieval_model_health", "PASS")
     payload.update(
         {
-            "authority_path": model_authority.get("authority_path_text"),
-            "authority_root": model_authority.get("authority_root"),
+            "authority_path": require_nonempty_string(model_authority, "authority_path_text", "model_authority"),
+            "authority_root": authority_root.strip(),
             "local_files_only": model_authority.get("local_files_only"),
             "network_allowed": model_authority.get("network_allowed"),
             "cache_resolution_allowed": model_authority.get("cache_resolution_allowed"),
@@ -324,32 +364,46 @@ def write_retrieval_dependency_health(runtime_state: dict[str, Any]) -> dict[str
     dependency_authority = runtime_state.get("dependency_authority")
     if not isinstance(dependency_authority, dict):
         dependency_authority = {}
-    package_list = dependency_authority.get("package_list")
+    package_versions_expected = dependency_authority.get("package_versions_expected")
+    if not isinstance(package_versions_expected, dict):
+        package_versions_expected = {}
     payload = base_surface("retrieval_dependency_health", "PASS")
     payload.update(
-        {
-            "d01_status": dependency_authority.get("status"),
-            "d01_execution_status": dependency_authority.get("execution_status"),
-            "build_id": dependency_authority.get("build_id"),
-            "target_interpreter_path": dependency_authority.get("target_interpreter_path"),
-            "approval_artifact": dependency_authority.get("approval_artifact"),
-            "package_count": len(package_list) if isinstance(package_list, list) else None,
-            "installed_package_verification": dependency_authority.get("installed_package_verification", {}).get("status")
-            if isinstance(dependency_authority.get("installed_package_verification"), dict)
-            else None,
-            "import_readiness_verification": dependency_authority.get("import_readiness_verification", {}).get("status")
-            if isinstance(dependency_authority.get("import_readiness_verification"), dict)
-            else None,
-            "package_hash_verification": dependency_authority.get("package_hash_verification", {}).get("status")
-            if isinstance(dependency_authority.get("package_hash_verification"), dict)
-            else None,
-            "network_verification": dependency_authority.get("network_verification", {}).get("status")
-            if isinstance(dependency_authority.get("network_verification"), dict)
-            else None,
-            "fallback_verification": dependency_authority.get("fallback_verification", {}).get("status")
-            if isinstance(dependency_authority.get("fallback_verification"), dict)
-            else None,
-        }
+        compact_dict({
+            "d01_status": require_nonempty_string(dependency_authority, "status", "dependency_authority"),
+            "build_id": require_nonempty_string(dependency_authority, "build_id", "dependency_authority"),
+            "result_authority": require_nonempty_string(
+                dependency_authority,
+                "result_authority",
+                "dependency_authority",
+            ),
+            "target_interpreter_path": require_nonempty_string(
+                dependency_authority,
+                "target_interpreter_path",
+                "dependency_authority",
+            ),
+            "dependency_preparation_attempted": require_bool(
+                dependency_authority,
+                "dependency_preparation_attempted",
+                "dependency_authority",
+            ),
+            "package_count": len(package_versions_expected),
+            "package_source_verification": status_from_object(
+                dependency_authority,
+                "package_source_verification",
+                "dependency_authority",
+            ),
+            "network_verification": status_from_object(
+                dependency_authority,
+                "network_verification",
+                "dependency_authority",
+            ),
+            "fallback_verification": status_from_object(
+                dependency_authority,
+                "fallback_verification",
+                "dependency_authority",
+            ),
+        })
     )
     atomic_write_json(RETRIEVAL_DEPENDENCY_HEALTH_PATH, payload)
     return payload
@@ -360,15 +414,23 @@ def write_retrieval_last_build_status() -> dict[str, Any]:
     promotion_result = load_json_object(PROMOTION_RESULT_PATH, ".repo_index/promotion_result.json")
     payload = base_surface("retrieval_last_build_status", "PASS")
     payload.update(
-        {
+        compact_dict({
             "active_build_id": lineage["active_build_id"],
             "manifest_state": lineage["manifest_state"],
             "corpus_size": lineage["corpus_size"],
-            "promotion_status": promotion_result.get("status"),
-            "promotion_occurred": promotion_result.get("promotion_occurred"),
+            "promotion_status": require_nonempty_string(promotion_result, "status", "promotion_result"),
+            "promotion_started_at_utc": require_nonempty_string(
+                promotion_result,
+                "promotion_started_at_utc",
+                "promotion_result",
+            ),
+            "promotion_completed_at_utc": require_nonempty_string(
+                promotion_result,
+                "promotion_completed_at_utc",
+                "promotion_result",
+            ),
             "build_mode": promotion_result.get("build_mode"),
-            "completed_at_utc": promotion_result.get("completed_at_utc"),
-        }
+        })
     )
     atomic_write_json(RETRIEVAL_LAST_BUILD_STATUS_PATH, payload)
     return payload

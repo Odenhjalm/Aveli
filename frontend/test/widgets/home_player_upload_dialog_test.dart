@@ -19,11 +19,28 @@ import 'package:aveli/features/studio/widgets/home_player_upload_dialog.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_source.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_types.dart';
 
+const _homePlayerChunkSizeBytes = 8 * 1024 * 1024;
+const _largeHomePlayerWavBytes = _homePlayerChunkSizeBytes * 2 + 17;
+
+typedef _UploadPayloadBuilder =
+    Map<String, Object?> Function({
+      required String filename,
+      required String mimeType,
+      required int sizeBytes,
+    });
+
 class _FakeApiClient extends Fake implements ApiClient {}
 
 class _DialogStudioRepository extends StudioRepository {
-  _DialogStudioRepository() : super(client: _FakeApiClient());
+  _DialogStudioRepository({
+    List<String>? events,
+    _UploadPayloadBuilder? uploadPayloadBuilder,
+  }) : events = events ?? <String>[],
+       _uploadPayloadBuilder = uploadPayloadBuilder ?? _chunkUploadPayload,
+       super(client: _FakeApiClient());
 
+  final List<String> events;
+  final _UploadPayloadBuilder _uploadPayloadBuilder;
   int requestUploadUrlCalls = 0;
   int uploadCreateCalls = 0;
   int refreshCalls = 0;
@@ -38,15 +55,14 @@ class _DialogStudioRepository extends StudioRepository {
     required int sizeBytes,
   }) async {
     requestUploadUrlCalls += 1;
+    events.add('POST /api/home-player/media-assets/upload-url');
     lastRequestedFilename = filename;
     lastRequestedMimeType = mimeType;
-    return <String, Object?>{
-      'media_asset_id': 'media-1',
-      'asset_state': 'pending_upload',
-      'upload_session_id': 'upload-session-1',
-      'upload_endpoint': '/api/media-assets/media-1/upload-bytes',
-      'expires_at': '2026-04-21T12:00:00Z',
-    };
+    return _uploadPayloadBuilder(
+      filename: filename,
+      mimeType: mimeType,
+      sizeBytes: sizeBytes,
+    );
   }
 
   @override
@@ -56,6 +72,7 @@ class _DialogStudioRepository extends StudioRepository {
     bool active = true,
   }) async {
     uploadCreateCalls += 1;
+    events.add('studio.uploadHomePlayerUpload');
     return HomePlayerUploadItem(
       id: 'upload-1',
       mediaAssetId: mediaAssetId,
@@ -102,12 +119,121 @@ class _DialogStudioRepository extends StudioRepository {
   }
 }
 
+Map<String, Object?> _legacyUploadBytesPayload({
+  required String filename,
+  required String mimeType,
+  required int sizeBytes,
+}) {
+  return <String, Object?>{
+    'media_asset_id': 'media-1',
+    'asset_state': 'pending_upload',
+    'upload_session_id': 'upload-session-1',
+    'upload_endpoint': '/api/media-assets/media-1/upload-bytes',
+    'expires_at': '2026-04-21T12:00:00Z',
+  };
+}
+
+Map<String, Object?> _chunkUploadPayload({
+  required String filename,
+  required String mimeType,
+  required int sizeBytes,
+}) {
+  return <String, Object?>{
+    'media_asset_id': 'media-1',
+    'asset_state': 'pending_upload',
+    'upload_session_id': 'upload-session-1',
+    'upload_endpoint':
+        '/api/media-assets/media-1/upload-sessions/upload-session-1/chunks',
+    'session_status_endpoint':
+        '/api/media-assets/media-1/upload-sessions/upload-session-1/status',
+    'finalize_endpoint':
+        '/api/media-assets/media-1/upload-sessions/upload-session-1/finalize',
+    'chunk_size': _homePlayerChunkSizeBytes,
+    'expected_chunks': _expectedChunkCount(sizeBytes),
+    'expires_at': '2026-04-21T12:00:00Z',
+  };
+}
+
+int _expectedChunkCount(int sizeBytes) {
+  return (sizeBytes + _homePlayerChunkSizeBytes - 1) ~/
+      _homePlayerChunkSizeBytes;
+}
+
 void main() {
+  testWidgets('WAV upload refuses the legacy upload-bytes target', (
+    tester,
+  ) async {
+    final events = <String>[];
+    final studioRepo = _DialogStudioRepository(
+      events: events,
+      uploadPayloadBuilder: _legacyUploadBytesPayload,
+    );
+    final harness = await _PipelineHarness.create(events: events);
+    final pipelineRepo = MediaPipelineRepository(client: harness.client);
+    final streamingUploads = <_RecordedStreamingUpload>[];
+    final file = _UnreadableWavUploadFile();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          studioRepositoryProvider.overrideWithValue(studioRepo),
+          mediaPipelineRepositoryProvider.overrideWithValue(pipelineRepo),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                return FilledButton(
+                  onPressed: () {
+                    showDialog<bool>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => HomePlayerUploadDialog(
+                        file: file,
+                        title: 'Morgonljud',
+                        contentType: 'audio/wav',
+                        textBundle: _textBundle(),
+                        uploadFileOverride: _recordingUpload(
+                          streamingUploads,
+                          events: events,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Ã–ppna dialog'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Ã–ppna dialog'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(file.readAsBytesCalls, 0);
+    expect(
+      streamingUploads.map((upload) => upload.uploadEndpoint.path),
+      isNot(contains('/api/media-assets/media-1/upload-bytes')),
+      reason: 'Home Player WAV uploads must not use the old full-file route.',
+    );
+    expect(
+      harness.adapter.requestsFor(
+        '/api/media-assets/media-1/upload-completion',
+      ),
+      isEmpty,
+    );
+    expect(studioRepo.uploadCreateCalls, 0);
+  });
+
   testWidgets(
-    'upload dialog uses canonical repository methods and keeps blocked methods unused',
+    'WAV upload uses chunk session transport before creating the Home Player row',
     (tester) async {
-      final studioRepo = _DialogStudioRepository();
-      final harness = await _PipelineHarness.create();
+      final events = <String>[];
+      final studioRepo = _DialogStudioRepository(events: events);
+      final harness = await _PipelineHarness.create(events: events);
       final pipelineRepo = MediaPipelineRepository(client: harness.client);
       final streamingUploads = <_RecordedStreamingUpload>[];
       final file = _UnreadableWavUploadFile();
@@ -134,6 +260,7 @@ void main() {
                           textBundle: _textBundle(),
                           uploadFileOverride: _recordingUpload(
                             streamingUploads,
+                            events: events,
                           ),
                         ),
                       );
@@ -157,33 +284,79 @@ void main() {
       expect(studioRepo.createFromStorageCalls, 0);
       expect(find.text('Laddar upp ljud'), findsNothing);
       expect(studioRepo.lastRequestedMimeType, 'audio/wav');
+      expect(file.readAsBytesCalls, 0);
 
-      expect(streamingUploads, hasLength(1));
-      final streamingUpload = streamingUploads.single;
-      expect(
-        streamingUpload.uploadEndpoint,
-        Uri.parse('http://127.0.0.1:1/api/media-assets/media-1/upload-bytes'),
+      expect(streamingUploads, isNotEmpty);
+      for (final streamingUpload in streamingUploads) {
+        expect(streamingUpload.contentType, 'audio/wav');
+        expect(
+          streamingUpload.headers['X-Aveli-Upload-Session'],
+          'upload-session-1',
+        );
+        expect(
+          streamingUpload.headers['Authorization'],
+          'Bearer ${_jwtWithExpSeconds(4102444800)}',
+        );
+      }
+      final expectedChunkPaths = List<String>.generate(
+        _expectedChunkCount(file.size),
+        (index) =>
+            '/api/media-assets/media-1/upload-sessions/upload-session-1/chunks/$index',
       );
-      expect(streamingUpload.file, same(file));
-      expect(streamingUpload.contentType, 'audio/wav');
       expect(
-        streamingUpload.headers['X-Aveli-Upload-Session'],
-        'upload-session-1',
+        streamingUploads.map((upload) => upload.uploadEndpoint.path).toList(),
+        expectedChunkPaths,
       );
+      expect(streamingUploads.map((upload) => upload.bodySize), <int>[
+        _homePlayerChunkSizeBytes,
+        _homePlayerChunkSizeBytes,
+        17,
+      ]);
+      expect(streamingUploads.map((upload) => upload.headers['Content-Range']), <
+        String
+      >[
+        'bytes 0-${_homePlayerChunkSizeBytes - 1}/$_largeHomePlayerWavBytes',
+        'bytes $_homePlayerChunkSizeBytes-${_homePlayerChunkSizeBytes * 2 - 1}/$_largeHomePlayerWavBytes',
+        'bytes ${_homePlayerChunkSizeBytes * 2}-${_largeHomePlayerWavBytes - 1}/$_largeHomePlayerWavBytes',
+      ]);
       expect(
-        streamingUpload.headers['Authorization'],
-        'Bearer ${_jwtWithExpSeconds(4102444800)}',
+        streamingUploads.map(
+          (upload) => upload.headers['X-Aveli-Chunk-Sha256'],
+        ),
+        everyElement(matches(RegExp(r'^[a-f0-9]{64}$'))),
       );
       expect(
         harness.adapter.requestsFor('/api/media-assets/media-1/upload-bytes'),
         isEmpty,
       );
 
-      final completionRequests = harness.adapter.requestsFor(
-        '/api/media-assets/media-1/upload-completion',
+      expect(
+        events,
+        containsAllInOrder(<String>[
+          'POST /api/home-player/media-assets/upload-url',
+          'PUT /api/media-assets/media-1/upload-sessions/upload-session-1/chunks/0',
+          'PUT /api/media-assets/media-1/upload-sessions/upload-session-1/chunks/1',
+          'PUT /api/media-assets/media-1/upload-sessions/upload-session-1/chunks/2',
+          'POST /api/media-assets/media-1/upload-sessions/upload-session-1/finalize',
+          'studio.uploadHomePlayerUpload',
+        ]),
       );
-      expect(completionRequests, hasLength(1));
-      expect(completionRequests.single.method, 'POST');
+      expect(
+        harness.adapter.requestsFor('/api/media-assets/media-1/upload-session'),
+        isEmpty,
+      );
+
+      final finalizeRequests = harness.adapter.requestsFor(
+        '/api/media-assets/media-1/upload-sessions/upload-session-1/finalize',
+      );
+      expect(finalizeRequests, hasLength(1));
+      expect(finalizeRequests.single.method, 'POST');
+      expect(
+        harness.adapter.requestsFor(
+          '/api/media-assets/media-1/upload-completion',
+        ),
+        isEmpty,
+      );
 
       final statusRequests = harness.adapter.requestsFor(
         '/api/media-assets/media-1/status',
@@ -257,18 +430,13 @@ void main() {
     final studioRepo = _DialogStudioRepository();
     final harness = await _PipelineHarness.create(
       handler: (options) {
-        if (options.path == '/api/media-assets/media-1/upload-bytes' &&
-            options.method.toUpperCase() == 'PUT') {
-          return _jsonResponse(
-            statusCode: 200,
-            body: const <String, Object?>{},
-          );
-        }
-        if (options.path == '/api/media-assets/media-1/upload-completion' &&
+        if (options.path ==
+                '/api/media-assets/media-1/upload-sessions/upload-session-1/finalize' &&
             options.method.toUpperCase() == 'POST') {
           return _jsonResponse(
             statusCode: 200,
             body: <String, Object?>{
+              'upload_session_id': 'upload-session-1',
               'media_asset_id': 'media-1',
               'asset_state': 'uploaded',
             },
@@ -357,18 +525,13 @@ void main() {
       final studioRepo = _DialogStudioRepository();
       final harness = await _PipelineHarness.create(
         handler: (options) {
-          if (options.path == '/api/media-assets/media-1/upload-bytes' &&
-              options.method.toUpperCase() == 'PUT') {
-            return _jsonResponse(
-              statusCode: 200,
-              body: const <String, Object?>{},
-            );
-          }
-          if (options.path == '/api/media-assets/media-1/upload-completion' &&
+          if (options.path ==
+                  '/api/media-assets/media-1/upload-sessions/upload-session-1/finalize' &&
               options.method.toUpperCase() == 'POST') {
             return _jsonResponse(
               statusCode: 200,
               body: <String, Object?>{
+                'upload_session_id': 'upload-session-1',
                 'media_asset_id': 'media-1',
                 'asset_state': 'uploaded',
               },
@@ -589,7 +752,7 @@ HomePlayerTextBundle _textBundle() {
 }
 
 class _UnreadableWavUploadFile extends WavUploadFile {
-  _UnreadableWavUploadFile()
+  _UnreadableWavUploadFile({int size = _largeHomePlayerWavBytes})
     : super(
         fs.XFile.fromData(
           Uint8List(0),
@@ -597,12 +760,23 @@ class _UnreadableWavUploadFile extends WavUploadFile {
           mimeType: 'audio/wav',
         ),
         'audio/wav',
-        150 * 1024 * 1024,
+        size,
       );
+
+  int readAsBytesCalls = 0;
 
   @override
   Future<Uint8List> readAsBytes() {
+    readAsBytesCalls += 1;
     throw StateError('Home Player uploads must use streaming transport');
+  }
+
+  @override
+  Future<Uint8List> readRangeBytes(int start, int endExclusive) async {
+    if (start < 0 || endExclusive < start || endExclusive > size) {
+      throw RangeError.range(start, 0, size, 'start');
+    }
+    return Uint8List(endExclusive - start);
   }
 }
 
@@ -612,17 +786,24 @@ class _RecordedStreamingUpload {
     required this.file,
     required this.contentType,
     required this.headers,
+    required this.bodySize,
+    required this.byteStart,
+    required this.byteEndExclusive,
   });
 
   final Uri uploadEndpoint;
   final WavUploadFile file;
   final String contentType;
   final Map<String, String> headers;
+  final int bodySize;
+  final int? byteStart;
+  final int? byteEndExclusive;
 }
 
 HomePlayerStreamingUpload _recordingUpload(
-  List<_RecordedStreamingUpload> calls,
-) {
+  List<_RecordedStreamingUpload> calls, {
+  List<String>? events,
+}) {
   return ({
     required Uri uploadEndpoint,
     required WavUploadFile file,
@@ -630,19 +811,27 @@ HomePlayerStreamingUpload _recordingUpload(
     required Map<String, String> headers,
     required void Function(int sent, int total) onProgress,
     WavUploadCancelToken? cancelToken,
+    int? byteStart,
+    int? byteEndExclusive,
+    Uint8List? bodyBytes,
   }) async {
     if (cancelToken?.isCancelled == true) {
       throw const WavUploadFailure(WavUploadFailureKind.cancelled);
     }
+    events?.add('PUT ${uploadEndpoint.path}');
     calls.add(
       _RecordedStreamingUpload(
         uploadEndpoint: uploadEndpoint,
         file: file,
         contentType: contentType,
         headers: Map<String, String>.from(headers),
+        bodySize: bodyBytes?.length ?? file.size,
+        byteStart: byteStart,
+        byteEndExclusive: byteEndExclusive,
       ),
     );
-    onProgress(file.size, file.size);
+    final total = bodyBytes?.length ?? file.size;
+    onProgress(total, total);
   };
 }
 
@@ -654,6 +843,7 @@ class _PipelineHarness {
 
   static Future<_PipelineHarness> create({
     ResponseBody Function(RequestOptions options)? handler,
+    List<String>? events,
   }) async {
     final storage = _MemoryFlutterSecureStorage();
     final tokens = TokenStorage(storage: storage);
@@ -666,12 +856,80 @@ class _PipelineHarness {
       baseUrl: 'http://127.0.0.1:1',
       tokenStorage: tokens,
     );
-    final adapter = _RecordingAdapter(handler ?? _defaultHandler);
+    final adapter = _RecordingAdapter(handler ?? _defaultHandler, events);
     client.raw.httpClientAdapter = adapter;
     return _PipelineHarness(client: client, adapter: adapter);
   }
 
   static ResponseBody _defaultHandler(RequestOptions options) {
+    if (options.path == '/api/media-assets/media-1/upload-session' &&
+        options.method.toUpperCase() == 'POST') {
+      return _jsonResponse(
+        statusCode: 201,
+        body: _chunkUploadPayload(
+          filename: 'large-home-player.wav',
+          mimeType: 'audio/wav',
+          sizeBytes: _largeHomePlayerWavBytes,
+        ),
+      );
+    }
+    if (options.path.startsWith(
+          '/api/media-assets/media-1/upload-sessions/upload-session-1/chunks/',
+        ) &&
+        options.method.toUpperCase() == 'PUT') {
+      final chunkIndex = int.parse(options.path.split('/').last);
+      final byteStart = chunkIndex * _homePlayerChunkSizeBytes;
+      final maxChunkEnd = byteStart + _homePlayerChunkSizeBytes - 1;
+      final byteEnd = maxChunkEnd < _largeHomePlayerWavBytes
+          ? maxChunkEnd
+          : _largeHomePlayerWavBytes - 1;
+      return _jsonResponse(
+        statusCode: 200,
+        body: <String, Object?>{
+          'upload_session_id': 'upload-session-1',
+          'media_asset_id': 'media-1',
+          'chunk_index': chunkIndex,
+          'byte_start': byteStart,
+          'byte_end': byteEnd,
+          'size_bytes': byteEnd - byteStart + 1,
+          'sha256': 'a' * 64,
+          'received_bytes': byteEnd + 1,
+        },
+      );
+    }
+    if (options.path ==
+            '/api/media-assets/media-1/upload-sessions/upload-session-1/status' &&
+        options.method.toUpperCase() == 'GET') {
+      return _jsonResponse(
+        statusCode: 200,
+        body: <String, Object?>{
+          'upload_session_id': 'upload-session-1',
+          'media_asset_id': 'media-1',
+          'owner_user_id': 'teacher-1',
+          'state': 'open',
+          'asset_state': 'pending_upload',
+          'total_bytes': _largeHomePlayerWavBytes,
+          'content_type': 'audio/wav',
+          'chunk_size': _homePlayerChunkSizeBytes,
+          'expected_chunks': _expectedChunkCount(_largeHomePlayerWavBytes),
+          'received_bytes': _largeHomePlayerWavBytes,
+          'expires_at': '2026-04-21T12:00:00Z',
+          'chunks': const <Object?>[],
+        },
+      );
+    }
+    if (options.path ==
+            '/api/media-assets/media-1/upload-sessions/upload-session-1/finalize' &&
+        options.method.toUpperCase() == 'POST') {
+      return _jsonResponse(
+        statusCode: 200,
+        body: <String, Object?>{
+          'upload_session_id': 'upload-session-1',
+          'media_asset_id': 'media-1',
+          'asset_state': 'uploaded',
+        },
+      );
+    }
     if (options.path == '/api/media-assets/media-1/upload-bytes' &&
         options.method.toUpperCase() == 'PUT') {
       return _jsonResponse(statusCode: 200, body: const <String, Object?>{});
@@ -722,9 +980,10 @@ String _jwtWithExpSeconds(int expSeconds) {
 }
 
 class _RecordingAdapter implements HttpClientAdapter {
-  _RecordingAdapter(this._handler);
+  _RecordingAdapter(this._handler, this._events);
 
   final ResponseBody Function(RequestOptions options) _handler;
+  final List<String>? _events;
   final List<_RecordedRequest> _requests = <_RecordedRequest>[];
 
   List<_RecordedRequest> requestsFor(String path) => _requests
@@ -740,6 +999,7 @@ class _RecordingAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    _events?.add('${options.method.toUpperCase()} ${options.path}');
     _requests.add(
       _RecordedRequest(
         path: options.path,

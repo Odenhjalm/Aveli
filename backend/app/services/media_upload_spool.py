@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import itertools
+import os
 import shutil
+import time
 from collections.abc import AsyncIterable, Iterable
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from ..config import settings
 from . import storage_service
@@ -13,6 +17,8 @@ from . import storage_service
 
 _SPOOL_ROOT = Path(__file__).resolve().parents[2] / ".media_upload_spool"
 _READ_SIZE = 1024 * 1024
+_LOCK_TIMEOUT_SECONDS = 10.0
+_TEMP_COUNTER = itertools.count()
 
 
 class SpoolChecksumMismatchError(RuntimeError):
@@ -21,6 +27,10 @@ class SpoolChecksumMismatchError(RuntimeError):
 
 class SpoolSizeMismatchError(RuntimeError):
     """Raised when received chunk bytes do not match the declared size."""
+
+
+class SpoolChunkConflictError(RuntimeError):
+    """Raised when a published chunk path already has different bytes."""
 
 
 def _clean_component(value: str) -> str:
@@ -54,15 +64,90 @@ def _path_for_logical_path(logical_path: str) -> Path:
     return path
 
 
-async def _write_bytes(path: Path, data: bytes, *, append: bool) -> None:
+def _unique_temp_path(final_path: Path) -> Path:
+    suffix = f".{os.getpid()}.{next(_TEMP_COUNTER)}.{uuid4().hex}.tmp"
+    return final_path.with_name(final_path.name + suffix)
+
+
+def _sha256_file_sync(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(_READ_SIZE), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _write_bytes_sync(path: Path, data: bytes, *, append: bool) -> None:
     mode = "ab" if append else "wb"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open(mode) as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
 
-    def _sync_write() -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open(mode) as handle:
-            handle.write(data)
 
-    await asyncio.to_thread(_sync_write)
+async def _write_bytes(path: Path, data: bytes, *, append: bool) -> None:
+    await asyncio.to_thread(_write_bytes_sync, path, data, append=append)
+
+
+def _publish_temp_file_sync(
+    *,
+    temp_path: Path,
+    final_path: Path,
+    digest: str,
+) -> str:
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = final_path.with_name(final_path.name + ".lock")
+    deadline = time.monotonic() + _LOCK_TIMEOUT_SECONDS
+    fd: int | None = None
+    while fd is None:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                raise SpoolChunkConflictError("chunk publish lock timed out")
+            time.sleep(0.01)
+
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(f"{os.getpid()}\n")
+        fd = None
+        if final_path.exists():
+            existing_digest = _sha256_file_sync(final_path)
+            if existing_digest != digest:
+                raise SpoolChunkConflictError(
+                    "chunk already exists with different bytes"
+                )
+            return existing_digest
+        os.replace(temp_path, final_path)
+        published_digest = _sha256_file_sync(final_path)
+        if published_digest != digest:
+            raise SpoolChecksumMismatchError(
+                "published chunk checksum changed during write"
+            )
+        return published_digest
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        temp_path.unlink(missing_ok=True)
+        lock_path.unlink(missing_ok=True)
+
+
+async def _publish_temp_file(
+    *,
+    temp_path: Path,
+    final_path: Path,
+    digest: str,
+) -> str:
+    return await asyncio.to_thread(
+        _publish_temp_file_sync,
+        temp_path=temp_path,
+        final_path=final_path,
+        digest=digest,
+    )
 
 
 async def _iter_content(content: bytes | AsyncIterable[bytes]) -> AsyncIterable[bytes]:
@@ -88,7 +173,7 @@ async def write_chunk(
         chunk_index=chunk_index,
     )
     final_path = _path_for_logical_path(logical_path)
-    temp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+    temp_path = _unique_temp_path(final_path)
     hasher = hashlib.sha256()
     size = 0
     first = True
@@ -113,11 +198,25 @@ async def write_chunk(
         temp_path.unlink(missing_ok=True)
         raise SpoolChecksumMismatchError("chunk checksum does not match declared digest")
 
-    await asyncio.to_thread(temp_path.replace, final_path)
+    persisted_digest = await asyncio.to_thread(_sha256_file_sync, temp_path)
+    if persisted_digest != digest:
+        temp_path.unlink(missing_ok=True)
+        raise SpoolChecksumMismatchError("chunk checksum changed during write")
+
+    final_digest = await _publish_temp_file(
+        temp_path=temp_path,
+        final_path=final_path,
+        digest=digest,
+    )
+    if (
+        expected_sha256 is not None
+        and final_digest != str(expected_sha256).strip().lower()
+    ):
+        raise SpoolChecksumMismatchError("published chunk checksum does not match digest")
     return {
         "spool_object_path": logical_path,
         "size_bytes": size,
-        "sha256": digest,
+        "sha256": final_digest,
     }
 
 

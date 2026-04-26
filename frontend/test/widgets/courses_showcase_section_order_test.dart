@@ -150,7 +150,7 @@ void main() {
   testWidgets(
     'showcase cards keep deterministic description rendering for short long and exact text',
     (tester) async {
-      const shortDescription = 'Kort beskrivning.';
+      const compactDescription = 'Kort beskrivning.';
       const longDescription =
           'En lang kursbeskrivning fran backend som ska visas i tre fasta '
           'rader med ellips nar texten fortsatter utan att landningskortet '
@@ -163,7 +163,7 @@ void main() {
           _course(
             id: 'showcase-short',
             title: 'Showcase Short',
-            description: shortDescription,
+            description: compactDescription,
           ),
           _course(
             id: 'showcase-long',
@@ -179,7 +179,7 @@ void main() {
       );
 
       for (final description in [
-        shortDescription,
+        compactDescription,
         longDescription,
         exactDescription,
       ]) {
