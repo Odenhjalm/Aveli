@@ -88,13 +88,13 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "549d4aba48a803c9c888d77f23365aea9d77c1d40578f447e6de149d4f8cb60b",
+    "expected_schema_hash": "bd402dbba2f607f73b1eb945a5ca522c37dbac0b7ba27d3e98279425c50b90b6",
     "expected_counts": {
       "enums": 13,
-      "tables": 43,
+      "tables": 45,
       "views": 5,
-      "fks": 62,
-      "constraints": 227,
+      "fks": 65,
+      "constraints": 249,
       "triggers": 36,
       "functions": 54
     },
@@ -743,6 +743,22 @@
         "views": 5,
         "fks": 62,
         "constraints": 227,
+        "triggers": 36,
+        "functions": 54
+      }
+    },
+    {
+      "slot": 36,
+      "filename": "V2_0036_media_upload_sessions.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0036_media_upload_sessions.sql",
+      "sha256": "00df81e3cea15db6270364a1f2d009bd525bf09f5bf3d973395b6a3fbafae5d3",
+      "post_state_hash": "25cbf7fa46214e3e019abfff6853b30be71bd7b1b31d6a811afcff0f60b2642d",
+      "post_counts": {
+        "enums": 13,
+        "tables": 45,
+        "views": 5,
+        "fks": 65,
+        "constraints": 249,
         "triggers": 36,
         "functions": 54
       }
