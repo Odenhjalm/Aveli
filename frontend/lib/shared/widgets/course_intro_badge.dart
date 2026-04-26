@@ -6,6 +6,10 @@ import 'package:aveli/shared/theme/ui_consts.dart';
 enum CourseIntroBadgeVariant { badge, link }
 
 const LinearGradient _courseIntroBadgeGradient = kBrandVibrantGradient;
+const EdgeInsets _courseIntroBadgePadding = EdgeInsets.symmetric(
+  horizontal: 6,
+  vertical: 3,
+);
 
 class CourseIntroBadge extends StatelessWidget {
   const CourseIntroBadge({
@@ -40,8 +44,15 @@ class CourseIntroBadge extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(gradient: gradient),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              child: Text(label, style: style),
+              padding: _courseIntroBadgePadding,
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: style,
+                textWidthBasis: TextWidthBasis.longestLine,
+              ),
             ),
           ),
         );
@@ -56,8 +67,15 @@ class CourseIntroBadge extends StatelessWidget {
             const TextStyle(fontWeight: FontWeight.w600);
         final style = baseStyle.merge(buttonStyle);
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Text(label, style: style.copyWith(color: resolvedTextColor)),
+          padding: _courseIntroBadgePadding,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+            style: style.copyWith(color: resolvedTextColor),
+            textWidthBasis: TextWidthBasis.longestLine,
+          ),
         );
     }
   }
