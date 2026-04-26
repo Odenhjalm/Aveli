@@ -1362,16 +1362,22 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final target = _activeTextTarget();
     if (target == null) return null;
     final children = _childrenForTarget(target);
-    final length = _plainText(children).length;
+    final text = _plainText(children);
+    final length = text.length;
     if (length == 0) return null;
     final key = _controlKeyForTarget(target);
     if (key == null) return null;
-    final selection = _controllers[key]?.selection;
+    final controller = _controllers[key];
+    if (controller == null || controller.text != text) return null;
+    final selection = controller.selection;
     if (selection == null || selection.isCollapsed) {
       return null;
     }
-    final start = selection.start.clamp(0, length).toInt();
-    final end = selection.end.clamp(0, length).toInt();
+    final start = selection.start;
+    final end = selection.end;
+    if (start < 0 || end < 0 || start > length || end > length) {
+      return null;
+    }
     if (start == end) return null;
     return _SelectedTextRange(
       target: target,

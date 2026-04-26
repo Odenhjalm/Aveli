@@ -761,6 +761,51 @@ void main() {
     );
   });
 
+  testWidgets('document editor heading ignores out-of-range selections', (
+    tester,
+  ) async {
+    const initial = LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+      ],
+    );
+    var document = initial;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _focusTextField(
+      tester,
+      const ValueKey('lesson_document_editor_node_0'),
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    _forceControllerSelection(
+      tester,
+      const ValueKey('lesson_document_editor_node_0'),
+      const TextSelection(baseOffset: 0, extentOffset: 99),
+    );
+    await tester.pump();
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+    expect(document.toJson(), initial.toJson());
+  });
+
   testWidgets('document editor applies heading to a full-block selection', (
     tester,
   ) async {
@@ -846,6 +891,55 @@ void main() {
     await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
 
     expect(document.toJson(), initial.toJson());
+  });
+
+  testWidgets('document editor heading ignores stale invalid selections', (
+    tester,
+  ) async {
+    final controller = LessonDocumentEditorController();
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+      ],
+    );
+    const resetDocument = LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Short')]),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  controller: controller,
+                  lessonId: 'lesson-stale-selection',
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _selectTextRange(
+      tester,
+      const ValueKey('lesson_document_editor_node_0'),
+      text: 'Alpha Beta Gamma',
+      start: 0,
+      end: 16,
+    );
+    controller.resetTo(document: resetDocument, lessonId: 'lesson-reset');
+    await tester.pump();
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+    expect(controller.currentDocument?.toJson(), resetDocument.toJson());
   });
 
   testWidgets('document editor ignores inline formatting without selection', (
@@ -2376,6 +2470,23 @@ Future<void> _selectTextRange(
     ),
   );
   await tester.pump();
+}
+
+Future<void> _focusTextField(WidgetTester tester, ValueKey<String> key) async {
+  final finder = find.byKey(key);
+  await tester.ensureVisible(finder);
+  await tester.tap(finder);
+  await tester.pump();
+}
+
+void _forceControllerSelection(
+  WidgetTester tester,
+  ValueKey<String> key,
+  TextSelection selection,
+) {
+  final textField = tester.widget<TextField>(find.byKey(key));
+  final controller = textField.controller!;
+  controller.value = controller.value.copyWith(selection: selection);
 }
 
 Future<void> _tapToolbar(WidgetTester tester, Key key) async {
