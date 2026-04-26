@@ -21,6 +21,18 @@ def _assert_fail_fast_storage_client(init: dict[str, object]) -> None:
     assert limits.max_keepalive_connections == 0
 
 
+def _assert_upload_storage_client(init: dict[str, object]) -> None:
+    timeout = init["kwargs"]["timeout"]
+    limits = init["kwargs"]["limits"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.connect == 5.0
+    assert timeout.read == 900.0
+    assert timeout.write == 900.0
+    assert timeout.pool == 5.0
+    assert isinstance(limits, httpx.Limits)
+    assert limits.max_keepalive_connections == 0
+
+
 @pytest.mark.anyio("asyncio")
 async def test_get_presigned_url_sets_content_disposition(monkeypatch):
     captured: dict[str, dict[str, object]] = {}
@@ -208,6 +220,159 @@ async def test_create_upload_url_returns_put_headers(monkeypatch):
     request = captured["request"]
     assert request["headers"]["x-upsert"] == "true"
     _assert_fail_fast_storage_client(captured["init"])
+
+
+@pytest.mark.anyio("asyncio")
+async def test_upload_object_uses_extended_timeout_and_logs_success(
+    monkeypatch, caplog
+):
+    captured: dict[str, list[dict[str, object]] | dict[str, object]] = {
+        "init": []
+    }
+
+    class SignResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "url": "/storage/v1/object/upload/sign/lesson_media/course/audio.wav?token=abc"
+            }
+
+    class UploadResponse:
+        status_code = 200
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            captured["init"].append({"args": args, "kwargs": kwargs})
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            captured["sign"] = {"url": url, "json": json, "headers": headers}
+            return SignResponse()
+
+        async def put(self, url, headers, content):
+            captured["upload"] = {
+                "url": url,
+                "headers": headers,
+                "content": content,
+            }
+            return UploadResponse()
+
+    monkeypatch.setattr(storage_module.httpx, "AsyncClient", DummyAsyncClient)
+
+    service = StorageService(
+        bucket="lesson_media",
+        supabase_url="https://example.supabase.co",
+        service_role_key="service-role-key",
+    )
+
+    caplog.set_level("INFO", logger=storage_module.logger.name)
+    result = await service.upload_object(
+        "course/audio.wav",
+        content=b"wav",
+        content_type="audio/wav",
+        content_length=3,
+        media_asset_id="media-1",
+    )
+
+    assert result.path == "course/audio.wav"
+    init_calls = captured["init"]
+    assert len(init_calls) == 2
+    _assert_fail_fast_storage_client(init_calls[0])
+    _assert_upload_storage_client(init_calls[1])
+    assert captured["upload"]["headers"]["content-type"] == "audio/wav"
+    assert "token=abc" not in caplog.text
+
+    success_records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("SUPABASE_STORAGE_UPLOAD_RESULT")
+    ]
+    assert len(success_records) == 1
+    record = success_records[0]
+    assert record.media_asset_id == "media-1"
+    assert record.bucket == "lesson_media"
+    assert record.object_path == "course/audio.wav"
+    assert record.content_length == 3
+    assert record.content_type == "audio/wav"
+    assert record.result == "success"
+    assert record.error_class is None
+    assert isinstance(record.elapsed_ms, int)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_upload_object_timeout_logs_and_wraps(monkeypatch, caplog):
+    captured: dict[str, list[dict[str, object]]] = {"init": []}
+
+    class SignResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "url": "/storage/v1/object/upload/sign/lesson_media/course/audio.wav?token=abc"
+            }
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            captured["init"].append({"args": args, "kwargs": kwargs})
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return SignResponse()
+
+        async def put(self, url, headers, content):
+            raise httpx.WriteTimeout("upload too slow")
+
+    monkeypatch.setattr(storage_module.httpx, "AsyncClient", DummyAsyncClient)
+
+    service = StorageService(
+        bucket="lesson_media",
+        supabase_url="https://example.supabase.co",
+        service_role_key="service-role-key",
+    )
+
+    caplog.set_level("WARNING", logger=storage_module.logger.name)
+    with pytest.raises(StorageServiceError) as exc_info:
+        await service.upload_object(
+            "course/audio.wav",
+            content=b"wav",
+            content_type="audio/wav",
+            content_length=3,
+            media_asset_id="media-1",
+        )
+
+    assert isinstance(exc_info.value.__cause__, httpx.WriteTimeout)
+    init_calls = captured["init"]
+    assert len(init_calls) == 2
+    _assert_fail_fast_storage_client(init_calls[0])
+    _assert_upload_storage_client(init_calls[1])
+    assert "token=abc" not in caplog.text
+
+    timeout_records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("SUPABASE_STORAGE_UPLOAD_RESULT")
+    ]
+    assert len(timeout_records) == 1
+    record = timeout_records[0]
+    assert record.media_asset_id == "media-1"
+    assert record.bucket == "lesson_media"
+    assert record.object_path == "course/audio.wav"
+    assert record.content_length == 3
+    assert record.content_type == "audio/wav"
+    assert record.result == "timeout"
+    assert record.error_class == "WriteTimeout"
+    assert isinstance(record.elapsed_ms, int)
 
 
 def test_canonical_upload_bucket_uses_profile_media_bucket_for_profile_assets():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 def storage_http_timeout() -> httpx.Timeout:
     return httpx.Timeout(10.0, connect=5.0, read=10.0)
+
+
+def storage_upload_http_timeout() -> httpx.Timeout:
+    return httpx.Timeout(900.0, connect=5.0, read=900.0, write=900.0, pool=5.0)
 
 
 def storage_http_limits() -> httpx.Limits:
@@ -397,6 +402,8 @@ class StorageService:
         *,
         content: bytes | AsyncIterable[bytes],
         content_type: str | None = None,
+        content_length: int | None = None,
+        media_asset_id: str | None = None,
         upsert: bool = False,
         cache_seconds: int | None = None,
     ) -> PresignedUpload:
@@ -408,14 +415,20 @@ class StorageService:
             upsert=upsert,
             cache_seconds=cache_seconds,
         )
+        logged_content_type = str(
+            upload.headers.get("content-type") or content_type or ""
+        ).strip() or None
         logger.info(
-            "Supabase Storage upload request started bucket=%s path=%s url=%s",
+            "SUPABASE_STORAGE_UPLOAD_STARTED media_asset_id=%s bucket=%s object_path=%s content_length=%s content_type=%s",
+            media_asset_id,
             self._bucket,
             upload.path,
-            redact_http_url(upload.url),
+            content_length,
+            logged_content_type,
         )
+        started_at = time.monotonic()
         async with httpx.AsyncClient(
-            timeout=storage_http_timeout(),
+            timeout=storage_upload_http_timeout(),
             limits=storage_http_limits(),
         ) as client:
             try:
@@ -424,27 +437,102 @@ class StorageService:
                     headers=dict(upload.headers),
                     content=content,
                 )
-            except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+            except httpx.TimeoutException as exc:
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
                 logger.warning(
-                    "Supabase Storage upload request failed bucket=%s path=%s url=%s error=%s",
+                    "SUPABASE_STORAGE_UPLOAD_RESULT media_asset_id=%s bucket=%s object_path=%s content_length=%s content_type=%s elapsed_ms=%s result=timeout error_class=%s",
+                    media_asset_id,
                     self._bucket,
                     upload.path,
-                    redact_http_url(upload.url),
-                    exc,
+                    content_length,
+                    logged_content_type,
+                    elapsed_ms,
+                    exc.__class__.__name__,
+                    extra={
+                        "media_asset_id": media_asset_id,
+                        "bucket": self._bucket,
+                        "object_path": upload.path,
+                        "content_length": content_length,
+                        "content_type": logged_content_type,
+                        "elapsed_ms": elapsed_ms,
+                        "result": "timeout",
+                        "error_class": exc.__class__.__name__,
+                    },
+                )
+                raise StorageServiceError(
+                    "Supabase Storage upload timed out"
+                ) from exc
+            except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                logger.warning(
+                    "SUPABASE_STORAGE_UPLOAD_RESULT media_asset_id=%s bucket=%s object_path=%s content_length=%s content_type=%s elapsed_ms=%s result=error error_class=%s",
+                    media_asset_id,
+                    self._bucket,
+                    upload.path,
+                    content_length,
+                    logged_content_type,
+                    elapsed_ms,
+                    exc.__class__.__name__,
+                    extra={
+                        "media_asset_id": media_asset_id,
+                        "bucket": self._bucket,
+                        "object_path": upload.path,
+                        "content_length": content_length,
+                        "content_type": logged_content_type,
+                        "elapsed_ms": elapsed_ms,
+                        "result": "error",
+                        "error_class": exc.__class__.__name__,
+                    },
                 )
                 raise StorageServiceError("Failed to upload storage object") from exc
-        logger.info(
-            "Supabase Storage upload request completed bucket=%s path=%s status=%s",
-            self._bucket,
-            upload.path,
-            response.status_code,
-        )
 
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
         if response.status_code >= 400:
+            error_class = f"HTTP_{response.status_code}"
+            logger.warning(
+                "SUPABASE_STORAGE_UPLOAD_RESULT media_asset_id=%s bucket=%s object_path=%s content_length=%s content_type=%s elapsed_ms=%s result=error error_class=%s",
+                media_asset_id,
+                self._bucket,
+                upload.path,
+                content_length,
+                logged_content_type,
+                elapsed_ms,
+                error_class,
+                extra={
+                    "media_asset_id": media_asset_id,
+                    "bucket": self._bucket,
+                    "object_path": upload.path,
+                    "content_length": content_length,
+                    "content_type": logged_content_type,
+                    "elapsed_ms": elapsed_ms,
+                    "result": "error",
+                    "error_class": error_class,
+                },
+            )
             raise StorageServiceError(
                 f"Supabase Storage upload failed with status {response.status_code}",
                 status_code=response.status_code,
             )
+        logger.info(
+            "SUPABASE_STORAGE_UPLOAD_RESULT media_asset_id=%s bucket=%s object_path=%s content_length=%s content_type=%s elapsed_ms=%s result=success error_class=%s",
+            media_asset_id,
+            self._bucket,
+            upload.path,
+            content_length,
+            logged_content_type,
+            elapsed_ms,
+            "none",
+            extra={
+                "media_asset_id": media_asset_id,
+                "bucket": self._bucket,
+                "object_path": upload.path,
+                "content_length": content_length,
+                "content_type": logged_content_type,
+                "elapsed_ms": elapsed_ms,
+                "result": "success",
+                "error_class": None,
+            },
+        )
         return upload
 
     async def delete_object(self, path: str) -> bool:

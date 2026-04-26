@@ -17,6 +17,7 @@ import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
+import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/course_intro_badge.dart';
 import 'package:aveli/shared/widgets/semantic_text.dart';
@@ -222,14 +223,8 @@ class _ActIntroSection extends StatelessWidget {
                   final width = constraints.maxWidth;
                   final tileWidth = (width - (spacing * 2)) / 3;
 
-                  final imageHeight = tileWidth * 9 / 16;
-                  const reservedBottom = 116.0;
-                  final listHeight = (imageHeight + reservedBottom)
-                      .clamp(180.0, 232.0)
-                      .toDouble();
-
                   return SizedBox(
-                    height: listHeight,
+                    height: _IntroMiniCourseCard.cardHeight,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       physics: const BouncingScrollPhysics(),
@@ -238,6 +233,7 @@ class _ActIntroSection extends StatelessWidget {
                           const SizedBox(width: spacing),
                       itemBuilder: (context, index) => SizedBox(
                         width: tileWidth,
+                        height: _IntroMiniCourseCard.cardHeight,
                         child: _IntroMiniCourseCard(
                           course: courses[index],
                           mediaRepository: mediaRepository,
@@ -467,6 +463,13 @@ class _IntroMiniCourseCard extends StatelessWidget {
     required this.mediaRepository,
   });
 
+  static const cardHeight = 232.0;
+  static const _imageHeight = 108.0;
+  static const _bodyHeight = cardHeight - _imageHeight;
+  static const _titleSlotHeight = 20.0;
+  static const _descriptionSlotHeight = 38.0;
+  static const _badgeSlotHeight = 30.0;
+
   final CourseSummary course;
   final MediaRepository mediaRepository;
 
@@ -491,99 +494,126 @@ class _IntroMiniCourseCard extends StatelessWidget {
                 pathParameters: {'slug': slug},
               ),
         borderRadius: radius,
-        child: GlassCard(
-          padding: EdgeInsets.zero,
-          opacity: 0.18,
-          sigmaX: 12,
-          sigmaY: 12,
+        child: ClipRRect(
           borderRadius: radius,
-          borderColor: Colors.white.withValues(alpha: 0.16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      if (SafeMedia.enabled) {
-                        SafeMedia.markThumbnails();
-                      }
-                      final cacheWidth = SafeMedia.cacheDimension(
-                        context,
-                        constraints.maxWidth,
-                        max: 800,
-                      );
-                      final cacheHeight = SafeMedia.cacheDimension(
-                        context,
-                        constraints.maxHeight,
-                        max: 800,
-                      );
-                      return DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
+          child: EffectsBackdropFilter(
+            sigmaX: 12,
+            sigmaY: 12,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: radius,
+                border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+              ),
+              child: SizedBox(
+                height: cardHeight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: _imageHeight,
+                      width: double.infinity,
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(16),
                         ),
-                        child: FutureBuilder<String?>(
-                          future: courseCoverImageUrlFuture,
-                          builder: (context, snapshot) {
-                            final courseCoverImageUrl = snapshot.data;
-                            if (courseCoverImageUrl == null ||
-                                courseCoverImageUrl.isEmpty) {
-                              return const SizedBox.shrink();
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            if (SafeMedia.enabled) {
+                              SafeMedia.markThumbnails();
                             }
-                            return Image.network(
-                              courseCoverImageUrl,
-                              fit: BoxFit.cover,
-                              filterQuality: SafeMedia.filterQuality(
-                                full: FilterQuality.high,
+                            final cacheWidth = SafeMedia.cacheDimension(
+                              context,
+                              constraints.maxWidth,
+                              max: 800,
+                            );
+                            final cacheHeight = SafeMedia.cacheDimension(
+                              context,
+                              constraints.maxHeight,
+                              max: 800,
+                            );
+                            return DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.18),
                               ),
-                              cacheWidth: cacheWidth,
-                              cacheHeight: cacheHeight,
-                              gaplessPlayback: true,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const SizedBox.shrink(),
+                              child: FutureBuilder<String?>(
+                                future: courseCoverImageUrlFuture,
+                                builder: (context, snapshot) {
+                                  final courseCoverImageUrl = snapshot.data;
+                                  if (courseCoverImageUrl == null ||
+                                      courseCoverImageUrl.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Image.network(
+                                    courseCoverImageUrl,
+                                    fit: BoxFit.cover,
+                                    filterQuality: SafeMedia.filterQuality(
+                                      full: FilterQuality.high,
+                                    ),
+                                    cacheWidth: cacheWidth,
+                                    cacheHeight: cacheHeight,
+                                    gaplessPlayback: true,
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            const SizedBox.shrink(),
+                                  );
+                                },
+                              ),
                             );
                           },
                         ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        course.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: DesignTokens.bodyTextColor,
-                          fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(
+                      height: _bodyHeight,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              height: _titleSlotHeight,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  course.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: DesignTokens.bodyTextColor,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            SizedBox(
+                              height: _descriptionSlotHeight,
+                              child: description.isEmpty
+                                  ? const SizedBox.shrink()
+                                  : CourseDescriptionText(
+                                      description,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      baseStyle: theme.textTheme.bodySmall,
+                                    ),
+                            ),
+                            const SizedBox(height: 10),
+                            const SizedBox(
+                              height: _badgeSlotHeight,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: CourseIntroBadge(label: 'Introduktion'),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      if (description.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        CourseDescriptionText(
-                          description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          baseStyle: theme.textTheme.bodySmall,
-                        ),
-                      ],
-                      const Spacer(),
-                      const CourseIntroBadge(label: 'Introduktion'),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),

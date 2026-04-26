@@ -1133,6 +1133,7 @@ async def canonical_upload_media_asset_bytes(
             detail="Media asset cannot receive upload bytes from its current state",
         )
 
+    content_length: int | None = None
     content_length_raw = request.headers.get("content-length")
     if content_length_raw:
         try:
@@ -1170,6 +1171,8 @@ async def canonical_upload_media_asset_bytes(
             object_path,
             content=request.stream(),
             content_type=content_type,
+            content_length=content_length,
+            media_asset_id=media_asset_id_str,
             upsert=False,
             cache_seconds=settings.media_public_cache_seconds,
         )

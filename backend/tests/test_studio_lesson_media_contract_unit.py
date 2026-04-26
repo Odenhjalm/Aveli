@@ -449,6 +449,221 @@ async def test_canonical_upload_completion_does_not_attach(monkeypatch):
     assert completed == [MEDIA_ASSET_ID]
 
 
+async def test_canonical_upload_bytes_storage_timeout_fails_closed(monkeypatch):
+    assert_storage_called = False
+
+    class DummyRequest:
+        headers = {"content-length": "3", "content-type": "audio/wav"}
+
+        async def stream(self):
+            yield b"wav"
+
+    class FailingStorage:
+        async def upload_object(self, object_path, **kwargs):
+            assert object_path == f"media/{MEDIA_ASSET_ID}/source"
+            assert kwargs["content_type"] == "audio/wav"
+            assert kwargs["content_length"] == 3
+            assert kwargs["media_asset_id"] == MEDIA_ASSET_ID
+            raise studio.storage_service.StorageServiceError(
+                "Supabase Storage upload timed out"
+            )
+
+    async def fake_authorize_media_asset(**kwargs):
+        assert kwargs["media_asset_id"] == MEDIA_ASSET_ID
+        return {
+            "id": MEDIA_ASSET_ID,
+            "state": "pending_upload",
+            "purpose": "home_player_audio",
+            "media_type": "audio",
+            "ingest_format": "wav",
+            "original_object_path": f"media/{MEDIA_ASSET_ID}/source",
+        }
+
+    async def fail_assert_storage_write(media_asset):
+        nonlocal assert_storage_called
+        assert_storage_called = True
+        raise AssertionError("storage verification must not run after upload failure")
+
+    monkeypatch.setattr(
+        studio,
+        "_authorize_canonical_media_upload_asset",
+        fake_authorize_media_asset,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.storage_service,
+        "get_storage_service",
+        lambda bucket: FailingStorage(),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio,
+        "_assert_canonical_media_storage_write",
+        fail_assert_storage_write,
+        raising=True,
+    )
+
+    with pytest.raises(studio.HTTPException) as exc_info:
+        await studio.canonical_upload_media_asset_bytes(
+            media_asset_id=studio.UUID(MEDIA_ASSET_ID),
+            request=DummyRequest(),
+            current={"id": TEACHER_ID},
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "Storage upload failed"
+    assert assert_storage_called is False
+
+
+async def test_canonical_upload_completion_rejects_missing_storage_object(
+    monkeypatch,
+):
+    completed: list[str] = []
+    expected_bucket = studio.storage_service.settings.media_source_bucket
+    expected_path = f"media/{MEDIA_ASSET_ID}/source"
+
+    async def fake_authorize_media_asset(**kwargs):
+        assert kwargs["media_asset_id"] == MEDIA_ASSET_ID
+        return {
+            "id": MEDIA_ASSET_ID,
+            "state": "pending_upload",
+            "purpose": "home_player_audio",
+            "media_type": "audio",
+            "ingest_format": "wav",
+            "original_object_path": expected_path,
+        }
+
+    async def fake_fetch_storage_object_existence(pairs):
+        assert list(pairs) == [(expected_bucket, expected_path)]
+        return {(expected_bucket, expected_path): False}, True
+
+    async def fail_mark_uploaded(*, media_id: str):
+        completed.append(media_id)
+        raise AssertionError("missing source object must not mark uploaded")
+
+    monkeypatch.setattr(
+        studio,
+        "_authorize_canonical_media_upload_asset",
+        fake_authorize_media_asset,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.storage_objects,
+        "fetch_storage_object_existence",
+        fake_fetch_storage_object_existence,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.media_assets_repo,
+        "mark_lesson_media_pipeline_asset_uploaded",
+        fail_mark_uploaded,
+        raising=True,
+    )
+
+    with pytest.raises(studio.HTTPException) as exc_info:
+        await studio.canonical_complete_lesson_media_upload(
+            media_asset_id=studio.UUID(MEDIA_ASSET_ID),
+            payload=schemas.CanonicalMediaAssetUploadCompletionRequest(),
+            current={"id": TEACHER_ID},
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Uploaded file is missing from storage"
+    assert completed == []
+
+
+async def test_large_home_player_wav_upload_bytes_then_completion_succeeds(
+    monkeypatch,
+):
+    large_content_length = 200 * 1024 * 1024
+    expected_bucket = studio.storage_service.settings.media_source_bucket
+    expected_path = f"media/{MEDIA_ASSET_ID}/source"
+    uploaded_chunks: list[bytes] = []
+    completed: list[str] = []
+
+    class DummyRequest:
+        headers = {
+            "content-length": str(large_content_length),
+            "content-type": "audio/wav",
+        }
+
+        async def stream(self):
+            yield b"wav-header"
+            yield b"wav-body"
+
+    class SuccessfulStorage:
+        async def upload_object(self, object_path, **kwargs):
+            assert object_path == expected_path
+            assert kwargs["content_type"] == "audio/wav"
+            assert kwargs["content_length"] == large_content_length
+            assert kwargs["media_asset_id"] == MEDIA_ASSET_ID
+            async for chunk in kwargs["content"]:
+                uploaded_chunks.append(chunk)
+
+    async def fake_authorize_media_asset(**kwargs):
+        assert kwargs["media_asset_id"] == MEDIA_ASSET_ID
+        return {
+            "id": MEDIA_ASSET_ID,
+            "state": "pending_upload",
+            "purpose": "home_player_audio",
+            "media_type": "audio",
+            "ingest_format": "wav",
+            "original_object_path": expected_path,
+        }
+
+    async def fake_fetch_storage_object_existence(pairs):
+        assert list(pairs) == [(expected_bucket, expected_path)]
+        return {(expected_bucket, expected_path): True}, True
+
+    async def fake_mark_uploaded(*, media_id: str):
+        completed.append(media_id)
+        return {"id": media_id, "state": "uploaded"}
+
+    monkeypatch.setattr(
+        studio,
+        "_authorize_canonical_media_upload_asset",
+        fake_authorize_media_asset,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.storage_service,
+        "get_storage_service",
+        lambda bucket: SuccessfulStorage(),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.storage_objects,
+        "fetch_storage_object_existence",
+        fake_fetch_storage_object_existence,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        studio.media_assets_repo,
+        "mark_lesson_media_pipeline_asset_uploaded",
+        fake_mark_uploaded,
+        raising=True,
+    )
+
+    upload_response = await studio.canonical_upload_media_asset_bytes(
+        media_asset_id=studio.UUID(MEDIA_ASSET_ID),
+        request=DummyRequest(),
+        current={"id": TEACHER_ID},
+    )
+
+    completion_response = await studio.canonical_complete_lesson_media_upload(
+        media_asset_id=studio.UUID(MEDIA_ASSET_ID),
+        payload=schemas.CanonicalMediaAssetUploadCompletionRequest(),
+        current={"id": TEACHER_ID},
+    )
+
+    assert str(upload_response.media_asset_id) == MEDIA_ASSET_ID
+    assert upload_response.uploaded is True
+    assert uploaded_chunks == [b"wav-header", b"wav-body"]
+    assert str(completion_response.media_asset_id) == MEDIA_ASSET_ID
+    assert completion_response.asset_state == "uploaded"
+    assert completed == [MEDIA_ASSET_ID]
+
+
 async def test_course_cover_upload_url_persists_metadata_without_exposing_storage(
     monkeypatch,
 ) -> None:
