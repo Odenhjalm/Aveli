@@ -118,6 +118,13 @@ Accepted append-only continuation above the protected range:
   - Adds canonical notification records, notification delivery queue substrate,
     and push device routing substrate. Notification records are created before
     delivery attempts, and delivery state is worker-owned.
+- Slot `0035_course_public_description_substrate.sql`
+  - Adds canonical full public course description substrate through
+    `app.course_public_content.description`.
+  - `description.md` remains ingestion/source material only and is not runtime
+    authority.
+  - Existing `app.course_public_content.short_description` remains legacy
+    sibling public content.
 
 ## 3. Domain Classification
 
@@ -145,7 +152,7 @@ owning backend/operator authority:
 | `app.courses`                  | course identity, structure, pricing fields, grouping, legacy uniform drip configuration, and cover identity | studio/course backend authority                                                      |
 | `app.course_custom_drip_configs` | canonical custom-drip schedule root for one course                                      | studio/course scheduling backend authority                                           |
 | `app.course_custom_drip_lesson_offsets` | canonical per-lesson custom-drip unlock offsets                                  | studio/course scheduling backend authority                                           |
-| `app.course_public_content`    | sibling public course content such as `short_description`                                | dedicated public-content backend authority                                           |
+| `app.course_public_content`    | sibling public course content such as canonical `description` and legacy `short_description` | dedicated public-content backend authority                                           |
 | `app.lessons`                  | lesson identity and structure                                                            | studio lesson-structure backend authority                                            |
 | `app.lesson_contents`          | lesson markdown content                                                                  | studio lesson-content backend authority                                              |
 | `app.lesson_media`             | authored lesson-media placement identity and ordering                                    | media placement backend authority                                                    |

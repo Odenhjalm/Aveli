@@ -88,7 +88,7 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "ceb6b02245fd10b8848f471d39890122c535e63982b864740b867861ac3a1191",
+    "expected_schema_hash": "549d4aba48a803c9c888d77f23365aea9d77c1d40578f447e6de149d4f8cb60b",
     "expected_counts": {
       "enums": 13,
       "tables": 43,
@@ -721,6 +721,22 @@
       "path": "backend/supabase/baseline_v2_slots/V2_0034_intro_source_canonicalization.sql",
       "sha256": "3aab0a4ac070e2bd6c044054d80763765ef2f4320f221b5093150ec99a4e11fb",
       "post_state_hash": "3612570e5b519844c7c39963bdb1ed22946c4bcc1ea64449d2b365399d115856",
+      "post_counts": {
+        "enums": 13,
+        "tables": 43,
+        "views": 5,
+        "fks": 62,
+        "constraints": 227,
+        "triggers": 36,
+        "functions": 54
+      }
+    },
+    {
+      "slot": 35,
+      "filename": "V2_0035_course_public_description_substrate.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0035_course_public_description_substrate.sql",
+      "sha256": "78225ec719958e8b03ff59c6fe557f8111827b4369b3bd69d2e5ca8c893d8184",
+      "post_state_hash": "6a55cdef7d65e960185875705fa921338b5c410d223d57ecd67713d0d1ebf05c",
       "post_counts": {
         "enums": 13,
         "tables": 43,
