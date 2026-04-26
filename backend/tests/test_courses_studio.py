@@ -308,6 +308,51 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
             mode="no_drip_immediate_access",
         )
 
+        student_public_content = await async_client.post(
+            f"/studio/courses/{course_id}/public",
+            headers=auth_header(student_token),
+            json={"description": "Student should not save this"},
+        )
+        assert student_public_content.status_code == 403, student_public_content.text
+
+        save_public_content = await async_client.post(
+            f"/studio/courses/{course_id}/public",
+            headers=auth_header(teacher_token),
+            json={"description": "Full public course description"},
+        )
+        assert save_public_content.status_code == 200, save_public_content.text
+        assert save_public_content.json() == {
+            "course_id": course_id,
+            "description": "Full public course description",
+        }
+        assert "short_description" not in save_public_content.json()
+
+        read_public_content = await async_client.get(
+            f"/studio/courses/{course_id}/public",
+            headers=auth_header(teacher_token),
+        )
+        assert read_public_content.status_code == 200, read_public_content.text
+        assert read_public_content.json() == {
+            "course_id": course_id,
+            "description": "Full public course description",
+        }
+
+        async with db.pool.connection() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor() as cur:  # type: ignore[attr-defined]
+                await cur.execute(
+                    """
+                    select description, short_description
+                    from app.course_public_content
+                    where course_id = %s::uuid
+                    """,
+                    (course_id,),
+                )
+                persisted_public_content = await cur.fetchone()
+        assert persisted_public_content == (
+            "Full public course description",
+            "Full public course description",
+        )
+
         cover_media_id = str(uuid.uuid4())
         await media_assets_repo.create_media_asset(
             media_asset_id=cover_media_id,
@@ -405,7 +450,9 @@ async def test_studio_course_and_lesson_endpoints_follow_canonical_shape(async_c
         )
         assert list_lessons.status_code == 200, list_lessons.text
         listed_lesson = next(
-            item for item in list_lessons.json()["items"] if str(item["id"]) == lesson_id
+            item
+            for item in list_lessons.json()["items"]
+            if str(item["id"]) == lesson_id
         )
         assert "content_markdown" not in listed_lesson
 
@@ -591,9 +638,12 @@ async def test_studio_lesson_delete_removes_content_and_placements_only(
                     """,
                     (lesson_id, lesson_id, lesson_id, media_asset_id),
                 )
-                content_exists, placement_exists, lesson_exists, asset_exists = (
-                    await cur.fetchone()
-                )
+                (
+                    content_exists,
+                    placement_exists,
+                    lesson_exists,
+                    asset_exists,
+                ) = await cur.fetchone()
 
         assert content_exists is False
         assert placement_exists is False
@@ -745,17 +795,18 @@ async def test_persisted_preview_media_delete_integrity_gate(
         )
         assert save_with_media.status_code == 200, save_with_media.text
 
-        persisted_body, persisted_media_refs = (
-            await assert_persisted_preview_media_resolves(
-                async_client,
-                lesson_id=lesson_id,
-                token=teacher_token,
-            )
+        (
+            persisted_body,
+            persisted_media_refs,
+        ) = await assert_persisted_preview_media_resolves(
+            async_client,
+            lesson_id=lesson_id,
+            token=teacher_token,
         )
         assert persisted_media_refs == [lesson_media_id]
-        assert [
-            item["lesson_media_id"] for item in persisted_body["media"]
-        ] == [lesson_media_id]
+        assert [item["lesson_media_id"] for item in persisted_body["media"]] == [
+            lesson_media_id
+        ]
 
         referenced_delete = await async_client.delete(
             f"/api/media-placements/{lesson_media_id}",
@@ -771,25 +822,25 @@ async def test_persisted_preview_media_delete_integrity_gate(
             f"/api/media-placements/{lesson_media_id}",
             headers=auth_header(teacher_token),
         )
-        assert placement_after_rejected_delete.status_code == 200, (
-            placement_after_rejected_delete.text
-        )
         assert (
-            placement_after_rejected_delete.json()["lesson_media_id"]
-            == lesson_media_id
+            placement_after_rejected_delete.status_code == 200
+        ), placement_after_rejected_delete.text
+        assert (
+            placement_after_rejected_delete.json()["lesson_media_id"] == lesson_media_id
         )
 
-        persisted_body, persisted_media_refs = (
-            await assert_persisted_preview_media_resolves(
-                async_client,
-                lesson_id=lesson_id,
-                token=teacher_token,
-            )
+        (
+            persisted_body,
+            persisted_media_refs,
+        ) = await assert_persisted_preview_media_resolves(
+            async_client,
+            lesson_id=lesson_id,
+            token=teacher_token,
         )
         assert persisted_media_refs == [lesson_media_id]
-        assert [
-            item["lesson_media_id"] for item in persisted_body["media"]
-        ] == [lesson_media_id]
+        assert [item["lesson_media_id"] for item in persisted_body["media"]] == [
+            lesson_media_id
+        ]
 
         save_without_media = await async_client.patch(
             f"/studio/lessons/{lesson_id}/content",
@@ -805,9 +856,7 @@ async def test_persisted_preview_media_delete_integrity_gate(
         )
         assert save_without_media.status_code == 200, save_without_media.text
         assert (
-            lesson_document_media_refs(
-                save_without_media.json()["content_document"]
-            )
+            lesson_document_media_refs(save_without_media.json()["content_document"])
             == []
         )
 
@@ -995,7 +1044,9 @@ async def test_studio_course_family_transition_endpoints_are_canonical(async_cli
             headers=auth_header(teacher_token),
             json={"course_group_id": source_family_id},
         )
-        assert invalid_same_family_move.status_code == 422, invalid_same_family_move.text
+        assert (
+            invalid_same_family_move.status_code == 422
+        ), invalid_same_family_move.text
 
         moved = await async_client.post(
             f"/studio/courses/{source_a['id']}/move-family",

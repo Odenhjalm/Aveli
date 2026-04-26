@@ -578,11 +578,11 @@ async def fetch_course_public_content(course_id: str) -> dict[str, Any] | None:
 async def upsert_course_public_content(
     course_id: str,
     *,
-    short_description: str,
+    description: str,
 ) -> dict[str, Any]:
     row = await courses_repo.upsert_course_public_content(
         course_id,
-        short_description=short_description,
+        description=description,
     )
     return dict(row)
 
@@ -1617,7 +1617,9 @@ async def _default_new_custom_drip_unlock_offset_days(
     try:
         lesson_index = ordered_lesson_ids.index(lesson_id)
     except ValueError as exc:
-        raise RuntimeError("created lesson missing from custom drip lesson order") from exc
+        raise RuntimeError(
+            "created lesson missing from custom drip lesson order"
+        ) from exc
 
     if lesson_index == 0:
         return 0
@@ -2645,7 +2647,9 @@ async def read_canonical_lesson_access(
     if conn is None:
         course_access = await read_canonical_course_access(user_id, course_id)
     else:
-        course_access = await read_canonical_course_access(user_id, course_id, conn=conn)
+        course_access = await read_canonical_course_access(
+            user_id, course_id, conn=conn
+        )
     enrollment = course_access["enrollment"]
     current_unlock_position = (
         int(enrollment.get("current_unlock_position") or 0)

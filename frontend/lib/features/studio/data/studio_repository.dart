@@ -92,11 +92,12 @@ class StudioRepository {
   }
 
   static void _rejectCoursePublicContentPatch(Map<String, Object?> patch) {
-    if (!patch.containsKey('short_description')) {
+    if (!patch.containsKey('description') &&
+        !patch.containsKey('short_description')) {
       return;
     }
     throw UnsupportedError(
-      'Use upsertCoursePublicContent for short_description changes',
+      'Use upsertCoursePublicContent for course description changes',
     );
   }
 
@@ -313,6 +314,18 @@ class StudioRepository {
     return CourseStudio.fromResponse(response.data, label: 'Studio course');
   }
 
+  Future<StudioCoursePublicContent> fetchCoursePublicContent(
+    String courseId,
+  ) async {
+    final response = await _client.raw.get<Object?>(
+      '/studio/courses/$courseId/public',
+    );
+    return StudioCoursePublicContent.fromResponse(
+      response.data,
+      label: 'Studio course public content',
+    );
+  }
+
   Future<CourseStudio> updateCourse(
     String courseId,
     Map<String, Object?> patch,
@@ -337,11 +350,11 @@ class StudioRepository {
 
   Future<StudioCoursePublicContent> upsertCoursePublicContent(
     String courseId, {
-    required String shortDescription,
+    required String description,
   }) async {
     final response = await _client.raw.post<Object?>(
       '/studio/courses/$courseId/public',
-      data: <String, Object?>{'short_description': shortDescription},
+      data: <String, Object?>{'description': description},
     );
     return StudioCoursePublicContent.fromResponse(
       response.data,

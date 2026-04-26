@@ -32,6 +32,7 @@ from ..services import (
     courses_service,
     email_service,
     lesson_playback_service,
+    media_upload_sessions as media_upload_sessions_service,
     referral_service,
     storage_service,
     studio_authority,
@@ -260,9 +261,13 @@ def _canonical_lesson_media_asset_scope(
 
     metadata_lesson_id = _asset_metadata_text(media_asset, "lesson_id")
     if metadata_lesson_id is not None:
-        return media_type, metadata_lesson_id, _asset_metadata_text(
-            media_asset,
-            "course_id",
+        return (
+            media_type,
+            metadata_lesson_id,
+            _asset_metadata_text(
+                media_asset,
+                "course_id",
+            ),
         )
 
     object_path = str(media_asset.get("original_object_path") or "").strip().lstrip("/")
@@ -531,6 +536,7 @@ async def _authorize_studio_home_player_upload_asset(
 
 _MAX_MEDIA_BYTES = settings.lesson_media_max_bytes
 _MAX_COURSE_COVER_BYTES = max(1, int(settings.media_upload_max_image_bytes))
+_MAX_HOME_PLAYER_AUDIO_BYTES = max(1, int(settings.media_upload_max_audio_bytes))
 _UPLOAD_SESSION_EXPIRES_SECONDS = 2 * 60 * 60
 _LIVE_RECORDINGS_ROOT = "live-recordings"
 
@@ -591,6 +597,7 @@ def _recording_from_row(row: Dict[str, Any]) -> schemas.SeminarRecordingResponse
     data = _normalize_metadata(row, ("metadata",))
     return schemas.SeminarRecordingResponse(**data)
 
+
 def _canonical_studio_course_payload(course: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(course)
     payload = {field: normalized.get(field) for field in _STUDIO_COURSE_COMMON_FIELDS}
@@ -640,6 +647,107 @@ async def _require_studio_lesson(lesson_id: str) -> dict[str, Any]:
 
 def _canonical_upload_endpoint(media_asset_id: str) -> str:
     return f"/api/media-assets/{media_asset_id}/upload-bytes"
+
+
+def _canonical_home_player_chunk_upload_endpoint(
+    *,
+    media_asset_id: str,
+    upload_session_id: str,
+) -> str:
+    return f"/api/media-assets/{media_asset_id}/upload-sessions/{upload_session_id}/chunks"
+
+
+def _canonical_home_player_session_status_endpoint(
+    *,
+    media_asset_id: str,
+    upload_session_id: str,
+) -> str:
+    return (
+        f"/api/media-assets/{media_asset_id}/upload-sessions/"
+        f"{upload_session_id}/status"
+    )
+
+
+def _canonical_home_player_finalize_endpoint(
+    *,
+    media_asset_id: str,
+    upload_session_id: str,
+) -> str:
+    return (
+        f"/api/media-assets/{media_asset_id}/upload-sessions/"
+        f"{upload_session_id}/finalize"
+    )
+
+
+def _home_player_upload_session_response(
+    *,
+    media_asset_id: UUID,
+    session: dict[str, Any],
+) -> schemas.CanonicalHomePlayerMediaUploadUrlResponse:
+    upload_session_id = UUID(str(session["id"]))
+    media_asset_id_str = str(media_asset_id)
+    upload_session_id_str = str(upload_session_id)
+    return schemas.CanonicalHomePlayerMediaUploadUrlResponse(
+        media_asset_id=media_asset_id,
+        asset_state="pending_upload",
+        upload_session_id=upload_session_id,
+        upload_endpoint=_canonical_home_player_chunk_upload_endpoint(
+            media_asset_id=media_asset_id_str,
+            upload_session_id=upload_session_id_str,
+        ),
+        session_status_endpoint=_canonical_home_player_session_status_endpoint(
+            media_asset_id=media_asset_id_str,
+            upload_session_id=upload_session_id_str,
+        ),
+        finalize_endpoint=_canonical_home_player_finalize_endpoint(
+            media_asset_id=media_asset_id_str,
+            upload_session_id=upload_session_id_str,
+        ),
+        chunk_size=int(session["chunk_size"]),
+        expected_chunks=int(session["expected_chunks"]),
+        expires_at=session["expires_at"],
+    )
+
+
+def _content_length_from_request(request: Request) -> int | None:
+    raw = request.headers.get("content-length")
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid content length",
+        ) from exc
+    if value <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File payload is empty",
+        )
+    return value
+
+
+def _raise_upload_session_http_error(exc: Exception) -> NoReturn:
+    if isinstance(exc, media_upload_sessions_service.UploadSessionNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if isinstance(exc, media_upload_sessions_service.UploadChunkRangeError):
+        raise HTTPException(status_code=416, detail=str(exc)) from exc
+    if isinstance(exc, media_upload_sessions_service.UploadChunkChecksumError):
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if isinstance(exc, media_upload_sessions_service.UploadSessionIncompleteError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(exc, media_upload_sessions_service.UploadSourceVerificationError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(
+        exc,
+        (
+            media_upload_sessions_service.UploadSessionConflictError,
+            media_upload_sessions_service.UploadChunkConflictError,
+        ),
+    ):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    raise exc
 
 
 def _canonical_upload_storage_bucket(media_asset: dict[str, Any]) -> str:
@@ -1083,7 +1191,7 @@ async def canonical_issue_home_player_upload_url(
     payload: schemas.CanonicalHomePlayerMediaUploadUrlRequest,
     current: TeacherEntryUser,
 ):
-    if payload.size_bytes > _MAX_MEDIA_BYTES:
+    if payload.size_bytes > _MAX_HOME_PLAYER_AUDIO_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="File too large",
@@ -1102,14 +1210,138 @@ async def canonical_issue_home_player_upload_url(
         original_filename=payload.filename,
         owner_user_id=str(current["id"]),
     )
+    del expires_at
     media_asset_id = UUID(str(media_asset["id"]))
-    return schemas.CanonicalHomePlayerMediaUploadUrlResponse(
+    try:
+        session = await media_upload_sessions_service.create_home_player_upload_session(
+            media_asset=media_asset,
+            owner_user_id=str(current["id"]),
+            total_bytes=payload.size_bytes,
+            content_type=exact_mime_type,
+        )
+    except Exception as exc:
+        _raise_upload_session_http_error(exc)
+    return _home_player_upload_session_response(
         media_asset_id=media_asset_id,
-        asset_state="pending_upload",
-        upload_session_id=media_asset_id,
-        upload_endpoint=_canonical_upload_endpoint(str(media_asset_id)),
-        expires_at=expires_at,
+        session=session,
     )
+
+
+@media_pipeline_router.post(
+    "/media-assets/{media_asset_id}/upload-session",
+    response_model=schemas.CanonicalHomePlayerMediaUploadUrlResponse,
+)
+async def canonical_create_home_player_media_upload_session(
+    media_asset_id: UUID,
+    payload: schemas.CanonicalMediaUploadSessionCreateRequest,
+    current: CurrentUser,
+):
+    media_asset_id_str = str(media_asset_id)
+    media_asset = await _authorize_canonical_media_upload_asset(
+        media_asset_id=media_asset_id_str,
+        current=current,
+    )
+    try:
+        session = await media_upload_sessions_service.create_home_player_upload_session(
+            media_asset=media_asset,
+            owner_user_id=str(current["id"]),
+            total_bytes=payload.total_bytes,
+            content_type=payload.content_type,
+        )
+    except Exception as exc:
+        _raise_upload_session_http_error(exc)
+    return _home_player_upload_session_response(
+        media_asset_id=media_asset_id,
+        session=session,
+    )
+
+
+@media_pipeline_router.put(
+    "/media-assets/{media_asset_id}/upload-sessions/{upload_session_id}/chunks/{chunk_index}",
+    response_model=schemas.CanonicalMediaUploadChunkResponse,
+)
+async def canonical_upload_home_player_media_chunk(
+    media_asset_id: UUID,
+    upload_session_id: UUID,
+    chunk_index: int,
+    request: Request,
+    current: CurrentUser,
+):
+    media_asset_id_str = str(media_asset_id)
+    media_asset = await _authorize_canonical_media_upload_asset(
+        media_asset_id=media_asset_id_str,
+        current=current,
+    )
+    if str(media_asset.get("purpose") or "").strip().lower() != "home_player_audio":
+        raise HTTPException(status_code=422, detail="Invalid media purpose")
+    content_length = _content_length_from_request(request)
+    try:
+        result = await media_upload_sessions_service.receive_home_player_upload_chunk(
+            media_asset_id=media_asset_id_str,
+            upload_session_id=str(upload_session_id),
+            owner_user_id=str(current["id"]),
+            chunk_index=chunk_index,
+            content=request.stream(),
+            content_range=request.headers.get("content-range"),
+            content_length=content_length,
+            content_type=request.headers.get("content-type"),
+            chunk_sha256=request.headers.get("x-aveli-chunk-sha256"),
+        )
+    except Exception as exc:
+        _raise_upload_session_http_error(exc)
+    return schemas.CanonicalMediaUploadChunkResponse(**result)
+
+
+@media_pipeline_router.get(
+    "/media-assets/{media_asset_id}/upload-sessions/{upload_session_id}/status",
+    response_model=schemas.CanonicalMediaUploadSessionStatusResponse,
+)
+async def canonical_get_home_player_upload_session_status(
+    media_asset_id: UUID,
+    upload_session_id: UUID,
+    current: CurrentUser,
+):
+    media_asset_id_str = str(media_asset_id)
+    media_asset = await _authorize_canonical_media_upload_asset(
+        media_asset_id=media_asset_id_str,
+        current=current,
+    )
+    try:
+        result = await media_upload_sessions_service.get_home_player_upload_session_status(
+            media_asset=media_asset,
+            media_asset_id=media_asset_id_str,
+            upload_session_id=str(upload_session_id),
+            owner_user_id=str(current["id"]),
+        )
+    except Exception as exc:
+        _raise_upload_session_http_error(exc)
+    return schemas.CanonicalMediaUploadSessionStatusResponse(**result)
+
+
+@media_pipeline_router.post(
+    "/media-assets/{media_asset_id}/upload-sessions/{upload_session_id}/finalize",
+    response_model=schemas.CanonicalMediaUploadFinalizeResponse,
+)
+async def canonical_finalize_home_player_upload_session(
+    media_asset_id: UUID,
+    upload_session_id: UUID,
+    current: CurrentUser,
+):
+    media_asset_id_str = str(media_asset_id)
+    media_asset = await _authorize_canonical_media_upload_asset(
+        media_asset_id=media_asset_id_str,
+        current=current,
+    )
+    try:
+        result = await media_upload_sessions_service.finalize_home_player_upload_session(
+            media_asset=media_asset,
+            media_asset_id=media_asset_id_str,
+            upload_session_id=str(upload_session_id),
+            owner_user_id=str(current["id"]),
+        )
+    except Exception as exc:
+        _raise_upload_session_http_error(exc)
+    return schemas.CanonicalMediaUploadFinalizeResponse(**result)
 
 
 @media_pipeline_router.put(
@@ -1625,8 +1857,7 @@ async def studio_home_player_library(current: TeacherEntryUser):
     text_bundle = studio_home_player_text_catalog.build_studio_home_player_text_bundle()
     return schemas.HomePlayerLibraryResponse(
         uploads=[
-            schemas.HomePlayerLibraryUploadItem(**item)
-            for item in payload["uploads"]
+            schemas.HomePlayerLibraryUploadItem(**item) for item in payload["uploads"]
         ],
         course_links=[
             schemas.HomePlayerLibraryCourseLinkItem(**item)
@@ -1921,11 +2152,15 @@ async def studio_reserve_recording(
 
 @course_lesson_router.get("/courses", response_model=schemas.StudioCourseListResponse)
 async def studio_courses(current: TeacherEntryUser):
-    rows = list(await courses_service.list_studio_courses(teacher_id=str(current["id"])))
+    rows = list(
+        await courses_service.list_studio_courses(teacher_id=str(current["id"]))
+    )
     return _studio_course_list_response(rows)
 
 
-@course_lesson_router.get("/courses/{course_id}", response_model=schemas.StudioCourseDetail)
+@course_lesson_router.get(
+    "/courses/{course_id}", response_model=schemas.StudioCourseDetail
+)
 async def course_meta(course_id: str, current: TeacherEntryUser):
     await studio_authority.get_course_for_teacher_or_404(
         course_id,
@@ -1935,6 +2170,24 @@ async def course_meta(course_id: str, current: TeacherEntryUser):
     if row is None:
         raise HTTPException(status_code=404, detail="Course not found")
     return _studio_course_detail_response(row)
+
+
+@course_lesson_router.get(
+    "/courses/{course_id}/public",
+    response_model=schemas.StudioCoursePublicContent,
+)
+async def course_public_content(course_id: str, current: TeacherEntryUser):
+    await studio_authority.get_course_for_teacher_or_404(
+        course_id,
+        str(current["id"]),
+    )
+    public_content = await courses_service.fetch_course_public_content(course_id)
+    if public_content is None:
+        public_content = {
+            "course_id": course_id,
+            "description": "",
+        }
+    return schemas.StudioCoursePublicContent(**public_content)
 
 
 @course_lesson_router.post(
@@ -1952,7 +2205,7 @@ async def upsert_course_public_content(
     )
     public_content = await courses_service.upsert_course_public_content(
         course_id,
-        short_description=payload.short_description,
+        description=payload.description,
     )
     return schemas.StudioCoursePublicContent(**public_content)
 

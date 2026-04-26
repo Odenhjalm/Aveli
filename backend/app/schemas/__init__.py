@@ -1176,10 +1176,13 @@ class IntroSelectionStateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     selection_locked: bool
-    selection_lock_reason: Literal[
-        "incomplete_drip",
-        "incomplete_lesson_completion",
-    ] | None = None
+    selection_lock_reason: (
+        Literal[
+            "incomplete_drip",
+            "incomplete_lesson_completion",
+        ]
+        | None
+    ) = None
     eligible_courses: List[CourseListItem]
 
 
@@ -1209,14 +1212,14 @@ class LessonCompletionCommandResponse(BaseModel):
 class StudioCoursePublicContentUpsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    short_description: str
+    description: str
 
 
 class StudioCoursePublicContent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     course_id: UUID
-    short_description: str
+    description: str
 
 
 class MediaUploadUrlRequest(BaseModel):
@@ -1660,7 +1663,66 @@ class CanonicalHomePlayerMediaUploadUrlResponse(BaseModel):
     asset_state: Literal["pending_upload"]
     upload_session_id: UUID
     upload_endpoint: str
+    session_status_endpoint: str
+    finalize_endpoint: str
+    chunk_size: int
+    expected_chunks: int
     expires_at: datetime
+
+
+class CanonicalMediaUploadSessionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_bytes: int = Field(ge=1)
+    content_type: str
+
+
+class CanonicalMediaUploadSessionChunk(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_index: int
+    byte_start: int
+    byte_end: int
+    size_bytes: int
+    sha256: str
+
+
+class CanonicalMediaUploadSessionStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    upload_session_id: UUID
+    media_asset_id: UUID
+    owner_user_id: UUID
+    state: Literal["open", "finalized", "expired"]
+    asset_state: Literal["pending_upload", "uploaded", "processing", "ready", "failed"]
+    total_bytes: int
+    content_type: str
+    chunk_size: int
+    expected_chunks: int
+    received_bytes: int
+    expires_at: datetime
+    chunks: List[CanonicalMediaUploadSessionChunk]
+
+
+class CanonicalMediaUploadChunkResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    upload_session_id: UUID
+    media_asset_id: UUID
+    chunk_index: int
+    byte_start: int
+    byte_end: int
+    size_bytes: int
+    sha256: str
+    received_bytes: int
+
+
+class CanonicalMediaUploadFinalizeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    upload_session_id: UUID
+    media_asset_id: UUID
+    asset_state: Literal["uploaded", "processing", "ready", "failed"]
 
 
 class CanonicalProfileAvatarInitRequest(BaseModel):

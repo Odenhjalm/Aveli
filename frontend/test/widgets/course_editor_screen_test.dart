@@ -133,7 +133,7 @@ void main() {
 
   group('course public description editing', () {
     test(
-      'description hydrates from studio course detail and saves via public endpoint',
+      'description hydrates from studio public content and saves via public endpoint',
       () {
         final source = _courseEditorSource();
         final loadCourseMeta = _sourceSlice(
@@ -154,17 +154,24 @@ void main() {
 
         expect(
           loadCourseMeta,
-          contains('_courseDescriptionCtrl.text = course.shortDescription ??'),
+          contains('_studioRepo.fetchCoursePublicContent(courseId)'),
+        );
+        expect(
+          loadCourseMeta,
+          contains('_courseDescriptionCtrl.text = publicContent.description'),
         );
         expect(
           savePublicContent,
           contains('_studioRepo.upsertCoursePublicContent('),
         );
+        expect(savePublicContent, contains('description: description'));
         expect(
-          savePublicContent,
-          contains('shortDescription: shortDescription'),
+          saveCourseMeta,
+          contains('_studioRepo.upsertCoursePublicContent('),
         );
+        expect(saveCourseMeta, contains('description: description'));
         expect(saveCourseMeta, isNot(contains('short_description')));
+        expect(saveCourseMeta, isNot(contains("'description'")));
       },
     );
 
@@ -185,7 +192,7 @@ void main() {
         coverAndDescription,
         contains('Expanded(child: descriptionEditor)'),
       );
-      expect(coverAndDescription, contains("labelText: 'Kort beskrivning'"));
+      expect(coverAndDescription, contains("labelText: 'Beskrivning'"));
       expect(
         coverAndDescription,
         contains("ValueKey<String>('course-public-content-save-button')"),

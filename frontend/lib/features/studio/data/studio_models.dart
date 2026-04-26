@@ -670,11 +670,11 @@ class CourseStudio extends CourseCore {
 class StudioCoursePublicContent {
   const StudioCoursePublicContent({
     required this.courseId,
-    required this.shortDescription,
+    required this.description,
   });
 
   final String courseId;
-  final String shortDescription;
+  final String description;
 
   factory StudioCoursePublicContent.fromResponse(
     Object? payload, {
@@ -682,11 +682,7 @@ class StudioCoursePublicContent {
   }) {
     return StudioCoursePublicContent(
       courseId: _requiredResponseString(payload, 'course_id', label),
-      shortDescription: _requiredResponseText(
-        payload,
-        'short_description',
-        label,
-      ),
+      description: _requiredResponseText(payload, 'description', label),
     );
   }
 }

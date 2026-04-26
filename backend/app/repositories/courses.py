@@ -1251,26 +1251,55 @@ async def get_course_public_content(course_id: str) -> dict[str, Any] | None:
 async def upsert_course_public_content(
     course_id: str,
     *,
-    short_description: str,
+    description: str,
 ) -> dict[str, Any]:
+    normalized_description = str(description)
+    if not normalized_description.strip():
+        update_query = """
+            update app.course_public_content
+            set description = %s
+            where course_id = %s::uuid
+            returning
+                course_id,
+                description
+        """
+        async with pool.connection() as conn:  # type: ignore
+            async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+                await cur.execute(update_query, (normalized_description, course_id))
+                row = await cur.fetchone()
+                await conn.commit()
+        return (
+            dict(row)
+            if row
+            else {
+                "course_id": course_id,
+                "description": normalized_description,
+            }
+        )
+
     query = """
         insert into app.course_public_content (
             course_id,
-            short_description
+            short_description,
+            description
         )
         values (
             %s::uuid,
+            %s,
             %s
         )
         on conflict (course_id) do update
-        set short_description = excluded.short_description
+        set description = excluded.description
         returning
             course_id,
-            short_description
+            description
     """
     async with pool.connection() as conn:  # type: ignore
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
-            await cur.execute(query, (course_id, short_description))
+            await cur.execute(
+                query,
+                (course_id, normalized_description, normalized_description),
+            )
             row = await cur.fetchone()
             await conn.commit()
     if row is None:

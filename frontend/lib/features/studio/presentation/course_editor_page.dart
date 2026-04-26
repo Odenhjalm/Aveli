@@ -1482,7 +1482,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     final requestId = ++_courseMetaRequestId;
     setState(() => _courseMetaLoading = true);
     try {
-      final course = await _studioRepo.fetchCourseMeta(courseId);
+      final results = await Future.wait<Object>([
+        _studioRepo.fetchCourseMeta(courseId),
+        _studioRepo.fetchCoursePublicContent(courseId),
+      ]);
+      final course = results[0] as CourseStudio;
+      final publicContent = results[1] as StudioCoursePublicContent;
       if (_isStaleRequest(
         requestId: requestId,
         currentId: _courseMetaRequestId,
@@ -1507,7 +1512,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       _logCourseMetaReloadResponse(courseId: courseId, response: course);
       _courseTitleCtrl.text = course.title;
       _courseSlugCtrl.text = course.slug;
-      _courseDescriptionCtrl.text = course.shortDescription ?? '';
+      _courseDescriptionCtrl.text = publicContent.description;
       final priceOre = course.priceAmountCents;
       _coursePriceCtrl.text = priceOre == null
           ? ''
@@ -3740,7 +3745,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
           minLines: 6,
           maxLines: 8,
           decoration: const InputDecoration(
-            labelText: 'Kort beskrivning',
+            labelText: 'Beskrivning',
             alignLabelWithHint: true,
           ),
         ),
@@ -6330,6 +6335,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     if (courseId == null || _savingCourseMeta) return;
     final title = _courseTitleCtrl.text.trim();
     final slug = _courseSlugCtrl.text.trim();
+    final description = _courseDescriptionCtrl.text.trim();
     final rawPriceText = _coursePriceCtrl.text.trim();
     final effectivePriceOre = _parseCoursePriceOre();
 
@@ -6355,9 +6361,16 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     _logCourseMetaPatchPayload(courseId: courseId, patch: patch);
 
     final requestId = ++_saveCourseRequestId;
-    setState(() => _savingCourseMeta = true);
+    setState(() {
+      _savingCourseMeta = true;
+      _savingCoursePublicContent = true;
+    });
     try {
       final updated = await _studioRepo.updateCourse(courseId, patch);
+      final updatedPublicContent = await _studioRepo.upsertCoursePublicContent(
+        courseId,
+        description: description,
+      );
       if (_isStaleRequest(
         requestId: requestId,
         currentId: _saveCourseRequestId,
@@ -6370,6 +6383,10 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _courses = _courses
             .map((course) => course.id == courseId ? updated : course)
             .toList();
+        _setTextControllerValue(
+          _courseDescriptionCtrl,
+          updatedPublicContent.description,
+        );
       });
       _invalidateCourseReadProviders();
       await _loadCourseMeta();
@@ -6385,7 +6402,12 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
       }
       _showFriendlyErrorSnack('Kunde inte spara kurs', e, stackTrace);
     } finally {
-      if (mounted) setState(() => _savingCourseMeta = false);
+      if (mounted) {
+        setState(() {
+          _savingCourseMeta = false;
+          _savingCoursePublicContent = false;
+        });
+      }
     }
   }
 
@@ -6395,14 +6417,14 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
     }
     final courseId = _selectedCourseId;
     if (courseId == null || _savingCoursePublicContent) return;
-    final shortDescription = _courseDescriptionCtrl.text.trim();
+    final description = _courseDescriptionCtrl.text.trim();
 
     final requestId = ++_saveCoursePublicContentRequestId;
     setState(() => _savingCoursePublicContent = true);
     try {
       final updated = await _studioRepo.upsertCoursePublicContent(
         courseId,
-        shortDescription: shortDescription,
+        description: description,
       );
       if (_isStaleRequest(
         requestId: requestId,
@@ -6412,17 +6434,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         return;
       }
       setState(() {
-        _setTextControllerValue(
-          _courseDescriptionCtrl,
-          updated.shortDescription,
-        );
-        final current = _courseById(courseId);
-        if (current != null) {
-          _courses = _adoptCourseById(
-            _courses,
-            current.copyWith(shortDescription: updated.shortDescription),
-          );
-        }
+        _setTextControllerValue(_courseDescriptionCtrl, updated.description);
       });
       _invalidateCourseReadProviders();
       if (!mounted || !context.mounted) return;
@@ -6548,9 +6560,6 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
         _courses = _adoptCourseById(_courses, published);
         _courseTitleCtrl.text = published.title;
         _courseSlugCtrl.text = published.slug;
-        if (published.shortDescription != null) {
-          _courseDescriptionCtrl.text = published.shortDescription!;
-        }
         final priceOre = published.priceAmountCents;
         _coursePriceCtrl.text = priceOre == null
             ? ''
