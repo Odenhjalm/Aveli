@@ -10,6 +10,7 @@ import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_catalog_page.dart';
+import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 
 CourseSummary _course({
@@ -221,6 +222,73 @@ void main() {
       expect(slot2X, greaterThan(slot1X));
       expect(slot3X, greaterThan(slot2X));
       expect(slot4X, greaterThan(slot3X));
+    },
+  );
+
+  testWidgets(
+    'catalog cards keep deterministic description rendering for short long and exact text',
+    (tester) async {
+      _setLargeSurface(tester);
+      addTearDown(() => _resetSurface(tester));
+
+      const shortDescription = 'Kort kursbeskrivning.';
+      const longDescription =
+          'En lang kursbeskrivning fran backend som ska fa plats i kortets '
+          'fasta beskrivningsyta med exakt tva rader och ellips utan att '
+          'kortet vaxer eller flyttar kontroller.';
+      const exactDescription = 'Forsta raden\nAndra raden';
+
+      await _pumpCatalog(
+        tester,
+        courses: [
+          _course(
+            id: 'intro-short',
+            slug: 'intro-short',
+            title: 'Intro Short',
+            groupPosition: 0,
+            courseGroupId: 'series:description-contract',
+            requiredEnrollmentSource: 'intro',
+            enrollable: true,
+            purchasable: false,
+            description: shortDescription,
+          ),
+          _course(
+            id: 'journey-long',
+            slug: 'journey-long',
+            title: 'Journey Long',
+            groupPosition: 1,
+            courseGroupId: 'series:description-contract',
+            priceCents: 9900,
+            description: longDescription,
+          ),
+          _course(
+            id: 'journey-exact',
+            slug: 'journey-exact',
+            title: 'Journey Exact',
+            groupPosition: 2,
+            courseGroupId: 'series:description-contract',
+            priceCents: 10900,
+            description: exactDescription,
+          ),
+        ],
+      );
+
+      for (final description in [
+        shortDescription,
+        longDescription,
+        exactDescription,
+      ]) {
+        final descriptionWidget = tester.widget<CourseDescriptionText>(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is CourseDescriptionText && widget.text == description,
+          ),
+        );
+        expect(descriptionWidget.maxLines, 2);
+        expect(descriptionWidget.overflow, TextOverflow.ellipsis);
+      }
+
+      expect(tester.takeException(), isNull);
     },
   );
 

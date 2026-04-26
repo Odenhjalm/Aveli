@@ -654,6 +654,8 @@ class _CourseTileGlass extends StatelessWidget {
   static const _bodyInnerHeight = _bodyHeight - (_bodyPadding * 2);
   static const _titleDescriptionGap = 4.0;
   static const _descriptionCtaGap = 36.0;
+  static const _descriptionTextFontSize = 13.0;
+  static const _descriptionTextHeight = 1.25;
   static const _contentBottomReserveHeight =
       _bodyInnerHeight -
       _titleRowHeight -
@@ -901,8 +903,9 @@ class _CourseTileGlass extends StatelessWidget {
                                         overflow: TextOverflow.ellipsis,
                                         baseStyle: theme.textTheme.bodyMedium
                                             ?.copyWith(
-                                              fontSize: 13.5,
-                                              height: 1.3,
+                                              fontSize:
+                                                  _descriptionTextFontSize,
+                                              height: _descriptionTextHeight,
                                             ),
                                         color: textColor,
                                       ),

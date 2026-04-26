@@ -11,6 +11,7 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
+import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/courses_showcase_section.dart';
 
 import '../helpers/backend_asset_resolver_stub.dart';
@@ -143,6 +144,56 @@ void main() {
       expect(find.text('Backend showcase description'), findsOneWidget);
       expect(find.text('Introduktion'), findsOneWidget);
       expect(find.textContaining('saknas'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'showcase cards keep deterministic description rendering for short long and exact text',
+    (tester) async {
+      const shortDescription = 'Kort beskrivning.';
+      const longDescription =
+          'En lang kursbeskrivning fran backend som ska visas i tre fasta '
+          'rader med ellips nar texten fortsatter utan att landningskortet '
+          'andras i hojd eller borjar scrolla.';
+      const exactDescription = 'Forsta raden\nAndra raden\nTredje raden';
+
+      await _pumpShowcase(
+        tester,
+        courses: [
+          _course(
+            id: 'showcase-short',
+            title: 'Showcase Short',
+            description: shortDescription,
+          ),
+          _course(
+            id: 'showcase-long',
+            title: 'Showcase Long',
+            description: longDescription,
+          ),
+          _course(
+            id: 'showcase-exact',
+            title: 'Showcase Exact',
+            description: exactDescription,
+          ),
+        ],
+      );
+
+      for (final description in [
+        shortDescription,
+        longDescription,
+        exactDescription,
+      ]) {
+        final descriptionWidget = tester.widget<CourseDescriptionText>(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is CourseDescriptionText && widget.text == description,
+          ),
+        );
+        expect(descriptionWidget.maxLines, 3);
+        expect(descriptionWidget.overflow, TextOverflow.ellipsis);
+      }
+
+      expect(tester.takeException(), isNull);
     },
   );
 

@@ -468,6 +468,8 @@ class _IntroMiniCourseCard extends StatelessWidget {
   static const _descriptionSlotHeight = 36.0;
   static const _descriptionBadgeGap = 8.0;
   static const _badgeSlotHeight = 30.0;
+  static const _descriptionTextFontSize = 11.8;
+  static const _descriptionTextHeight = 1.25;
   static const _bodyBottomReserveHeight =
       _bodyHeight -
       (_bodyVerticalPadding * 2) -
@@ -609,7 +611,10 @@ class _IntroMiniCourseCard extends StatelessWidget {
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       baseStyle: theme.textTheme.bodySmall
-                                          ?.copyWith(height: 1.3),
+                                          ?.copyWith(
+                                            fontSize: _descriptionTextFontSize,
+                                            height: _descriptionTextHeight,
+                                          ),
                                     ),
                             ),
                             const SizedBox(height: _descriptionBadgeGap),
@@ -654,6 +659,8 @@ class _JourneyCourseCard extends StatelessWidget {
   static const _titleRowHeight = 46.0;
   static const _titleDescriptionGap = 4.0;
   static const _descriptionSlotHeight = 40.0;
+  static const _descriptionTextFontSize = 13.0;
+  static const _descriptionTextHeight = 1.25;
   static const _descriptionBottomReserveHeight =
       _bodyHeight -
       (_bodyVerticalPadding * 2) -
@@ -862,8 +869,8 @@ class _JourneyCourseCard extends StatelessWidget {
                                       overflow: TextOverflow.ellipsis,
                                       baseStyle: theme.textTheme.bodyMedium
                                           ?.copyWith(
-                                            fontSize: 13.5,
-                                            height: 1.28,
+                                            fontSize: _descriptionTextFontSize,
+                                            height: _descriptionTextHeight,
                                           ),
                                     ),
                             ),
