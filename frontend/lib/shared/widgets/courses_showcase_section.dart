@@ -646,18 +646,20 @@ class _CourseTileGlass extends StatelessWidget {
   static const _imageHeight = 190.0;
   static const _bodyHeight = cardHeight - _imageHeight;
   static const _bodyPadding = 12.0;
-  static const _titleRowHeight = 48.0;
-  static const _descriptionSlotHeight = 60.0;
+  static const _titleRowHeight = 44.0;
+  static const _descriptionSlotHeight = 54.0;
   static const _ctaSlotHeight = 48.0;
   static const _controlSlotWidth = 92.0;
   static const _titleControlGap = 10.0;
   static const _bodyInnerHeight = _bodyHeight - (_bodyPadding * 2);
-  static const _titleDescriptionGap = 8.0;
-  static const _descriptionCtaGap =
+  static const _titleDescriptionGap = 4.0;
+  static const _descriptionCtaGap = 36.0;
+  static const _contentBottomReserveHeight =
       _bodyInnerHeight -
       _titleRowHeight -
       _titleDescriptionGap -
       _descriptionSlotHeight -
+      _descriptionCtaGap -
       _ctaSlotHeight;
 
   final CourseSummary course;
@@ -700,6 +702,7 @@ class _CourseTileGlass extends StatelessWidget {
     final titleStyle = theme.textTheme.titleMedium?.copyWith(
       color: textColor ?? DesignTokens.bodyTextColor,
       fontWeight: FontWeight.w800,
+      height: 1.22,
     );
 
     void openCourse() {
@@ -896,7 +899,11 @@ class _CourseTileGlass extends StatelessWidget {
                                         desc,
                                         maxLines: 3,
                                         overflow: TextOverflow.ellipsis,
-                                        baseStyle: theme.textTheme.bodyMedium,
+                                        baseStyle: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                              fontSize: 13.5,
+                                              height: 1.3,
+                                            ),
                                         color: textColor,
                                       ),
                               ),
@@ -921,6 +928,9 @@ class _CourseTileGlass extends StatelessWidget {
                                     ),
                                   ),
                                 ),
+                              ),
+                              const SizedBox(
+                                height: _contentBottomReserveHeight,
                               ),
                             ],
                           ),

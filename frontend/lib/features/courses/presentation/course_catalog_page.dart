@@ -461,9 +461,21 @@ class _IntroMiniCourseCard extends StatelessWidget {
   static const cardHeight = 232.0;
   static const _imageHeight = 108.0;
   static const _bodyHeight = cardHeight - _imageHeight;
-  static const _titleSlotHeight = 20.0;
-  static const _descriptionSlotHeight = 38.0;
+  static const _bodyHorizontalPadding = 10.0;
+  static const _bodyVerticalPadding = 10.0;
+  static const _titleSlotHeight = 18.0;
+  static const _titleDescriptionGap = 4.0;
+  static const _descriptionSlotHeight = 36.0;
+  static const _descriptionBadgeGap = 8.0;
   static const _badgeSlotHeight = 30.0;
+  static const _bodyBottomReserveHeight =
+      _bodyHeight -
+      (_bodyVerticalPadding * 2) -
+      _titleSlotHeight -
+      _titleDescriptionGap -
+      _descriptionSlotHeight -
+      _descriptionBadgeGap -
+      _badgeSlotHeight;
 
   final CourseSummary course;
   final MediaRepository mediaRepository;
@@ -562,7 +574,12 @@ class _IntroMiniCourseCard extends StatelessWidget {
                     SizedBox(
                       height: _bodyHeight,
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                        padding: const EdgeInsets.fromLTRB(
+                          _bodyHorizontalPadding,
+                          _bodyVerticalPadding,
+                          _bodyHorizontalPadding,
+                          _bodyVerticalPadding,
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -577,11 +594,12 @@ class _IntroMiniCourseCard extends StatelessWidget {
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: DesignTokens.bodyTextColor,
                                     fontWeight: FontWeight.w800,
+                                    height: 1.18,
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: _titleDescriptionGap),
                             SizedBox(
                               height: _descriptionSlotHeight,
                               child: description.isEmpty
@@ -590,10 +608,11 @@ class _IntroMiniCourseCard extends StatelessWidget {
                                       description,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      baseStyle: theme.textTheme.bodySmall,
+                                      baseStyle: theme.textTheme.bodySmall
+                                          ?.copyWith(height: 1.3),
                                     ),
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: _descriptionBadgeGap),
                             const SizedBox(
                               height: _badgeSlotHeight,
                               child: Align(
@@ -601,6 +620,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
                                 child: CourseIntroBadge(label: 'Introduktion'),
                               ),
                             ),
+                            const SizedBox(height: _bodyBottomReserveHeight),
                           ],
                         ),
                       ),
@@ -630,8 +650,18 @@ class _JourneyCourseCard extends StatelessWidget {
   static const _bodyVerticalPadding = 14.0;
   static const _contentWidth = cardWidth - (_bodyHorizontalPadding * 2);
   static const _stageSlotHeight = 18.0;
-  static const _titleRowHeight = 48.0;
+  static const _stageTitleGap = 6.0;
+  static const _titleRowHeight = 46.0;
+  static const _titleDescriptionGap = 4.0;
   static const _descriptionSlotHeight = 40.0;
+  static const _descriptionBottomReserveHeight =
+      _bodyHeight -
+      (_bodyVerticalPadding * 2) -
+      _stageSlotHeight -
+      _stageTitleGap -
+      _titleRowHeight -
+      _titleDescriptionGap -
+      _descriptionSlotHeight;
   static const _controlSlotWidth = 92.0;
   static const _titleControlGap = 12.0;
   static const _titleWithControlWidth =
@@ -767,7 +797,7 @@ class _JourneyCourseCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: _stageTitleGap),
                             SizedBox(
                               height: _titleRowHeight,
                               child: Row(
@@ -785,6 +815,7 @@ class _JourneyCourseCard extends StatelessWidget {
                                           ?.copyWith(
                                             color: DesignTokens.bodyTextColor,
                                             fontWeight: FontWeight.w800,
+                                            height: 1.22,
                                           ),
                                     ),
                                   ),
@@ -820,7 +851,7 @@ class _JourneyCourseCard extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: _titleDescriptionGap),
                             SizedBox(
                               height: _descriptionSlotHeight,
                               child: description.isEmpty
@@ -829,10 +860,16 @@ class _JourneyCourseCard extends StatelessWidget {
                                       description,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      baseStyle: theme.textTheme.bodyMedium,
+                                      baseStyle: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            fontSize: 13.5,
+                                            height: 1.28,
+                                          ),
                                     ),
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(
+                              height: _descriptionBottomReserveHeight,
+                            ),
                           ],
                         ),
                       ),
