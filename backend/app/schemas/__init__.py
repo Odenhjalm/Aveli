@@ -936,7 +936,7 @@ class Course(BaseModel):
 class CourseListItem(Course):
     model_config = ConfigDict(extra="forbid")
 
-    short_description: str | None = None
+    description: str | None = None
 
 
 StudioCourseDripMode = Literal[
@@ -1098,7 +1098,7 @@ class CourseDetailResponse(BaseModel):
 
     course: Course
     lessons: List[LessonStructureItem]
-    short_description: str | None = None
+    description: str | None = None
 
 
 class LessonContentItem(BaseModel):
@@ -1142,7 +1142,7 @@ class CoursePublicContent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     course_id: UUID
-    short_description: str
+    description: str
 
 
 class CourseEnrollmentRecord(BaseModel):
@@ -1209,6 +1209,13 @@ class LessonCompletionCommandResponse(BaseModel):
 class StudioCoursePublicContentUpsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    short_description: str
+
+
+class StudioCoursePublicContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    course_id: UUID
     short_description: str
 
 

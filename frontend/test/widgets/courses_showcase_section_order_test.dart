@@ -122,7 +122,7 @@ void main() {
   );
 
   testWidgets(
-    'showcase renders backend short description and intro badge from backend source',
+    'showcase renders backend description and intro badge from backend source',
     (tester) async {
       await _pumpShowcase(
         tester,
@@ -135,7 +135,7 @@ void main() {
             enrollable: true,
             purchasable: false,
             priceCents: null,
-            shortDescription: 'Backend showcase description',
+            description: 'Backend showcase description',
           ),
         ],
       );
@@ -196,13 +196,13 @@ CourseSummary _course({
   String requiredEnrollmentSource = 'purchase',
   bool enrollable = false,
   bool purchasable = true,
-  String? shortDescription = 'Backend showcase description',
+  String? description = 'Backend showcase description',
 }) {
   return CourseSummary(
     id: id,
     slug: 'foundations-of-soulwisdom',
     title: title,
-    shortDescription: shortDescription,
+    description: description,
     teacher: const CourseTeacherData(
       userId: 'teacher-1',
       displayName: 'Aveli Teacher',

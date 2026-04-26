@@ -285,12 +285,12 @@ class CourseDetailData {
   const CourseDetailData({
     required this.course,
     required this.lessons,
-    required this.shortDescription,
+    required this.description,
   });
 
   final CourseSummary course;
   final List<LessonSummary> lessons;
-  final String? shortDescription;
+  final String? description;
 
   factory CourseDetailData.fromResponse(Object? payload) {
     final lessons =
@@ -302,9 +302,9 @@ class CourseDetailData {
     return CourseDetailData(
       course: CourseSummary.fromResponse(_requiredField(payload, 'course')),
       lessons: lessons,
-      shortDescription: _optionalString(
-        _requiredField(payload, 'short_description'),
-        'short_description',
+      description: _optionalString(
+        _requiredField(payload, 'description'),
+        'description',
       ),
     );
   }
@@ -496,7 +496,7 @@ class CourseSummary {
     required this.id,
     required this.slug,
     required this.title,
-    required this.shortDescription,
+    required this.description,
     required this.teacher,
     required this.groupPosition,
     required this.courseGroupId,
@@ -513,7 +513,7 @@ class CourseSummary {
   final String id;
   final String slug;
   final String title;
-  final String? shortDescription;
+  final String? description;
   final CourseTeacherData? teacher;
   final int groupPosition;
   final String courseGroupId;
@@ -538,9 +538,9 @@ class CourseSummary {
       id: _requireString(_requiredField(payload, 'id'), 'id'),
       slug: _requireString(_requiredField(payload, 'slug'), 'slug'),
       title: _requireString(_requiredField(payload, 'title'), 'title'),
-      shortDescription: _optionalString(
-        _requiredField(payload, 'short_description'),
-        'short_description',
+      description: _optionalString(
+        _requiredField(payload, 'description'),
+        'description',
       ),
       teacher: _optionalCourseTeacher(
         _requiredField(payload, 'teacher'),

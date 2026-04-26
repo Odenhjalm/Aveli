@@ -24,13 +24,13 @@ CourseSummary _course({
   String requiredEnrollmentSource = 'purchase',
   bool enrollable = false,
   bool purchasable = true,
-  String? shortDescription = 'Backend catalog description',
+  String? description = 'Backend catalog description',
 }) {
   return CourseSummary(
     id: id,
     slug: slug,
     title: title,
-    shortDescription: shortDescription,
+    description: description,
     teacher: const CourseTeacherData(
       userId: 'teacher-1',
       displayName: 'Aveli Teacher',
@@ -115,7 +115,7 @@ void main() {
           requiredEnrollmentSource: 'intro',
           enrollable: true,
           purchasable: false,
-          shortDescription: 'Backend intro description',
+          description: 'Backend intro description',
         ),
       ],
     );

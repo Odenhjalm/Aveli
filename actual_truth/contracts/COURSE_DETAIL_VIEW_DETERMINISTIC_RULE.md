@@ -18,18 +18,18 @@ Top-level serialized field order:
 
 - `course`
 - `lessons`
-- `short_description`
+- `description`
 
 Rules:
 
 - `course` MUST always exist in the response
 - `lessons` MUST always exist in the response
-- `short_description` MUST always exist in the response
-- Top-level serialization order MUST remain `course`, then `lessons`, then `short_description`
+- `description` MUST always exist in the response
+- Top-level serialization order MUST remain `course`, then `lessons`, then `description`
 - `cover` MUST NOT exist as a top-level COURSE_DETAIL_VIEW field
 - `course` MUST conform to the canonical `CourseDiscoveryCourse` response surface
 - `lessons` MUST be serialized as an array
-- `short_description` MUST be serialized as `str | null`
+- `description` MUST be serialized as `str | null`
 
 ---
 
@@ -46,7 +46,7 @@ Rules:
 
 Violation examples:
 
-- Omitting `short_description` when missing
+- Omitting `description` when missing
 - Returning different field sets between courses
 
 ---
@@ -56,9 +56,9 @@ Violation examples:
 Rules:
 
 - Missing optional data MUST be represented as `null`
-- Empty string MUST NOT be used instead of `null` for `short_description`
+- Empty string MUST NOT be used instead of `null` for `description`
 - Field omission is forbidden
-- `short_description` MUST be `null` if not present
+- `description` MUST be `null` if not present
 - `lessons` MUST be `[]` if no lessons exist
 - `lessons` MUST NOT be `null`
 

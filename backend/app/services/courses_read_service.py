@@ -36,12 +36,12 @@ def _compose_course_detail_view(
     *,
     course: Mapping[str, Any],
     lessons: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...],
-    short_description: str | None,
+    description: str | None,
 ) -> schemas.CourseDetailResponse:
     return schemas.CourseDetailResponse(
         course=schemas.Course(**_canonical_course_payload(course)),
         lessons=[schemas.LessonStructureItem(**row) for row in lessons],
-        short_description=short_description,
+        description=description,
     )
 
 
@@ -95,7 +95,7 @@ async def read_course_detail(
     return _compose_course_detail_view(
         course=course,
         lessons=lessons,
-        short_description=rows[0].get("short_description"),
+        description=rows[0].get("description"),
     )
 
 
@@ -103,10 +103,10 @@ async def read_public_course_content(course_id: str) -> dict[str, Any] | None:
     rows = await _read_public_course_detail_rows(course_id=course_id)
     if not rows:
         return None
-    short_description = rows[0].get("short_description")
-    if short_description is None:
+    description = rows[0].get("description")
+    if description is None:
         return None
     return {
         "course_id": rows[0]["id"],
-        "short_description": short_description,
+        "description": description,
     }

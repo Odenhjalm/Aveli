@@ -180,7 +180,7 @@ class _CourseContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final course = detail.course;
     final teacherName = course.teacher?.displayName;
-    final shortDescription = detail.shortDescription;
+    final description = detail.description;
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final courseState = courseStateAsync.valueOrNull;
@@ -286,9 +286,9 @@ class _CourseContent extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text('Lärare: $teacherName', style: t.bodyMedium),
                 ],
-                if (shortDescription != null) ...[
+                if (description != null) ...[
                   const SizedBox(height: 12),
-                  Text(shortDescription, style: t.bodyLarge),
+                  Text(description, style: t.bodyLarge),
                 ],
                 const SizedBox(height: 12),
                 if (primaryCta != null)

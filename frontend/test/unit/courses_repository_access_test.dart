@@ -92,10 +92,10 @@ void main() {
       },
     );
 
-    test('maps backend short description and intro source classifier', () {
+    test('maps backend description and intro source classifier', () {
       final intro = CourseSummary.fromResponse(
         _coursePayload(
-          shortDescription: 'Backend list description',
+          description: 'Backend list description',
           requiredEnrollmentSource: 'intro',
         ),
       );
@@ -106,7 +106,7 @@ void main() {
         ),
       );
 
-      expect(intro.shortDescription, 'Backend list description');
+      expect(intro.description, 'Backend list description');
       expect(intro.isIntroCourse, isTrue);
       expect(legacyFree.isIntroCourse, isFalse);
     });
@@ -378,7 +378,7 @@ void main() {
                 {'id': 'lesson-2', 'lesson_title': 'Second', 'position': 2},
                 {'id': 'lesson-1', 'lesson_title': 'First', 'position': 1},
               ],
-              'short_description': 'Backend-authored course description',
+              'description': 'Backend-authored course description',
             },
           );
         }
@@ -390,7 +390,7 @@ void main() {
 
       expect(detail.course.slug, slug);
       expect(detail.course.teacher?.displayName, 'Aveli Teacher');
-      expect(detail.shortDescription, 'Backend-authored course description');
+      expect(detail.description, 'Backend-authored course description');
       expect(
         detail.lessons.map((lesson) => lesson.lessonTitle),
         orderedEquals(['First', 'Second']),
@@ -443,7 +443,7 @@ void main() {
                 },
               ),
               'lessons': const [],
-              'short_description': null,
+              'description': null,
             },
           );
         }
@@ -524,14 +524,14 @@ Map<String, Object?> _coursePayload({
   String? requiredEnrollmentSource = 'intro',
   bool enrollable = true,
   bool purchasable = false,
-  String? shortDescription = 'Backend-authored summary description',
+  String? description = 'Backend-authored summary description',
   Map<String, Object?> extra = const {},
 }) {
   return {
     'id': 'course-1',
     'slug': slug,
     'title': title,
-    'short_description': shortDescription,
+    'description': description,
     'teacher': const {'user_id': 'teacher-1', 'display_name': 'Aveli Teacher'},
     'group_position': groupPosition,
     'course_group_id': 'group-1',
@@ -596,7 +596,7 @@ const Map<String, Object?> _defaultCoursePayload = {
   'id': 'course-1',
   'slug': 'aveli-course',
   'title': 'Aveli 101',
-  'short_description': 'Backend-authored summary description',
+  'description': 'Backend-authored summary description',
   'teacher': {'user_id': 'teacher-1', 'display_name': 'Aveli Teacher'},
   'group_position': 0,
   'course_group_id': 'group-1',

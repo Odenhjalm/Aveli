@@ -159,7 +159,7 @@ CourseSummary _course({
     id: id,
     slug: slug,
     title: title,
-    shortDescription: 'Backend unit description',
+    description: 'Backend unit description',
     teacher: const CourseTeacherData(
       userId: 'teacher-1',
       displayName: 'Aveli Teacher',

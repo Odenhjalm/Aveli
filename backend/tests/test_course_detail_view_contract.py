@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app import schemas
 from app.routes import courses as course_routes
+from app.routes import landing as landing_routes
 from app.services import courses_read_service, courses_service
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -37,7 +38,7 @@ def _course_payload(*, cover: dict | None) -> dict:
         "price_amount_cents": None,
         "drip_enabled": False,
         "drip_interval_days": None,
-        "required_enrollment_source": "intro_enrollment",
+        "required_enrollment_source": "intro",
         "enrollable": True,
         "purchasable": False,
     }
@@ -75,7 +76,7 @@ def _detail_response(
     *,
     cover: dict | None,
     lessons: list[dict] | None = None,
-    short_description: str | None = None,
+    description: str | None = None,
 ) -> schemas.CourseDetailResponse:
     return schemas.CourseDetailResponse(
         course=schemas.Course(**_course_payload(cover=cover)),
@@ -93,7 +94,7 @@ def _detail_response(
                 ]
             )
         ],
-        short_description=short_description,
+        description=description,
     )
 
 
@@ -104,7 +105,7 @@ async def test_course_detail_http_shape_contains_cover_and_null_sibling_content(
     async def fake_read_course_detail(*, course_id: str | None = None, slug: str | None = None):
         assert course_id is None
         assert slug == "course-1"
-        return _detail_response(cover=_cover_payload(), short_description=None)
+        return _detail_response(cover=_cover_payload(), description=None)
 
     monkeypatch.setattr(
         course_routes.courses_read_service,
@@ -117,8 +118,8 @@ async def test_course_detail_http_shape_contains_cover_and_null_sibling_content(
     assert response.status_code == 200, response.text
     body = response.json()
 
-    assert set(body.keys()) == {"course", "lessons", "short_description"}
-    assert body["short_description"] is None
+    assert set(body.keys()) == {"course", "lessons", "description"}
+    assert body["description"] is None
     assert body["course"]["cover"] == _cover_payload()
     assert set(body["course"].keys()) == {
         "id",
@@ -166,7 +167,7 @@ async def test_course_detail_http_shape_preserves_empty_lessons_and_null_cover(
     async def fake_read_course_detail(*, course_id: str | None = None, slug: str | None = None):
         assert course_id == COURSE_ID
         assert slug is None
-        return _detail_response(cover=None, lessons=[], short_description=None)
+        return _detail_response(cover=None, lessons=[], description=None)
 
     monkeypatch.setattr(
         course_routes.courses_read_service,
@@ -181,11 +182,11 @@ async def test_course_detail_http_shape_preserves_empty_lessons_and_null_cover(
 
     assert body["course"]["cover"] is None
     assert body["lessons"] == []
-    assert body["short_description"] is None
+    assert body["description"] is None
 
 
 async def test_course_detail_route_is_identity_independent(monkeypatch):
-    detail = _detail_response(cover=_cover_payload(), short_description="Short")
+    detail = _detail_response(cover=_cover_payload(), description="Description")
     calls: list[tuple[str | None, str | None]] = []
 
     async def fake_read_course_detail(*, course_id: str | None = None, slug: str | None = None):
@@ -210,7 +211,7 @@ async def test_course_detail_route_is_identity_independent(monkeypatch):
 
 
 async def test_course_detail_by_id_route_is_identity_independent(monkeypatch):
-    detail = _detail_response(cover=_cover_payload(), short_description="Short")
+    detail = _detail_response(cover=_cover_payload(), description="Description")
     calls: list[tuple[str | None, str | None]] = []
 
     async def fake_read_course_detail(*, course_id: str | None = None, slug: str | None = None):
@@ -308,6 +309,65 @@ async def test_course_route_rejects_legacy_step_field(monkeypatch):
         await course_routes.list_courses()
 
 
+async def test_course_list_http_shape_uses_description(async_client, monkeypatch):
+    async def fake_list_public_courses(*, search: str | None = None, limit: int | None = None):
+        assert search is None
+        assert limit is None
+        return [
+            {
+                **_course_payload(cover=None),
+                "description": "Backend-authored list description",
+            }
+        ]
+
+    async def fake_attach_course_cover_read_contract(courses):
+        rows = [courses] if isinstance(courses, dict) else list(courses)
+        for row in rows:
+            row["cover"] = None
+
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "list_public_courses",
+        fake_list_public_courses,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        course_routes.courses_service,
+        "attach_course_cover_read_contract",
+        fake_attach_course_cover_read_contract,
+        raising=True,
+    )
+
+    response = await async_client.get("/courses")
+    assert response.status_code == 200, response.text
+    item = response.json()["items"][0]
+    assert item["description"] == "Backend-authored list description"
+    assert "short_description" not in item
+
+
+async def test_landing_course_http_shape_uses_description(async_client, monkeypatch):
+    async def fake_list_intro_courses():
+        return [
+            {
+                **_course_payload(cover=None),
+                "description": "Backend-authored landing description",
+            }
+        ]
+
+    monkeypatch.setattr(
+        landing_routes.models,
+        "list_intro_courses",
+        fake_list_intro_courses,
+        raising=True,
+    )
+
+    response = await async_client.get("/landing/intro-courses")
+    assert response.status_code == 200, response.text
+    item = response.json()["items"][0]
+    assert item["description"] == "Backend-authored landing description"
+    assert "short_description" not in item
+
+
 def test_course_schemas_reject_legacy_step_field():
     with pytest.raises(ValidationError):
         schemas.Course(**{**_course_payload(cover=None), "step": "intro"})
@@ -317,7 +377,7 @@ def test_course_schemas_reject_legacy_step_field():
             course_id=COURSE_ID,
             group_position=0,
             step="intro",
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
             is_intro_course=True,
             selection_locked=False,
             enrollable=True,
@@ -327,7 +387,7 @@ def test_course_schemas_reject_legacy_step_field():
         )
 
 
-async def test_read_course_detail_composes_teacher_cover_and_short_description(monkeypatch):
+async def test_read_course_detail_composes_teacher_cover_and_description(monkeypatch):
     async def fail_fetch_course(*, course_id: str | None = None, slug: str | None = None):
         raise AssertionError("raw course reads must not back public course detail")
 
@@ -348,7 +408,7 @@ async def test_read_course_detail_composes_teacher_cover_and_short_description(m
                 "sellable": False,
                 "teacher_id": TEACHER_ID,
                 "teacher_display_name": "Aveli Teacher",
-                "short_description": "Backend-authored course description",
+                "description": "Backend-authored course description",
                 "lesson_id": LESSON_ID,
                 "lesson_title": "Lesson 1",
                 "lesson_position": 1,
@@ -358,7 +418,7 @@ async def test_read_course_detail_composes_teacher_cover_and_short_description(m
                 "sellable": False,
                 "teacher_id": TEACHER_ID,
                 "teacher_display_name": "Aveli Teacher",
-                "short_description": "Backend-authored course description",
+                "description": "Backend-authored course description",
                 "lesson_id": "55555555-5555-5555-5555-555555555555",
                 "lesson_title": "Lesson 2",
                 "lesson_position": 2,
@@ -400,7 +460,7 @@ async def test_read_course_detail_composes_teacher_cover_and_short_description(m
 
     assert detail is not None
     payload = detail.model_dump(mode="json")
-    assert payload["short_description"] == "Backend-authored course description"
+    assert payload["description"] == "Backend-authored course description"
     assert payload["course"]["teacher"] == {
         "user_id": TEACHER_ID,
         "display_name": "Aveli Teacher",
@@ -424,7 +484,7 @@ async def test_course_public_content_route_reads_through_public_detail_surface(
         assert course_id == COURSE_ID
         return {
             "course_id": COURSE_ID,
-            "short_description": "Short description",
+            "description": "Course description",
         }
 
     monkeypatch.setattr(
@@ -438,7 +498,7 @@ async def test_course_public_content_route_reads_through_public_detail_surface(
     assert response.status_code == 200, response.text
     assert response.json() == {
         "course_id": COURSE_ID,
-        "short_description": "Short description",
+        "description": "Course description",
     }
 
 

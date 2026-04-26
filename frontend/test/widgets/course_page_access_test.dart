@@ -38,14 +38,14 @@ CourseDetailData _detail({
   bool dripEnabled = false,
   int? dripIntervalDays,
   List<LessonSummary>? lessons,
-  String? shortDescription = 'Backendbeskriven kurs för startklara elever.',
+  String? description = 'Backendbeskriven kurs för startklara elever.',
 }) {
   return CourseDetailData(
     course: CourseSummary(
       id: courseId,
       slug: slug,
       title: title,
-      shortDescription: shortDescription,
+      description: description,
       teacher: const CourseTeacherData(
         userId: 'teacher-1',
         displayName: 'Aveli Teacher',
@@ -66,7 +66,7 @@ CourseDetailData _detail({
         const [
           LessonSummary(id: 'lesson-1', lessonTitle: 'Lesson 1', position: 1),
         ],
-    shortDescription: shortDescription,
+    description: description,
   );
 }
 
@@ -254,7 +254,7 @@ void main() {
       slug: 'detail-course',
       title: 'Detail Course',
       groupPosition: 0,
-      shortDescription: 'En tydlig kursbeskrivning från backend.',
+      description: 'En tydlig kursbeskrivning från backend.',
     );
 
     await tester.pumpWidget(

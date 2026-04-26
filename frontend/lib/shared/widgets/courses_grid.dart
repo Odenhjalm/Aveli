@@ -49,7 +49,7 @@ class CoursesGrid extends StatelessWidget {
               courseCoverResolvedUrl(c.cover),
             );
             final title = c.title;
-            final shortDescription = c.shortDescription?.trim() ?? '';
+            final description = c.description?.trim() ?? '';
             final id = c.id;
             final pct = (progress?[id] ?? 0.0).clamp(0.0, 1.0);
             final slug = c.slug;
@@ -156,10 +156,10 @@ class CoursesGrid extends StatelessWidget {
                                             fontWeight: FontWeight.w800,
                                           ),
                                         ),
-                                        if (shortDescription.isNotEmpty) ...[
+                                        if (description.isNotEmpty) ...[
                                           const SizedBox(height: 6),
                                           CourseDescriptionText(
-                                            shortDescription,
+                                            description,
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                             baseStyle: t.bodySmall,

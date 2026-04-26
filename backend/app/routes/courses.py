@@ -35,7 +35,7 @@ _CANONICAL_COURSE_FIELDS = (
 )
 _CANONICAL_COURSE_LIST_FIELDS = (
     *_CANONICAL_COURSE_FIELDS,
-    "short_description",
+    "description",
 )
 
 _COURSE_NOT_FOUND_DETAIL = "Kursen kunde inte hittas."

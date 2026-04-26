@@ -172,8 +172,19 @@ data from unrelated profile, landing, community, or auth surfaces.
 
 ### Public Course Content Field
 
-`app.course_public_content.short_description` is sibling public course content.
-It is not course structure and is not lesson content.
+`app.course_public_content.short_description` is stored legacy sibling public
+course content and is not learner runtime output.
+`app.course_public_content.description` is the canonical full public course
+description substrate required by Course Entry/Gateway.
+
+Both fields are backend-owned public course content. They are not course
+structure and are not lesson content. Learner runtime responses MUST use
+`app.course_public_content.description` as the course-description field.
+
+`description.md` is permitted only as ingestion/source material into
+`app.course_public_content.description`. It is not runtime authority and must
+not be read by learner runtime, frontend runtime, Course Entry/Gateway, Lesson
+View, Preview, or public API reads as course-description truth.
 
 ### Lesson Fields
 
@@ -623,6 +634,11 @@ The frontend MUST render only this response for Course Entry/Gateway decisions.
 Frontend MUST NOT decide CTA type, intro eligibility, purchase eligibility,
 price visibility, price formatting, lesson lock state, current/upcoming/
 completed state, or next recommended lesson.
+
+The full course description payload is sourced from
+`app.course_public_content.description` through backend read composition.
+Frontend MUST NOT parse markdown files, derive this value from
+`short_description`, or synthesize fallback descriptions.
 
 The backend-authored CTA decision MUST use only:
 

@@ -21,7 +21,7 @@ _CANONICAL_COURSE_FIELDS = (
     "required_enrollment_source",
     "enrollable",
     "purchasable",
-    "short_description",
+    "description",
 )
 
 

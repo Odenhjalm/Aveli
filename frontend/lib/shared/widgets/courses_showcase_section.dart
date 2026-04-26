@@ -669,7 +669,7 @@ class _CourseTileGlass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = course.title;
-    final desc = course.shortDescription?.trim() ?? '';
+    final desc = course.description?.trim() ?? '';
     final slug = course.slug;
     final isIntroCourse = course.isIntroCourse;
     final courseCoverImageUrlFuture = Future<String?>.value(

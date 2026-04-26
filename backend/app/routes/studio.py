@@ -1936,7 +1936,7 @@ async def course_meta(course_id: str, current: TeacherEntryUser):
 
 @course_lesson_router.post(
     "/courses/{course_id}/public",
-    response_model=schemas.CoursePublicContent,
+    response_model=schemas.StudioCoursePublicContent,
 )
 async def upsert_course_public_content(
     course_id: str,
@@ -1951,7 +1951,7 @@ async def upsert_course_public_content(
         course_id,
         short_description=payload.short_description,
     )
-    return schemas.CoursePublicContent(**public_content)
+    return schemas.StudioCoursePublicContent(**public_content)
 
 
 @course_lesson_router.post(

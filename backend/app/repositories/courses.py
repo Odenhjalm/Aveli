@@ -71,7 +71,7 @@ _PUBLIC_DISCOVERY_COLUMNS = """
     cds.drip_interval_days,
     cds.cover_media_id,
     cds.required_enrollment_source::text as required_enrollment_source,
-    cpc.short_description,
+    cpc.description,
     c.sellable
 """
 
@@ -652,7 +652,7 @@ async def list_courses(
     query = f"""
         select
             {_COURSE_COLUMNS},
-            cpc.short_description
+            cpc.description
         from app.courses as c
         left join app.course_public_content as cpc
           on cpc.course_id = c.id
@@ -843,7 +843,7 @@ async def get_public_course_detail_rows(
             cd.drip_interval_days,
             cd.required_enrollment_source::text as required_enrollment_source,
             c.sellable,
-            cd.short_description,
+            cpc.description,
             cd.lesson_id,
             cd.lesson_title,
             cd.lesson_position
@@ -852,6 +852,8 @@ async def get_public_course_detail_rows(
           on c.id = cd.id
         left join app.profiles as p
           on p.user_id = c.teacher_id
+        left join app.course_public_content as cpc
+          on cpc.course_id = cd.id
         where {_PUBLIC_DISCOVERABLE_COURSE_SQL}
           and {" and ".join(clauses)}
         order by cd.lesson_position asc nulls last, cd.lesson_id asc nulls last
@@ -1234,7 +1236,7 @@ async def get_course_public_content(course_id: str) -> dict[str, Any] | None:
     query = """
         select
             cpc.course_id,
-            cpc.short_description
+            cpc.description
         from app.course_public_content as cpc
         where cpc.course_id = %s::uuid
         limit 1
@@ -1280,7 +1282,7 @@ async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
     query = f"""
         select distinct on (c.id)
             {_COURSE_COLUMNS},
-            cpc.short_description
+            cpc.description
         from app.course_enrollments as ce
         join app.courses as c
           on c.id = ce.course_id

@@ -55,7 +55,7 @@ def _course(*, cover_media_id: str | None = MEDIA_ID) -> dict:
         "price_amount_cents": 0,
         "drip_enabled": False,
         "drip_interval_days": None,
-        "required_enrollment_source": "intro_enrollment",
+        "required_enrollment_source": "intro",
         "enrollable": True,
         "purchasable": False,
     }
@@ -74,7 +74,7 @@ def _landing_course(*, cover: dict | None) -> dict:
         "price_amount_cents": 0,
         "drip_enabled": False,
         "drip_interval_days": None,
-        "required_enrollment_source": "intro_enrollment",
+        "required_enrollment_source": "intro",
         "enrollable": True,
         "purchasable": False,
     }
@@ -88,7 +88,7 @@ def _detail_row(
     return {
         **_course(cover_media_id=cover_media_id),
         "price_amount_cents": price_amount_cents,
-        "short_description": "Detail",
+        "description": "Detail",
         "lesson_id": "55555555-5555-5555-5555-555555555555",
         "lesson_title": "Lesson 1",
         "lesson_position": 1,

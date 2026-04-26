@@ -31,13 +31,15 @@ Canonical authorities are:
 
 Sibling authority outside core structure/content:
 
-- `app.course_public_content.short_description` is not course structure
-- `app.course_public_content.short_description` is not lesson content
-- it remains a sibling public-content surface
+- `app.course_public_content.short_description` is stored legacy sibling public content and is not learner runtime output
+- `app.course_public_content.description` is not course structure
+- `app.course_public_content.description` is not lesson content
+- `app.course_public_content.description` is the canonical learner runtime course-description field
 
 Forbidden as authority:
 
 - `LessonSummary` as content authority
+- `description.md` as runtime course-description authority
 
 ## 3. PUBLIC STRUCTURE AND CONTENT VISIBILITY
 
@@ -47,7 +49,15 @@ Lesson content read context may additionally include:
 - lesson structure
 - lesson media
 
-`short_description` is sibling public content and must not be treated as course structure or lesson content.
+`description` is canonical learner runtime course-description public content and
+must not be treated as course structure or lesson content.
+
+`short_description` remains stored legacy sibling public content until explicit
+deprecation, but it MUST NOT be emitted by learner runtime responses.
+
+`description.md` may be ingestion/source material only. Runtime course
+description authority is `app.course_public_content.description`, delivered
+through backend read composition.
 
 ## 4. CANONICAL ENTRYPOINTS
 
@@ -105,7 +115,7 @@ Lesson content read context may additionally include:
       "position": 1
     }
   ],
-  "short_description": "string | null"
+  "description": "string | null"
 }
 ~~~
 
@@ -152,7 +162,6 @@ Response:
       "state": "ready",
       "resolved_url": "string"
     },
-    "short_description": "string | null",
     "description": "string | null",
     "required_enrollment_source": "intro | purchase | null"
   },
@@ -212,6 +221,10 @@ Rules:
   clean baseline substrate cannot materialize the full description field,
   implementation MUST fail closed and create a baseline-owner task before this
   endpoint is implemented
+- full course description payload MUST source from
+  `app.course_public_content.description` through backend read composition
+- frontend MUST NOT parse markdown files, derive descriptions from
+  `short_description`, or synthesize missing descriptions
 - price display MUST come from backend-authored `pricing` or `cta.price`
 - `reason_text`, `label`, and rendered price text must follow
   `system_text_authority_contract.md`
@@ -307,7 +320,10 @@ Frontend model separation law:
 Sibling public-content rule:
 
 - if frontend edits `short_description`, it must use the dedicated public-content surface
+- if frontend edits `description`, it must use the dedicated public-content
+  surface or another explicitly contracted backend ingestion/authoring surface
 - `short_description` must not be sent through course structure endpoints
+- `description` must not be sent through course structure endpoints
 
 ## 9. FINAL ASSERTION
 

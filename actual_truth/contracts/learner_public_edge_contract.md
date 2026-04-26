@@ -42,14 +42,14 @@ Field rules:
 
 - `course`
 - `lessons`
-- `short_description`
+- `description`
 
 Field rules:
 
 - All listed fields MUST be present in the response
 - `course` MUST be serialized as an object
 - `lessons` MUST be serialized as an array
-- `short_description` MUST be serialized as `str | null`
+- `description` MUST be serialized as `str | null`
 
 `LessonContentResponse` media output rules:
 

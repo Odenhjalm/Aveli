@@ -51,7 +51,7 @@ CourseSummary _course({required String id, required String title}) {
     id: id,
     slug: id,
     title: title,
-    shortDescription: 'Backend course description',
+    description: 'Backend course description',
     teacher: const CourseTeacherData(
       userId: 'teacher-1',
       displayName: 'Aveli Teacher',

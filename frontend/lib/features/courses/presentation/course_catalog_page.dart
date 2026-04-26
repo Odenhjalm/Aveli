@@ -475,7 +475,7 @@ class _IntroMiniCourseCard extends StatelessWidget {
     final theme = Theme.of(context);
     final radius = BorderRadius.circular(16);
     final slug = course.slug.trim();
-    final shortDescription = course.shortDescription?.trim() ?? '';
+    final description = course.description?.trim() ?? '';
     final courseCoverImageUrlFuture = Future<String?>.value(
       courseCoverResolvedUrl(course.cover),
     );
@@ -568,10 +568,10 @@ class _IntroMiniCourseCard extends StatelessWidget {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      if (shortDescription.isNotEmpty) ...[
+                      if (description.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         CourseDescriptionText(
-                          shortDescription,
+                          description,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           baseStyle: theme.textTheme.bodySmall,
@@ -604,7 +604,7 @@ class _JourneyCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final slug = course.slug.trim();
-    final shortDescription = course.shortDescription?.trim() ?? '';
+    final description = course.description?.trim() ?? '';
     final isIntroCourse = course.isIntroCourse;
     final courseCoverImageUrlFuture = Future<String?>.value(
       courseCoverResolvedUrl(course.cover),
@@ -738,10 +738,10 @@ class _JourneyCourseCard extends StatelessWidget {
                         ],
                       ],
                     ),
-                    if (shortDescription.isNotEmpty) ...[
+                    if (description.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       CourseDescriptionText(
-                        shortDescription,
+                        description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         baseStyle: theme.textTheme.bodyMedium,
