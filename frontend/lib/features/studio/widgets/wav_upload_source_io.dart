@@ -63,6 +63,7 @@ Future<void> uploadWavFile({
   required Uri uploadEndpoint,
   required WavUploadFile file,
   required String contentType,
+  Map<String, String> headers = const <String, String>{},
   required void Function(int sent, int total) onProgress,
   WavUploadCancelToken? cancelToken,
 }) async {
@@ -79,7 +80,7 @@ Future<void> uploadWavFile({
     await dio.putUri<void>(
       uploadEndpoint,
       data: stream,
-      options: Options(contentType: contentType),
+      options: Options(contentType: contentType, headers: headers),
       cancelToken: dioCancel,
       onSendProgress: (sent, total) {
         final resolvedTotal = total > 0 ? total : file.size;

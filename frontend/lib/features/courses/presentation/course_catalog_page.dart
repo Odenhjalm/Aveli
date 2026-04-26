@@ -349,8 +349,6 @@ class _JourneyFamilyBand extends StatelessWidget {
 
   final CourseJourneyFamily family;
   final MediaRepository mediaRepository;
-  static const _slotMinHeight = 292.0;
-  static const _slotWidth = 320.0;
   static const _slotGap = 12.0;
   static const _arrowWidth = 24.0;
 
@@ -398,10 +396,9 @@ class _JourneyFamilyBand extends StatelessWidget {
                   index++
                 ) ...[
                   SizedBox(
-                    width: _slotWidth,
+                    width: _JourneyCourseCard.cardWidth,
                     child: _JourneyCourseSlot(
                       courseGroupId: family.courseGroupId,
-                      minHeight: _slotMinHeight,
                       course: progressionCourses[index],
                       mediaRepository: mediaRepository,
                     ),
@@ -432,23 +429,21 @@ class _JourneyFamilyBand extends StatelessWidget {
 class _JourneyCourseSlot extends StatelessWidget {
   const _JourneyCourseSlot({
     required this.courseGroupId,
-    required this.minHeight,
     required this.course,
     required this.mediaRepository,
   });
 
   final String courseGroupId;
-  final double minHeight;
   final CourseSummary course;
   final MediaRepository mediaRepository;
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
+    return SizedBox(
       key: ValueKey(
         'journey-course-slot:$courseGroupId:position${course.groupPosition}',
       ),
-      constraints: BoxConstraints(minHeight: minHeight),
+      height: _JourneyCourseCard.cardHeight,
       child: _JourneyCourseCard(
         course: course,
         mediaRepository: mediaRepository,
@@ -627,6 +622,21 @@ class _JourneyCourseCard extends StatelessWidget {
     required this.mediaRepository,
   });
 
+  static const cardWidth = 320.0;
+  static const cardHeight = 336.0;
+  static const _imageHeight = 180.0;
+  static const _bodyHeight = cardHeight - _imageHeight;
+  static const _bodyHorizontalPadding = 14.0;
+  static const _bodyVerticalPadding = 14.0;
+  static const _contentWidth = cardWidth - (_bodyHorizontalPadding * 2);
+  static const _stageSlotHeight = 18.0;
+  static const _titleRowHeight = 48.0;
+  static const _descriptionSlotHeight = 40.0;
+  static const _controlSlotWidth = 92.0;
+  static const _titleControlGap = 12.0;
+  static const _titleWithControlWidth =
+      _contentWidth - _titleControlGap - _controlSlotWidth;
+
   final CourseSummary course;
   final MediaRepository mediaRepository;
 
@@ -659,128 +669,178 @@ class _JourneyCourseCard extends StatelessWidget {
                 pathParameters: {'slug': slug},
               ),
         borderRadius: radius,
-        child: GlassCard(
-          padding: EdgeInsets.zero,
-          opacity: 0.18,
-          sigmaX: 12,
-          sigmaY: 12,
+        child: ClipRRect(
           borderRadius: radius,
-          borderColor: Colors.white.withValues(alpha: 0.16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(18),
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      if (SafeMedia.enabled) {
-                        SafeMedia.markThumbnails();
-                      }
-                      final cacheWidth = SafeMedia.cacheDimension(
-                        context,
-                        constraints.maxWidth,
-                        max: 1200,
-                      );
-                      final cacheHeight = SafeMedia.cacheDimension(
-                        context,
-                        constraints.maxHeight,
-                        max: 900,
-                      );
-                      return DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                        ),
-                        child: FutureBuilder<String?>(
-                          future: courseCoverImageUrlFuture,
-                          builder: (context, snapshot) {
-                            final courseCoverImageUrl = snapshot.data;
-                            if (courseCoverImageUrl == null ||
-                                courseCoverImageUrl.isEmpty) {
-                              return const SizedBox.shrink();
-                            }
-                            return Image.network(
-                              courseCoverImageUrl,
-                              fit: BoxFit.cover,
-                              filterQuality: SafeMedia.filterQuality(
-                                full: FilterQuality.high,
-                              ),
-                              cacheWidth: cacheWidth,
-                              cacheHeight: cacheHeight,
-                              gaplessPlayback: true,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const SizedBox.shrink(),
-                            );
-                          },
-                        ),
-                      );
-                    },
-                  ),
-                ),
+          child: EffectsBackdropFilter(
+            sigmaX: 12,
+            sigmaY: 12,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: radius,
+                border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+              child: SizedBox(
+                height: cardHeight,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _courseStageLabel(course.groupPosition),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: DesignTokens.bodyTextColor.withValues(
-                          alpha: 0.72,
+                    SizedBox(
+                      height: _imageHeight,
+                      width: double.infinity,
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(18),
                         ),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            course.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: DesignTokens.bodyTextColor,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        if (isIntroCourse) ...[
-                          const SizedBox(width: 12),
-                          const CourseIntroBadge(label: 'Introduktion'),
-                        ] else if (priceLabel != null) ...[
-                          const SizedBox(width: 12),
-                          Text(
-                            priceLabel,
-                            textAlign: TextAlign.right,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: DesignTokens.bodyTextColor.withValues(
-                                alpha: 0.72,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            if (SafeMedia.enabled) {
+                              SafeMedia.markThumbnails();
+                            }
+                            final cacheWidth = SafeMedia.cacheDimension(
+                              context,
+                              constraints.maxWidth,
+                              max: 1200,
+                            );
+                            final cacheHeight = SafeMedia.cacheDimension(
+                              context,
+                              constraints.maxHeight,
+                              max: 900,
+                            );
+                            return DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.18),
                               ),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (description.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      CourseDescriptionText(
-                        description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        baseStyle: theme.textTheme.bodyMedium,
+                              child: FutureBuilder<String?>(
+                                future: courseCoverImageUrlFuture,
+                                builder: (context, snapshot) {
+                                  final courseCoverImageUrl = snapshot.data;
+                                  if (courseCoverImageUrl == null ||
+                                      courseCoverImageUrl.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Image.network(
+                                    courseCoverImageUrl,
+                                    fit: BoxFit.cover,
+                                    filterQuality: SafeMedia.filterQuality(
+                                      full: FilterQuality.high,
+                                    ),
+                                    cacheWidth: cacheWidth,
+                                    cacheHeight: cacheHeight,
+                                    gaplessPlayback: true,
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            const SizedBox.shrink(),
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ],
+                    ),
+                    SizedBox(
+                      height: _bodyHeight,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          _bodyHorizontalPadding,
+                          _bodyVerticalPadding,
+                          _bodyHorizontalPadding,
+                          _bodyVerticalPadding,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              height: _stageSlotHeight,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  _courseStageLabel(course.groupPosition),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: DesignTokens.bodyTextColor
+                                        .withValues(alpha: 0.72),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: _titleRowHeight,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: isIntroCourse || priceLabel != null
+                                        ? _titleWithControlWidth
+                                        : _contentWidth,
+                                    child: Text(
+                                      course.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            color: DesignTokens.bodyTextColor,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                    ),
+                                  ),
+                                  if (isIntroCourse) ...[
+                                    const SizedBox(width: _titleControlGap),
+                                    const SizedBox(
+                                      width: _controlSlotWidth,
+                                      child: Align(
+                                        alignment: Alignment.topRight,
+                                        child: CourseIntroBadge(
+                                          label: 'Introduktion',
+                                        ),
+                                      ),
+                                    ),
+                                  ] else if (priceLabel != null) ...[
+                                    const SizedBox(width: _titleControlGap),
+                                    SizedBox(
+                                      width: _controlSlotWidth,
+                                      child: Text(
+                                        priceLabel,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.right,
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: DesignTokens.bodyTextColor
+                                                  .withValues(alpha: 0.72),
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: _descriptionSlotHeight,
+                              child: description.isEmpty
+                                  ? const SizedBox.shrink()
+                                  : CourseDescriptionText(
+                                      description,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      baseStyle: theme.textTheme.bodyMedium,
+                                    ),
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),

@@ -17,6 +17,7 @@ import 'package:aveli/features/studio/application/studio_providers.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
 import 'package:aveli/features/studio/widgets/home_player_upload_dialog.dart';
 import 'package:aveli/features/studio/widgets/wav_upload_source.dart';
+import 'package:aveli/features/studio/widgets/wav_upload_types.dart';
 
 class _FakeApiClient extends Fake implements ApiClient {}
 
@@ -108,15 +109,8 @@ void main() {
       final studioRepo = _DialogStudioRepository();
       final harness = await _PipelineHarness.create();
       final pipelineRepo = MediaPipelineRepository(client: harness.client);
-      final file = WavUploadFile(
-        fs.XFile.fromData(
-          Uint8List.fromList(<int>[1, 2, 3, 4]),
-          name: 'demo.mp3',
-          mimeType: 'audio/mpeg',
-        ),
-        'audio/mpeg',
-        4,
-      );
+      final streamingUploads = <_RecordedStreamingUpload>[];
+      final file = _UnreadableWavUploadFile();
 
       await tester.pumpWidget(
         ProviderScope(
@@ -136,8 +130,11 @@ void main() {
                         builder: (_) => HomePlayerUploadDialog(
                           file: file,
                           title: 'Morgonljud',
-                          contentType: 'audio/mpeg',
+                          contentType: 'audio/wav',
                           textBundle: _textBundle(),
+                          uploadFileOverride: _recordingUpload(
+                            streamingUploads,
+                          ),
                         ),
                       );
                     },
@@ -159,13 +156,28 @@ void main() {
       expect(studioRepo.refreshCalls, 0);
       expect(studioRepo.createFromStorageCalls, 0);
       expect(find.text('Laddar upp ljud'), findsNothing);
-      expect(studioRepo.lastRequestedMimeType, 'audio/mpeg');
+      expect(studioRepo.lastRequestedMimeType, 'audio/wav');
 
-      final uploadRequests = harness.adapter.requestsFor(
-        '/api/media-assets/media-1/upload-bytes',
+      expect(streamingUploads, hasLength(1));
+      final streamingUpload = streamingUploads.single;
+      expect(
+        streamingUpload.uploadEndpoint,
+        Uri.parse('http://127.0.0.1:1/api/media-assets/media-1/upload-bytes'),
       );
-      expect(uploadRequests, hasLength(1));
-      expect(uploadRequests.single.method, 'PUT');
+      expect(streamingUpload.file, same(file));
+      expect(streamingUpload.contentType, 'audio/wav');
+      expect(
+        streamingUpload.headers['X-Aveli-Upload-Session'],
+        'upload-session-1',
+      );
+      expect(
+        streamingUpload.headers['Authorization'],
+        'Bearer ${_jwtWithExpSeconds(4102444800)}',
+      );
+      expect(
+        harness.adapter.requestsFor('/api/media-assets/media-1/upload-bytes'),
+        isEmpty,
+      );
 
       final completionRequests = harness.adapter.requestsFor(
         '/api/media-assets/media-1/upload-completion',
@@ -187,6 +199,7 @@ void main() {
     final studioRepo = _DialogStudioRepository();
     final harness = await _PipelineHarness.create();
     final pipelineRepo = MediaPipelineRepository(client: harness.client);
+    final streamingUploads = <_RecordedStreamingUpload>[];
     final file = WavUploadFile(
       fs.XFile.fromData(
         Uint8List.fromList(<int>[1, 2, 3, 4]),
@@ -217,6 +230,7 @@ void main() {
                         title: 'Kvällsljud',
                         contentType: 'audio/mp4',
                         textBundle: _textBundle(),
+                        uploadFileOverride: _recordingUpload(streamingUploads),
                       ),
                     );
                   },
@@ -236,6 +250,7 @@ void main() {
     expect(studioRepo.requestUploadUrlCalls, 1);
     expect(studioRepo.lastRequestedMimeType, 'audio/m4a');
     expect(studioRepo.createFromStorageCalls, 0);
+    expect(streamingUploads.single.contentType, 'audio/m4a');
   });
 
   testWidgets('upload dialog stops polling after auth failure', (tester) async {
@@ -270,6 +285,7 @@ void main() {
       },
     );
     final pipelineRepo = MediaPipelineRepository(client: harness.client);
+    final streamingUploads = <_RecordedStreamingUpload>[];
     final file = WavUploadFile(
       fs.XFile.fromData(
         Uint8List.fromList(<int>[1, 2, 3, 4]),
@@ -300,6 +316,7 @@ void main() {
                         title: 'Morgonljud',
                         contentType: 'audio/mpeg',
                         textBundle: _textBundle(),
+                        uploadFileOverride: _recordingUpload(streamingUploads),
                       ),
                     );
                   },
@@ -368,6 +385,7 @@ void main() {
         },
       );
       final pipelineRepo = MediaPipelineRepository(client: harness.client);
+      final streamingUploads = <_RecordedStreamingUpload>[];
       final file = WavUploadFile(
         fs.XFile.fromData(
           Uint8List.fromList(<int>[1, 2, 3, 4]),
@@ -398,6 +416,9 @@ void main() {
                           title: 'Morgonljud',
                           contentType: 'audio/mpeg',
                           textBundle: _textBundle(),
+                          uploadFileOverride: _recordingUpload(
+                            streamingUploads,
+                          ),
                         ),
                       );
                     },
@@ -565,6 +586,64 @@ HomePlayerTextBundle _textBundle() {
       ),
     },
   );
+}
+
+class _UnreadableWavUploadFile extends WavUploadFile {
+  _UnreadableWavUploadFile()
+    : super(
+        fs.XFile.fromData(
+          Uint8List(0),
+          name: 'large-home-player.wav',
+          mimeType: 'audio/wav',
+        ),
+        'audio/wav',
+        150 * 1024 * 1024,
+      );
+
+  @override
+  Future<Uint8List> readAsBytes() {
+    throw StateError('Home Player uploads must use streaming transport');
+  }
+}
+
+class _RecordedStreamingUpload {
+  const _RecordedStreamingUpload({
+    required this.uploadEndpoint,
+    required this.file,
+    required this.contentType,
+    required this.headers,
+  });
+
+  final Uri uploadEndpoint;
+  final WavUploadFile file;
+  final String contentType;
+  final Map<String, String> headers;
+}
+
+HomePlayerStreamingUpload _recordingUpload(
+  List<_RecordedStreamingUpload> calls,
+) {
+  return ({
+    required Uri uploadEndpoint,
+    required WavUploadFile file,
+    required String contentType,
+    required Map<String, String> headers,
+    required void Function(int sent, int total) onProgress,
+    WavUploadCancelToken? cancelToken,
+  }) async {
+    if (cancelToken?.isCancelled == true) {
+      throw const WavUploadFailure(WavUploadFailureKind.cancelled);
+    }
+    calls.add(
+      _RecordedStreamingUpload(
+        uploadEndpoint: uploadEndpoint,
+        file: file,
+        contentType: contentType,
+        headers: Map<String, String>.from(headers),
+      ),
+    );
+    onProgress(file.size, file.size);
+  };
 }
 
 class _PipelineHarness {

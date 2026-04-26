@@ -117,6 +117,7 @@ Future<void> uploadWavFile({
   required Uri uploadEndpoint,
   required WavUploadFile file,
   required String contentType,
+  Map<String, String> headers = const <String, String>{},
   required void Function(int sent, int total) onProgress,
   WavUploadCancelToken? cancelToken,
 }) async {
@@ -131,6 +132,10 @@ Future<void> uploadWavFile({
     ..open('PUT', uploadEndpoint.toString())
     ..responseType = 'text';
   request.setRequestHeader('Content-Type', contentType);
+  headers.forEach((key, value) {
+    if (key.toLowerCase() == 'content-type') return;
+    request.setRequestHeader(key, value);
+  });
 
   cancelToken?.onCancel(request.abort);
 

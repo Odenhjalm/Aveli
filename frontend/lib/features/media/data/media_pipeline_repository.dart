@@ -307,6 +307,20 @@ class MediaPipelineRepository {
     );
     return MediaStatus.fromResponse(response.data);
   }
+
+  Uri resolveUploadEndpoint(MediaUploadTarget target) {
+    return _client.resolveUri(target.uploadEndpoint);
+  }
+
+  Future<Map<String, String>> uploadHeaders(MediaUploadTarget target) {
+    return _client.authenticatedHeadersFor(
+      target.uploadEndpoint,
+      method: 'PUT',
+      headers: <String, String>{
+        'X-Aveli-Upload-Session': target.uploadSessionId,
+      },
+    );
+  }
 }
 
 extension MediaPipelineUploadBytes on MediaPipelineRepository {

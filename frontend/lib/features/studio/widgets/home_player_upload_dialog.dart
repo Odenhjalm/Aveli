@@ -16,6 +16,16 @@ import 'package:aveli/features/studio/widgets/home_player_upload_routing.dart';
 import 'wav_upload_source.dart';
 import 'wav_upload_types.dart';
 
+typedef HomePlayerStreamingUpload =
+    Future<void> Function({
+      required Uri uploadEndpoint,
+      required WavUploadFile file,
+      required String contentType,
+      required Map<String, String> headers,
+      required void Function(int sent, int total) onProgress,
+      WavUploadCancelToken? cancelToken,
+    });
+
 class HomePlayerUploadDialog extends ConsumerStatefulWidget {
   const HomePlayerUploadDialog({
     super.key,
@@ -24,6 +34,7 @@ class HomePlayerUploadDialog extends ConsumerStatefulWidget {
     required this.contentType,
     required this.textBundle,
     this.active = true,
+    this.uploadFileOverride,
   });
 
   final WavUploadFile file;
@@ -31,6 +42,7 @@ class HomePlayerUploadDialog extends ConsumerStatefulWidget {
   final String contentType;
   final HomePlayerTextBundle textBundle;
   final bool active;
+  final HomePlayerStreamingUpload? uploadFileOverride;
 
   @override
   ConsumerState<HomePlayerUploadDialog> createState() =>
@@ -139,8 +151,6 @@ class _HomePlayerUploadDialogState
     final studioRepo = ref.read(studioRepositoryProvider);
     final pipelineRepo = ref.read(mediaPipelineRepositoryProvider);
     final uploadCancel = WavUploadCancelToken();
-    final dioCancel = CancelToken();
-    uploadCancel.onCancel(() => dioCancel.cancel('Upload cancelled'));
     _cancelToken = uploadCancel;
 
     late final String mediaId;
@@ -158,6 +168,8 @@ class _HomePlayerUploadDialogState
         throw StateError('home_player_upload_session_missing');
       }
       mediaId = upload.mediaId;
+      final uploadEndpoint = pipelineRepo.resolveUploadEndpoint(upload);
+      final uploadHeaders = await pipelineRepo.uploadHeaders(upload);
 
       if (mounted) {
         setState(
@@ -167,18 +179,29 @@ class _HomePlayerUploadDialogState
         );
       }
 
-      await pipelineRepo.uploadBytes(
-        target: upload,
-        data: await widget.file.readAsBytes(),
+      final uploadFile = widget.uploadFileOverride ?? uploadWavFile;
+      await uploadFile(
+        uploadEndpoint: uploadEndpoint,
+        file: widget.file,
         contentType: normalizedMime,
-        cancelToken: dioCancel,
-        onSendProgress: (sent, total) {
+        headers: uploadHeaders,
+        cancelToken: uploadCancel,
+        onProgress: (sent, total) {
           if (!mounted) return;
           final resolvedTotal = total > 0 ? total : widget.file.size;
           final fraction = resolvedTotal <= 0 ? 0.0 : sent / resolvedTotal;
           setState(() => _progress = fraction.clamp(0.0, 1.0));
         },
       );
+    } on WavUploadFailure catch (error, stackTrace) {
+      if (error.kind == WavUploadFailureKind.cancelled) {
+        _showUploadFailure(
+          widget.textBundle.requireValue('home.player_upload.cancelled_status'),
+        );
+        return;
+      }
+      _showUploadFailure(_messageForUploadStartFailure(error, stackTrace));
+      return;
     } on DioException catch (error, stackTrace) {
       if (error.type == DioExceptionType.cancel) {
         _showUploadFailure(

@@ -421,6 +421,54 @@ class ApiClient {
     return Uint8List.fromList(data);
   }
 
+  Uri resolveUri(String pathOrUrl) {
+    final uri = Uri.parse(pathOrUrl);
+    if (uri.hasScheme) {
+      return uri;
+    }
+    return Uri.parse(_dio.options.baseUrl).resolve(pathOrUrl);
+  }
+
+  Future<Map<String, String>> authenticatedHeadersFor(
+    String path, {
+    String method = 'GET',
+    Duration leeway = const Duration(minutes: 2),
+    Map<String, String> headers = const <String, String>{},
+  }) async {
+    final authed = await ensureAuth(leeway: leeway);
+    final requestOptions = RequestOptions(
+      path: path,
+      baseUrl: _dio.options.baseUrl,
+      method: method,
+    );
+    if (!authed) {
+      throw DioException(
+        requestOptions: requestOptions,
+        response: Response<dynamic>(
+          requestOptions: requestOptions,
+          statusCode: 401,
+          data: const {'detail': 'unauthorized'},
+        ),
+        type: DioExceptionType.badResponse,
+      );
+    }
+
+    final token = await _tokenStorage.readAccessToken();
+    if (token == null || token.isEmpty) {
+      throw DioException(
+        requestOptions: requestOptions,
+        response: Response<dynamic>(
+          requestOptions: requestOptions,
+          statusCode: 401,
+          data: const {'detail': 'unauthorized'},
+        ),
+        type: DioExceptionType.badResponse,
+      );
+    }
+
+    return <String, String>{...headers, 'Authorization': 'Bearer $token'};
+  }
+
   String get baseUrl => _dio.options.baseUrl;
 
   Dio get raw => _dio;

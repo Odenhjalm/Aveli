@@ -69,6 +69,16 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   Future<MediaStatus> fetchStatus(String mediaId) {
     throw UnimplementedError();
   }
+
+  @override
+  Uri resolveUploadEndpoint(MediaUploadTarget target) {
+    return Uri.parse(target.uploadEndpoint);
+  }
+
+  @override
+  Future<Map<String, String>> uploadHeaders(MediaUploadTarget target) async {
+    return const <String, String>{};
+  }
 }
 
 void main() {

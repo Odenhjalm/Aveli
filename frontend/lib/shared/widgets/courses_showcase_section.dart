@@ -302,15 +302,6 @@ class CoursesShowcaseSection extends ConsumerWidget {
             final crossAxisSpacing = gridCrossAxisSpacing;
             final mainAxisSpacing = gridMainAxisSpacing;
             final availableWidth = w - crossAxisSpacing * (cross - 1);
-            final itemWidth = cross == 0 ? w : availableWidth / cross;
-            const mediaAspectRatio = 16 / 9;
-            final mediaHeight = itemWidth / mediaAspectRatio;
-            const reservedHeight = 250.0;
-            final tileHeight = mediaHeight + reservedHeight;
-            final computedAspectRatio = itemWidth / tileHeight;
-            final childAspectRatio = computedAspectRatio
-                .clamp(0.72, 1.05)
-                .toDouble();
 
             final pageSize = desktop?.maxItems ?? 0;
             final shouldPageHorizontally =
@@ -320,7 +311,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
               crossAxisCount: cross,
               crossAxisSpacing: crossAxisSpacing,
               mainAxisSpacing: mainAxisSpacing,
-              childAspectRatio: childAspectRatio,
+              mainAxisExtent: _CourseTileGlass.cardHeight,
             );
 
             Widget grid;
@@ -651,6 +642,24 @@ class _RightPeekClipper extends CustomClipper<Rect> {
 // ---- Section item widgets (glass style) ----
 
 class _CourseTileGlass extends StatelessWidget {
+  static const cardHeight = 440.0;
+  static const _imageHeight = 190.0;
+  static const _bodyHeight = cardHeight - _imageHeight;
+  static const _bodyPadding = 12.0;
+  static const _titleRowHeight = 48.0;
+  static const _descriptionSlotHeight = 60.0;
+  static const _ctaSlotHeight = 48.0;
+  static const _controlSlotWidth = 92.0;
+  static const _titleControlGap = 10.0;
+  static const _bodyInnerHeight = _bodyHeight - (_bodyPadding * 2);
+  static const _titleDescriptionGap = 8.0;
+  static const _descriptionCtaGap =
+      _bodyInnerHeight -
+      _titleRowHeight -
+      _titleDescriptionGap -
+      _descriptionSlotHeight -
+      _ctaSlotHeight;
+
   final CourseSummary course;
   final int index;
   final MediaRepository mediaRepository;
@@ -711,159 +720,221 @@ class _CourseTileGlass extends StatelessWidget {
           child: EffectsBackdropFilter(
             sigmaX: 18,
             sigmaY: 18,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [baseColor, baseColor.withValues(alpha: 0.32)],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF000000).withValues(alpha: 0.06),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+            child: SizedBox(
+              height: cardHeight,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Colors.white.withValues(alpha: 0.18),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [baseColor, baseColor.withValues(alpha: 0.32)],
                       ),
-                      child: Padding(
-                        padding: EdgeInsets.zero,
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            if (SafeMedia.enabled) {
-                              SafeMedia.markThumbnails();
-                            }
-                            final cacheWidth = SafeMedia.cacheDimension(
-                              context,
-                              constraints.maxWidth,
-                              max: 1200,
-                            );
-                            final cacheHeight = SafeMedia.cacheDimension(
-                              context,
-                              constraints.maxHeight,
-                              max: 900,
-                            );
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF000000,
+                          ).withValues(alpha: 0.06),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        height: _imageHeight,
+                        width: double.infinity,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            color: Colors.white.withValues(alpha: 0.18),
+                          ),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              if (SafeMedia.enabled) {
+                                SafeMedia.markThumbnails();
+                              }
+                              final cacheWidth = SafeMedia.cacheDimension(
+                                context,
+                                constraints.maxWidth,
+                                max: 1200,
+                              );
+                              final cacheHeight = SafeMedia.cacheDimension(
+                                context,
+                                constraints.maxHeight,
+                                max: 900,
+                              );
 
-                            return Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Container(
-                                  color: Colors.white.withValues(alpha: 0.32),
-                                ),
-                                FutureBuilder<String?>(
-                                  future: courseCoverImageUrlFuture,
-                                  builder: (context, snapshot) {
-                                    final courseCoverImageUrl = snapshot.data;
-                                    if (courseCoverImageUrl == null ||
-                                        courseCoverImageUrl.isEmpty) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return Image.network(
-                                      courseCoverImageUrl,
-                                      fit: BoxFit.cover,
-                                      filterQuality: SafeMedia.filterQuality(
-                                        full: FilterQuality.high,
-                                      ),
-                                      cacheWidth: cacheWidth,
-                                      cacheHeight: cacheHeight,
-                                      gaplessPlayback: true,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              const SizedBox.shrink(),
+                              return Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Container(
+                                    color: Colors.white.withValues(alpha: 0.32),
+                                  ),
+                                  FutureBuilder<String?>(
+                                    future: courseCoverImageUrlFuture,
+                                    builder: (context, snapshot) {
+                                      final courseCoverImageUrl = snapshot.data;
+                                      if (courseCoverImageUrl == null ||
+                                          courseCoverImageUrl.isEmpty) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Image.network(
+                                        courseCoverImageUrl,
+                                        fit: BoxFit.cover,
+                                        filterQuality: SafeMedia.filterQuality(
+                                          full: FilterQuality.high,
+                                        ),
+                                        cacheWidth: cacheWidth,
+                                        cacheHeight: cacheHeight,
+                                        gaplessPlayback: true,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                const SizedBox.shrink(),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: _bodyHeight,
+                        child: Padding(
+                          padding: const EdgeInsets.all(_bodyPadding),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                height: _titleRowHeight,
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final hasControl =
+                                        isIntroCourse || priceLabel != null;
+                                    final titleWidth = hasControl
+                                        ? (constraints.maxWidth -
+                                                  _titleControlGap -
+                                                  _controlSlotWidth)
+                                              .clamp(0.0, constraints.maxWidth)
+                                        : constraints.maxWidth;
+                                    return Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        SizedBox(
+                                          width: titleWidth,
+                                          child: Text(
+                                            title,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: titleStyle,
+                                          ),
+                                        ),
+                                        if (isIntroCourse) ...[
+                                          const SizedBox(
+                                            width: _titleControlGap,
+                                          ),
+                                          SizedBox(
+                                            width: _controlSlotWidth,
+                                            child: Align(
+                                              alignment: Alignment.topRight,
+                                              child: CourseIntroBadge(
+                                                variant: introBadgeVariant,
+                                                textColor:
+                                                    introBadgeVariant ==
+                                                        CourseIntroBadgeVariant
+                                                            .link
+                                                    ? textColor
+                                                    : null,
+                                              ),
+                                            ),
+                                          ),
+                                        ] else if (priceLabel != null) ...[
+                                          const SizedBox(
+                                            width: _titleControlGap,
+                                          ),
+                                          SizedBox(
+                                            width: _controlSlotWidth,
+                                            child: Text(
+                                              priceLabel,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              textAlign: TextAlign.right,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        (textColor ??
+                                                                DesignTokens
+                                                                    .bodyTextColor)
+                                                            .withValues(
+                                                              alpha: 0.72,
+                                                            ),
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     );
                                   },
                                 ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: titleStyle,
-                                ),
                               ),
-                              if (isIntroCourse) ...[
-                                const SizedBox(width: 10),
-                                CourseIntroBadge(
-                                  variant: introBadgeVariant,
-                                  textColor:
-                                      introBadgeVariant ==
-                                          CourseIntroBadgeVariant.link
-                                      ? textColor
-                                      : null,
-                                ),
-                              ] else if (priceLabel != null) ...[
-                                const SizedBox(width: 10),
-                                Text(
-                                  priceLabel,
-                                  textAlign: TextAlign.right,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color:
-                                        (textColor ??
-                                                DesignTokens.bodyTextColor)
-                                            .withValues(alpha: 0.72),
-                                    fontWeight: FontWeight.w700,
+                              const SizedBox(height: _titleDescriptionGap),
+                              SizedBox(
+                                height: _descriptionSlotHeight,
+                                child: desc.isEmpty
+                                    ? const SizedBox.shrink()
+                                    : CourseDescriptionText(
+                                        desc,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        baseStyle: theme.textTheme.bodyMedium,
+                                        color: textColor,
+                                      ),
+                              ),
+                              const SizedBox(height: _descriptionCtaGap),
+                              SizedBox(
+                                height: _ctaSlotHeight,
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: GradientButton(
+                                    onPressed: openCourse,
+                                    gradient: ctaGradient,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: const Text(
+                                      'Öppna',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ],
+                              ),
                             ],
                           ),
-                          if (desc.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            CourseDescriptionText(
-                              desc,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              baseStyle: theme.textTheme.bodyMedium,
-                              color: textColor,
-                            ),
-                          ],
-                          const Spacer(),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: GradientButton(
-                              onPressed: openCourse,
-                              gradient: ctaGradient,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              child: const Text(
-                                'Öppna',
-                                style: TextStyle(fontWeight: FontWeight.w800),
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12),
+                        ),
                       ),
                     ),
                   ),
