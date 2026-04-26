@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote, urlparse
@@ -529,6 +530,22 @@ class Settings(BaseSettings):
                     "AVELI_ALLOW_REMOTE_DB=1 to override."
                 )
 
+        return self
+
+    @model_validator(mode="after")
+    def _include_frontend_cors_origin(self):
+        frontend_origin = _normalize_cors_origin(self.frontend_base_url)
+        if not frontend_origin:
+            return self
+
+        if frontend_origin in self.cors_allow_origins:
+            return self
+
+        pattern = self.cors_allow_origin_regex
+        if pattern and re.fullmatch(pattern, frontend_origin):
+            return self
+
+        self.cors_allow_origins = [*self.cors_allow_origins, frontend_origin]
         return self
 
     @field_validator("cors_allow_origins", mode="before")

@@ -85,7 +85,19 @@ setup_logging()
 
 logger = logging.getLogger(__name__)
 
-_CORS_ALLOW_METHODS = "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT"
+_CORS_ALLOW_METHOD_NAMES = ("GET", "POST", "PUT", "OPTIONS", "PATCH", "DELETE", "HEAD")
+_CORS_ALLOW_HEADER_NAMES = (
+    "Authorization",
+    "Content-Type",
+    "X-Aveli-Upload-Session",
+    "If-Match",
+    "X-Request-ID",
+    "X-Test-Session-ID",
+    "Accept",
+    "Range",
+)
+_CORS_ALLOW_METHODS = ", ".join(_CORS_ALLOW_METHOD_NAMES)
+_CORS_ALLOW_HEADERS = ", ".join(_CORS_ALLOW_HEADER_NAMES)
 _CORS_EXPOSE_HEADERS = "ETag"
 _WorkerStop = Callable[[], Awaitable[None]]
 _WorkerStart = Callable[..., Awaitable[None]]
@@ -214,7 +226,9 @@ def _cors_error_headers(request: Request) -> dict[str, str]:
     if not _origin_is_allowed(origin):
         return {}
 
-    requested_headers = request.headers.get("access-control-request-headers") or "*"
+    requested_headers = (
+        request.headers.get("access-control-request-headers") or _CORS_ALLOW_HEADERS
+    )
     return {
         "Access-Control-Allow-Origin": origin,
         "Access-Control-Allow-Credentials": "true",
@@ -235,8 +249,8 @@ def _configure_middleware(app: FastAPI) -> None:
         allow_origins=settings.cors_allow_origins,
         allow_origin_regex=settings.cors_allow_origin_regex,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=list(_CORS_ALLOW_METHOD_NAMES),
+        allow_headers=list(_CORS_ALLOW_HEADER_NAMES),
         expose_headers=[_CORS_EXPOSE_HEADERS],
     )
 

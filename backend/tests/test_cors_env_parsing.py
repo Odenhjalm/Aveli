@@ -26,6 +26,15 @@ def test_cors_defaults_include_prod_origin_and_localhost_regex():
     assert re.fullmatch(settings.cors_allow_origin_regex, "http://127.0.0.1:51829")
 
 
+def test_cors_includes_configured_frontend_origin_when_regex_does_not_cover_it():
+    settings = _settings(frontend_base_url="https://app.aveli.app/dashboard")
+
+    assert settings.cors_allow_origins == [
+        "https://aveli.app",
+        "https://app.aveli.app",
+    ]
+
+
 def test_cors_parses_json_array():
     settings = _settings(
         cors_allow_origins='["https://aveli.app/", "http://localhost:3000"]'
