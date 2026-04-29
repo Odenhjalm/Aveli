@@ -20,6 +20,7 @@ _EMPTY_LESSON_DOCUMENT_SQL = (
 _MISSING_COURSE_PUBLIC_CONTENT_ERROR = (
     "Invariant violation: missing course_public_content"
 )
+_COURSE_PUBLIC_CONTENT_SHORT_DESCRIPTION_COMPAT = "Pending public summary"
 
 _COURSE_COLUMNS = """
     c.id,
@@ -86,24 +87,6 @@ _MEDIA_ORIGINAL_NAME_SQL = """
 """
 
 
-async def _assert_course_public_content_invariant(conn: Any) -> None:
-    query = """
-        select 1
-        from app.courses as c
-        where not exists (
-            select 1
-            from app.course_public_content as cpc
-            where cpc.course_id = c.id
-        )
-        limit 1
-    """
-    async with conn.cursor() as cur:  # type: ignore[attr-defined]
-        await cur.execute(query)
-        row = await cur.fetchone()
-    if row is not None:
-        raise RuntimeError(_MISSING_COURSE_PUBLIC_CONTENT_ERROR)
-
-
 class CourseCreateDatabaseError(RuntimeError):
     def __init__(
         self,
@@ -124,6 +107,19 @@ class CourseScheduleLockedError(RuntimeError):
             "custom drip schedule-affecting edits are locked after first enrollment"
         )
         self.course_id = course_id
+
+
+class CoursePublicContentInvariantError(RuntimeError):
+    def __init__(self, course_id: str | None) -> None:
+        super().__init__(_MISSING_COURSE_PUBLIC_CONTENT_ERROR)
+        self.course_id = course_id
+
+
+def _require_course_public_content_description(row: dict[str, Any]) -> None:
+    if isinstance(row.get("description"), str):
+        return
+    course_id = row.get("course_id") or row.get("id")
+    raise CoursePublicContentInvariantError(str(course_id) if course_id else None)
 
 
 def _safe_course_create_log_value(value: Any, *, limit: int = 160) -> str | None:
@@ -686,7 +682,7 @@ async def get_course_entry_view_base(
             cover.purpose::text as cover_purpose,
             cpc.description
         from app.courses as c
-        join app.course_public_content as cpc
+        left join app.course_public_content as cpc
           on cpc.course_id = c.id
         left join app.media_assets as cover
           on cover.id = c.cover_media_id
@@ -698,7 +694,11 @@ async def get_course_entry_view_base(
         async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
             row = await cur.fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        result = dict(row)
+        _require_course_public_content_description(result)
+        return result
 
     if conn is not None:
         return await _execute(conn)
@@ -771,7 +771,6 @@ async def list_courses(
     """
 
     async with pool.connection() as conn:  # type: ignore
-        await _assert_course_public_content_invariant(conn)
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
             rows = await cur.fetchall()
@@ -897,7 +896,6 @@ async def list_public_course_discovery(
     """
 
     async with pool.connection() as conn:  # type: ignore
-        await _assert_course_public_content_invariant(conn)
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
             rows = await cur.fetchall()
@@ -991,7 +989,7 @@ async def get_public_course_detail_rows(
           on c.id = cd.id
         left join app.profiles as p
           on p.user_id = c.teacher_id
-        join app.course_public_content as cpc
+        left join app.course_public_content as cpc
           on cpc.course_id = cd.id
         where {_PUBLIC_DISCOVERABLE_COURSE_SQL}
           and {" and ".join(clauses)}
@@ -999,11 +997,13 @@ async def get_public_course_detail_rows(
     """
 
     async with pool.connection() as conn:  # type: ignore
-        await _assert_course_public_content_invariant(conn)
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, params)
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    result = [dict(row) for row in rows]
+    for row in result:
+        _require_course_public_content_description(row)
+    return result
 
 
 async def create_course(payload: dict[str, Any]) -> CourseRow:
@@ -1038,6 +1038,19 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
         )
             returning id
     """
+    public_content_query = """
+        insert into app.course_public_content (
+            course_id,
+            short_description,
+            description
+        )
+        values (
+            %s::uuid,
+            %s,
+            ''
+        )
+        on conflict (course_id) do nothing
+    """
     try:
         async with pool.connection() as conn:  # type: ignore
             await _acquire_course_family_locks(conn, (course_group_id,))
@@ -1065,6 +1078,10 @@ async def create_course(payload: dict[str, Any]) -> CourseRow:
                     ),
                 )
                 await cur.fetchone()
+                await cur.execute(
+                    public_content_query,
+                    (course_id, _COURSE_PUBLIC_CONTENT_SHORT_DESCRIPTION_COMPAT),
+                )
                 await conn.commit()
         row = await get_course(course_id=course_id)
     except PsycopgError as exc:
@@ -1375,20 +1392,23 @@ async def list_course_ownership_rows(
 async def get_course_public_content(course_id: str) -> dict[str, Any]:
     query = """
         select
-            cpc.course_id,
+            c.id as course_id,
             cpc.description
-        from app.course_public_content as cpc
-        where cpc.course_id = %s::uuid
+        from app.courses as c
+        left join app.course_public_content as cpc
+          on cpc.course_id = c.id
+        where c.id = %s::uuid
         limit 1
     """
     async with pool.connection() as conn:  # type: ignore
-        await _assert_course_public_content_invariant(conn)
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (course_id,))
             row = await cur.fetchone()
     if row is None:
-        raise RuntimeError(_MISSING_COURSE_PUBLIC_CONTENT_ERROR)
-    return dict(row)
+        raise LookupError("course not found")
+    result = dict(row)
+    _require_course_public_content_description(result)
+    return result
 
 
 async def upsert_course_public_content(
@@ -1398,9 +1418,18 @@ async def upsert_course_public_content(
 ) -> dict[str, Any]:
     normalized_description = str(description)
     query = """
-        update app.course_public_content
-        set description = %s
-        where course_id = %s::uuid
+        insert into app.course_public_content (
+            course_id,
+            short_description,
+            description
+        )
+        values (
+            %s::uuid,
+            %s,
+            %s
+        )
+        on conflict (course_id) do update
+        set description = excluded.description
         returning
             course_id,
             description
@@ -1409,12 +1438,16 @@ async def upsert_course_public_content(
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(
                 query,
-                (normalized_description, course_id),
+                (
+                    course_id,
+                    _COURSE_PUBLIC_CONTENT_SHORT_DESCRIPTION_COMPAT,
+                    normalized_description,
+                ),
             )
             row = await cur.fetchone()
             await conn.commit()
     if row is None:
-        raise RuntimeError(_MISSING_COURSE_PUBLIC_CONTENT_ERROR)
+        raise CoursePublicContentInvariantError(course_id)
     return dict(row)
 
 
@@ -1432,7 +1465,6 @@ async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
         order by c.id, ce.granted_at desc
     """
     async with pool.connection() as conn:  # type: ignore
-        await _assert_course_public_content_invariant(conn)
         async with conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
             await cur.execute(query, (user_id,))
             rows = await cur.fetchall()

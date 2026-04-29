@@ -36,11 +36,11 @@ def _entry_view_payload() -> dict:
                 "lesson_title": "Lesson 1",
                 "position": 1,
                 "availability": {
-                    "state": "available",
+                    "state": "unlocked",
                     "can_open": True,
                     "reason_code": None,
                     "reason_text": None,
-                    "available_at": None,
+                    "next_unlock_at": None,
                 },
                 "progression": {
                     "state": "current",

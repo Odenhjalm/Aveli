@@ -1006,7 +1006,7 @@ class Course(BaseModel):
 class CourseListItem(Course):
     model_config = ConfigDict(extra="forbid")
 
-    description: str
+    description: str | None = None
 
 
 StudioCourseDripMode = Literal[
@@ -1206,17 +1206,17 @@ class CourseEntryCourse(BaseModel):
 class CourseEntryLessonAvailability(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    state: Literal["available", "locked", "unavailable"]
+    state: Literal["unlocked", "locked"]
     can_open: bool
     reason_code: str | None = None
     reason_text: str | None = None
-    available_at: datetime | None = None
+    next_unlock_at: datetime | None = None
 
 
 class CourseEntryLessonProgression(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    state: Literal["not_started", "current", "completed"]
+    state: Literal["current", "upcoming", "completed"]
     completed_at: datetime | None = None
     is_next_recommended: bool = False
 

@@ -31,6 +31,7 @@ NON_APP_ENTRY_ROUTE_CLASSIFICATIONS: dict[RouteKey, str] = {
     ("GET", "/courses/"): "public_discovery",
     ("GET", "/courses/{slug}/pricing"): "public_discovery",
     ("GET", "/courses/by-slug/{slug}"): "public_discovery_optional_identity",
+    ("GET", "/courses/{course_id_or_slug}/entry-view"): "public_discovery_optional_identity",
     ("GET", "/courses/{course_id}/public"): "public_discovery",
     ("GET", "/courses/{course_id}"): "public_discovery_optional_identity",
     ("GET", "/api/courses/{slug}/pricing"): "public_discovery",

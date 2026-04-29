@@ -156,6 +156,54 @@ List<Object?> _requireList(Object? value, String fieldName) {
   }
 }
 
+Map<String, Object?> _requireMap(Object? value, String fieldName) {
+  switch (value) {
+    case final Map<String, Object?> data:
+      return Map<String, Object?>.unmodifiable(data);
+    case final Map<String, dynamic> data:
+      return Map<String, Object?>.unmodifiable(data);
+    case final Map data:
+      return Map<String, Object?>.unmodifiable(data);
+    default:
+      throw StateError('Invalid field type for $fieldName');
+  }
+}
+
+Map<String, Object?>? _optionalMap(Object? value, String fieldName) {
+  switch (value) {
+    case null:
+      return null;
+    default:
+      return _requireMap(value, fieldName);
+  }
+}
+
+const Set<String> _courseEntryRuntimeFields = <String>{
+  'content_document',
+  'content_markdown',
+  'lesson_media_id',
+  'media_id',
+  'resolved_url',
+};
+
+void _rejectCourseEntryRuntimeFields(Object? value, String context) {
+  switch (value) {
+    case final Map data:
+      for (final key in data.keys) {
+        if (_courseEntryRuntimeFields.contains(key)) {
+          throw StateError('Invalid course entry runtime field in $context');
+        }
+      }
+      for (final entry in data.entries) {
+        _rejectCourseEntryRuntimeFields(entry.value, '$context.${entry.key}');
+      }
+    case final Iterable items:
+      for (final item in items) {
+        _rejectCourseEntryRuntimeFields(item, context);
+      }
+  }
+}
+
 class CoursesRepository {
   CoursesRepository({required ApiClient client}) : _client = client;
 
@@ -225,6 +273,20 @@ class CoursesRepository {
     }
   }
 
+  Future<CourseEntryViewData> fetchCourseEntryView(
+    String courseIdOrSlug,
+  ) async {
+    try {
+      final encoded = Uri.encodeComponent(courseIdOrSlug);
+      final response = await _client.raw.get<Object?>(
+        '/courses/$encoded/entry-view',
+      );
+      return CourseEntryViewData.fromResponse(response.data);
+    } catch (error, stackTrace) {
+      throw AppFailure.from(error, stackTrace);
+    }
+  }
+
   Future<CourseDetailData> fetchCourseDetailById(String courseId) async {
     try {
       final response = await _client.raw.get<Object?>('/courses/$courseId');
@@ -265,6 +327,353 @@ class CoursesRepository {
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }
+  }
+}
+
+class CourseEntryViewData {
+  const CourseEntryViewData({
+    required this.course,
+    required this.lessons,
+    required this.access,
+    required this.cta,
+    required this.pricing,
+    required this.nextRecommendedLesson,
+  });
+
+  final CourseEntryCourseData course;
+  final List<CourseEntryLessonShellData> lessons;
+  final CourseEntryAccessData access;
+  final CourseEntryCtaData cta;
+  final CourseEntryPricingData? pricing;
+  final CourseEntryNextRecommendedLessonData? nextRecommendedLesson;
+
+  factory CourseEntryViewData.fromResponse(Object? payload) {
+    _rejectCourseEntryRuntimeFields(payload, 'course_entry_view');
+    return CourseEntryViewData(
+      course: CourseEntryCourseData.fromResponse(
+        _requiredField(payload, 'course'),
+      ),
+      lessons: _requireList(_requiredField(payload, 'lessons'), 'lessons')
+          .map(CourseEntryLessonShellData.fromResponse)
+          .toList(growable: false),
+      access: CourseEntryAccessData.fromResponse(
+        _requiredField(payload, 'access'),
+      ),
+      cta: CourseEntryCtaData.fromResponse(_requiredField(payload, 'cta')),
+      pricing: switch (_requiredField(payload, 'pricing')) {
+        null => null,
+        final Object pricing => CourseEntryPricingData.fromResponse(pricing),
+      },
+      nextRecommendedLesson:
+          switch (_requiredField(payload, 'next_recommended_lesson')) {
+            null => null,
+            final Object lesson =>
+              CourseEntryNextRecommendedLessonData.fromResponse(lesson),
+          },
+    );
+  }
+}
+
+class CourseEntryCourseData {
+  const CourseEntryCourseData({
+    required this.id,
+    required this.slug,
+    required this.title,
+    required this.description,
+    required this.cover,
+    required this.requiredEnrollmentSource,
+    required this.isPremium,
+    required this.priceAmountCents,
+    required this.priceCurrency,
+    required this.formattedPrice,
+    required this.sellable,
+  });
+
+  final String id;
+  final String slug;
+  final String title;
+  final String? description;
+  final CourseEntryCoverData? cover;
+  final String? requiredEnrollmentSource;
+  final bool isPremium;
+  final int? priceAmountCents;
+  final String? priceCurrency;
+  final String? formattedPrice;
+  final bool sellable;
+
+  factory CourseEntryCourseData.fromResponse(Object? payload) {
+    return CourseEntryCourseData(
+      id: _requireString(_requiredField(payload, 'id'), 'id'),
+      slug: _requireString(_requiredField(payload, 'slug'), 'slug'),
+      title: _requireString(_requiredField(payload, 'title'), 'title'),
+      description: _optionalString(
+        _requiredField(payload, 'description'),
+        'description',
+      ),
+      cover: switch (_requiredField(payload, 'cover')) {
+        null => null,
+        final Object cover => CourseEntryCoverData.fromResponse(cover),
+      },
+      requiredEnrollmentSource: _optionalString(
+        _requiredField(payload, 'required_enrollment_source'),
+        'required_enrollment_source',
+      ),
+      isPremium: _requireBool(_requiredField(payload, 'is_premium'), 'is_premium'),
+      priceAmountCents: _optionalInt(
+        _requiredField(payload, 'price_amount_cents'),
+        'price_amount_cents',
+      ),
+      priceCurrency: _optionalString(
+        _requiredField(payload, 'price_currency'),
+        'price_currency',
+      ),
+      formattedPrice: _optionalString(
+        _requiredField(payload, 'formatted_price'),
+        'formatted_price',
+      ),
+      sellable: _requireBool(_requiredField(payload, 'sellable'), 'sellable'),
+    );
+  }
+}
+
+class CourseEntryCoverData {
+  const CourseEntryCoverData({required this.url, required this.alt});
+
+  final String url;
+  final String? alt;
+
+  factory CourseEntryCoverData.fromResponse(Object? payload) {
+    return CourseEntryCoverData(
+      url: _requireString(_requiredField(payload, 'url'), 'url'),
+      alt: _optionalString(_requiredField(payload, 'alt'), 'alt'),
+    );
+  }
+}
+
+class CourseEntryLessonShellData {
+  const CourseEntryLessonShellData({
+    required this.id,
+    required this.lessonTitle,
+    required this.position,
+    required this.availability,
+    required this.progression,
+  });
+
+  final String id;
+  final String lessonTitle;
+  final int position;
+  final CourseEntryLessonAvailabilityData availability;
+  final CourseEntryLessonProgressionData progression;
+
+  factory CourseEntryLessonShellData.fromResponse(Object? payload) {
+    return CourseEntryLessonShellData(
+      id: _requireString(_requiredField(payload, 'id'), 'id'),
+      lessonTitle: _requireString(
+        _requiredField(payload, 'lesson_title'),
+        'lesson_title',
+      ),
+      position: _requireInt(_requiredField(payload, 'position'), 'position'),
+      availability: CourseEntryLessonAvailabilityData.fromResponse(
+        _requiredField(payload, 'availability'),
+      ),
+      progression: CourseEntryLessonProgressionData.fromResponse(
+        _requiredField(payload, 'progression'),
+      ),
+    );
+  }
+}
+
+class CourseEntryLessonAvailabilityData {
+  const CourseEntryLessonAvailabilityData({
+    required this.state,
+    required this.canOpen,
+    required this.reasonCode,
+    required this.reasonText,
+    required this.nextUnlockAt,
+  });
+
+  final String state;
+  final bool canOpen;
+  final String? reasonCode;
+  final String? reasonText;
+  final DateTime? nextUnlockAt;
+
+  factory CourseEntryLessonAvailabilityData.fromResponse(Object? payload) {
+    return CourseEntryLessonAvailabilityData(
+      state: _requireString(_requiredField(payload, 'state'), 'state'),
+      canOpen: _requireBool(_requiredField(payload, 'can_open'), 'can_open'),
+      reasonCode: _optionalString(
+        _requiredField(payload, 'reason_code'),
+        'reason_code',
+      ),
+      reasonText: _optionalString(
+        _requiredField(payload, 'reason_text'),
+        'reason_text',
+      ),
+      nextUnlockAt: _optionalDateTime(
+        _requiredField(payload, 'next_unlock_at'),
+        'next_unlock_at',
+      ),
+    );
+  }
+}
+
+class CourseEntryLessonProgressionData {
+  const CourseEntryLessonProgressionData({
+    required this.state,
+    required this.completedAt,
+    required this.isNextRecommended,
+  });
+
+  final String state;
+  final DateTime? completedAt;
+  final bool isNextRecommended;
+
+  factory CourseEntryLessonProgressionData.fromResponse(Object? payload) {
+    return CourseEntryLessonProgressionData(
+      state: _requireString(_requiredField(payload, 'state'), 'state'),
+      completedAt: _optionalDateTime(
+        _requiredField(payload, 'completed_at'),
+        'completed_at',
+      ),
+      isNextRecommended: _requireBool(
+        _requiredField(payload, 'is_next_recommended'),
+        'is_next_recommended',
+      ),
+    );
+  }
+}
+
+class CourseEntryAccessData {
+  const CourseEntryAccessData({
+    required this.isEnrolled,
+    required this.isInDrip,
+    required this.isInAnyIntroDrip,
+    required this.canEnroll,
+    required this.canPurchase,
+  });
+
+  final bool isEnrolled;
+  final bool isInDrip;
+  final bool isInAnyIntroDrip;
+  final bool canEnroll;
+  final bool canPurchase;
+
+  factory CourseEntryAccessData.fromResponse(Object? payload) {
+    return CourseEntryAccessData(
+      isEnrolled: _requireBool(
+        _requiredField(payload, 'is_enrolled'),
+        'is_enrolled',
+      ),
+      isInDrip: _requireBool(_requiredField(payload, 'is_in_drip'), 'is_in_drip'),
+      isInAnyIntroDrip: _requireBool(
+        _requiredField(payload, 'is_in_any_intro_drip'),
+        'is_in_any_intro_drip',
+      ),
+      canEnroll: _requireBool(_requiredField(payload, 'can_enroll'), 'can_enroll'),
+      canPurchase: _requireBool(
+        _requiredField(payload, 'can_purchase'),
+        'can_purchase',
+      ),
+    );
+  }
+}
+
+class CourseEntryCtaData {
+  const CourseEntryCtaData({
+    required this.type,
+    required this.label,
+    required this.enabled,
+    required this.reasonCode,
+    required this.reasonText,
+    required this.price,
+    required this.action,
+  });
+
+  final String type;
+  final String label;
+  final bool enabled;
+  final String? reasonCode;
+  final String? reasonText;
+  final Map<String, Object?>? price;
+  final Map<String, Object?>? action;
+
+  String? get actionType => switch (action?['type']) {
+    final String type when type.isNotEmpty => type,
+    _ => null,
+  };
+
+  factory CourseEntryCtaData.fromResponse(Object? payload) {
+    return CourseEntryCtaData(
+      type: _requireString(_requiredField(payload, 'type'), 'type'),
+      label: _requireString(_requiredField(payload, 'label'), 'label'),
+      enabled: _requireBool(_requiredField(payload, 'enabled'), 'enabled'),
+      reasonCode: _optionalString(
+        _requiredField(payload, 'reason_code'),
+        'reason_code',
+      ),
+      reasonText: _optionalString(
+        _requiredField(payload, 'reason_text'),
+        'reason_text',
+      ),
+      price: _optionalMap(_requiredField(payload, 'price'), 'price'),
+      action: _optionalMap(_requiredField(payload, 'action'), 'action'),
+    );
+  }
+}
+
+class CourseEntryPricingData {
+  const CourseEntryPricingData({
+    required this.priceAmountCents,
+    required this.priceCurrency,
+    required this.formattedPrice,
+    required this.sellable,
+  });
+
+  final int? priceAmountCents;
+  final String? priceCurrency;
+  final String? formattedPrice;
+  final bool sellable;
+
+  factory CourseEntryPricingData.fromResponse(Object? payload) {
+    return CourseEntryPricingData(
+      priceAmountCents: _optionalInt(
+        _requiredField(payload, 'price_amount_cents'),
+        'price_amount_cents',
+      ),
+      priceCurrency: _optionalString(
+        _requiredField(payload, 'price_currency'),
+        'price_currency',
+      ),
+      formattedPrice: _optionalString(
+        _requiredField(payload, 'formatted_price'),
+        'formatted_price',
+      ),
+      sellable: _requireBool(_requiredField(payload, 'sellable'), 'sellable'),
+    );
+  }
+}
+
+class CourseEntryNextRecommendedLessonData {
+  const CourseEntryNextRecommendedLessonData({
+    required this.id,
+    required this.lessonTitle,
+    required this.position,
+  });
+
+  final String id;
+  final String lessonTitle;
+  final int position;
+
+  factory CourseEntryNextRecommendedLessonData.fromResponse(Object? payload) {
+    return CourseEntryNextRecommendedLessonData(
+      id: _requireString(_requiredField(payload, 'id'), 'id'),
+      lessonTitle: _requireString(
+        _requiredField(payload, 'lesson_title'),
+        'lesson_title',
+      ),
+      position: _requireInt(_requiredField(payload, 'position'), 'position'),
+    );
   }
 }
 

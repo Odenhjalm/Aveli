@@ -930,6 +930,435 @@ def _lesson_view_sellable_course(
     )
 
 
+def _course_entry_subject_id(user_id_or_subject: Any | None) -> str | None:
+    if user_id_or_subject is None:
+        return None
+    if isinstance(user_id_or_subject, Mapping):
+        for key in ("id", "user_id", "subject_id", "sub"):
+            value = user_id_or_subject.get(key)
+            normalized = str(value or "").strip()
+            if normalized:
+                return normalized
+        return None
+    normalized = str(user_id_or_subject or "").strip()
+    return normalized or None
+
+
+def _course_entry_price_amount(value: Any) -> int | None:
+    try:
+        amount_cents = int(value)
+    except (TypeError, ValueError):
+        return None
+    if amount_cents < 0:
+        return None
+    return amount_cents
+
+
+def _course_entry_pricing_projection(
+    course: Mapping[str, Any],
+) -> schemas.CourseEntryPricing | None:
+    amount_cents = _course_entry_price_amount(course.get("price_amount_cents"))
+    if amount_cents is None or amount_cents <= 0:
+        return None
+    price_currency = _normalized_price_currency(course.get("price_currency"))
+    if price_currency is None:
+        return None
+    return schemas.CourseEntryPricing(
+        price_amount_cents=amount_cents,
+        price_currency=price_currency,
+        formatted_price=_format_lesson_view_price(
+            amount_cents=amount_cents,
+            price_currency=price_currency,
+        ),
+        sellable=bool(course.get("sellable")),
+    )
+
+
+def _course_entry_sellable_course(
+    *,
+    course: Mapping[str, Any],
+    pricing: schemas.CourseEntryPricing | None,
+    is_premium: bool,
+) -> bool:
+    active_price_id = str(course.get("active_stripe_price_id") or "").strip()
+    return bool(
+        is_premium
+        and pricing is not None
+        and course.get("sellable") is True
+        and active_price_id
+    )
+
+
+async def _course_entry_cover_projection(
+    course: Mapping[str, Any],
+) -> schemas.CourseEntryCover | None:
+    cover_media_id = str(course.get("cover_media_id") or "").strip()
+    if not cover_media_id:
+        return None
+    cover = await resolve_course_cover(
+        course_id=str(course.get("id") or "").strip(),
+        cover_media_id=cover_media_id,
+    )
+    if cover is None:
+        return None
+    url = str(cover.get("resolved_url") or "").strip()
+    if not url:
+        return None
+    title = str(course.get("title") or "").strip()
+    return schemas.CourseEntryCover(
+        url=url,
+        alt=f"{title} cover" if title else None,
+    )
+
+
+def _course_entry_lesson_position(lesson: Mapping[str, Any]) -> int:
+    try:
+        return int(lesson.get("position") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _course_entry_current_unlock_position(
+    enrollment: Mapping[str, Any] | None,
+) -> int:
+    if enrollment is None:
+        return 0
+    try:
+        return int(enrollment.get("current_unlock_position") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _course_entry_next_recommended_raw(
+    *,
+    lessons: Sequence[Mapping[str, Any]],
+    current_unlock_position: int,
+    is_enrolled: bool,
+) -> Mapping[str, Any] | None:
+    if not is_enrolled or current_unlock_position < 1:
+        return None
+    unlocked_lessons = [
+        lesson
+        for lesson in lessons
+        if 1 <= _course_entry_lesson_position(lesson) <= current_unlock_position
+    ]
+    if not unlocked_lessons:
+        return None
+    return sorted(
+        unlocked_lessons,
+        key=lambda lesson: (
+            _course_entry_lesson_position(lesson),
+            str(lesson.get("id") or ""),
+        ),
+    )[-1]
+
+
+def _course_entry_lesson_projections(
+    *,
+    lessons: Sequence[Mapping[str, Any]],
+    enrollment: Mapping[str, Any] | None,
+) -> tuple[
+    list[schemas.CourseEntryLessonShell],
+    schemas.CourseEntryNextRecommendedLesson | None,
+    int,
+    int,
+]:
+    is_enrolled = enrollment is not None
+    current_unlock_position = _course_entry_current_unlock_position(enrollment)
+    max_lesson_position = max(
+        (_course_entry_lesson_position(lesson) for lesson in lessons),
+        default=0,
+    )
+    next_raw = _course_entry_next_recommended_raw(
+        lessons=lessons,
+        current_unlock_position=current_unlock_position,
+        is_enrolled=is_enrolled,
+    )
+    next_lesson_id = str(next_raw.get("id") or "") if next_raw is not None else None
+
+    projected_lessons: list[schemas.CourseEntryLessonShell] = []
+    for lesson in lessons:
+        position = _course_entry_lesson_position(lesson)
+        unlocked = bool(
+            is_enrolled and 1 <= position <= current_unlock_position
+        )
+        reason_code = None
+        reason_text = None
+        if not unlocked:
+            reason_code = "not_enrolled" if not is_enrolled else "drip"
+            reason_text = (
+                "Enrollment is required."
+                if not is_enrolled
+                else "This lesson is not unlocked yet."
+            )
+        is_next = bool(next_lesson_id and str(lesson.get("id") or "") == next_lesson_id)
+        progression_state = "upcoming"
+        if is_next:
+            progression_state = "current"
+        elif unlocked:
+            progression_state = "completed"
+        projected_lessons.append(
+            schemas.CourseEntryLessonShell(
+                id=str(lesson.get("id") or ""),
+                lesson_title=str(lesson.get("lesson_title") or ""),
+                position=position,
+                availability=schemas.CourseEntryLessonAvailability(
+                    state="unlocked" if unlocked else "locked",
+                    can_open=unlocked,
+                    reason_code=reason_code,
+                    reason_text=reason_text,
+                    next_unlock_at=None,
+                ),
+                progression=schemas.CourseEntryLessonProgression(
+                    state=progression_state,
+                    completed_at=None,
+                    is_next_recommended=is_next,
+                ),
+            )
+        )
+
+    next_recommended = None
+    if next_raw is not None:
+        next_recommended = schemas.CourseEntryNextRecommendedLesson(
+            id=str(next_raw.get("id") or ""),
+            lesson_title=str(next_raw.get("lesson_title") or ""),
+            position=_course_entry_lesson_position(next_raw),
+        )
+    return (
+        projected_lessons,
+        next_recommended,
+        current_unlock_position,
+        max_lesson_position,
+    )
+
+
+def _course_entry_active_intro_drip_in_other_course(
+    *,
+    course_id: str,
+    is_intro: bool,
+    intro_drip_state: Mapping[str, Any],
+) -> bool:
+    active_course_id = str(intro_drip_state.get("active_course_id") or "").strip()
+    return bool(
+        is_intro
+        and intro_drip_state.get("is_in_any_intro_drip") is True
+        and active_course_id
+        and active_course_id != course_id
+    )
+
+
+def _course_entry_access_projection(
+    *,
+    course_id: str,
+    required_source: str | None,
+    enrollment: Mapping[str, Any] | None,
+    intro_drip_state: Mapping[str, Any],
+    max_lesson_position: int,
+    current_unlock_position: int,
+    has_request_user: bool,
+    sellable_course: bool,
+) -> tuple[schemas.CourseEntryAccess, bool]:
+    is_intro = required_source == _COURSE_ENROLLMENT_SOURCE_INTRO
+    is_premium = required_source == _COURSE_ENROLLMENT_SOURCE_PURCHASE
+    is_enrolled = enrollment is not None
+    active_intro_drip_other_course = _course_entry_active_intro_drip_in_other_course(
+        course_id=course_id,
+        is_intro=is_intro,
+        intro_drip_state=intro_drip_state,
+    )
+    is_in_drip = bool(
+        is_enrolled
+        and max_lesson_position > 0
+        and current_unlock_position < max_lesson_position
+    )
+    can_enroll = bool(
+        has_request_user
+        and is_intro
+        and not is_enrolled
+        and not active_intro_drip_other_course
+    )
+    can_purchase = bool(
+        has_request_user
+        and is_premium
+        and not is_enrolled
+        and sellable_course
+    )
+    return (
+        schemas.CourseEntryAccess(
+            is_enrolled=is_enrolled,
+            is_in_drip=is_in_drip,
+            is_in_any_intro_drip=bool(intro_drip_state.get("is_in_any_intro_drip")),
+            can_enroll=can_enroll,
+            can_purchase=can_purchase,
+        ),
+        active_intro_drip_other_course,
+    )
+
+
+def _course_entry_cta_projection(
+    *,
+    required_source: str | None,
+    access: schemas.CourseEntryAccess,
+    active_intro_drip_other_course: bool,
+    next_recommended_lesson: schemas.CourseEntryNextRecommendedLesson | None,
+    pricing: schemas.CourseEntryPricing | None,
+    has_request_user: bool,
+) -> schemas.CourseEntryCTA:
+    if access.is_enrolled and next_recommended_lesson is not None:
+        return schemas.CourseEntryCTA(
+            type="continue",
+            label="Continue",
+            enabled=True,
+            action={
+                "type": "lesson",
+                "lesson_id": str(next_recommended_lesson.id),
+            },
+        )
+    if not has_request_user:
+        return schemas.CourseEntryCTA(
+            type="unavailable",
+            label="Sign in required",
+            enabled=False,
+            reason_code="auth_required",
+            reason_text="Sign in to continue.",
+            price=pricing.model_dump(mode="json") if pricing is not None else None,
+            action=None,
+        )
+    if required_source == _COURSE_ENROLLMENT_SOURCE_INTRO:
+        if active_intro_drip_other_course:
+            return schemas.CourseEntryCTA(
+                type="blocked",
+                label="Blocked",
+                enabled=False,
+                reason_code="active_intro_drip",
+                reason_text="Finish your active intro course before starting another.",
+                price=None,
+                action=None,
+            )
+        if access.can_enroll:
+            return schemas.CourseEntryCTA(
+                type="enroll",
+                label="Enroll",
+                enabled=True,
+                action={"type": "enroll"},
+            )
+    if required_source == _COURSE_ENROLLMENT_SOURCE_PURCHASE:
+        if access.can_purchase:
+            return schemas.CourseEntryCTA(
+                type="buy",
+                label="Buy",
+                enabled=True,
+                price=pricing.model_dump(mode="json") if pricing is not None else None,
+                action={"type": "checkout"},
+            )
+        return schemas.CourseEntryCTA(
+            type="unavailable",
+            label="Unavailable",
+            enabled=False,
+            reason_code="premium_unavailable",
+            reason_text="This course is not available for purchase.",
+            price=pricing.model_dump(mode="json") if pricing is not None else None,
+            action=None,
+        )
+    return schemas.CourseEntryCTA(
+        type="unavailable",
+        label="Unavailable",
+        enabled=False,
+        reason_code="classification_unavailable",
+        reason_text="This course is not currently available.",
+        price=None,
+        action=None,
+    )
+
+
+async def read_course_entry_view_surface(
+    course_id_or_slug: str,
+    user_id_or_subject: Any | None = None,
+) -> schemas.CourseEntryViewResponse | None:
+    course = await courses_repo.get_course_entry_view_base(course_id_or_slug)
+    if course is None:
+        return None
+    if str(course.get("visibility") or "").strip().lower() != "public":
+        return None
+    if course.get("content_ready") is not True:
+        return None
+
+    course_id = str(course.get("id") or "").strip()
+    if not course_id:
+        return None
+    lessons = list(await courses_repo.list_course_entry_lessons(course_id))
+    user_id = _course_entry_subject_id(user_id_or_subject)
+    enrollment = (
+        await courses_repo.get_course_entry_enrollment(user_id, course_id)
+        if user_id
+        else None
+    )
+    intro_drip_state: Mapping[str, Any] = (
+        await courses_repo.get_active_intro_drip_state(user_id)
+        if user_id
+        else {"is_in_any_intro_drip": False, "active_course_id": None}
+    )
+    required_source = _course_required_enrollment_source(course)
+    is_premium = required_source == _COURSE_ENROLLMENT_SOURCE_PURCHASE
+    pricing = _course_entry_pricing_projection(course)
+    sellable_course = _course_entry_sellable_course(
+        course=course,
+        pricing=pricing,
+        is_premium=is_premium,
+    )
+    (
+        lesson_shells,
+        next_recommended_lesson,
+        current_unlock_position,
+        max_lesson_position,
+    ) = _course_entry_lesson_projections(
+        lessons=lessons,
+        enrollment=enrollment,
+    )
+    access, active_intro_drip_other_course = _course_entry_access_projection(
+        course_id=course_id,
+        required_source=required_source,
+        enrollment=enrollment,
+        intro_drip_state=intro_drip_state,
+        max_lesson_position=max_lesson_position,
+        current_unlock_position=current_unlock_position,
+        has_request_user=user_id is not None,
+        sellable_course=sellable_course,
+    )
+    cta = _course_entry_cta_projection(
+        required_source=required_source,
+        access=access,
+        active_intro_drip_other_course=active_intro_drip_other_course,
+        next_recommended_lesson=next_recommended_lesson,
+        pricing=pricing,
+        has_request_user=user_id is not None,
+    )
+    cover = await _course_entry_cover_projection(course)
+    price_amount_cents = _course_entry_price_amount(course.get("price_amount_cents"))
+    price_currency = _normalized_price_currency(course.get("price_currency"))
+    formatted_price = pricing.formatted_price if pricing is not None else None
+    return schemas.CourseEntryViewResponse(
+        course=schemas.CourseEntryCourse(
+            id=course_id,
+            slug=str(course.get("slug") or ""),
+            title=str(course.get("title") or ""),
+            description=course.get("description"),
+            cover=cover,
+            required_enrollment_source=required_source,
+            is_premium=is_premium,
+            price_amount_cents=price_amount_cents,
+            price_currency=price_currency,
+            formatted_price=formatted_price,
+            sellable=bool(course.get("sellable")),
+        ),
+        lessons=lesson_shells,
+        access=access,
+        cta=cta,
+        pricing=pricing,
+        next_recommended_lesson=next_recommended_lesson,
+    )
+
+
 def _lesson_view_lesson_shell(
     shell: Mapping[str, Any],
     *,

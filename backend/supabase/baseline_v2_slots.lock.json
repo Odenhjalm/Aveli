@@ -88,15 +88,15 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "fc13e133b5d37e47e4f4006e02d9dcaad5989d5e3a826b7bdf976d9496590ec4",
+    "expected_schema_hash": "8007a328a8faf81283db694e21e93888e8128b3cedbf3e62eb78887b6ba18a3c",
     "expected_counts": {
       "enums": 13,
       "tables": 46,
       "views": 5,
       "fks": 67,
       "constraints": 262,
-      "triggers": 37,
-      "functions": 55
+      "triggers": 39,
+      "functions": 57
     },
     "forbidden_legacy_columns": [
       "role_v2",
@@ -793,6 +793,22 @@
         "constraints": 262,
         "triggers": 37,
         "functions": 55
+      }
+    },
+    {
+      "slot": 39,
+      "filename": "V2_0039_course_public_content_invariant.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0039_course_public_content_invariant.sql",
+      "sha256": "5776fd8fa9d02d62af47d999a4c39c923d3bd79f22f08534151ae4b9baebb5d1",
+      "post_state_hash": "b6d69f534e753d60cb244490b3c9e3164e1b9d02a80157aafc88bcd0a7428b28",
+      "post_counts": {
+        "enums": 13,
+        "tables": 46,
+        "views": 5,
+        "fks": 67,
+        "constraints": 262,
+        "triggers": 39,
+        "functions": 57
       }
     }
   ]

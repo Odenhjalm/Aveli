@@ -300,6 +300,23 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     return detail
 
 
+@router.get(
+    "/{course_id_or_slug}/entry-view",
+    response_model=schemas.CourseEntryViewResponse,
+)
+async def course_entry_view(
+    course_id_or_slug: str,
+    current: OptionalCurrentUser = None,
+):
+    response = await courses_service.read_course_entry_view_surface(
+        course_id_or_slug,
+        current,
+    )
+    if response is None:
+        raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL)
+    return response
+
+
 @router.get("/{course_id}/public", response_model=schemas.CoursePublicContent)
 async def course_public_content(course_id: UUID):
     row = await courses_read_service.read_public_course_content(str(course_id))
