@@ -267,7 +267,7 @@ class _LessonSurfaceStatusCard extends StatelessWidget {
   }
 }
 
-LessonDocumentPreviewMedia _previewMediaFromLessonMediaItem(
+LessonDocumentPreviewMedia _previewMediaFromLessonViewMediaItem(
   LessonViewMediaItem item,
 ) {
   return LessonDocumentPreviewMedia(
@@ -351,7 +351,7 @@ class LessonPageRenderer extends StatelessWidget {
       );
     }
     final previewMedia = lessonMedia
-        .map(_previewMediaFromLessonMediaItem)
+        .map(_previewMediaFromLessonViewMediaItem)
         .toList(growable: false);
     return LessonDocumentPreview(
       document: document,

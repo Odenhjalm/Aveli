@@ -2,10 +2,8 @@ import 'dart:async';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
-import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/features/courses/data/lesson_view_surface.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
-import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
 const Set<String> _legacyCourseCoverFields = <String>{
   'cover_url',
@@ -19,8 +17,6 @@ const Set<String> _legacyCourseCoverFields = <String>{
 };
 
 const Set<String> _legacyCourseProgressionFields = <String>{'step'};
-const Set<String> _legacyLessonContentFields = <String>{'content_markdown'};
-
 Object? _requiredField(Object? payload, String fieldName) {
   switch (payload) {
     case final Map data when data.containsKey(fieldName):
@@ -47,16 +43,6 @@ void _rejectLegacyCourseProgressionFields(Object? payload, String context) {
     for (final field in _legacyCourseProgressionFields) {
       if (data.containsKey(field)) {
         throw StateError('Ogiltigt kursprogressionsf\u00e4lt i $context');
-      }
-    }
-  }
-}
-
-void _rejectLegacyLessonContentFields(Object? payload, String context) {
-  if (payload case final Map data) {
-    for (final field in _legacyLessonContentFields) {
-      if (data.containsKey(field)) {
-        throw StateError('Invalid lesson content field in $context');
       }
     }
   }
@@ -456,42 +442,6 @@ class CourseAccessData {
   }
 }
 
-class LessonDetailData {
-  const LessonDetailData({
-    required this.lesson,
-    required this.courseId,
-    required this.lessons,
-    required this.media,
-  });
-
-  final LessonDetail lesson;
-  final String courseId;
-  final List<LessonSummary> lessons;
-  final List<LessonMediaItem> media;
-
-  factory LessonDetailData.fromResponse(Object? payload) {
-    final lessons =
-        _requireList(
-            _requiredField(payload, 'lessons'),
-            'lessons',
-          ).map(LessonSummary.fromResponse).toList(growable: false)
-          ..sort((a, b) => a.position.compareTo(b.position));
-    final media = _requireList(
-      _requiredField(payload, 'media'),
-      'media',
-    ).map(LessonMediaItem.fromResponse).toList(growable: false);
-    return LessonDetailData(
-      lesson: LessonDetail.fromResponse(_requiredField(payload, 'lesson')),
-      courseId: _requireString(
-        _requiredField(payload, 'course_id'),
-        'course_id',
-      ),
-      lessons: lessons,
-      media: media,
-    );
-  }
-}
-
 class CourseSummary {
   const CourseSummary({
     required this.id,
@@ -625,88 +575,5 @@ class LessonSummary {
       ),
       position: _requireInt(_requiredField(payload, 'position'), 'position'),
     );
-  }
-}
-
-class LessonDetail {
-  const LessonDetail({
-    required this.id,
-    required this.lessonTitle,
-    required this.contentDocument,
-    required this.position,
-  });
-
-  final String id;
-  final String lessonTitle;
-  final LessonDocument contentDocument;
-  final int position;
-
-  factory LessonDetail.fromResponse(Object? payload) {
-    _rejectLegacyLessonContentFields(payload, 'lesson');
-    return LessonDetail(
-      id: _requireString(_requiredField(payload, 'id'), 'id'),
-      lessonTitle: _requireString(
-        _requiredField(payload, 'lesson_title'),
-        'lesson_title',
-      ),
-      contentDocument: LessonDocument.fromJson(
-        _requiredField(payload, 'content_document'),
-      ),
-      position: _requireInt(_requiredField(payload, 'position'), 'position'),
-    );
-  }
-}
-
-class LessonMediaItem {
-  const LessonMediaItem({
-    required this.id,
-    required this.lessonId,
-    required this.mediaAssetId,
-    required this.position,
-    required this.mediaType,
-    required this.state,
-    required this.media,
-  });
-
-  final String id;
-  final String lessonId;
-  final String? mediaAssetId;
-  final int position;
-  final String mediaType;
-  final String state;
-  final ResolvedMediaData? media;
-
-  factory LessonMediaItem.fromResponse(Object? payload) {
-    return LessonMediaItem(
-      id: _requireString(_requiredField(payload, 'id'), 'id'),
-      lessonId: _requireString(
-        _requiredField(payload, 'lesson_id'),
-        'lesson_id',
-      ),
-      mediaAssetId: _optionalString(
-        _requiredField(payload, 'media_asset_id'),
-        'media_asset_id',
-      ),
-      position: _requireInt(_requiredField(payload, 'position'), 'position'),
-      mediaType: _requireString(
-        _requiredField(payload, 'media_type'),
-        'media_type',
-      ),
-      state: _requireString(_requiredField(payload, 'state'), 'state'),
-      media: _optionalResolvedMedia(_requiredField(payload, 'media'), 'media'),
-    );
-  }
-}
-
-ResolvedMediaData? _optionalResolvedMedia(Object? value, String fieldName) {
-  switch (value) {
-    case null:
-      return null;
-    case final Map<String, dynamic> data:
-      return ResolvedMediaData.fromJson(data);
-    case final Map data:
-      return ResolvedMediaData.fromJson(Map<String, dynamic>.from(data));
-    default:
-      throw StateError('Invalid field type for $fieldName');
   }
 }
