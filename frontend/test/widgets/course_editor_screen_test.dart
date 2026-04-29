@@ -73,6 +73,23 @@ void main() {
     expect(previewMode, contains('Expanded('));
   });
 
+  test('lesson preview loader uses canonical lesson view surface only', () {
+    final source = _courseEditorSource();
+    final previewLoader = _sourceSlice(
+      source,
+      '  Future<void> _loadLessonViewPreview({',
+      '  void _startInitialLessonPreviewHydration({',
+    );
+
+    expect(
+      previewLoader,
+      contains('_studioRepo.readLessonViewSurfacePreview(lessonId)'),
+    );
+    expect(previewLoader, isNot(contains('_studioRepo.readLessonContent')));
+    expect(previewLoader, isNot(contains('fetchLessonMediaPlacements')));
+    expect(previewLoader, isNot(contains('_readPersistedPreviewMedia')));
+  });
+
   test(
     'editor preview and learner lesson page both depend on shared document rendering primitives',
     () {

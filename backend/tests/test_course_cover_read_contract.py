@@ -77,6 +77,7 @@ def _landing_course(*, cover: dict | None) -> dict:
         "required_enrollment_source": "intro",
         "enrollable": True,
         "purchasable": False,
+        "description": "Landing course description",
     }
 
 
@@ -708,7 +709,7 @@ async def test_list_public_courses_includes_cover_when_cover_media_id_resolves(m
     _install_storage(monkeypatch)
 
     async def fake_list_public_courses(**kwargs):
-        return [_course()]
+        return [{**_course(), "description": "Public course description"}]
 
     async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
         return _runtime_row()
@@ -739,6 +740,7 @@ async def test_courses_list_response_includes_cover_when_present(async_client, m
             {
                 **_course(),
                 "cover": _resolved_cover_payload(),
+                "description": "Public course description",
             }
         ]
 
@@ -770,7 +772,13 @@ async def test_courses_list_response_returns_null_cover_for_invalid_cover(
     monkeypatch,
 ):
     async def fake_list_public_courses(**kwargs):
-        return [{**_course(), "cover": None}]
+        return [
+            {
+                **_course(),
+                "cover": None,
+                "description": "Public course description",
+            }
+        ]
 
     async def fake_attach(rows):
         return None
@@ -807,6 +815,7 @@ async def test_courses_list_exposes_premium_cover_without_purchase(
                 **_course(),
                 "price_amount_cents": 9900,
                 "cover": _resolved_cover_payload(),
+                "description": "Public course description",
             }
         ]
 
@@ -951,7 +960,7 @@ async def test_courses_me_uses_same_canonical_cover_contract(monkeypatch):
 
     async def fake_list_my_courses(user_id: str):
         assert user_id == TEACHER_ID
-        return [_course()]
+        return [{**_course(), "description": "My course description"}]
 
     async def fake_get_runtime_media(*, course_id: str, media_asset_id: str):
         return _runtime_row()

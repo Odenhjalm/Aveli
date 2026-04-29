@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/editor/document/lesson_document.dart';
+import 'package:aveli/features/courses/data/lesson_view_surface.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
@@ -247,12 +248,12 @@ class CoursesRepository {
     }
   }
 
-  Future<LessonDetailData> fetchLessonDetail(String lessonId) async {
+  Future<LessonViewSurface> fetchLessonDetail(String lessonId) async {
     try {
       final response = await _client.raw.get<Object?>(
         '/courses/lessons/$lessonId',
       );
-      return LessonDetailData.fromResponse(response.data);
+      return LessonViewSurface.fromResponse(response.data);
     } catch (error, stackTrace) {
       throw AppFailure.from(error, stackTrace);
     }

@@ -496,6 +496,17 @@ class StudioRepository {
     );
   }
 
+  Future<LessonViewSurface> readLessonViewSurfacePreview(String id) async {
+    final response = await _client.raw.get<Object?>(
+      '/courses/lessons/$id',
+      queryParameters: const <String, Object?>{'preview': true},
+    );
+    return LessonViewSurface.fromResponse(
+      response.data,
+      label: 'Lesson view surface preview',
+    );
+  }
+
   Future<StudioLessonContentWriteResult> updateLessonContent(
     String id, {
     required LessonDocument contentDocument,

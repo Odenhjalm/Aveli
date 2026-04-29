@@ -47,6 +47,7 @@ dependencies:
   just_audio_web: ^0.4.9
   file_picker: ^10.3.3
   video_player: ^2.8.17
+  web: ^1.1.1
   media_kit: ^1.1.10
   media_kit_video: ^1.1.10
   media_kit_libs_android_video: ^1.1.4

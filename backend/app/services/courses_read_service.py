@@ -21,6 +21,9 @@ _CANONICAL_COURSE_FIELDS = (
     "enrollable",
     "purchasable",
 )
+_MISSING_COURSE_PUBLIC_CONTENT_ERROR = (
+    "Invariant violation: missing course_public_content"
+)
 
 
 def _canonical_course_payload(course: Mapping[str, Any]) -> dict[str, Any]:
@@ -29,14 +32,21 @@ def _canonical_course_payload(course: Mapping[str, Any]) -> dict[str, Any]:
     normalized = dict(course)
     courses_service.attach_course_access_model(normalized)
     courses_service.attach_course_teacher_read_contract(normalized)
-    return {field: normalized.get(field) for field in _CANONICAL_COURSE_FIELDS}
+    return {field: normalized[field] for field in _CANONICAL_COURSE_FIELDS}
+
+
+def _required_course_description(row: Mapping[str, Any]) -> str:
+    description = row["description"]
+    if not isinstance(description, str):
+        raise RuntimeError(_MISSING_COURSE_PUBLIC_CONTENT_ERROR)
+    return description
 
 
 def _compose_course_detail_view(
     *,
     course: Mapping[str, Any],
     lessons: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...],
-    description: str | None,
+    description: str,
 ) -> schemas.CourseDetailResponse:
     return schemas.CourseDetailResponse(
         course=schemas.Course(**_canonical_course_payload(course)),
@@ -78,7 +88,9 @@ async def read_course_detail(
     if not rows:
         return None
 
-    course = dict(_canonical_course_payload(rows[0]))
+    course_row = dict(rows[0])
+    course_row["cover"] = None
+    course = dict(_canonical_course_payload(course_row))
     await courses_service.attach_course_cover_read_contract(course)
     lessons: list[dict[str, Any]] = []
     seen_lesson_ids: set[str] = set()
@@ -95,7 +107,7 @@ async def read_course_detail(
     return _compose_course_detail_view(
         course=course,
         lessons=lessons,
-        description=rows[0].get("description"),
+        description=_required_course_description(rows[0]),
     )
 
 
@@ -103,10 +115,7 @@ async def read_public_course_content(course_id: str) -> dict[str, Any] | None:
     rows = await _read_public_course_detail_rows(course_id=course_id)
     if not rows:
         return None
-    description = rows[0].get("description")
-    if description is None:
-        return None
     return {
         "course_id": rows[0]["id"],
-        "description": description,
+        "description": _required_course_description(rows[0]),
     }

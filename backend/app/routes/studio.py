@@ -2218,11 +2218,6 @@ async def course_public_content(course_id: str, current: TeacherEntryUser):
         str(current["id"]),
     )
     public_content = await courses_service.fetch_course_public_content(course_id)
-    if public_content is None:
-        public_content = {
-            "course_id": course_id,
-            "description": "",
-        }
     return schemas.StudioCoursePublicContent(**public_content)
 
 

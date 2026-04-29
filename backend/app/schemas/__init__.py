@@ -1006,7 +1006,7 @@ class Course(BaseModel):
 class CourseListItem(Course):
     model_config = ConfigDict(extra="forbid")
 
-    description: str | None = None
+    description: str
 
 
 StudioCourseDripMode = Literal[
@@ -1168,7 +1168,7 @@ class CourseDetailResponse(BaseModel):
 
     course: Course
     lessons: List[LessonStructureItem]
-    description: str | None = None
+    description: str
 
 
 class LessonContentItem(BaseModel):

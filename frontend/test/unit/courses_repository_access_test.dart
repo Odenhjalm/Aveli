@@ -471,7 +471,7 @@ void main() {
 
       final detail = await repo.fetchLessonDetail('lesson-1');
 
-      expect(detail.lesson.contentDocument.blocks, isEmpty);
+      expect(detail.lesson.contentDocument?.blocks, isEmpty);
       expect(detail.media, isEmpty);
       expect(adapter.requestsFor('/courses/lessons/lesson-1'), hasLength(1));
     });
@@ -646,10 +646,18 @@ Map<String, Object?> _lessonPayload({
           'position': 1,
           'content_document': _lessonDocument(),
         },
-    'course_id': 'course-1',
-    'lessons': const [
-      {'id': 'lesson-1', 'lesson_title': 'Lesson', 'position': 1},
-    ],
+    'navigation': const {'previous_lesson_id': null, 'next_lesson_id': null},
+    'access': const {
+      'has_access': true,
+      'is_enrolled': true,
+      'is_in_drip': false,
+      'is_premium': false,
+      'can_enroll': false,
+      'can_purchase': false,
+    },
+    'cta': null,
+    'pricing': null,
+    'progression': const {'unlocked': true, 'reason': 'available'},
     'media': media,
   };
 }

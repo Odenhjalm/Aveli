@@ -32,7 +32,7 @@ def _course_list_response(rows) -> schemas.CourseListResponse:
     return schemas.CourseListResponse(
         items=[
             schemas.CourseListItem(
-                **{field: row.get(field) for field in _CANONICAL_COURSE_FIELDS}
+                **{field: row[field] for field in _CANONICAL_COURSE_FIELDS}
             )
             for row in normalized_rows
         ]

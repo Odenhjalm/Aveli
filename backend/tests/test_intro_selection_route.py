@@ -74,9 +74,10 @@ def _course_payload(*, course_id: str, slug: str) -> dict[str, object]:
         "price_amount_cents": None,
         "drip_enabled": False,
         "drip_interval_days": None,
-        "required_enrollment_source": "intro_enrollment",
+        "required_enrollment_source": "intro",
         "enrollable": True,
         "purchasable": False,
+        "description": f"description-{slug}",
         "extra_field": "must-not-leak",
     }
 
@@ -116,7 +117,7 @@ async def test_intro_selection_route_returns_unlocked_state_with_course_payloads
         selection_locked=False,
         selection_lock_reason=None,
         eligible_courses=[
-            schemas.Course(**course_routes._canonical_course_payload(row))
+            course_routes._course_list_item_response(row)
             for row in service_result["eligible_courses"]
         ],
     ).model_dump(mode="json")

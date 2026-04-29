@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/editor/document/lesson_document_editor.dart';
 import 'package:aveli/editor/document/lesson_document_renderer.dart';
-import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/courses/data/lesson_view_surface.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart';
 import 'package:aveli/shared/media/AveliLessonImage.dart';
 import 'package:aveli/shared/media/AveliLessonMediaPlayer.dart';
@@ -87,18 +87,15 @@ double _fontSizeForText(WidgetTester tester, String text) {
   return _richTextFor(tester, text).text.style?.fontSize ?? 0;
 }
 
-List<LessonMediaItem> _lessonMediaItemsFromCorpus(
+List<LessonViewMediaItem> _lessonMediaItemsFromCorpus(
   LessonDocumentFixtureCorpus corpus,
 ) {
   return [
     for (final row in corpus.mediaRows)
-      LessonMediaItem(
-        id: row.lessonMediaId,
-        lessonId: 'lesson-1',
-        mediaAssetId: row.mediaAssetId,
+      LessonViewMediaItem(
+        lessonMediaId: row.lessonMediaId,
         position: 1,
         mediaType: row.mediaType,
-        state: row.state,
         media: ResolvedMediaData(
           mediaId: row.mediaAssetId,
           state: row.state,
@@ -111,7 +108,7 @@ List<LessonMediaItem> _lessonMediaItemsFromCorpus(
 Future<void> _pumpLearnerRenderer(
   WidgetTester tester, {
   required LessonDocument document,
-  required List<LessonMediaItem> lessonMedia,
+  required List<LessonViewMediaItem> lessonMedia,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -215,7 +212,7 @@ void main() {
       await _pumpLearnerRenderer(
         tester,
         document: document,
-        lessonMedia: const <LessonMediaItem>[],
+        lessonMedia: const <LessonViewMediaItem>[],
       );
       await tester.pump();
 
@@ -233,7 +230,7 @@ void main() {
     await _pumpLearnerRenderer(
       tester,
       document: LessonDocument.empty(),
-      lessonMedia: const <LessonMediaItem>[],
+      lessonMedia: const <LessonViewMediaItem>[],
     );
     await tester.pump();
 

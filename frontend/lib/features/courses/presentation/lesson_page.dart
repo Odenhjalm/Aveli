@@ -10,8 +10,7 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/editor/document/lesson_document_renderer.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
-import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/courses/presentation/learner_course_visibility.dart';
+import 'package:aveli/features/courses/data/lesson_view_surface.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -43,15 +42,15 @@ class _LessonPageState extends ConsumerState<LessonPage> {
           ),
         ),
       ),
-      data: (data) => _LessonContent(detail: data),
+      data: (surface) => _LessonContent(surface: surface),
     );
   }
 }
 
-class _LessonContent extends ConsumerWidget {
-  const _LessonContent({required this.detail});
+class _LessonContent extends StatelessWidget {
+  const _LessonContent({required this.surface});
 
-  final LessonDetailData detail;
+  final LessonViewSurface surface;
 
   Future<void> _handleLinkTap(BuildContext context, String url) async {
     final parsed = Uri.tryParse(url);
@@ -71,45 +70,25 @@ class _LessonContent extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final lesson = detail.lesson;
-    final courseStateAsync = ref.watch(courseStateProvider(detail.courseId));
-    final visibility = LearnerCourseVisibility.fromState(
-      lessons: detail.lessons,
-      courseState: courseStateAsync.valueOrNull,
-      now: DateTime.now().toUtc(),
-    );
+  Widget build(BuildContext context) {
+    final lesson = surface.lesson;
     final screenWidth = MediaQuery.of(context).size.width;
     final safeScreenWidth = screenWidth.isFinite && screenWidth > 0
         ? screenWidth
         : 1200.0;
     final contentWidth = (safeScreenWidth - 32).clamp(720.0, 1200.0).toDouble();
-    final courseLessons = visibility.lessons;
-    LessonSummary? previous;
-    LessonSummary? next;
-    if (courseLessons.isNotEmpty) {
-      final index = courseLessons.indexWhere(
-        (element) => element.id == lesson.id,
-      );
-      if (index > 0) {
-        previous = courseLessons[index - 1];
-      }
-      if (index >= 0 && index < courseLessons.length - 1) {
-        next = courseLessons[index + 1];
-      }
-    }
-
     final documentContent = lesson.contentDocument;
-    final hasLessonContent = documentContent.blocks.isNotEmpty;
     final coreContent = MouseRegion(
       cursor: SystemMouseCursors.basic,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          if (hasLessonContent)
+          if (documentContent == null)
+            _LessonSurfaceStatusCard(surface: surface)
+          else if (documentContent.blocks.isNotEmpty)
             LearnerLessonContentRenderer(
               document: documentContent,
-              lessonMedia: detail.media,
+              lessonMedia: surface.media,
               onLaunchUrl: (url) => unawaited(_handleLinkTap(context, url)),
             )
           else
@@ -120,54 +99,30 @@ class _LessonContent extends ConsumerWidget {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    final prev = previous;
+                    final prev = surface.navigation.previousLessonId;
                     if (prev == null) return;
                     context.goNamed(
                       AppRoute.lesson,
-                      pathParameters: {'id': prev.id},
+                      pathParameters: {'id': prev},
                     );
                   },
                   icon: const Icon(Icons.chevron_left_rounded),
-                  label: const Text('Föregående'),
+                  label: const Text('F\u00f6reg\u00e5ende'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    final nxt = next;
+                    final nxt = surface.navigation.nextLessonId;
                     if (nxt == null) return;
-                    if (courseStateAsync.isLoading ||
-                        courseStateAsync.hasError ||
-                        courseStateAsync.valueOrNull == null) {
-                      _showLessonActionError(
-                        context,
-                        'Kunde inte kontrollera nästa lektion just nu.',
-                      );
-                      return;
-                    }
-                    if (visibility.isLessonLocked(nxt)) {
-                      _showLessonActionError(
-                        context,
-                        visibility.lockedLessonMessage(nxt),
-                      );
-                      return;
-                    }
                     context.goNamed(
                       AppRoute.lesson,
-                      pathParameters: {'id': nxt.id},
+                      pathParameters: {'id': nxt},
                     );
                   },
-                  icon: Icon(
-                    next != null && visibility.isLessonLocked(next)
-                        ? Icons.lock_outline_rounded
-                        : Icons.chevron_right_rounded,
-                  ),
-                  label: Text(
-                    next != null && visibility.isLessonLocked(next)
-                        ? 'Låst'
-                        : 'Nästa',
-                  ),
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  label: const Text('N\u00e4sta'),
                 ),
               ),
             ],
@@ -244,15 +199,83 @@ class _LessonEmptyContentState extends StatelessWidget {
   }
 }
 
+class _LessonSurfaceStatusCard extends StatelessWidget {
+  const _LessonSurfaceStatusCard({required this.surface});
+
+  final LessonViewSurface surface;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cta = surface.cta;
+    final pricing = surface.pricing;
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      opacity: 0.16,
+      sigmaX: 10,
+      sigmaY: 10,
+      borderRadius: BorderRadius.circular(22),
+      borderColor: Colors.white.withValues(alpha: 0.16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (cta != null) ...[
+            Text(
+              cta.label,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              cta.type,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          if (cta?.reasonText != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              cta!.reasonText!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+          if (pricing != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              pricing.formatted,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            surface.progression.reason,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 LessonDocumentPreviewMedia _previewMediaFromLessonMediaItem(
-  LessonMediaItem item,
+  LessonViewMediaItem item,
 ) {
   return LessonDocumentPreviewMedia(
-    lessonMediaId: item.id,
+    lessonMediaId: item.lessonMediaId,
     mediaType: item.mediaType,
-    state: item.state,
+    state: item.media.state,
     label: null,
-    resolvedUrl: item.media?.resolvedUrl,
+    resolvedUrl: item.media.resolvedUrl,
   );
 }
 
@@ -265,7 +288,7 @@ class LearnerLessonContentRenderer extends StatefulWidget {
   });
 
   final LessonDocument document;
-  final List<LessonMediaItem> lessonMedia;
+  final List<LessonViewMediaItem> lessonMedia;
   final ValueChanged<String>? onLaunchUrl;
 
   @override
@@ -310,13 +333,13 @@ class LessonPageRenderer extends StatelessWidget {
   const LessonPageRenderer({
     super.key,
     required this.document,
-    this.lessonMedia = const <LessonMediaItem>[],
+    this.lessonMedia = const <LessonViewMediaItem>[],
     this.onLaunchUrl,
     this.readingMode = LessonDocumentReadingMode.glass,
   });
 
   final LessonDocument document;
-  final List<LessonMediaItem> lessonMedia;
+  final List<LessonViewMediaItem> lessonMedia;
   final ValueChanged<String>? onLaunchUrl;
   final LessonDocumentReadingMode readingMode;
 

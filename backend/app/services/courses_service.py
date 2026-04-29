@@ -571,9 +571,9 @@ async def fetch_course_pricing(slug: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-async def fetch_course_public_content(course_id: str) -> dict[str, Any] | None:
+async def fetch_course_public_content(course_id: str) -> dict[str, Any]:
     row = await courses_repo.get_course_public_content(course_id)
-    return dict(row) if row else None
+    return dict(row)
 
 
 async def upsert_course_public_content(

@@ -6,6 +6,7 @@ import 'package:aveli/api/auth_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
+import 'package:aveli/features/courses/data/lesson_view_surface.dart';
 
 final coursesRepositoryProvider = Provider<CoursesRepository>((ref) {
   final client = ref.watch(apiClientProvider);
@@ -64,7 +65,7 @@ final courseStateProvider =
     });
 
 final lessonDetailProvider =
-    AutoDisposeFutureProvider.family<LessonDetailData, String>((
+    AutoDisposeFutureProvider.family<LessonViewSurface, String>((
       ref,
       lessonId,
     ) async {

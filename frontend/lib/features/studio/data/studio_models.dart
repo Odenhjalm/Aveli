@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:aveli/editor/document/lesson_document.dart';
+export 'package:aveli/features/courses/data/lesson_view_surface.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
@@ -40,24 +41,6 @@ String? _nullableResponseString(Object? payload, String key, String label) {
     return value;
   }
   throw StateError('$label field "$key" must be a string or null');
-}
-
-String? _optionalResponseString(Object? payload, String key, String label) {
-  switch (payload) {
-    case final Map data when data.containsKey(key):
-      final value = data[key];
-      if (value == null) {
-        return null;
-      }
-      if (value is String) {
-        return value;
-      }
-      throw StateError('$label field "$key" must be a string or null');
-    case final Map _:
-      return null;
-    default:
-      throw StateError('$label returned a non-object payload');
-  }
 }
 
 int _requiredResponseInt(Object? payload, String key, String label) {

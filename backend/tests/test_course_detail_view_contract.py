@@ -76,7 +76,7 @@ def _detail_response(
     *,
     cover: dict | None,
     lessons: list[dict] | None = None,
-    description: str | None = None,
+    description: str = "Backend-authored course description",
 ) -> schemas.CourseDetailResponse:
     return schemas.CourseDetailResponse(
         course=schemas.Course(**_course_payload(cover=cover)),
@@ -98,14 +98,17 @@ def _detail_response(
     )
 
 
-async def test_course_detail_http_shape_contains_cover_and_null_sibling_content(
+async def test_course_detail_http_shape_contains_cover_and_public_description(
     async_client,
     monkeypatch,
 ):
     async def fake_read_course_detail(*, course_id: str | None = None, slug: str | None = None):
         assert course_id is None
         assert slug == "course-1"
-        return _detail_response(cover=_cover_payload(), description=None)
+        return _detail_response(
+            cover=_cover_payload(),
+            description="Backend-authored course description",
+        )
 
     monkeypatch.setattr(
         course_routes.courses_read_service,
@@ -119,7 +122,7 @@ async def test_course_detail_http_shape_contains_cover_and_null_sibling_content(
     body = response.json()
 
     assert set(body.keys()) == {"course", "lessons", "description"}
-    assert body["description"] is None
+    assert body["description"] == "Backend-authored course description"
     assert body["course"]["cover"] == _cover_payload()
     assert set(body["course"].keys()) == {
         "id",
@@ -167,7 +170,11 @@ async def test_course_detail_http_shape_preserves_empty_lessons_and_null_cover(
     async def fake_read_course_detail(*, course_id: str | None = None, slug: str | None = None):
         assert course_id == COURSE_ID
         assert slug is None
-        return _detail_response(cover=None, lessons=[], description=None)
+        return _detail_response(
+            cover=None,
+            lessons=[],
+            description="Backend-authored course description",
+        )
 
     monkeypatch.setattr(
         course_routes.courses_read_service,
@@ -182,7 +189,7 @@ async def test_course_detail_http_shape_preserves_empty_lessons_and_null_cover(
 
     assert body["course"]["cover"] is None
     assert body["lessons"] == []
-    assert body["description"] is None
+    assert body["description"] == "Backend-authored course description"
 
 
 async def test_course_detail_route_is_identity_independent(monkeypatch):
@@ -248,7 +255,13 @@ async def test_list_public_courses_reads_public_discovery_surface(monkeypatch):
         assert search == "course"
         assert limit == 5
         assert group_position is None
-        return [{**_course_payload(cover=None), "sellable": False}]
+        return [
+            {
+                **_course_payload(cover=None),
+                "description": "Backend-authored list description",
+                "sellable": False,
+            }
+        ]
 
     async def fake_attach_course_cover_read_contract(courses):
         rows = [courses] if isinstance(courses, dict) else list(courses)
@@ -385,6 +398,18 @@ def test_course_schemas_reject_legacy_step_field():
         )
 
 
+def test_course_public_description_schemas_require_description():
+    with pytest.raises(ValidationError):
+        schemas.CourseListItem(**_course_payload(cover=None))
+
+    with pytest.raises(ValidationError):
+        schemas.CourseDetailResponse(
+            course=schemas.Course(**_course_payload(cover=None)),
+            lessons=[],
+            description=None,
+        )
+
+
 async def test_read_course_detail_composes_teacher_cover_and_description(monkeypatch):
     async def fail_fetch_course(*, course_id: str | None = None, slug: str | None = None):
         raise AssertionError("raw course reads must not back public course detail")
@@ -472,6 +497,82 @@ async def test_read_course_detail_composes_teacher_cover_and_description(monkeyp
             "position": 2,
         },
     ]
+
+
+async def test_read_course_detail_rejects_missing_description(monkeypatch):
+    async def fake_attach_course_cover_read_contract(course):
+        course["cover"] = None
+
+    async def fake_fetch_public_course_detail_rows(
+        *,
+        course_id: str | None = None,
+        slug: str | None = None,
+    ):
+        assert course_id == COURSE_ID
+        assert slug is None
+        return [
+            {
+                **_course_payload(cover=None),
+                "sellable": False,
+                "teacher_id": TEACHER_ID,
+                "teacher_display_name": "Aveli Teacher",
+                "description": None,
+                "lesson_id": LESSON_ID,
+                "lesson_title": "Lesson 1",
+                "lesson_position": 1,
+            }
+        ]
+
+    monkeypatch.setattr(
+        courses_service,
+        "attach_course_cover_read_contract",
+        fake_attach_course_cover_read_contract,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        courses_service,
+        "fetch_public_course_detail_rows",
+        fake_fetch_public_course_detail_rows,
+        raising=True,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Invariant violation: missing course_public_content",
+    ):
+        await courses_read_service.read_course_detail(course_id=COURSE_ID)
+
+
+async def test_read_public_course_content_rejects_missing_description(monkeypatch):
+    async def fake_fetch_public_course_detail_rows(
+        *,
+        course_id: str | None = None,
+        slug: str | None = None,
+    ):
+        assert course_id == COURSE_ID
+        assert slug is None
+        return [
+            {
+                **_course_payload(cover=None),
+                "sellable": False,
+                "teacher_id": TEACHER_ID,
+                "teacher_display_name": "Aveli Teacher",
+                "description": None,
+            }
+        ]
+
+    monkeypatch.setattr(
+        courses_service,
+        "fetch_public_course_detail_rows",
+        fake_fetch_public_course_detail_rows,
+        raising=True,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Invariant violation: missing course_public_content",
+    ):
+        await courses_read_service.read_public_course_content(COURSE_ID)
 
 
 async def test_course_public_content_route_reads_through_public_detail_surface(

@@ -139,6 +139,105 @@ void main() {
     },
   );
 
+  test(
+    'readLessonViewSurfacePreview uses canonical lesson view preview endpoint',
+    () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/lessons/lesson-1' &&
+            options.method.toUpperCase() == 'GET' &&
+            options.queryParameters['preview'] == true) {
+          return _jsonResponse(
+            statusCode: 200,
+            body: {
+              'lesson': {
+                'id': 'lesson-1',
+                'course_id': 'course-1',
+                'lesson_title': 'Preview lesson',
+                'position': 1,
+                'content_document': _lessonDocumentJson('Preview'),
+              },
+              'navigation': {
+                'previous_lesson_id': null,
+                'next_lesson_id': 'lesson-2',
+              },
+              'access': {
+                'has_access': true,
+                'is_enrolled': false,
+                'is_in_drip': false,
+                'is_premium': true,
+                'can_enroll': false,
+                'can_purchase': false,
+              },
+              'cta': {
+                'type': 'continue',
+                'label': 'Continue',
+                'enabled': true,
+                'reason_code': null,
+                'reason_text': null,
+                'price': null,
+                'action': {'type': 'continue'},
+              },
+              'pricing': {
+                'price_amount_cents': 12000,
+                'price_currency': 'sek',
+                'formatted': '120 SEK',
+              },
+              'progression': {'unlocked': true, 'reason': 'available'},
+              'media': [
+                {
+                  'lesson_media_id': imageMediaId,
+                  'position': 1,
+                  'media_type': 'image',
+                  'media': {
+                    'media_id': 'media-image',
+                    'state': 'ready',
+                    'resolved_url': 'https://cdn.test/image.webp',
+                  },
+                },
+              ],
+            },
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = StudioRepository(client: _clientWith(adapter));
+
+      final result = await repo.readLessonViewSurfacePreview('lesson-1');
+
+      expect(result.lesson.id, 'lesson-1');
+      expect(result.lesson.lessonTitle, 'Preview lesson');
+      expect(
+        result.lesson.contentDocument?.toCanonicalJsonString(),
+        LessonDocument(
+          blocks: const [
+            LessonParagraphBlock(children: [LessonTextRun('Preview')]),
+          ],
+        ).toCanonicalJsonString(),
+      );
+      expect(result.navigation.nextLessonId, 'lesson-2');
+      expect(result.progression.reason, 'available');
+      expect(result.cta?.label, 'Continue');
+      expect(result.pricing?.formatted, '120 SEK');
+      expect(result.media.single.lessonMediaId, imageMediaId);
+      expect(
+        result.media.single.media.resolvedUrl,
+        'https://cdn.test/image.webp',
+      );
+
+      final lessonViewRequests = adapter.requestsFor(
+        '/courses/lessons/lesson-1',
+      );
+      expect(lessonViewRequests, hasLength(1));
+      expect(lessonViewRequests.single.method, 'GET');
+      expect(lessonViewRequests.single.queryParameters, {'preview': true});
+      expect(adapter.requestsFor('/studio/lessons/lesson-1/content'), isEmpty);
+      expect(
+        adapter.requestsFor('/api/media-placements/$imageMediaId'),
+        isEmpty,
+      );
+    },
+  );
+
   test('updateLessonContent carries If-Match and replacement ETag', () async {
     final corpus = loadLessonDocumentFixtureCorpus();
     final updatedDocument = corpus.document(
@@ -362,6 +461,7 @@ class _RecordingAdapter implements HttpClientAdapter {
       _RecordedRequest(
         path: options.path,
         method: options.method.toUpperCase(),
+        queryParameters: Map<String, Object?>.from(options.queryParameters),
         headers: Map<String, Object?>.from(options.headers),
         data: options.data,
       ),
@@ -374,12 +474,14 @@ class _RecordedRequest {
   const _RecordedRequest({
     required this.path,
     required this.method,
+    required this.queryParameters,
     required this.headers,
     required this.data,
   });
 
   final String path;
   final String method;
+  final Map<String, Object?> queryParameters;
   final Map<String, Object?> headers;
   final Object? data;
 }

@@ -52,7 +52,7 @@ def _canonical_course_payload(course: Mapping[str, Any]) -> dict[str, Any]:
     normalized = dict(course)
     courses_service.attach_course_access_model(normalized)
     courses_service.attach_course_teacher_read_contract(normalized)
-    return {field: normalized.get(field) for field in _CANONICAL_COURSE_FIELDS}
+    return {field: normalized[field] for field in _CANONICAL_COURSE_FIELDS}
 
 
 def _course_response(course: Mapping[str, Any]) -> schemas.Course:
@@ -66,7 +66,7 @@ def _course_list_item_response(course: Mapping[str, Any]) -> schemas.CourseListI
     courses_service.attach_course_access_model(normalized)
     courses_service.attach_course_teacher_read_contract(normalized)
     return schemas.CourseListItem(
-        **{field: normalized.get(field) for field in _CANONICAL_COURSE_LIST_FIELDS}
+        **{field: normalized[field] for field in _CANONICAL_COURSE_LIST_FIELDS}
     )
 
 
@@ -295,7 +295,7 @@ async def enroll_course(course_id: UUID, current: AppEntryUser):
 async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
     del current
     detail = await courses_read_service.read_course_detail(slug=slug)
-    if not detail:
+    if detail is None:
         raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL)
     return detail
 
@@ -303,7 +303,7 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
 @router.get("/{course_id}/public", response_model=schemas.CoursePublicContent)
 async def course_public_content(course_id: UUID):
     row = await courses_read_service.read_public_course_content(str(course_id))
-    if not row:
+    if row is None:
         raise HTTPException(
             status_code=404,
             detail=_COURSE_PUBLIC_CONTENT_NOT_FOUND_DETAIL,
@@ -315,6 +315,6 @@ async def course_public_content(course_id: UUID):
 async def course_detail(course_id: UUID, current: OptionalCurrentUser = None):
     del current
     detail = await courses_read_service.read_course_detail(course_id=str(course_id))
-    if not detail:
+    if detail is None:
         raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL)
     return detail
