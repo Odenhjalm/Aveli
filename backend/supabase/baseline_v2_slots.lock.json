@@ -88,13 +88,13 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "960009d9736547b152e8b27ddc9bdc6274e187f9e62a23d454704d8e291c388e",
+    "expected_schema_hash": "fc13e133b5d37e47e4f4006e02d9dcaad5989d5e3a826b7bdf976d9496590ec4",
     "expected_counts": {
       "enums": 13,
       "tables": 46,
       "views": 5,
       "fks": 67,
-      "constraints": 261,
+      "constraints": 262,
       "triggers": 37,
       "functions": 55
     },
@@ -775,6 +775,22 @@
         "views": 5,
         "fks": 67,
         "constraints": 261,
+        "triggers": 37,
+        "functions": 55
+      }
+    },
+    {
+      "slot": 38,
+      "filename": "V2_0038_course_price_currency.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0038_course_price_currency.sql",
+      "sha256": "2e1a651dc00cd3f9f20c8f4563decaad65cf82ebfe55902a23083af74303d83c",
+      "post_state_hash": "c7470ce2ba06d7e3060e54dc32b458ff52a50e0bc4c16c57265d710a64c25d06",
+      "post_counts": {
+        "enums": 13,
+        "tables": 46,
+        "views": 5,
+        "fks": 67,
+        "constraints": 262,
         "triggers": 37,
         "functions": 55
       }
