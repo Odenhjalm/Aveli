@@ -764,6 +764,63 @@ void main() {
     expect(controller.lastCommandResult?.applied, isTrue);
   });
 
+  testWidgets('document editor reverts selected heading range to paragraph', (
+    tester,
+  ) async {
+    final controller = LessonDocumentEditorController();
+    var document = const LessonDocument(
+      blocks: [
+        LessonHeadingBlock(
+          level: 2,
+          children: [LessonTextRun('Alpha Beta Gamma')],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  controller: controller,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _selectTextRange(
+      tester,
+      const ValueKey('lesson_document_editor_node_0'),
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 10,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+    expect(_blockTypes(document), ['heading', 'paragraph', 'heading']);
+    expect(
+      (document.blocks[0] as LessonHeadingBlock).children.single.text,
+      'Alpha ',
+    );
+    expect(
+      (document.blocks[1] as LessonParagraphBlock).children.single.text,
+      'Beta',
+    );
+    expect(
+      (document.blocks[2] as LessonHeadingBlock).children.single.text,
+      ' Gamma',
+    );
+    expect(controller.lastCommandResult?.applied, isTrue);
+  });
+
   testWidgets('document editor heading ignores out-of-range selections', (
     tester,
   ) async {
@@ -859,6 +916,110 @@ void main() {
       LessonDocument.fromJson(document.toJson()).toCanonicalJsonString(),
       document.toCanonicalJsonString(),
     );
+  });
+
+  testWidgets('document editor reverts full heading selection to paragraph', (
+    tester,
+  ) async {
+    final controller = LessonDocumentEditorController();
+    var document = const LessonDocument(
+      blocks: [
+        LessonHeadingBlock(level: 2, children: [LessonTextRun('Full heading')]),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  controller: controller,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _selectTextRange(
+      tester,
+      const ValueKey('lesson_document_editor_node_0'),
+      text: 'Full heading',
+      start: 0,
+      end: 12,
+    );
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+    expect(_blockTypes(document), ['paragraph']);
+    final paragraph = document.blocks.single as LessonParagraphBlock;
+    expect(paragraph.children.single.text, 'Full heading');
+    expect(controller.lastCommandResult?.applied, isTrue);
+  });
+
+  testWidgets('document editor repeats selected range heading toggle', (
+    tester,
+  ) async {
+    final controller = LessonDocumentEditorController();
+    var document = const LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  controller: controller,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _selectTextRange(
+      tester,
+      const ValueKey('lesson_document_editor_node_0'),
+      text: 'Alpha Beta Gamma',
+      start: 6,
+      end: 10,
+    );
+
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+    expect(_blockTypes(document), ['paragraph', 'heading', 'paragraph']);
+    expect(
+      (document.blocks[1] as LessonHeadingBlock).children.single.text,
+      'Beta',
+    );
+
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+    expect(_blockTypes(document), ['paragraph', 'paragraph', 'paragraph']);
+    expect(
+      (document.blocks[1] as LessonParagraphBlock).children.single.text,
+      'Beta',
+    );
+
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+    expect(_blockTypes(document), ['paragraph', 'heading', 'paragraph']);
+    expect(
+      (document.blocks[1] as LessonHeadingBlock).children.single.text,
+      'Beta',
+    );
+    expect(controller.lastCommandResult?.applied, isTrue);
   });
 
   testWidgets('document editor heading is a no-op for collapsed cursor', (
@@ -1312,6 +1473,84 @@ void main() {
       LessonEditorCommandFailure.unsupportedTarget,
     );
   });
+
+  testWidgets('document editor heading reports CTA targets as unsupported', (
+    tester,
+  ) async {
+    final controller = LessonDocumentEditorController();
+    const initial = LessonDocument(
+      blocks: [LessonCtaBlock(label: 'Join now', targetUrl: '/join')],
+    );
+    var document = initial;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  controller: controller,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+    expect(document.toJson(), initial.toJson());
+    expect(
+      controller.lastCommandResult?.failure,
+      LessonEditorCommandFailure.unsupportedTarget,
+    );
+  });
+
+  testWidgets(
+    'document editor reports heading command results through callback',
+    (tester) async {
+      final results = <LessonEditorCommandResult>[];
+      const initial = LessonDocument(
+        blocks: [
+          LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+        ],
+      );
+      var document = initial;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 520,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    onCommandResult: results.add,
+                    onChanged: (next) => setState(() => document = next),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+      expect(document.toJson(), initial.toJson());
+      expect(results, hasLength(1));
+      expect(
+        results.single.failure,
+        LessonEditorCommandFailure.invalidSelection,
+      );
+    },
+  );
 
   testWidgets('document editor applies list formatting only to selection', (
     tester,

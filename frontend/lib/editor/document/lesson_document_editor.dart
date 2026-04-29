@@ -213,6 +213,8 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
   final Map<_EditorControlKey, _LessonTextEditingController> _controllers =
       <_EditorControlKey, _LessonTextEditingController>{};
+  final Map<_EditorControlKey, TextSelection> _pendingSelections =
+      <_EditorControlKey, TextSelection>{};
   final Map<_EditorControlKey, FocusNode> _focusNodes =
       <_EditorControlKey, FocusNode>{};
   final Map<_EditorControlKey, _EditorTarget> _focusTargets =
@@ -375,6 +377,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
   void _disposeControlKey(_EditorControlKey key) {
     _controllers.remove(key)?.dispose();
+    _pendingSelections.remove(key);
     _focusNodes.remove(key)?.dispose();
     _focusTargets.remove(key);
   }
@@ -429,6 +432,13 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       () => _LessonTextEditingController(text: text, runs: runs),
     );
     controller.setRuns(runs);
+    final pendingSelection = _pendingSelections.remove(key);
+    if (pendingSelection != null && pendingSelection.end <= text.length) {
+      controller.value = TextEditingValue(
+        text: text,
+        selection: pendingSelection,
+      );
+    }
     return controller;
   }
 
@@ -653,6 +663,18 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   void _recordCommandResult(LessonEditorCommandResult result) {
     widget.controller?._recordCommandResult(result);
     widget.onCommandResult?.call(result);
+  }
+
+  void _preserveSelectedOutputRange(_EditorTarget target, String text) {
+    final key = _controlKeyForTarget(target);
+    if (key == null) return;
+    final selection = TextSelection(baseOffset: 0, extentOffset: text.length);
+    final controller = _controllers[key];
+    if (controller == null) {
+      _pendingSelections[key] = selection;
+      return;
+    }
+    controller.value = TextEditingValue(text: text, selection: selection);
   }
 
   void _setSelectedTargetForCurrentRevision(_EditorTarget? target) {
@@ -1017,7 +1039,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     _setSelectedTargetForCurrentRevision(nextTarget);
   }
 
-  void _convertSelectedHeading() {
+  void _toggleSelectedHeading() {
     final selectionResult = _resolveSelectedTextRange();
     final selection = selectionResult.range;
     if (selection == null) {
@@ -1034,6 +1056,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     late final int blockIndex;
     late final _BlockIdentity sourceIdentity;
     late final LessonSelectionSplitTarget splitTarget;
+    late final LessonSelectionStructuralConversion conversion;
 
     if (selection.target case _BlockTextTarget(:final blockId)) {
       final resolvedBlockIndex = _blockIndexFor(blockId);
@@ -1049,6 +1072,17 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       blockIndex = resolvedBlockIndex;
       sourceIdentity = identity;
       splitTarget = LessonTextBlockSelectionTarget(blockIndex: blockIndex);
+      final block = _document.blocks[blockIndex];
+      if (block is LessonHeadingBlock) {
+        conversion = const LessonSelectionParagraphConversion();
+      } else if (block is LessonParagraphBlock) {
+        conversion = const LessonSelectionHeadingConversion(
+          level: _defaultHeadingLevel,
+        );
+      } else {
+        _recordCommandFailure(LessonEditorCommandFailure.unsupportedTarget);
+        return;
+      }
     } else if (selection.target case _ListItemTextTarget(:final itemId)) {
       final location = _listItemLocationFor(itemId);
       if (location == null) {
@@ -1061,19 +1095,23 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         blockIndex: blockIndex,
         itemIndex: location.itemIndex,
       );
+      conversion = const LessonSelectionHeadingConversion(
+        level: _defaultHeadingLevel,
+      );
     } else {
       _recordCommandFailure(LessonEditorCommandFailure.unsupportedTarget);
       return;
     }
+    final selectedText = _plainText(
+      _childrenForTarget(selection.target),
+    ).substring(selection.start, selection.end);
 
     final result = splitLessonDocumentSelection(
       document: _document,
       target: splitTarget,
       start: selection.start,
       end: selection.end,
-      conversion: const LessonSelectionHeadingConversion(
-        level: _defaultHeadingLevel,
-      ),
+      conversion: conversion,
     );
     final metadata = result.metadata;
     if (!result.applied || metadata == null) {
@@ -1119,6 +1157,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       _insertionIndexForTarget(nextTarget) ?? blockIndex + 1,
     );
     _setSelectedTargetForCurrentRevision(nextTarget);
+    _preserveSelectedOutputRange(nextTarget, selectedText);
     _recordCommandApplied();
   }
 
@@ -1364,128 +1403,6 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       }
     }
     return _BlockTextTarget(selectedNodeId);
-  }
-
-  void _toggleHeading() {
-    final target = _activeTextTarget();
-    if (target == null) return;
-    final sourceBlocks = _document.blocks;
-    final nextBlocks = List<LessonBlock>.from(sourceBlocks);
-    final nextRegistry = _identityRegistry.copy();
-    late final _EditorTarget nextTarget;
-
-    if (target case _ListItemTextTarget(:final itemId)) {
-      final location = _listItemLocationFor(itemId);
-      if (location == null) return;
-      final replacement = _toggleHeadingForListItem(
-        location.block,
-        location.itemIndex,
-      );
-      final replacementIdentities = _toggleHeadingListItemIdentities(
-        sourceIdentity: location.blockIdentity,
-        itemIndex: location.itemIndex,
-        selectedItemId: itemId,
-        registry: nextRegistry,
-      );
-      nextBlocks
-        ..removeAt(location.blockIndex)
-        ..insertAll(location.blockIndex, replacement);
-      nextRegistry.blocks
-        ..removeAt(location.blockIndex)
-        ..insertAll(location.blockIndex, replacementIdentities);
-      _disposeRemovedIdentityKeys([
-        location.blockIdentity,
-      ], replacementIdentities);
-      nextTarget = _BlockTextTarget(itemId);
-    } else if (target case _BlockTextTarget(:final blockId)) {
-      final blockIndex = _blockIndexFor(blockId);
-      if (blockIndex == null) return;
-      final block = sourceBlocks[blockIndex];
-      if (block is LessonHeadingBlock) {
-        nextBlocks[blockIndex] = LessonParagraphBlock(
-          id: block.id,
-          children: block.children,
-        );
-        nextTarget = _BlockTextTarget(blockId);
-      } else if (block is LessonParagraphBlock) {
-        nextBlocks[blockIndex] = LessonHeadingBlock(
-          id: block.id,
-          level: _defaultHeadingLevel,
-          children: block.children,
-        );
-        nextTarget = _BlockTextTarget(blockId);
-      } else {
-        return;
-      }
-    } else {
-      return;
-    }
-
-    final next = LessonDocument(
-      blocks: List<LessonBlock>.unmodifiable(nextBlocks),
-    );
-    _applyDocument(next, identityRegistry: nextRegistry);
-    widget.onInsertionIndexChanged?.call(
-      _insertionIndexForTarget(nextTarget) ?? _currentInsertionIndex(),
-    );
-    _setSelectedTargetForCurrentRevision(nextTarget);
-  }
-
-  List<_BlockIdentity> _toggleHeadingListItemIdentities({
-    required _BlockIdentity sourceIdentity,
-    required int itemIndex,
-    required _EditorNodeId selectedItemId,
-    required _EditorIdentityRegistry registry,
-  }) {
-    final identities = <_BlockIdentity>[];
-    final beforeItemIds = sourceIdentity.listItemIds
-        .take(itemIndex)
-        .toList(growable: false);
-    final afterItemIds = sourceIdentity.listItemIds
-        .skip(itemIndex + 1)
-        .toList(growable: false);
-    if (beforeItemIds.isNotEmpty) {
-      identities.add(
-        _BlockIdentity(
-          blockId: sourceIdentity.blockId,
-          listItemIds: beforeItemIds,
-        ),
-      );
-    }
-    identities.add(_BlockIdentity(blockId: selectedItemId));
-    if (afterItemIds.isNotEmpty) {
-      identities.add(
-        _BlockIdentity(
-          blockId: beforeItemIds.isEmpty
-              ? sourceIdentity.blockId
-              : registry.nextNodeId(),
-          listItemIds: afterItemIds,
-        ),
-      );
-    }
-    return identities;
-  }
-
-  List<LessonBlock> _toggleHeadingForListItem(
-    LessonListBlock source,
-    int itemIndex,
-  ) {
-    final selectedItem = source.items[itemIndex];
-    final beforeItems = source.items.take(itemIndex).toList(growable: false);
-    final afterItems = source.items.skip(itemIndex + 1).toList(growable: false);
-    return <LessonBlock>[
-      if (beforeItems.isNotEmpty) _listBlockLike(source, beforeItems),
-      LessonHeadingBlock(
-        id: selectedItem.id,
-        level: _defaultHeadingLevel,
-        children: selectedItem.children,
-      ),
-      if (afterItems.isNotEmpty) _listBlockLike(source, afterItems),
-    ];
-  }
-
-  _EditorTarget? _activeTextTarget() {
-    return _resolveActiveTextTarget().target;
   }
 
   _ActiveTextTargetResolution _resolveActiveTextTarget() {
@@ -1761,7 +1678,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
             onClearFormatting: _clearFormatting,
             onParagraph: () =>
                 _convertSelectedBlock(_BlockConversion.paragraph),
-            onHeading: _convertSelectedHeading,
+            onHeading: _toggleSelectedHeading,
             onBulletList: () =>
                 _convertSelectedBlock(_BlockConversion.bulletList),
             onOrderedList: () =>
@@ -2416,7 +2333,7 @@ class _Toolbar extends StatelessWidget {
   }
 }
 
-enum _BlockConversion { paragraph, heading, bulletList, orderedList }
+enum _BlockConversion { paragraph, bulletList, orderedList }
 
 class _ActiveTextTargetResolution {
   const _ActiveTextTargetResolution.resolved({
@@ -2747,10 +2664,6 @@ LessonBlock _convertedBlock(
 ) {
   return switch (conversion) {
     _BlockConversion.paragraph => LessonParagraphBlock(children: children),
-    _BlockConversion.heading => LessonHeadingBlock(
-      level: 2,
-      children: children,
-    ),
     _BlockConversion.bulletList => LessonListBlock.bullet(
       items: <LessonListItem>[LessonListItem(children: children)],
     ),
