@@ -138,6 +138,58 @@ Frontend MUST render the projection only. Frontend MUST NOT infer lesson
 availability from `position`, `current_unlock_position`, local enrollment
 presence, checkout return state, Stripe state, or route state.
 
+## 6B. LESSON VIEW ACCESS AND CTA PROJECTION LAW
+
+`GET /courses/lessons/{lesson_id}` is the canonical `lesson_view_surface`
+defined by `course_public_surface_contract.md`.
+
+`lesson_view_surface` MAY project access, CTA, pricing eligibility, progression,
+and navigation decisions, but it MUST NOT become a separate access or CTA
+authority. The owning backend access/CTA projection service is shared with
+Course Entry/Gateway.
+
+The `lesson_view_surface.access` projection MUST include:
+
+- `has_access`
+- `is_enrolled`
+- `is_in_drip`
+- `is_premium`
+- `can_enroll`
+- `can_purchase`
+
+Access projection rules:
+
+- `has_access` is backend-authored request authorization for the selected
+  lesson runtime view.
+- learner-mode `has_access` requires canonical course-access state and valid
+  lesson unlock state.
+- `is_enrolled` is true only from canonical `app.course_enrollments` state.
+- `is_in_drip` is true only when backend-owned drip/progression state blocks
+  the selected lesson or blocks a new intro-course enrollment CTA.
+- `is_premium` is derived only from
+  `app.courses.required_enrollment_source = purchase`.
+- `can_enroll` is derived only from backend selection/enrollment eligibility.
+- `can_purchase` is derived only from backend monetization and purchasability
+  projection.
+
+CTA projection rules:
+
+- CTA is derived only from backend access and monetization projection.
+- Lesson View CTA types use the same enum as Course Entry/Gateway:
+  `enroll`, `buy`, `continue`, `blocked`, `unavailable`.
+- The frontend MUST NOT choose CTA type, label, enabled state, reason, action,
+  enrollment eligibility, purchase eligibility, or lock state.
+
+Preview rule:
+
+- `GET /courses/lessons/{lesson_id}?preview=true` may authorize persisted
+  lesson rendering through teacher/studio authorization instead of learner
+  enrollment.
+- preview authorization MUST NOT create, mutate, imply, or masquerade as learner
+  `app.course_enrollments` access.
+- preview mode MUST use the same response shape and backend projections as
+  learner Lesson View.
+
 ## 7. IMPLEMENTATION DRIFT OUTSIDE CONTRACT
 
 - Current webhook implementation does not yet fully align purchase settlement with canonical course-access creation in all branches.

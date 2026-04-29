@@ -12,6 +12,7 @@ class ApiPaths {
   static const authOnboardingCreateProfile = '/auth/onboarding/create-profile';
   static const authOnboardingComplete = '/auth/onboarding/complete';
   static const entryState = '/entry-state';
+  static const appRenderInputs = '/app/render-inputs';
 
   static const billingCreateSubscription = '/api/billing/create-subscription';
   static const checkoutCreate = '/api/checkout/create';

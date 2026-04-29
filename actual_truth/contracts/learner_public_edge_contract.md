@@ -51,11 +51,15 @@ Field rules:
 - `lessons` MUST be serialized as an array
 - `description` MUST be serialized as `str | null`
 
-`LessonContentResponse` media output rules:
+`LessonViewResponse` media output rules:
 
 - `media` MUST be serialized as an array
-- Each media item MUST contain a `media` field
+- unlocked media items MUST contain `lesson_media_id`
+- unlocked media items MUST contain a `media` field
 - `media` MUST be `{ media_id, state, resolved_url } | null`
+- locked or no-access responses MUST serialize `media: []`
+- locked or no-access responses MUST NOT expose media placement metadata,
+  `lesson_media_id`, `media.media_id`, or `resolved_url`
 - Learner/public surfaces MUST NOT expose storage fields, signed URLs, or resolver-specific payloads
 
 ## TRANSPORT CONSTRAINTS

@@ -1,78 +1,20 @@
 import 'package:flutter/material.dart';
 
-import 'package:aveli/core/bootstrap/boot_log.dart';
 import 'package:aveli/core/bootstrap/effects_policy.dart';
-import 'package:aveli/core/bootstrap/safe_media.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
-import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/widgets/brand_logo_image.dart';
 
 class BrandLogo extends StatelessWidget {
   const BrandLogo({super.key, required this.height});
 
   final double height;
 
-  static Widget _placeholder(double height) {
-    final placeholder = Text(
-      'A',
-      style: TextStyle(
-        fontWeight: FontWeight.w900,
-        fontSize: height * 0.70,
-        color: Colors.white,
-      ),
-    );
-    if (EffectsPolicyController.isSafe) {
-      return ExcludeSemantics(
-        child: Center(
-          child: Text(
-            'A',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: height * 0.70,
-              color: kBrandAzure,
-            ),
-          ),
-        ),
-      );
-    }
-    return ExcludeSemantics(
-      child: Center(
-        child: ShaderMask(
-          shaderCallback: (bounds) =>
-              kBrandBluePurpleGradient.createShader(bounds),
-          blendMode: BlendMode.srcIn,
-          child: placeholder,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 16, right: 12),
-      child: SizedBox(
-        width: height,
-        height: height,
-        child: Image(
-          image: SafeMedia.resizedProvider(
-            AppImages.logo,
-            cacheWidth: SafeMedia.cacheDimension(context, height * 3, max: 900),
-            cacheHeight: SafeMedia.cacheDimension(context, height, max: 300),
-          ),
-          fit: BoxFit.contain,
-          filterQuality: SafeMedia.filterQuality(full: FilterQuality.high),
-          gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) {
-            BootLog.criticalAsset(
-              name: 'logo',
-              status: 'fallback',
-              path: AppImages.logoPath,
-              error: error,
-            );
-            return _placeholder(height);
-          },
-        ),
-      ),
+    return SizedBox(
+      width: height,
+      height: height,
+      child: BrandLogoImage(height: height, width: height),
     );
   }
 }
@@ -157,14 +99,19 @@ class BrandHeader extends StatelessWidget {
         child: Row(
           children: [
             if (leading != null) ...[leading!, const SizedBox(width: 8)],
-            BrandLogo(height: logoHeight),
-            const SizedBox(width: 10),
             InkWell(
               onTap: onBrandTap,
               borderRadius: BorderRadius.circular(10),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                child: BrandWordmark(style: titleStyle),
+                padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    BrandLogo(height: logoHeight),
+                    const SizedBox(width: 10),
+                    BrandWordmark(style: titleStyle),
+                  ],
+                ),
               ),
             ),
             if (title.isNotEmpty) ...[

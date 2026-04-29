@@ -17,7 +17,7 @@ The canonical domain flow is:
 
 ~~~text
 learner structure read -> public structure surfaces -> API response
-learner content read -> lesson_content_surface -> API response
+learner lesson runtime read -> lesson_view_surface -> API response
 frontend render -> backend-provided truth only
 ~~~
 
@@ -26,8 +26,11 @@ frontend render -> backend-provided truth only
 Canonical authorities are:
 
 - learner structure read authority: `app.course_detail_surface`
-- learner content read authority: `app.lesson_content_surface`
-- lesson media representation authority inside lesson content: backend read composition, subordinate to the media pipeline contract
+- learner lesson runtime read authority: `lesson_view_surface`
+- lesson media representation authority inside lesson view: backend read composition, subordinate to the media pipeline contract
+- lesson runtime decision authority: backend access, CTA, pricing, progression,
+  navigation, and media projection services named by this contract and their
+  owning domain contracts
 
 Sibling authority outside core structure/content:
 
@@ -48,6 +51,11 @@ Lesson content read context may additionally include:
 - lesson identity
 - lesson structure
 - lesson media
+- backend-authored navigation projection
+- backend-authored access projection
+- backend-authored CTA projection
+- backend-authored pricing projection
+- backend-authored progression projection
 
 `description` is canonical learner runtime course-description public content and
 must not be treated as course structure or lesson content.
@@ -71,7 +79,7 @@ through backend read composition.
 
 - `GET /courses/{course_id_or_slug}/entry-view`
 
-### Learner Content Read
+### Learner Lesson Runtime Read
 
 - `GET /courses/lessons/{lesson_id}`
 
@@ -217,6 +225,8 @@ Rules:
 - frontend MUST render this response only and MUST NOT reconstruct the decision
 - `lessons` on this endpoint remain structure/progression objects and MUST NOT
   contain `content_document`, legacy `content_markdown`, or `lesson_media`
+- this endpoint MUST NOT return lesson media placement metadata, resolved lesson
+  media URLs, or any field that allows frontend media reconstruction
 - full course description payload is backend-owned public course content; if
   clean baseline substrate cannot materialize the full description field,
   implementation MUST fail closed and create a baseline-owner task before this
@@ -229,13 +239,23 @@ Rules:
 - `reason_text`, `label`, and rendered price text must follow
   `system_text_authority_contract.md`
 
-## 6. CONTENT READ CONTRACT
+## 6. LESSON VIEW SURFACE CONTRACT
 
 Endpoint:
 
 `GET /courses/lessons/{lesson_id}`
 
-Response:
+Preview endpoint:
+
+`GET /courses/lessons/{lesson_id}?preview=true`
+
+`lesson_view_surface` formally extends the former `lesson_content_surface`.
+It is the only learner/studio persisted lesson runtime rendering surface.
+No new lesson runtime endpoint is introduced.
+
+### 6.1 Unlocked Response
+
+Unlocked response:
 
 ~~~json
 {
@@ -249,22 +269,41 @@ Response:
       "blocks": []
     }
   },
-  "course_id": "uuid",
-  "lessons": [
-    {
-      "id": "uuid",
-      "lesson_title": "string",
-      "position": 1
-    }
-  ],
+  "navigation": {
+    "previous_lesson_id": "uuid | null",
+    "next_lesson_id": "uuid | null"
+  },
+  "access": {
+    "has_access": true,
+    "is_enrolled": true,
+    "is_in_drip": false,
+    "is_premium": false,
+    "can_enroll": false,
+    "can_purchase": false
+  },
+  "cta": {
+    "type": "enroll | buy | continue | blocked | unavailable",
+    "label": "string",
+    "enabled": true,
+    "reason_code": "string | null",
+    "reason_text": "string | null",
+    "price": "object | null",
+    "action": "object | null"
+  },
+  "pricing": {
+    "price_amount_cents": 123,
+    "currency": "string",
+    "formatted": "string"
+  },
+  "progression": {
+    "unlocked": true,
+    "reason": "available"
+  },
   "media": [
     {
-      "id": "uuid",
-      "lesson_id": "uuid",
-      "media_asset_id": "uuid | null",
+      "lesson_media_id": "uuid",
       "position": 1,
       "media_type": "audio | image | video | document",
-      "state": "pending_upload | uploaded | processing | ready | failed",
       "media": {
         "media_id": "string",
         "state": "string",
@@ -275,15 +314,103 @@ Response:
 }
 ~~~
 
-Rules:
+`cta` MAY be `null` when no lesson-runtime CTA should be rendered.
+`pricing` MAY be `null` when no learner-facing price should be rendered.
 
-- this endpoint is the canonical `lesson_content_surface`
-- it may expose lesson identity, lesson structure, lesson content, and lesson media only
-- rebuilt lesson content is exposed as `content_document`
-- access requires `course_enrollments` and
+### 6.2 Locked Or No-Access Response
+
+Locked or no-access response:
+
+~~~json
+{
+  "lesson": {
+    "id": "uuid",
+    "course_id": "uuid",
+    "lesson_title": "string",
+    "position": 1
+  },
+  "navigation": {
+    "previous_lesson_id": "uuid | null",
+    "next_lesson_id": "uuid | null"
+  },
+  "access": {
+    "has_access": false,
+    "is_enrolled": false,
+    "is_in_drip": false,
+    "is_premium": true,
+    "can_enroll": false,
+    "can_purchase": true
+  },
+  "cta": {
+    "type": "enroll | buy | continue | blocked | unavailable",
+    "label": "string",
+    "enabled": true,
+    "reason_code": "string | null",
+    "reason_text": "string | null",
+    "price": "object | null",
+    "action": "object | null"
+  },
+  "pricing": {
+    "price_amount_cents": 123,
+    "currency": "string",
+    "formatted": "string"
+  },
+  "progression": {
+    "unlocked": false,
+    "reason": "drip | no_access"
+  },
+  "media": []
+}
+~~~
+
+`cta` is required only when a backend-authored action is renderable.
+`pricing` is required only when `access.can_purchase = true`.
+
+### 6.3 Rules
+
+- this endpoint is the canonical `lesson_view_surface`
+- the former `lesson_content_surface` is not a separate runtime endpoint; it is
+  the unlocked content/media subset of `lesson_view_surface`
+- `lesson_view_surface` may expose lesson identity, lesson structure, lesson
+  content, lesson media, navigation projection, access projection, CTA
+  projection, pricing projection, and progression projection
+- rebuilt lesson content is exposed only as `lesson.content_document`
+- `lesson.content_document` and `media` with placement metadata MAY be returned
+  only when `access.has_access = true` AND `progression.unlocked = true`
+- if `access.has_access = false` OR `progression.unlocked = false`, the response
+  MUST NOT contain `lesson.content_document`
+- if `access.has_access = false` OR `progression.unlocked = false`, `media`
+  MUST be `[]`
+- locked responses MUST NOT expose media placement metadata, `lesson_media_id`,
+  `media.media_id`, or `resolved_url`
+- unlocked learner access requires `course_enrollments` and
   `lesson.position <= current_unlock_position`
-- `media` must use backend-authored media objects only
-- structure context inside this response does not authorize structure surfaces to expose content
+- unlocked preview access requires explicit teacher/studio authorization through
+  `GET /courses/lessons/{lesson_id}?preview=true`; preview access does not
+  create learner enrollment truth and does not alter course access state
+- `lesson.lesson_title` is canonical; `lesson.title` is forbidden
+- `media[].lesson_media_id` is canonical authored placement identity;
+  `placement_id` is forbidden
+- frontend-facing media representation MUST be exactly
+  `media = { media_id, state, resolved_url } | null`
+- `media_asset_id` is backend-only and non-authoritative for playback; it MUST
+  NOT be used by frontend or accepted as a playback resolution path
+- `progression.reason` enum is exactly `available | drip | no_access`
+- `navigation.previous_lesson_id` and `navigation.next_lesson_id` are derived
+  by backend from `lessons.position` with `id` as stable fallback
+- frontend MUST NOT compute, filter, or repair navigation
+- access flags are backend-owned projections:
+  `has_access`, `is_enrolled`, `is_in_drip`, `is_premium`, `can_enroll`,
+  `can_purchase`
+- CTA is backend-derived from access and monetization authority
+- pricing is backend-authored; `price_amount_cents` comes from course pricing
+  storage, `currency` comes from canonical backend pricing storage, and
+  `formatted` comes from a backend formatter
+- frontend MUST NOT compute access, gating, enrollment decisions, CTA, pricing,
+  progression, navigation, lock state, or media resolution
+- structure context inside this response does not authorize structure surfaces
+  to expose content
+- no duplicate learner lesson runtime surface may exist
 
 ## 7. FORBIDDEN PATTERNS
 
@@ -292,6 +419,10 @@ The following are forbidden:
 - structure reads that expose `content_document`
 - structure reads that expose legacy `content_markdown`
 - Markdown as rebuilt learner content truth
+- any endpoint other than `lesson_view_surface` returning learner lesson
+  `content_document`
+- any endpoint other than unlocked `lesson_view_surface` returning learner
+  lesson media placement metadata or resolved lesson media URLs
 
 ## 8. FRONTEND ALIGNMENT TARGET
 
@@ -316,6 +447,12 @@ Frontend model separation law:
 - frontend must not decide Course Entry/Gateway CTA type, price visibility,
   price formatting, intro eligibility, lesson availability, lesson progression,
   or next recommended lesson
+- frontend must not decide lesson runtime access, progression, CTA, pricing,
+  navigation, media resolution, gating, enrollment decisions, or lock state
+- Editor Preview MUST consume `lesson_view_surface` through
+  `GET /courses/lessons/{lesson_id}?preview=true`
+- Editor Preview MUST use the same response shape as learner lesson runtime
+  rendering and MUST NOT rely on studio-only frontend transforms
 
 Sibling public-content rule:
 
@@ -333,6 +470,9 @@ It is valid only if all future implementation preserves these laws:
 
 - no structure-read surface leaks `content_document`
 - no structure-read surface leaks legacy `content_markdown`
+- entry-view remains a pure Course Entry/Gateway surface and never returns
+  lesson content, lesson media placement metadata, or resolved lesson media URLs
+- `lesson_view_surface` is the only lesson runtime content/media surface
 - legacy aliases and mixed surfaces do not survive as contract truth
 
 This contract is ready to govern deterministic task-tree construction for implementation.

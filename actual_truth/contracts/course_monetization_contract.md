@@ -60,6 +60,15 @@ This contract operates under `SYSTEM_LAWS.md`,
 - Teacher pricing intent MUST be validated and persisted by backend before it becomes canonical.
 - Frontend pricing state MUST NEVER define final price authority.
 - Student-facing displayed price MUST be a backend-owned projection.
+- Learner-facing course price amount is sourced from
+  `app.courses.price_amount_cents`.
+- Learner-facing course price currency is sourced from canonical backend pricing
+  storage as `app.courses.price_currency`; hardcoded runtime currency is
+  forbidden.
+- Learner-facing formatted price text MUST be produced by a backend pricing
+  formatter from canonical amount and currency.
+- Course Entry/Gateway and Lesson View MUST consume the same backend pricing
+  projection and MUST NOT introduce separate formatting rules.
 - Pricing for a completed purchase is immutable for that completed purchase.
 - Later price changes apply only to future purchases.
 - Admin MAY override teacher pricing only through explicit backend-admin action.
@@ -84,6 +93,9 @@ This contract operates under `SYSTEM_LAWS.md`,
 - Learner-facing price display is backend-authored. Frontend MUST NOT format,
   hide, or infer price display from intro/premium, sellable, Stripe, or
   position-based logic.
+- Purchase eligibility projected to frontend MUST come from backend
+  monetization/access projection and MUST NOT be inferred from
+  `group_position`, frontend state, Stripe runtime state, or local price fields.
 
 ## 5. STRIPE PRODUCT MODEL
 

@@ -119,7 +119,7 @@ class AppScaffold extends StatelessWidget {
                                 ))
                         : null,
                     actions: computedActions,
-                    onBrandTap: () => context.goNamed(AppRoute.landing),
+                    onBrandTap: () => context.goNamed(AppRoute.landingRoot),
                   ),
                   Expanded(
                     child: Padding(

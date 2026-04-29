@@ -76,11 +76,12 @@ The canonical learner/public surfaces are:
 - `course_discovery_surface`
 - `lesson_structure_surface`
 - `course_entry_gateway_surface`
-- `lesson_content_surface`
+- `lesson_view_surface`
 
 `course_discovery_surface` and `lesson_structure_surface` are not protected by
-course enrollment. `lesson_content_surface` is protected by course enrollment
-and lesson unlock position.
+course enrollment. `lesson_view_surface` is the selected lesson runtime
+rendering surface. Its learner content/media subset is protected by course
+enrollment and lesson unlock position.
 
 `course_entry_gateway_surface` is a backend-composed learner decision surface.
 It may include course structure, user access/enrollment state, per-lesson
@@ -587,7 +588,8 @@ and is not governed by course enrollment.
 `lesson_structure_surface` is public lesson identity/structure discovery and is
 not governed by course enrollment.
 
-`lesson_content_surface` is protected and requires all of:
+Unlocked learner `lesson_view_surface` content/media is protected and requires
+all of:
 
 - a canonical `app.course_enrollments` row for `(user_id, course_id)`
 - either:
@@ -607,7 +609,7 @@ be accessed.
 
 No endpoint, view, frontend model, token claim, membership state, purchase state,
 or media state may provide protected lesson content or lesson media without the
-required `lesson_content_surface` conditions.
+required unlocked learner `lesson_view_surface` conditions.
 
 ## 8A. COURSE ENTRY / GATEWAY MODEL
 
@@ -671,6 +673,74 @@ Frontend MUST NOT compare lesson positions or reconstruct drip state.
 Backend pricing payloads are the only learner-facing course price authority.
 Frontend MUST NOT hide, format, repair, or infer price display from intro,
 premium, sellable, Stripe, or position-based logic.
+
+## 8B. LESSON VIEW SURFACE MODEL
+
+Backend read composition owns canonical Lesson View state.
+
+Canonical endpoint:
+
+```text
+GET /courses/lessons/{lesson_id}
+```
+
+Canonical preview endpoint:
+
+```text
+GET /courses/lessons/{lesson_id}?preview=true
+```
+
+`lesson_view_surface` formally extends the former lesson content surface and is
+the only selected lesson runtime content/media surface. No separate `/view`
+endpoint exists.
+
+Unlocked Lesson View MAY include:
+
+- lesson identity and structure
+- `content_document`
+- lesson media using `lesson_media_id`
+- backend-authored navigation projection
+- backend-authored access projection
+- backend-authored CTA projection
+- backend-authored pricing projection
+- backend-authored progression projection
+
+Locked or no-access Lesson View MUST include lesson identity/structure only and
+MUST NOT expose:
+
+- `content_document`
+- media placement metadata
+- `lesson_media_id`
+- `media.media_id`
+- `resolved_url`
+
+Locked or no-access Lesson View MUST serialize `media: []`.
+
+Lesson View field naming is fixed:
+
+- `lesson.lesson_title`, never `lesson.title`
+- `media[].lesson_media_id`, never `placement_id`
+- `media[].media = { media_id, state, resolved_url } | null`
+- `progression.reason = available | drip | no_access`
+
+`media_asset_id` is backend-only and non-authoritative for playback. Frontend
+MUST NOT use `media_asset_id` to resolve, fetch, or infer playback.
+
+Lesson View navigation is backend-authored as `previous_lesson_id` and
+`next_lesson_id`, derived from `app.lessons.position` with `id` as stable
+fallback. Frontend MUST NOT compute navigation.
+
+Lesson View pricing projection uses `app.courses.price_amount_cents`,
+`app.courses.price_currency`, and backend formatted price text. Frontend MUST
+NOT format pricing.
+
+Lesson View preview requires teacher/studio authorization. Preview MAY bypass
+learner enrollment gating only for the explicit preview request and MUST NOT
+create, mutate, imply, or masquerade as learner course access.
+
+Frontend is a pure renderer for Lesson View and MUST NOT compute access,
+progression, CTA, pricing, navigation, media resolution, gating, enrollment
+decisions, or lock state.
 
 ## 9. FRONTEND CONTRACT (strict media shape)
 
@@ -798,12 +868,13 @@ The following patterns are forbidden:
 - using `group_position` as protected-access, bundle, order, payment, or
   membership authority
 - treating `course_discovery_surface` as enrollment-gated
-- treating `lesson_structure_surface` as `lesson_content_surface`
+- treating `lesson_structure_surface` as `lesson_view_surface`
 - conflating `course_discovery_surface` or `lesson_structure_surface` with
-  `lesson_content_surface`
+  `lesson_view_surface`
 - exposing `lesson_content` on a structure surface
 - exposing `lesson_media` on a structure surface
-- returning `lesson_content_surface` data from course-detail endpoints
+- returning unlocked `lesson_view_surface` content/media from course-detail
+  endpoints
 - collapsing `app.lessons` and `app.lesson_contents` into one semantic surface
 - putting `content_document` on lesson structure write or read surfaces
 - putting legacy `content_markdown` on lesson structure write or read surfaces

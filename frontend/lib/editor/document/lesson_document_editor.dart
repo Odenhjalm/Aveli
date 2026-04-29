@@ -1885,8 +1885,9 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         ),
         onTap: () {
           widget.onInsertionIndexChanged?.call(0);
-          if (_selectedTarget != null)
+          if (_selectedTarget != null) {
             _setSelectedTargetForCurrentRevision(null);
+          }
         },
         onChanged: _insertFirstParagraphFromEmptyDocument,
       ),

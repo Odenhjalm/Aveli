@@ -850,10 +850,19 @@ Preview Mode must not become an alternate course-cover authority.
 
 Differences between Preview Mode UI and Learner UI must be presentation-only and must not change canonical truth.
 
-Preview Mode and Learner Lesson View MUST use the same learner rendering
-surface for lesson body rendering. Editor preview may wrap that learner
-renderer in editor chrome, but it MUST NOT bypass the learner renderer by
-calling a lower-level preview primitive directly.
+Preview Mode and Learner Lesson View MUST use the same `lesson_view_surface`
+response shape for persisted lesson body and media rendering.
+
+Editor Preview MUST consume:
+
+`GET /courses/lessons/{lesson_id}?preview=true`
+
+Preview mode requires teacher/studio authorization. It MAY bypass learner
+enrollment gating only for the explicit preview request, and that bypass MUST
+NOT create, mutate, imply, or masquerade as learner course access.
+
+Editor preview may wrap the learner renderer in editor chrome, but it MUST NOT
+bypass the learner renderer by calling a lower-level preview primitive directly.
 
 Content block rendering, media rendering, spacing, link handling, and fallback
 behavior MUST be identical between Preview Mode and Learner Lesson View.
@@ -867,7 +876,11 @@ Preview Mode must be persisted-only unless a later contract explicitly defines a
 
 A new backend mutation surface for Preview Mode is forbidden.
 
-A new backend read surface is not required for authority if existing canonical read surfaces can compose persisted lesson text, lesson media, and course cover. Any future Preview helper surface must remain read-only projection only.
+A new backend read surface is forbidden for persisted lesson preview authority
+when `lesson_view_surface` can compose persisted lesson text, lesson media, and
+course cover. Any future Preview helper surface must remain read-only
+projection only, must not return a different lesson rendering shape, and must
+not introduce studio-only frontend transforms.
 
 ## 9. DOCUMENT EDITOR LAW
 

@@ -5,7 +5,7 @@
 - Aveli is a social learning platform with courses and lessons as the core runtime learning model, plus live lesson/session experiences and a marketplace for cultivated knowledge.
 - Aveli is for teachers and learners, including course/lesson interactions, checkout/onboarding flows, session-level experiences, and guided app access.
 - Teachers use Aveli to create, manage, publish, and refine learning experiences, media-rich course content, home-player tracks, and cultivated knowledge offers.
-- Learners use Aveli to onboard, access the app through membership, discover courses and lesson structure without course enrollment, access `lesson_content_surface` through explicit course enrollment and `current_unlock_position`, and progress through repeated learning experiences.
+- Learners use Aveli to onboard, access the app through membership, discover courses and lesson structure without course enrollment, access unlocked `lesson_view_surface` content through explicit course enrollment and `current_unlock_position`, and progress through repeated learning experiences.
 - The user actions explicitly represented in the approved product framing are:
   - onboard into the trusted teacher/learner journey
   - enter the app through valid membership access
@@ -164,8 +164,10 @@
 - Category definitions are semantic law, not fixed field lists. Future fields must map into these categories without changing surface rules.
 - `course_discovery_surface` is the canonical term for a surface that allows only `course_identity`, `course_display`, `course_grouping`, and `course_pricing`.
 - `lesson_structure_surface` is the canonical term for a surface that allows only `lesson_identity` and `lesson_structure`.
-- `lesson_content_surface` is the canonical term for a surface that allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`, and requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
-- For learner/public surfaces, `lesson_media` exists only inside `lesson_content_surface`.
+- `lesson_view_surface` is the canonical term for the selected lesson runtime rendering surface at `GET /courses/lessons/{lesson_id}`. It extends the former `lesson_content_surface` and may project lesson identity, lesson structure, lesson content, lesson media, access, CTA, pricing, navigation, and progression.
+- `lesson_view_surface` may return lesson content and lesson media only when unlocked. Unlocked learner access requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- Locked or no-access `lesson_view_surface` responses must not expose `content_document`, media placement metadata, or resolved media URLs.
+- For learner/public surfaces, `lesson_media` exists only inside unlocked `lesson_view_surface`.
 - No independent lesson-media surface exists for learner/public surfaces.
 - Studio authoring may manage `lesson_media` as authored placement, but it must not introduce a second media-resolution or frontend-representation authority.
 - `media_assets` never defines access.
@@ -209,7 +211,7 @@
 - Execution authority = `worker`
 - `course_discovery_surface` exposure is not governed by `course_enrollments`
 - `lesson_structure_surface` exposure is not governed by `course_enrollments`
-- `lesson_content_surface` access must not be derived from membership alone
+- `lesson_view_surface` unlocked access must not be derived from membership alone
 - Media identity authority = `app.media_assets`
 - Media authored-placement authority = `app.lesson_media`
 - Runtime truth authority = `runtime_media`
@@ -267,7 +269,7 @@ Frontend must render only and must not resolve or construct media.
 
 - `membership` is required to pass landing and enter the app.
 - `membership` is global platform access, not creator-scoped.
-- `course_discovery_surface` is separate from `lesson_content_surface`.
+- `course_discovery_surface` is separate from `lesson_view_surface`.
 - `course_discovery_surface` allows only:
   - `course_identity`
   - `course_display`
@@ -293,12 +295,12 @@ Frontend must render only and must not resolve or construct media.
   - the row source matches required course access source, or is a backend-validated purchase/package entitlement override using purchase-source access state
   - `lesson.position <= current_unlock_position`
 - `current_unlock_position` is stored on `course_enrollments`.
-- `lesson_content_surface` allows only `lesson_identity`, `lesson_structure`, `lesson_content`, and `lesson_media`.
-- `lesson_content_surface` maps to `lessons` + `lesson_contents` + `lesson_media`.
-- For learner/public surfaces, `lesson_media` exists only inside `lesson_content_surface`.
+- `lesson_view_surface` allows `lesson_identity`, `lesson_structure`, backend-owned runtime projections, and unlocked `lesson_content` + `lesson_media`.
+- `lesson_view_surface` maps unlocked content/media to `lessons` + `lesson_contents` + `lesson_media`.
+- For learner/public surfaces, `lesson_media` exists only inside unlocked `lesson_view_surface`.
 - Intro courses require `course_enrollments` rows with `source = intro`, unless
   a backend-validated purchase/package entitlement override grants access
-  without creating a fake intro enrollment. `lesson_content_surface` still
+  without creating a fake intro enrollment. Unlocked `lesson_view_surface` still
   requires `lesson.position <= current_unlock_position`.
 - No lesson content or lesson media access exists outside `course_enrollments` AND `lesson.position <= current_unlock_position`.
 - `media_assets` never defines access.
@@ -334,16 +336,19 @@ Frontend must render only and must not resolve or construct media.
   - `lesson_media`
   - `enrollment_state`
   - `unlock_state`
-- `GET /courses/lessons/{lesson_id}` is `lesson_content_surface`.
-- `LessonContent` is the `lesson_content_surface` shape and allows only:
+- `GET /courses/lessons/{lesson_id}` is `lesson_view_surface`.
+- `LessonView` is the `lesson_view_surface` shape and allows:
   - `lesson_identity`
   - `lesson_structure`
-  - `lesson_content`
-  - `lesson_media`
-- `LessonContent` is sourced from canonical `lessons` + `lesson_contents` + `lesson_media`.
-- `LessonContent` requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
-- `lesson_media` exists only inside `LessonContent`.
-- No endpoint may return `lesson_content` or `lesson_media` without `course_enrollments` AND `lesson.position <= current_unlock_position`.
+  - access/CTA/pricing/progression/navigation projections
+  - unlocked `lesson_content`
+  - unlocked `lesson_media`
+- `LessonView` unlocked content/media is sourced from canonical `lessons` + `lesson_contents` + `lesson_media`.
+- Learner `LessonView` content/media requires `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- `lesson_media` exists only inside unlocked `LessonView`.
+- No learner/public endpoint may return `lesson_content` or `lesson_media` without `course_enrollments` AND `lesson.position <= current_unlock_position`.
+- `GET /courses/lessons/{lesson_id}?preview=true` is explicit teacher/studio preview over the same `lesson_view_surface` response shape. It may bypass learner enrollment gating only through teacher/studio authorization and must not create or imply learner course access.
+- Locked or no-access `LessonView` responses must omit `content_document`, must return `media: []`, and must not expose media placement metadata or `resolved_url`.
 - No rule referring to visibility may be interpreted as permission for raw table access.
 - `app.lessons` must remain structure-only and `app.lesson_contents` must remain content-only.
 - `app.lessons` and `app.lesson_contents` must not be collapsed into one raw-table lesson access surface that bypasses canonical surface boundaries.
@@ -368,9 +373,9 @@ Frontend must render only and must not resolve or construct media.
 - `course_enrollments` is the only source of `canonical_protected_course_content_access` truth.
 - Intro courses require explicit enrollment with `source = intro`, unless a
   backend-validated purchase/package entitlement override grants access without
-  creating a fake intro enrollment. `lesson_content_surface` access still
+  creating a fake intro enrollment. Learner `lesson_view_surface` content/media access still
   requires `lesson.position <= current_unlock_position`.
-- Paid courses require explicit enrollment with `source = purchase`, and `lesson_content_surface` access still requires `lesson.position <= current_unlock_position`.
+- Paid courses require explicit enrollment with `source = purchase`, and learner `lesson_view_surface` content/media access still requires `lesson.position <= current_unlock_position`.
 - Enrollment stores state only.
 - Enrollment always stores `drip_started_at` and `current_unlock_position`.
 - Enrollment source records access origin and does not define drip behavior.
@@ -550,7 +555,7 @@ Frontend must render only and must not resolve or construct media.
 - Membership app access: runtime/canonical authority
 - `course_discovery_surface`: canonical surface type
 - `lesson_structure_surface`: canonical surface type
-- `lesson_content_surface`: canonical surface type
+- `lesson_view_surface`: canonical surface type
 - `canonical_protected_course_content_access`: runtime/canonical authority
 
 ## Explicitly Forbidden Surfaces
@@ -562,11 +567,11 @@ Frontend must render only and must not resolve or construct media.
 - implicit intro access
 - treating `course_discovery_surface` as enrollment-gated
 - hiding course catalog behind enrollment
-- treating `lesson_structure_surface` as `lesson_content_surface`
-- conflating `course_discovery_surface` or `lesson_structure_surface` with `lesson_content_surface`
+- treating `lesson_structure_surface` as `lesson_view_surface`
+- conflating `course_discovery_surface` or `lesson_structure_surface` with `lesson_view_surface`
 - exposing `lesson_content` or `lesson_media` on `lesson_structure_surface`
-- returning `lesson_content_surface` data from course-detail endpoints
-- treating any rule that does not require `course_enrollments` AND `lesson.position <= current_unlock_position` as sufficient authority for `lesson_content_surface`
+- returning unlocked `lesson_view_surface` data from course-detail endpoints
+- treating any learner rule that does not require `course_enrollments` AND `lesson.position <= current_unlock_position` as sufficient authority for unlocked `lesson_view_surface`
 - entitlement fallback paths
 - progression-position-based ownership logic
 - runtime-derived progression
@@ -576,7 +581,7 @@ Frontend must render only and must not resolve or construct media.
 - fallback drip behavior
 - implicit unlock strategies
 - inferred drip behavior from course type
-- implicit `lesson_content_surface` access by inferred tags or hidden rules
+- implicit `lesson_view_surface` content/media access by inferred tags or hidden rules
 - direct media delivery from `storage.objects`
 - alternate media source/read authorities outside the Baseline V2 source-to-read authority model
 - alternate frontend-representation authorities outside backend read composition
