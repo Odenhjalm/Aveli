@@ -16,6 +16,6 @@ def app_render_inputs():
     except storage_service.StorageServiceError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Brand logo render input is unavailable.",
+            detail="App render inputs are unavailable.",
         )
     return schemas.AppRenderInputsResponse(**payload)

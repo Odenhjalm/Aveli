@@ -7,10 +7,8 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SerializerFunctionWrapHandler,
     field_validator,
     model_validator,
-    model_serializer,
 )
 from uuid import UUID
 
@@ -613,7 +611,7 @@ class ResolvedMedia(BaseModel):
     resolved_url: str | None = None
 
 
-class BrandLogoRenderInput(BaseModel):
+class ResolvedUrlRenderInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     resolved_url: str = Field(min_length=1)
@@ -623,8 +621,12 @@ class BrandLogoRenderInput(BaseModel):
     def _validate_resolved_url(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("brand logo resolved_url must be nonblank")
+            raise ValueError("render input resolved_url must be nonblank")
         return normalized
+
+
+class BrandLogoRenderInput(ResolvedUrlRenderInput):
+    pass
 
 
 class BrandRenderInputs(BaseModel):
@@ -633,10 +635,29 @@ class BrandRenderInputs(BaseModel):
     logo: BrandLogoRenderInput
 
 
+class UiBackgroundRenderInput(ResolvedUrlRenderInput):
+    pass
+
+
+class UiBackgroundRenderInputs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default: UiBackgroundRenderInput
+    lesson: UiBackgroundRenderInput
+    observatory: UiBackgroundRenderInput
+
+
+class UiRenderInputs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    backgrounds: UiBackgroundRenderInputs
+
+
 class AppRenderInputsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     brand: BrandRenderInputs
+    ui: UiRenderInputs
 
 
 class CourseCoverMedia(BaseModel):
