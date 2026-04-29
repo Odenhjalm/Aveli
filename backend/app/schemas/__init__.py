@@ -1171,6 +1171,125 @@ class CourseDetailResponse(BaseModel):
     description: str
 
 
+class CourseEntryCover(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1)
+    alt: str | None = None
+
+
+class CourseEntryCourse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    slug: str
+    title: str
+    description: str
+    cover: CourseEntryCover | None = None
+    required_enrollment_source: Literal["purchase", "intro"] | None = None
+    is_premium: bool
+    price_amount_cents: int | None = Field(default=None, ge=0)
+    price_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    formatted_price: str | None = None
+    sellable: bool
+
+    @field_validator("price_currency")
+    @classmethod
+    def _validate_price_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if value.strip() != value or value.lower() != value:
+            raise ValueError("price_currency must be a lowercase 3-letter code")
+        return value
+
+
+class CourseEntryLessonAvailability(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["available", "locked", "unavailable"]
+    can_open: bool
+    reason_code: str | None = None
+    reason_text: str | None = None
+    available_at: datetime | None = None
+
+
+class CourseEntryLessonProgression(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["not_started", "current", "completed"]
+    completed_at: datetime | None = None
+    is_next_recommended: bool = False
+
+
+class CourseEntryLessonShell(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    lesson_title: str
+    position: int
+    availability: CourseEntryLessonAvailability
+    progression: CourseEntryLessonProgression
+
+
+class CourseEntryAccess(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_enrolled: bool
+    is_in_drip: bool
+    is_in_any_intro_drip: bool
+    can_enroll: bool
+    can_purchase: bool
+
+
+class CourseEntryCTA(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["enroll", "buy", "continue", "blocked", "unavailable"]
+    label: str
+    enabled: bool
+    reason_code: str | None = None
+    reason_text: str | None = None
+    price: dict[str, Any] | None = None
+    action: dict[str, Any] | None = None
+
+
+class CourseEntryPricing(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    price_amount_cents: int | None = Field(default=None, ge=0)
+    price_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    formatted_price: str | None = None
+    sellable: bool
+
+    @field_validator("price_currency")
+    @classmethod
+    def _validate_price_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if value.strip() != value or value.lower() != value:
+            raise ValueError("price_currency must be a lowercase 3-letter code")
+        return value
+
+
+class CourseEntryNextRecommendedLesson(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    lesson_title: str
+    position: int
+
+
+class CourseEntryViewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    course: CourseEntryCourse
+    lessons: List[CourseEntryLessonShell]
+    access: CourseEntryAccess
+    cta: CourseEntryCTA
+    pricing: CourseEntryPricing | None = None
+    next_recommended_lesson: CourseEntryNextRecommendedLesson | None = None
+
+
 class LessonContentItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

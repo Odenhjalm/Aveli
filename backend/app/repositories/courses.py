@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Sequence
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from psycopg import Error as PsycopgError
 from psycopg.rows import dict_row
@@ -650,6 +650,63 @@ async def get_lesson_view_course_pricing(
         return await _execute(active_conn)
 
 
+def _course_entry_lookup_clause(course_id_or_slug: str) -> tuple[str, tuple[Any, ...]]:
+    normalized = str(course_id_or_slug or "").strip()
+    if not normalized:
+        raise ValueError("course_id_or_slug is required")
+    try:
+        UUID(normalized)
+    except ValueError:
+        return "c.slug = %s", (normalized,)
+    return "c.id = %s::uuid", (normalized,)
+
+
+async def get_course_entry_view_base(
+    course_id_or_slug: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    where_clause, params = _course_entry_lookup_clause(course_id_or_slug)
+    query = f"""
+        select
+            c.id::text as id,
+            c.slug,
+            c.title,
+            c.required_enrollment_source::text as required_enrollment_source,
+            c.sellable,
+            c.price_amount_cents,
+            c.price_currency,
+            c.active_stripe_price_id,
+            c.content_ready,
+            c.visibility::text as visibility,
+            c.cover_media_id::text as cover_media_id,
+            cover.id::text as cover_asset_id,
+            cover.state::text as cover_state,
+            cover.media_type::text as cover_media_type,
+            cover.purpose::text as cover_purpose,
+            cpc.description
+        from app.courses as c
+        join app.course_public_content as cpc
+          on cpc.course_id = c.id
+        left join app.media_assets as cover
+          on cover.id = c.cover_media_id
+        where {where_clause}
+        limit 1
+    """
+
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, params)
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
+
+
 async def get_course_publish_subject(course_id: str) -> dict[str, Any] | None:
     query = """
         select
@@ -863,6 +920,34 @@ async def list_lesson_structure_surface(course_id: str) -> Sequence[LessonRow]:
             await cur.execute(query, (course_id,))
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def list_course_entry_lessons(
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> Sequence[LessonRow]:
+    query = """
+        select
+            lss.id::text as id,
+            lss.lesson_title,
+            lss.position
+        from app.lesson_structure_surface as lss
+        where lss.course_id = %s::uuid
+        order by lss.position asc, lss.id asc
+    """
+
+    async def _execute(active_conn: Any) -> list[LessonRow]:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
 
 
 async def get_public_course_detail_rows(
@@ -1402,6 +1487,79 @@ async def list_intro_selection_progress_rows(
         return rows
 
 
+async def get_active_intro_drip_state(
+    user_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any]:
+    query = """
+        with intro_enrollments as (
+            select
+                ce.id,
+                ce.course_id::text as active_course_id,
+                ce.current_unlock_position,
+                ce.drip_started_at,
+                ce.granted_at,
+                coalesce(max(l.position), 0)::integer as max_lesson_position
+            from app.course_enrollments as ce
+            join app.courses as c
+              on c.id = ce.course_id
+            left join app.lessons as l
+              on l.course_id = ce.course_id
+            where ce.user_id = %s::uuid
+              and c.required_enrollment_source = 'intro'::app.course_enrollment_source
+              and ce.source = c.required_enrollment_source
+            group by
+                ce.id,
+                ce.course_id,
+                ce.current_unlock_position,
+                ce.drip_started_at,
+                ce.granted_at
+        ),
+        active_intro_drip as (
+            select
+                active_course_id,
+                current_unlock_position,
+                max_lesson_position,
+                drip_started_at
+            from intro_enrollments
+            where current_unlock_position < max_lesson_position
+            order by granted_at asc, id asc
+            limit 1
+        )
+        select
+            exists(select 1 from active_intro_drip) as is_in_any_intro_drip,
+            (
+                select active_course_id
+                from active_intro_drip
+            ) as active_course_id,
+            (
+                select current_unlock_position
+                from active_intro_drip
+            ) as current_unlock_position,
+            (
+                select max_lesson_position
+                from active_intro_drip
+            ) as max_lesson_position,
+            (
+                select drip_started_at
+                from active_intro_drip
+            ) as drip_started_at
+    """
+
+    async def _execute(active_conn: Any) -> dict[str, Any]:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (user_id,))
+            row = await cur.fetchone()
+        return dict(row) if row else {"is_in_any_intro_drip": False}
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
+
+
 async def get_course_enrollment(
     user_id: str,
     course_id: str,
@@ -1425,6 +1583,37 @@ async def get_course_enrollment(
         from app.course_enrollments as ce
         where ce.user_id = %s
           and ce.course_id = %s
+        limit 1
+    """
+
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (user_id, course_id))
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
+
+
+async def get_course_entry_enrollment(
+    user_id: str,
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    query = """
+        select
+            true as enrollment_exists,
+            ce.id::text as enrollment_id,
+            ce.drip_started_at,
+            ce.current_unlock_position
+        from app.course_enrollments as ce
+        where ce.user_id = %s::uuid
+          and ce.course_id = %s::uuid
         limit 1
     """
 
