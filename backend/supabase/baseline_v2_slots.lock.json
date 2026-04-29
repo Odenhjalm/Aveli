@@ -88,15 +88,15 @@
   "schema_verification": {
     "schema_scope": "app_owned_schema_only",
     "schema_hash_algorithm": "backend.bootstrap.baseline_v2.app_schema_fingerprint_v2",
-    "expected_schema_hash": "bd402dbba2f607f73b1eb945a5ca522c37dbac0b7ba27d3e98279425c50b90b6",
+    "expected_schema_hash": "960009d9736547b152e8b27ddc9bdc6274e187f9e62a23d454704d8e291c388e",
     "expected_counts": {
       "enums": 13,
-      "tables": 45,
+      "tables": 46,
       "views": 5,
-      "fks": 65,
-      "constraints": 249,
-      "triggers": 36,
-      "functions": 54
+      "fks": 67,
+      "constraints": 261,
+      "triggers": 37,
+      "functions": 55
     },
     "forbidden_legacy_columns": [
       "role_v2",
@@ -761,6 +761,22 @@
         "constraints": 249,
         "triggers": 36,
         "functions": 54
+      }
+    },
+    {
+      "slot": 37,
+      "filename": "V2_0037_media_pipeline_status.sql",
+      "path": "backend/supabase/baseline_v2_slots/V2_0037_media_pipeline_status.sql",
+      "sha256": "1f5293c9d6e85b451e037ddcace07aa81dd6fa8569a0fccb782cd21e954cea74",
+      "post_state_hash": "567c4b8deab0ba2d6f676db7ce4b296f671273aa8e2eaf28d4ecddf82b156305",
+      "post_counts": {
+        "enums": 13,
+        "tables": 46,
+        "views": 5,
+        "fks": 67,
+        "constraints": 261,
+        "triggers": 37,
+        "functions": 55
       }
     }
   ]
