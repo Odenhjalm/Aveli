@@ -1,7 +1,9 @@
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app import schemas
+from app.routes import render_inputs
 from app.services import app_render_inputs_service, storage_service
 
 
@@ -97,18 +99,15 @@ async def test_app_render_inputs_endpoint_returns_resolved_url_only(async_client
     }
 
 
-@pytest.mark.anyio("asyncio")
-async def test_app_render_inputs_endpoint_fails_when_brand_logo_url_is_empty(
-    async_client,
-    monkeypatch,
-):
+def test_app_render_inputs_endpoint_fails_when_brand_logo_url_is_empty(monkeypatch):
     monkeypatch.setattr(
         app_render_inputs_service.storage_service,
         "StorageService",
         _EmptyStorage,
     )
 
-    response = await async_client.get("/app/render-inputs")
+    with pytest.raises(HTTPException) as exc_info:
+        render_inputs.app_render_inputs()
 
-    assert response.status_code == 500
-    assert response.json() == {"detail": "Internal Server Error"}
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "Brand logo render input is unavailable."

@@ -221,6 +221,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       TextEditingController();
   final FocusNode _emptyDocumentFocusNode = FocusNode();
   _EditorTarget? _selectedTarget;
+  int _selectedTargetRevision = 0;
   late LessonDocument _document;
   late _EditorIdentityRegistry _identityRegistry;
   late LessonDocument _baseSavedDocument;
@@ -236,6 +237,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     _document = widget.document;
     _identityRegistry = _EditorIdentityRegistry.fromDocument(_document);
     _selectedTarget = _firstTargetForDocument();
+    _selectedTargetRevision = _revision;
     _baseSavedDocument = widget.document;
     _sessionLessonId = widget.lessonId;
     _sessionId = _newSessionId(widget.lessonId);
@@ -294,6 +296,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     _dirty = false;
     _identityRegistry = _EditorIdentityRegistry.fromDocument(document);
     _selectedTarget = _firstTargetForDocument();
+    _selectedTargetRevision = _revision;
     _emptyDocumentController.clear();
     _syncControllersFromDocument();
     if (notifyDirty && wasDirty) {
@@ -652,6 +655,13 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     widget.onCommandResult?.call(result);
   }
 
+  void _setSelectedTargetForCurrentRevision(_EditorTarget? target) {
+    setState(() {
+      _selectedTarget = target;
+      _selectedTargetRevision = _revision;
+    });
+  }
+
   void _emit(LessonDocument document) {
     if (!widget.enabled) return;
     _applyDocument(document);
@@ -744,7 +754,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     widget.onInsertionIndexChanged?.call(
       _insertionIndexForTarget(nextTarget) ?? insertionIndex + 1,
     );
-    setState(() => _selectedTarget = nextTarget);
+    _setSelectedTargetForCurrentRevision(nextTarget);
     return true;
   }
 
@@ -764,7 +774,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     widget.onInsertionIndexChanged?.call(
       _insertionIndexForTarget(nextTarget) ?? insertionIndex + 1,
     );
-    setState(() => _selectedTarget = nextTarget);
+    _setSelectedTargetForCurrentRevision(nextTarget);
     return true;
   }
 
@@ -801,8 +811,10 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     final insertionIndex = _insertionIndexForTarget(target);
     if (insertionIndex == null) return;
     widget.onInsertionIndexChanged?.call(insertionIndex);
-    if (_selectedTarget == target) return;
-    setState(() => _selectedTarget = target);
+    if (_selectedTarget == target && _selectedTargetRevision == _revision) {
+      return;
+    }
+    _setSelectedTargetForCurrentRevision(target);
   }
 
   void _replaceTargetText(_EditorTarget target, String text) {
@@ -1002,7 +1014,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     widget.onInsertionIndexChanged?.call(
       _insertionIndexForTarget(nextTarget) ?? blockIndex + 1,
     );
-    setState(() => _selectedTarget = nextTarget);
+    _setSelectedTargetForCurrentRevision(nextTarget);
   }
 
   void _convertSelectedHeading() {
@@ -1012,6 +1024,10 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       _recordCommandFailure(
         selectionResult.failure ?? LessonEditorCommandFailure.invalidSelection,
       );
+      return;
+    }
+    if (selection.revision != _revision) {
+      _recordCommandFailure(LessonEditorCommandFailure.staleSelection);
       return;
     }
 
@@ -1102,7 +1118,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     widget.onInsertionIndexChanged?.call(
       _insertionIndexForTarget(nextTarget) ?? blockIndex + 1,
     );
-    setState(() => _selectedTarget = nextTarget);
+    _setSelectedTargetForCurrentRevision(nextTarget);
     _recordCommandApplied();
   }
 
@@ -1412,7 +1428,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     widget.onInsertionIndexChanged?.call(
       _insertionIndexForTarget(nextTarget) ?? _currentInsertionIndex(),
     );
-    setState(() => _selectedTarget = nextTarget);
+    _setSelectedTargetForCurrentRevision(nextTarget);
   }
 
   List<_BlockIdentity> _toggleHeadingListItemIdentities({
@@ -1506,7 +1522,10 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         LessonEditorCommandFailure.invalidSelection,
       );
     }
-    return _ActiveTextTargetResolution.resolved(target);
+    return _ActiveTextTargetResolution.resolved(
+      target: target,
+      revision: _selectedTargetRevision,
+    );
   }
 
   _SelectedTextRange? _selectedTextRange() {
@@ -1570,6 +1589,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     return _SelectedTextRangeResolution.resolved(
       _SelectedTextRange(
         target: target,
+        revision: targetResult.revision ?? _revision,
         start: start < end ? start : end,
         end: end > start ? end : start,
       ),
@@ -1590,7 +1610,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     widget.onInsertionIndexChanged?.call(
       _insertionIndexForTarget(nextTarget) ?? next.blocks.length,
     );
-    setState(() => _selectedTarget = nextTarget);
+    _setSelectedTargetForCurrentRevision(nextTarget);
   }
 
   void _moveBlock(_EditorNodeId blockId, int targetIndex) {
@@ -1610,7 +1630,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     widget.onInsertionIndexChanged?.call(
       _insertionIndexForTarget(nextTarget) ?? targetIndex + 1,
     );
-    setState(() => _selectedTarget = nextTarget);
+    _setSelectedTargetForCurrentRevision(nextTarget);
   }
 
   void _moveBlockUp(_EditorNodeId blockId) {
@@ -1650,7 +1670,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     widget.onInsertionIndexChanged?.call(
       nextTarget == null ? 0 : _insertionIndexForTarget(nextTarget) ?? 0,
     );
-    setState(() => _selectedTarget = nextTarget);
+    _setSelectedTargetForCurrentRevision(nextTarget);
   }
 
   void _deleteSelectedBlock() {
@@ -1699,7 +1719,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     nextRegistry.blocks.add(identity);
     _applyDocument(next, identityRegistry: nextRegistry);
     widget.onInsertionIndexChanged?.call(1);
-    setState(() => _selectedTarget = _BlockTextTarget(identity.blockId));
+    _setSelectedTargetForCurrentRevision(_BlockTextTarget(identity.blockId));
   }
 
   void _updateCtaBlock(
@@ -1865,7 +1885,8 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         ),
         onTap: () {
           widget.onInsertionIndexChanged?.call(0);
-          if (_selectedTarget != null) setState(() => _selectedTarget = null);
+          if (_selectedTarget != null)
+            _setSelectedTargetForCurrentRevision(null);
         },
         onChanged: _insertFirstParagraphFromEmptyDocument,
       ),
@@ -2397,11 +2418,17 @@ class _Toolbar extends StatelessWidget {
 enum _BlockConversion { paragraph, heading, bulletList, orderedList }
 
 class _ActiveTextTargetResolution {
-  const _ActiveTextTargetResolution.resolved(this.target) : failure = null;
+  const _ActiveTextTargetResolution.resolved({
+    required this.target,
+    required this.revision,
+  }) : failure = null;
 
-  const _ActiveTextTargetResolution.failed(this.failure) : target = null;
+  const _ActiveTextTargetResolution.failed(this.failure)
+    : target = null,
+      revision = null;
 
   final _EditorTarget? target;
+  final int? revision;
   final LessonEditorCommandFailure? failure;
 }
 
@@ -2417,11 +2444,13 @@ class _SelectedTextRangeResolution {
 class _SelectedTextRange {
   const _SelectedTextRange({
     required this.target,
+    required this.revision,
     required this.start,
     required this.end,
   });
 
   final _EditorTarget target;
+  final int revision;
   final int start;
   final int end;
 }

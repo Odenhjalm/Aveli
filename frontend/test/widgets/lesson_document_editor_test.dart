@@ -708,6 +708,7 @@ void main() {
   testWidgets('document editor applies heading only to selected range', (
     tester,
   ) async {
+    final controller = LessonDocumentEditorController();
     var document = const LessonDocument(
       blocks: [
         LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
@@ -723,6 +724,7 @@ void main() {
                 height: 520,
                 child: LessonDocumentEditor(
                   document: document,
+                  controller: controller,
                   onChanged: (next) => setState(() => document = next),
                 ),
               );
@@ -759,6 +761,7 @@ void main() {
       LessonDocument.fromJson(document.toJson()).toCanonicalJsonString(),
       document.toCanonicalJsonString(),
     );
+    expect(controller.lastCommandResult?.applied, isTrue);
   });
 
   testWidgets('document editor heading ignores out-of-range selections', (
@@ -1046,6 +1049,74 @@ void main() {
       expect(
         controller.lastCommandResult?.failure,
         LessonEditorCommandFailure.textMismatch,
+      );
+    },
+  );
+
+  testWidgets(
+    'document editor heading reports stale selection after revision changes',
+    (tester) async {
+      final controller = LessonDocumentEditorController();
+      var document = const LessonDocument(
+        blocks: [
+          LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+          LessonMediaBlock(mediaType: 'image', lessonMediaId: 'lesson-media-1'),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 520,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    controller: controller,
+                    onChanged: (next) => setState(() => document = next),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await _selectTextRange(
+        tester,
+        const ValueKey('lesson_document_editor_node_0'),
+        text: 'Alpha Beta Gamma',
+        start: 6,
+        end: 10,
+      );
+
+      expect(
+        controller.replaceMediaReference(
+          fromLessonMediaId: 'lesson-media-1',
+          toLessonMediaId: 'lesson-media-2',
+          mediaType: 'image',
+        ),
+        isTrue,
+      );
+      await tester.pump();
+      final beforeHeadingCommand = document.toJson();
+
+      await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+      expect(document.toJson(), beforeHeadingCommand);
+      expect(_blockTypes(document), ['paragraph', 'media']);
+      expect(
+        (document.blocks.first as LessonParagraphBlock).children.single.text,
+        'Alpha Beta Gamma',
+      );
+      expect(
+        (document.blocks.last as LessonMediaBlock).lessonMediaId,
+        'lesson-media-2',
+      );
+      expect(
+        controller.lastCommandResult?.failure,
+        LessonEditorCommandFailure.staleSelection,
       );
     },
   );
