@@ -6,8 +6,8 @@ void main() {
     test('web: required keys satisfied (supports aliases)', () {
       final values = <String, String>{
         'API_BASE_URL': 'https://example.com',
-        'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
-        'OAUTH_REDIRECT_WEB': 'https://app.example.com/auth/callback',
+        'STRIPE_PUBLISHABLE_KEY': 'dummy-publishable-key',
+        'OAUTH_REDIRECT_WEB': 'https://example.com/test-web-redirect',
         'SUBSCRIPTIONS_ENABLED': 'true',
       };
 
@@ -24,8 +24,8 @@ void main() {
     test('web: requires OAUTH_REDIRECT_WEB (not mobile)', () {
       final values = <String, String>{
         'API_BASE_URL': 'https://example.com',
-        'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
-        'OAUTH_REDIRECT_MOBILE': 'aveliapp://auth/callback',
+        'STRIPE_PUBLISHABLE_KEY': 'dummy-publishable-key',
+        'OAUTH_REDIRECT_MOBILE': 'https://example.com/test-mobile-redirect',
         'SUBSCRIPTIONS_ENABLED': 'true',
       };
 
@@ -42,8 +42,8 @@ void main() {
     test('non-web: requires OAUTH_REDIRECT_MOBILE (not web)', () {
       final values = <String, String>{
         'API_BASE_URL': 'https://example.com',
-        'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
-        'OAUTH_REDIRECT_MOBILE': 'aveliapp://auth/callback',
+        'STRIPE_PUBLISHABLE_KEY': 'dummy-publishable-key',
+        'OAUTH_REDIRECT_MOBILE': 'https://example.com/test-mobile-redirect',
         'SUBSCRIPTIONS_ENABLED': 'true',
       };
 
@@ -60,7 +60,7 @@ void main() {
     test('reports missing oauth redirect without requiring Supabase keys', () {
       final values = <String, String>{
         'API_BASE_URL': 'https://example.com',
-        'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
+        'STRIPE_PUBLISHABLE_KEY': 'dummy-publishable-key',
         'SUBSCRIPTIONS_ENABLED': 'true',
       };
 
@@ -78,8 +78,8 @@ void main() {
       () {
         final values = <String, String>{
           'API_BASE_URL': 'https://example.com',
-          'STRIPE_PUBLISHABLE_KEY': 'pk_test_123',
-          'OAUTH_REDIRECT_WEB': 'https://app.example.com/auth/callback',
+          'STRIPE_PUBLISHABLE_KEY': 'dummy-publishable-key',
+          'OAUTH_REDIRECT_WEB': 'https://example.com/test-web-redirect',
         };
 
         final result = EnvResolver.validateRequiredWithReader(

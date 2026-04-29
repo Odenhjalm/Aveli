@@ -196,3 +196,13 @@ actual_truth/DETERMINED_TASKS/retrieval_index_environment_bootstrap/*
 actual_truth/DETERMINED_TASKS/retrieval_index_environment_dependencies/*
 actual_truth/DETERMINED_TASKS/retrieval_index_build_execution/*
 actual_truth/DETERMINED_TASKS/retrieval_index_environment_wheelhouse/*
+# Flutter generated files
+**/generated_plugin_registrant.*
+**/generated_plugins.cmake
+**/GeneratedPluginRegistrant.*
+
+# Flutter platform generated
+frontend/**/flutter/generated_*
+
+# Lockfile (valfri policy)
+frontend/pubspec.lock
