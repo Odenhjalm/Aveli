@@ -231,34 +231,46 @@
                     ],
                     "requires_course_enrollments": false
                 },
-                "course_entry_gateway_surface": {
+                "course_entry_view_surface": {
                     "endpoint": "GET /courses/{course_id_or_slug}/entry-view",
+                    "role": "Course Gateway surface; canonical Course Page data source",
+                    "canonical_shape": "CourseEntryViewResponse",
                     "allowed_categories": [
                         "course_identity",
                         "course_display",
-                        "course_grouping",
+                        "course_public_content_description",
+                        "course_cover_image",
                         "course_pricing",
                         "lesson_identity",
                         "lesson_structure",
                         "enrollment_state",
+                        "global_intro_drip_state",
                         "unlock_state",
                         "lesson_progression",
+                        "next_recommended_lesson",
                         "course_entry_cta",
                         "course_entry_pricing"
                     ],
                     "forbidden_categories": [
                         "lesson_content",
-                        "lesson_media"
+                        "lesson_content_document",
+                        "content_markdown",
+                        "lesson_media",
+                        "lesson_media_placement_metadata",
+                        "lesson_media_ids",
+                        "resolved_lesson_media_urls"
                     ],
                     "backend_owned_decisions": [
                         "cta",
                         "pricing_payload",
+                        "price_formatting",
+                        "enrollment_gating",
                         "intro_eligibility",
+                        "global_intro_drip_lock",
                         "purchase_eligibility",
                         "lesson_availability",
                         "lesson_progression",
-                        "next_recommended_lesson",
-                        "previous_next_navigation"
+                        "next_recommended_lesson"
                     ],
                     "frontend_role": "render_only"
                 },
@@ -535,22 +547,31 @@
                 "unlock_state"
             ]
         },
-        "course_entry_gateway_surface": {
+        "course_entry_view_surface": {
             "endpoint": "GET /courses/{course_id_or_slug}/entry-view",
+            "role": "Course Gateway surface; canonical Course Page data source",
+            "canonical_shape": "CourseEntryViewResponse",
             "backend_owned_decisions": [
                 "cta",
                 "pricing_payload",
+                "price_formatting",
+                "enrollment_gating",
                 "intro_eligibility",
+                "global_intro_drip_lock",
                 "purchase_eligibility",
                 "lesson_availability",
                 "lesson_progression",
-                "next_recommended_lesson",
-                "previous_next_navigation"
+                "next_recommended_lesson"
             ],
             "frontend_role": "render_only",
             "forbidden_categories": [
                 "lesson_content",
-                "lesson_media"
+                "lesson_content_document",
+                "content_markdown",
+                "lesson_media",
+                "lesson_media_placement_metadata",
+                "lesson_media_ids",
+                "resolved_lesson_media_urls"
             ]
         },
         "lesson_view_surface": {
@@ -600,8 +621,8 @@
                 "GET /courses/by-slug/{slug}"
             ]
         },
-        "course_entry_gateway_endpoints": {
-            "course_entry_gateway_surface": [
+        "course_entry_view_endpoints": {
+            "course_entry_view_surface": [
                 "GET /courses/{course_id_or_slug}/entry-view"
             ]
         },
@@ -663,13 +684,23 @@
                 ],
                 "frontend_role": "render_only"
             },
-            "CourseEntryGateway": {
-                "surface": "course_entry_gateway_surface",
+            "CourseEntryViewResponse": {
+                "surface": "course_entry_view_surface",
                 "must_include": [
                     "course_identity",
+                    "course_slug",
+                    "course_title",
                     "full_course_description_payload",
+                    "course_cover_image",
+                    "required_enrollment_source",
+                    "is_premium",
+                    "price_amount_cents",
+                    "price_currency",
+                    "formatted_price",
+                    "sellable",
                     "lesson_structure",
                     "user_access_enrollment_state",
+                    "global_intro_drip_state",
                     "per_lesson_availability_progression",
                     "next_recommended_lesson",
                     "backend_authored_cta_decision",
@@ -685,7 +716,12 @@
                 "frontend_role": "render_only",
                 "forbidden_categories": [
                     "lesson_content",
-                    "lesson_media"
+                    "lesson_content_document",
+                    "content_markdown",
+                    "lesson_media",
+                    "lesson_media_placement_metadata",
+                    "lesson_media_ids",
+                    "resolved_lesson_media_urls"
                 ]
             }
         },
@@ -693,8 +729,12 @@
             "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface_does_not_require_enrollment": true,
             "course_detail_composed_of_course_discovery_surface_and_lesson_structure_surface_returns_only_lesson_summary_array": true,
             "lesson_content_or_lesson_media_never_appear_on_course_discovery_surface_or_lesson_structure_surface": true,
-            "course_entry_gateway_backend_owns_cta_pricing_progression_and_navigation": true,
-            "course_entry_gateway_must_not_return_content_document_lesson_media_or_resolved_lesson_media_urls": true,
+            "course_entry_view_backend_owns_cta_pricing_gating_drip_availability_progression_and_next_lesson": true,
+            "course_entry_view_must_not_return_content_document_lesson_media_or_resolved_lesson_media_urls": true,
+            "course_entry_view_is_single_authoritative_course_page_data_source": true,
+            "course_entry_view_global_intro_drip_lock_backend_owned": true,
+            "course_entry_view_group_position_runtime_classification": "forbidden",
+            "course_entry_view_price_formatting_frontend_logic": "forbidden",
             "frontend_course_entry_decision_logic": "forbidden",
             "lesson_media_only_on_unlocked_lesson_view_surface": true,
             "lesson_view_surface_only_lesson_runtime_surface": true,
@@ -824,15 +864,33 @@
         "hardcoded_runtime_currency": "forbidden",
         "intro_lesson_view_surface_unlocked_access_rule": "requires course_enrollments AND (source = intro OR purchase_source_backend_validated_purchase_package_entitlement_override) AND lesson.position <= current_unlock_position",
         "paid_lesson_view_surface_unlocked_access_rule": "requires source = purchase AND course_enrollments AND lesson.position <= current_unlock_position",
-        "course_entry_gateway_endpoint": "GET /courses/{course_id_or_slug}/entry-view",
-        "course_entry_gateway_backend_decision_authority": true,
-        "course_entry_gateway_cta_types": [
+        "course_entry_view_surface": "course_entry_view_surface",
+        "course_entry_view_endpoint": "GET /courses/{course_id_or_slug}/entry-view",
+        "course_entry_view_backend_decision_authority": true,
+        "course_entry_view_single_authoritative_course_page_data_source": true,
+        "course_entry_view_cta_types": [
             "enroll",
             "buy",
             "continue",
             "blocked",
             "unavailable"
         ],
+        "course_entry_view_global_intro_drip_lock": {
+            "is_in_any_intro_drip": "backend_owned_boolean",
+            "blocked_when_intro_and_active_intro_drip_in_another_course": true,
+            "blocked_cta_type": "blocked",
+            "blocked_reason_code": "active_intro_drip",
+            "can_enroll_when_blocked": false
+        },
+        "course_entry_view_pricing_authority": {
+            "price_amount_cents": "app.courses.price_amount_cents",
+            "price_currency": "app.courses.price_currency",
+            "formatted_price": "backend_formatter",
+            "frontend_formatting": "forbidden"
+        },
+        "course_entry_view_runtime_classification_authority": "required_enrollment_source",
+        "course_entry_view_group_position_runtime_classification": "forbidden",
+        "course_entry_view_lesson_runtime_content": "forbidden",
         "course_entry_frontend_render_only": true,
         "lesson_view_frontend_render_only": true,
         "frontend_access_progression_cta_pricing_navigation_media_resolution_lock_logic": "forbidden",

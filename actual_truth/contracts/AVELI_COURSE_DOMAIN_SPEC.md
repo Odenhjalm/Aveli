@@ -75,7 +75,7 @@ The canonical learner/public surfaces are:
 
 - `course_discovery_surface`
 - `lesson_structure_surface`
-- `course_entry_gateway_surface`
+- `course_entry_view_surface`
 - `lesson_view_surface`
 
 `course_discovery_surface` and `lesson_structure_surface` are not protected by
@@ -83,7 +83,7 @@ course enrollment. `lesson_view_surface` is the selected lesson runtime
 rendering surface. Its learner content/media subset is protected by course
 enrollment and lesson unlock position.
 
-`course_entry_gateway_surface` is a backend-composed learner decision surface.
+`course_entry_view_surface` is a backend-composed learner decision surface.
 It may include course structure, user access/enrollment state, per-lesson
 availability/progression state, next recommended lesson, backend-authored CTA
 state, and backend-authored pricing display payloads. It MUST NOT expose
@@ -614,6 +614,7 @@ required unlocked learner `lesson_view_surface` conditions.
 ## 8A. COURSE ENTRY / GATEWAY MODEL
 
 Backend read composition owns canonical Course Entry/Gateway state.
+The canonical Course Entry/Gateway surface is `course_entry_view_surface`.
 
 Canonical endpoint:
 
@@ -624,9 +625,16 @@ GET /courses/{course_id_or_slug}/entry-view
 The Course Entry/Gateway response MUST include backend-authored:
 
 - course identity
+- course slug
+- course title
 - full course description payload
+- course cover/image projection
+- required enrollment source
+- premium/free classification
+- sellability
 - lesson structure
 - user access and enrollment state
+- global intro drip state
 - per-lesson availability and progression state
 - next recommended lesson
 - CTA decision
@@ -665,14 +673,26 @@ Backend lesson progression projection MUST author:
 - locked/unlocked availability
 - current/upcoming/completed state
 - `next_unlock_at`
-- previous/next navigation state
 - locked reason
 
-Frontend MUST NOT compare lesson positions or reconstruct drip state.
+Frontend MUST NOT compare lesson positions, compute lesson lock state, determine
+next lesson, or reconstruct drip state.
 
 Backend pricing payloads are the only learner-facing course price authority.
-Frontend MUST NOT hide, format, repair, or infer price display from intro,
-premium, sellable, Stripe, or position-based logic.
+`price_amount_cents` comes from database pricing storage, `price_currency` comes
+from database pricing storage, and `formatted_price` comes from a deterministic
+backend formatter. Frontend MUST NOT hide, format, repair, or infer price display
+from intro, premium, sellable, Stripe, currency, or position-based logic.
+
+`required_enrollment_source` is the canonical runtime Course Entry/Gateway
+classification authority. `group_position` MUST NOT be used for runtime
+classification, enrollment CTA selection, purchase CTA selection, price
+visibility, or sellability.
+
+`is_in_any_intro_drip` is backend-owned. If the current course requires intro
+enrollment and the user has active intro drip in another course, Course
+Entry/Gateway MUST return `cta.type = blocked`, `cta.enabled = false`,
+`cta.reason_code = active_intro_drip`, and `access.can_enroll = false`.
 
 ## 8B. LESSON VIEW SURFACE MODEL
 

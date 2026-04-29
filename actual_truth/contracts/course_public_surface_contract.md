@@ -17,6 +17,7 @@ The canonical domain flow is:
 
 ~~~text
 learner structure read -> public structure surfaces -> API response
+learner Course Page read -> course_entry_view_surface -> API response
 learner lesson runtime read -> lesson_view_surface -> API response
 frontend render -> backend-provided truth only
 ~~~
@@ -26,8 +27,12 @@ frontend render -> backend-provided truth only
 Canonical authorities are:
 
 - learner structure read authority: `app.course_detail_surface`
+- learner Course Page gateway read authority: `course_entry_view_surface`
 - learner lesson runtime read authority: `lesson_view_surface`
 - lesson media representation authority inside lesson view: backend read composition, subordinate to the media pipeline contract
+- Course Entry/Gateway decision authority: backend access, CTA, pricing, drip,
+  progression, lesson availability, and next recommended lesson projection
+  services named by this contract and their owning domain contracts
 - lesson runtime decision authority: backend access, CTA, pricing, progression,
   navigation, and media projection services named by this contract and their
   owning domain contracts
@@ -147,10 +152,38 @@ Rules:
 
 ### 5.2 Learner Course Entry / Gateway Read
 
+#### course_entry_view_surface
+
 `GET /courses/{course_id_or_slug}/entry-view` is the canonical backend-owned
 Course Entry/Gateway read model for learner course-entry decisions.
 
-Response:
+Role:
+
+- Course Gateway surface
+- single authoritative Course Page data source
+- pure render contract for Course Page frontend consumers
+
+Allowed fields:
+
+- course identity and metadata
+- `app.course_public_content.description`
+- course cover/image projection
+- lesson structure shells only
+- backend-authored access projection
+- backend-authored CTA projection
+- backend-authored pricing projection
+- backend-authored progression summaries
+- backend-authored next recommended lesson
+
+Forbidden fields:
+
+- `lesson.content_document`
+- legacy `content_markdown`
+- lesson media placement metadata
+- lesson media IDs
+- resolved lesson media URLs
+
+Canonical schema: `CourseEntryViewResponse`
 
 ~~~json
 {
@@ -158,27 +191,17 @@ Response:
     "id": "uuid",
     "slug": "string",
     "title": "string",
-    "teacher": {
-      "user_id": "uuid",
-      "display_name": "string | null"
-    },
-    "course_group_id": "uuid",
-    "group_position": 0,
-    "cover_media_id": "uuid | null",
-    "cover": {
-      "media_id": "string",
-      "state": "ready",
-      "resolved_url": "string"
-    },
     "description": "string | null",
-    "required_enrollment_source": "intro | purchase | null"
-  },
-  "access": {
-    "can_access": true,
+    "cover": {
+      "url": "string",
+      "alt": "string | null"
+    },
     "required_enrollment_source": "intro | purchase | null",
-    "selection_locked": false,
-    "selection_lock_reason": "string | null",
-    "enrollment": "object | null"
+    "is_premium": false,
+    "price_amount_cents": 123,
+    "price_currency": "string | null",
+    "formatted_price": "string | null",
+    "sellable": true
   },
   "lessons": [
     {
@@ -196,14 +219,16 @@ Response:
         "state": "current | upcoming | completed",
         "completed_at": "timestamp | null",
         "is_next_recommended": false
-      },
-      "navigation": {
-        "previous": "object | null",
-        "next": "object | null"
       }
     }
   ],
-  "next_recommended_lesson": "object | null",
+  "access": {
+    "is_enrolled": false,
+    "is_in_drip": false,
+    "is_in_any_intro_drip": false,
+    "can_enroll": true,
+    "can_purchase": false
+  },
   "cta": {
     "type": "enroll | buy | continue | blocked | unavailable",
     "label": "string",
@@ -213,20 +238,37 @@ Response:
     "price": "object | null",
     "action": "object | null"
   },
-  "pricing": "object | null"
+  "pricing": {
+    "price_amount_cents": 123,
+    "price_currency": "string",
+    "formatted_price": "string"
+  },
+  "next_recommended_lesson": {
+    "id": "uuid",
+    "lesson_title": "string",
+    "position": 1
+  }
 }
 ~~~
 
 Rules:
 
-- this endpoint is the only Course Entry/Gateway authority
-- backend owns all CTA, pricing, access, selection, progression, and navigation
-  decisions in this response
-- frontend MUST render this response only and MUST NOT reconstruct the decision
+- `pricing` MUST be `null` when no learner-facing price should be rendered
+- `next_recommended_lesson` MUST be `null` when no backend-authored next lesson
+  should be rendered
+- `course_entry_view_surface` is the only Course Entry/Gateway authority
+- backend owns all CTA, pricing, access, selection, lesson availability,
+  progression, and next-recommended-lesson decisions in this response
+- frontend MUST render this response only and MUST NOT reconstruct any decision
+- frontend MUST NOT compute CTA type, CTA enabled state, enrollability,
+  purchasability, price formatting, currency, drip lock state, lesson lock
+  state, lesson progression, or next recommended lesson
 - `lessons` on this endpoint remain structure/progression objects and MUST NOT
   contain `content_document`, legacy `content_markdown`, or `lesson_media`
 - this endpoint MUST NOT return lesson media placement metadata, resolved lesson
   media URLs, or any field that allows frontend media reconstruction
+- this endpoint MUST NOT return lesson runtime content; lesson runtime is
+  exclusively `GET /courses/lessons/{lesson_id}`
 - full course description payload is backend-owned public course content; if
   clean baseline substrate cannot materialize the full description field,
   implementation MUST fail closed and create a baseline-owner task before this
@@ -235,6 +277,20 @@ Rules:
   `app.course_public_content.description` through backend read composition
 - frontend MUST NOT parse markdown files, derive descriptions from
   `short_description`, or synthesize missing descriptions
+- `required_enrollment_source` is the canonical runtime course classification
+  authority for Course Entry/Gateway decisions
+- `group_position` MUST NOT be used for runtime classification, enrollment CTA
+  selection, purchase CTA selection, price visibility, or sellability
+- intro/free courses use `required_enrollment_source = intro`
+- premium courses use `required_enrollment_source = purchase`
+- `access.is_in_any_intro_drip` is a backend-owned boolean
+- if `course.required_enrollment_source = intro` and the user has active intro
+  drip in another course, then `cta.type = blocked`, `cta.enabled = false`,
+  `cta.reason_code = active_intro_drip`, and `access.can_enroll = false`
+- price amount MUST come from backend pricing storage
+- `price_currency` MUST come from backend pricing storage, including Baseline V2
+  slot 0038 currency authority
+- `formatted_price` MUST come from a deterministic backend formatter
 - price display MUST come from backend-authored `pricing` or `cta.price`
 - `reason_text`, `label`, and rendered price text must follow
   `system_text_authority_contract.md`

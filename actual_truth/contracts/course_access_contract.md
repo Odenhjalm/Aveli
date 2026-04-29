@@ -131,12 +131,13 @@ Per-lesson projection MUST include:
 - locked/unlocked availability
 - current/upcoming/completed state
 - `next_unlock_at`
-- previous/next navigation state
 - locked reason
 
 Frontend MUST render the projection only. Frontend MUST NOT infer lesson
 availability from `position`, `current_unlock_position`, local enrollment
 presence, checkout return state, Stripe state, or route state.
+Frontend MUST NOT compute lesson lock state, determine next lesson, or
+reconstruct drip state.
 
 ## 6B. LESSON VIEW ACCESS AND CTA PROJECTION LAW
 
