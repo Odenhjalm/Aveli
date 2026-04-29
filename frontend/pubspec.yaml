@@ -81,7 +81,10 @@ flutter:
 
   assets:
     - fonts/
-    - assets/images/
+    - assets/images/bakgrund.png
+    - assets/images/bakgrundlektion.png
+    - assets/images/loggo_clea.png
+    - assets/images/observatorium_bg.png
 
   fonts:
     - family: NotoSans

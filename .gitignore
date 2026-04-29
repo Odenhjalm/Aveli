@@ -206,3 +206,7 @@ frontend/**/flutter/generated_*
 
 # Lockfile (valfri policy)
 frontend/pubspec.lock
+
+# assets
+backend/assets/*
+frontend/assets/images/*
