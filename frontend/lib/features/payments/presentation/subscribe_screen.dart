@@ -17,8 +17,8 @@ import 'package:aveli/features/payments/presentation/embedded_membership_checkou
 import 'package:aveli/features/paywall/application/checkout_flow.dart';
 import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
-import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/brand_logo_image.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 import 'package:aveli/shared/widgets/gradient_button.dart';
 
@@ -417,19 +417,7 @@ class _CheckoutLogo extends StatelessWidget {
       label: 'Aveli',
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Image(
-          image: AppImages.logo,
-          height: 58,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) {
-            return Text(
-              'Aveli',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
-            );
-          },
-        ),
+        child: BrandLogoImage(height: 58, width: 139.2, semanticLabel: 'Aveli'),
       ),
     );
   }

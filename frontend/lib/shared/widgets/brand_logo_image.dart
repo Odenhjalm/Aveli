@@ -49,10 +49,8 @@ class BrandLogoImage extends ConsumerWidget {
         return Opacity(opacity: opacity.clamp(0.0, 1.0), child: image);
       },
       loading: () => SizedBox(width: reservedWidth, height: height),
-      error: (error, stackTrace) => Error.throwWithStackTrace(
-        error,
-        stackTrace,
-      ),
+      error: (error, stackTrace) =>
+          Error.throwWithStackTrace(error, stackTrace),
     );
   }
 }

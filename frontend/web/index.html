@@ -71,25 +71,12 @@
         gap: 18px;
         padding: 24px;
       }
-      #aveli-bootstrap-shell .aveli-shell-logo {
-        width: min(360px, 70vw);
-        height: auto;
-        filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.35));
-        opacity: 0;
-        transition: opacity 180ms ease;
-      }
-      #aveli-bootstrap-shell[data-logo='ready'] .aveli-shell-logo {
-        opacity: 1;
-      }
       #aveli-bootstrap-shell .aveli-shell-wordmark {
         font: 900 42px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Arial,
           sans-serif;
         letter-spacing: 0.5px;
         color: rgba(255, 255, 255, 0.94);
         text-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
-        display: none;
-      }
-      #aveli-bootstrap-shell[data-logo='fallback'] .aveli-shell-wordmark {
         display: block;
       }
       #aveli-bootstrap-shell .aveli-shell-spinner {
@@ -140,18 +127,11 @@
       id="aveli-bootstrap-shell"
       data-hidden="0"
       data-bg="init"
-      data-logo="fallback"
       aria-label="Aveli loading"
     >
       <div class="aveli-shell-bg" id="aveli-shell-bg"></div>
       <div class="aveli-shell-scrim" aria-hidden="true"></div>
       <div class="aveli-shell-center">
-        <img
-          id="aveli-shell-logo"
-          class="aveli-shell-logo"
-          alt="Aveli"
-          decoding="async"
-        />
         <div class="aveli-shell-wordmark" aria-hidden="true">Aveli</div>
         <div class="aveli-shell-spinner" aria-hidden="true"></div>
       </div>
@@ -164,12 +144,10 @@
 
         var BOOT_VERSION = 'rfc-deterministic-bootstrap-v1';
         var ASSET_BG = 'assets/assets/images/bakgrund.png';
-        var ASSET_LOGO = 'assets/assets/images/loggo_clea.png';
         var SW_RELOAD_KEY = 'aveli_sw_cleanup_done';
 
         var shell = document.getElementById('aveli-bootstrap-shell');
         var bgEl = document.getElementById('aveli-shell-bg');
-        var logoEl = document.getElementById('aveli-shell-logo');
         var diagEl = document.getElementById('aveli-boot-diag');
 
         function bootNow() {
@@ -204,7 +182,6 @@
           renderer: { mode: 'unknown', policy: 'safe', reason: 'init' },
           critical_assets: {
             background: { path: ASSET_BG, status: 'init' },
-            logo: { path: ASSET_LOGO, status: 'init' },
           },
         };
 
@@ -264,9 +241,7 @@
           );
           lines.push(
             'assets:  bg=' +
-              boot.critical_assets.background.status +
-              ' logo=' +
-              boot.critical_assets.logo.status
+              boot.critical_assets.background.status
           );
           lines.push('');
           for (var i = 0; i < last.length; i++) {
@@ -443,26 +418,9 @@
 
         function applyCriticalAssets() {
           var bgUrl = resolveAssetUrl(ASSET_BG);
-          var logoUrl = resolveAssetUrl(ASSET_LOGO);
 
-          // Show fallback visuals immediately; swap in assets when ready.
           if (shell) {
             shell.dataset.bg = 'init';
-            shell.dataset.logo = 'fallback';
-          }
-          if (logoEl) {
-            logoEl.src = logoUrl;
-            logoEl.onerror = function () {
-              // Ensure no silent failures if the DOM load differs from preload.
-              boot.critical_assets.logo.status = 'fallback';
-              if (shell) shell.dataset.logo = 'fallback';
-              log('error', 'critical_asset', {
-                name: 'logo',
-                status: 'fallback',
-                reason: 'dom_error',
-                path: ASSET_LOGO,
-              });
-            };
           }
 
           var bgPromise = preloadImage(bgUrl, 4500).then(function (res) {
@@ -488,29 +446,7 @@
             return res;
           });
 
-          var logoPromise = preloadImage(logoUrl, 4500).then(function (res) {
-            if (res.ok) {
-              boot.critical_assets.logo.status = 'loaded';
-              if (shell) shell.dataset.logo = 'ready';
-              log('info', 'critical_asset', {
-                name: 'logo',
-                status: 'loaded',
-                path: ASSET_LOGO,
-              });
-            } else {
-              boot.critical_assets.logo.status = 'fallback';
-              if (shell) shell.dataset.logo = 'fallback';
-              log('error', 'critical_asset', {
-                name: 'logo',
-                status: 'fallback',
-                reason: res.reason,
-                path: ASSET_LOGO,
-              });
-            }
-            return res;
-          });
-
-          return Promise.all([bgPromise, logoPromise]);
+          return Promise.all([bgPromise]);
         }
 
         function injectFlutterBootstrap() {

@@ -62,13 +62,7 @@ class _BootGateState extends State<BootGate> {
       provider: AppImages.background,
       path: AppImages.backgroundPath,
     );
-    final logoOk = await warmAsset(
-      name: 'logo',
-      provider: AppImages.logo,
-      path: AppImages.logoPath,
-    );
     CriticalAssets.backgroundOk = bgOk;
-    CriticalAssets.logoOk = logoOk;
 
     BootLog.transition(from: 'dart_warmup_start', to: 'dart_allow_first_frame');
 
@@ -79,7 +73,10 @@ class _BootGateState extends State<BootGate> {
         // Best effort; avoid a permanent blank render.
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        BootLog.transition(from: 'dart_allow_first_frame', to: 'dart_app_ready');
+        BootLog.transition(
+          from: 'dart_allow_first_frame',
+          to: 'dart_app_ready',
+        );
         BootBridge.appReady({
           'boot_id': widget.config.bootId,
           'renderer_mode': widget.config.rendererMode,
@@ -92,4 +89,3 @@ class _BootGateState extends State<BootGate> {
   @override
   Widget build(BuildContext context) => widget.child;
 }
-

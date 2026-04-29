@@ -11,10 +11,10 @@ import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/features/courses/presentation/course_journey_layout.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
-import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 import 'package:aveli/shared/utils/money.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/brand_logo_image.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/shared/widgets/card_text.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
@@ -926,15 +926,7 @@ class _ActAveliProSection extends StatelessWidget {
           Positioned(
             right: 0,
             top: 0,
-            child: Opacity(
-              opacity: 0.18,
-              child: Image(
-                image: AppImages.logo,
-                width: 64,
-                height: 64,
-                fit: BoxFit.contain,
-              ),
-            ),
+            child: BrandLogoImage(height: 64, width: 64, opacity: 0.18),
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,

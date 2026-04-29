@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
+import 'package:aveli/shared/widgets/brand_logo_image.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
 
 enum AdminShellDestination { controlRoom, users, mediaControl, system }
@@ -244,7 +245,7 @@ class _AdminSidebar extends StatelessWidget {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(8),
-                  child: Image(image: AppImages.logo, fit: BoxFit.contain),
+                  child: BrandLogoImage(height: 28, width: 28),
                 ),
               ),
               const SizedBox(width: 12),
