@@ -598,6 +598,37 @@ async def get_course_pricing_by_slug(slug: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+async def get_lesson_view_course_pricing(
+    course_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    query = """
+        select
+            c.id::text as course_id,
+            c.price_amount_cents,
+            c.price_currency,
+            c.sellable,
+            c.required_enrollment_source::text as required_enrollment_source,
+            c.active_stripe_price_id
+        from app.courses as c
+        where c.id = %s::uuid
+        limit 1
+    """
+
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (course_id,))
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
+
+
 async def get_course_publish_subject(course_id: str) -> dict[str, Any] | None:
     query = """
         select
@@ -1405,6 +1436,89 @@ async def list_course_lessons(course_id: str) -> Sequence[LessonRow]:
             await cur.execute(query, (course_id,))
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def get_lesson_view_lesson_shell(
+    lesson_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    query = """
+        select
+            l.id::text as id,
+            l.course_id::text as course_id,
+            l.lesson_title,
+            l.position
+        from app.lessons as l
+        where l.id = %s::uuid
+        limit 1
+    """
+
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id,))
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
+
+
+async def get_lesson_view_navigation(
+    lesson_id: str,
+    *,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    query = """
+        with target as (
+            select
+                l.id,
+                l.course_id
+            from app.lessons as l
+            where l.id = %s::uuid
+            limit 1
+        ),
+        ordered_lessons as (
+            select
+                l.id,
+                l.course_id,
+                lag(l.id) over (
+                    partition by l.course_id
+                    order by l.position asc, l.id asc
+                ) as previous_lesson_id,
+                lead(l.id) over (
+                    partition by l.course_id
+                    order by l.position asc, l.id asc
+                ) as next_lesson_id
+            from app.lessons as l
+            join target as t
+              on t.course_id = l.course_id
+        )
+        select
+            t.id::text as lesson_id,
+            t.course_id::text as course_id,
+            ol.previous_lesson_id::text as previous_lesson_id,
+            ol.next_lesson_id::text as next_lesson_id
+        from target as t
+        join ordered_lessons as ol
+          on ol.id = t.id
+        limit 1
+    """
+
+    async def _execute(active_conn: Any) -> dict[str, Any] | None:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (lesson_id,))
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
 
 
 async def get_lesson_content_surface_rows(

@@ -1172,6 +1172,119 @@ class LearnerLessonMediaItem(BaseModel):
     media: ResolvedMedia | None = None
 
 
+class LessonViewLesson(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    course_id: UUID
+    lesson_title: str
+    position: int
+    content_document: Optional[Dict[str, Any]] = None
+
+
+class LessonViewNavigation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    previous_lesson_id: UUID | None = None
+    next_lesson_id: UUID | None = None
+
+
+class LessonViewAccess(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    has_access: bool
+    is_enrolled: bool
+    is_in_drip: bool
+    is_premium: bool
+    can_enroll: bool
+    can_purchase: bool
+
+
+class LessonViewCTA(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["enroll", "buy", "continue", "blocked", "unavailable"]
+    label: str
+    enabled: bool
+    reason_code: str | None = None
+    reason_text: str | None = None
+    price: dict[str, Any] | None = None
+    action: dict[str, Any] | None = None
+
+
+class LessonViewPricing(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    price_amount_cents: int
+    price_currency: str = Field(min_length=3, max_length=3, pattern="^[a-z]{3}$")
+    formatted: str
+
+
+class LessonViewProgression(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    unlocked: bool
+    reason: Literal["available", "drip", "no_access"]
+
+
+class LessonViewMedia(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_id: str
+    state: str
+    resolved_url: str | None = None
+
+
+class LessonViewMediaItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson_media_id: UUID
+    position: int
+    media_type: Literal["audio", "image", "video", "document"]
+    media: LessonViewMedia
+
+
+class LessonViewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lesson: LessonViewLesson
+    navigation: LessonViewNavigation
+    access: LessonViewAccess
+    cta: LessonViewCTA | None = None
+    pricing: LessonViewPricing | None = None
+    progression: LessonViewProgression
+    media: List[LessonViewMediaItem] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_locked_and_unlocked_shapes(self):
+        is_unlocked = self.access.has_access and self.progression.unlocked
+
+        if is_unlocked:
+            if self.lesson.content_document is None:
+                raise ValueError(
+                    "unlocked lesson_view_surface requires lesson.content_document"
+                )
+            if self.progression.reason != "available":
+                raise ValueError(
+                    "unlocked lesson_view_surface progression.reason must be available"
+                )
+            return self
+
+        if self.lesson.content_document is not None:
+            raise ValueError(
+                "locked lesson_view_surface must not include lesson.content_document"
+            )
+        if self.media:
+            raise ValueError("locked lesson_view_surface must serialize media as []")
+        if self.progression.reason == "available":
+            raise ValueError(
+                "locked lesson_view_surface progression.reason must be drip or no_access"
+            )
+        return self
+
+
+# Deprecated: legacy unlocked-only lesson content response. Use LessonViewResponse
+# for canonical lesson_view_surface serialization.
 class LessonContentResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
