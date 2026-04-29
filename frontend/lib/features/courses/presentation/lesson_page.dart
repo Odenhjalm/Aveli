@@ -15,7 +15,6 @@ import 'package:aveli/features/courses/presentation/learner_course_visibility.da
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
-import 'package:aveli/shared/utils/app_images.dart';
 
 class LessonPage extends ConsumerStatefulWidget {
   const LessonPage({super.key, required this.lessonId});
@@ -180,10 +179,7 @@ class _LessonContent extends ConsumerWidget {
     return AppScaffold(
       title: lesson.lessonTitle,
       body: coreContent,
-      background: BackgroundLayer(
-        image: AppImages.lessonBackground,
-        imagePath: AppImages.lessonBackgroundPath,
-      ),
+      background: const BackgroundLayer.lesson(),
       maxContentWidth: contentWidth,
     );
   }

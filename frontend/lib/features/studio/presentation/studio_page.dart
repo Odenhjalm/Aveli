@@ -58,10 +58,7 @@ class _StudioApplyView extends StatelessWidget {
       title: 'Studio',
       extendBodyBehindAppBar: true,
       transparentAppBar: true,
-      background: const HeroBackground(
-        assetPath: 'images/bakgrund.png',
-        opacity: 0.72,
-      ),
+      background: const HeroBackground(opacity: 0.72),
       body: Align(
         alignment: Alignment.topCenter,
         child: Padding(

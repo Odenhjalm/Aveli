@@ -12,7 +12,6 @@ import 'package:aveli/features/home/presentation/widgets/home_audio_section.dart
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
 import 'package:aveli/shared/widgets/app_scaffold.dart';
-import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/theme/design_tokens.dart';
 import 'package:aveli/shared/theme/ui_consts.dart';
 import 'package:aveli/shared/widgets/courses_showcase_section.dart';
@@ -75,7 +74,6 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         ),
       ],
       background: FullBleedBackground(
-        image: AppImages.background,
         alignment: Alignment.center,
         topOpacity: 0.22,
         overlayColor: Theme.of(context).brightness == Brightness.dark

@@ -16,6 +16,7 @@ from psycopg import DataError, Error as PsycopgError, IntegrityError
 from psycopg import errors as psycopg_errors
 from starlette.concurrency import run_in_threadpool
 
+from .. import schemas
 from ..config import settings
 from ..db import pool
 from .. import stripe_mode
@@ -863,6 +864,384 @@ async def read_protected_lesson_content_surface(
         "lesson": lesson,
         "media": media_rows,
     }
+
+
+def _lesson_view_string(value: Any) -> str:
+    return _require_lesson_surface_string(value)
+
+
+def _lesson_view_position(value: Any) -> int:
+    return _require_lesson_surface_position(value)
+
+
+def _normalized_price_currency(value: Any) -> str | None:
+    currency = str(value or "").strip().lower()
+    if len(currency) != 3:
+        return None
+    if not all("a" <= char <= "z" for char in currency):
+        return None
+    return currency
+
+
+def _format_lesson_view_price(*, amount_cents: int, price_currency: str) -> str:
+    whole_units = amount_cents // 100
+    minor_units = amount_cents % 100
+    return f"{whole_units}.{minor_units:02d} {price_currency.upper()}"
+
+
+def _lesson_view_pricing_projection(
+    course_pricing: Mapping[str, Any] | None,
+) -> schemas.LessonViewPricing | None:
+    if course_pricing is None:
+        return None
+    try:
+        amount_cents = int(course_pricing.get("price_amount_cents"))
+    except (TypeError, ValueError):
+        return None
+    if amount_cents <= 0:
+        return None
+
+    price_currency = _normalized_price_currency(course_pricing.get("price_currency"))
+    if price_currency is None:
+        return None
+
+    return schemas.LessonViewPricing(
+        price_amount_cents=amount_cents,
+        price_currency=price_currency,
+        formatted=_format_lesson_view_price(
+            amount_cents=amount_cents,
+            price_currency=price_currency,
+        ),
+    )
+
+
+def _lesson_view_sellable_course(
+    *,
+    course_pricing: Mapping[str, Any],
+    pricing: schemas.LessonViewPricing | None,
+    is_premium: bool,
+) -> bool:
+    active_price_id = str(course_pricing.get("active_stripe_price_id") or "").strip()
+    return bool(
+        is_premium
+        and pricing is not None
+        and course_pricing.get("sellable") is True
+        and active_price_id
+    )
+
+
+def _lesson_view_lesson_shell(
+    shell: Mapping[str, Any],
+    *,
+    content_document: Mapping[str, Any] | None = None,
+) -> schemas.LessonViewLesson:
+    return schemas.LessonViewLesson(
+        id=_lesson_view_string(shell.get("id")),
+        course_id=_lesson_view_string(shell.get("course_id")),
+        lesson_title=_lesson_view_string(shell.get("lesson_title")),
+        position=_lesson_view_position(shell.get("position")),
+        content_document=dict(content_document) if content_document is not None else None,
+    )
+
+
+def _lesson_view_navigation_projection(
+    navigation: Mapping[str, Any],
+) -> schemas.LessonViewNavigation:
+    previous_lesson_id = navigation.get("previous_lesson_id")
+    next_lesson_id = navigation.get("next_lesson_id")
+    return schemas.LessonViewNavigation(
+        previous_lesson_id=(
+            _lesson_view_string(previous_lesson_id)
+            if previous_lesson_id is not None
+            else None
+        ),
+        next_lesson_id=(
+            _lesson_view_string(next_lesson_id) if next_lesson_id is not None else None
+        ),
+    )
+
+
+def _lesson_view_access_projection(
+    *,
+    course_pricing: Mapping[str, Any],
+    course_access: Mapping[str, Any],
+    lesson_position: int,
+    pricing: schemas.LessonViewPricing | None,
+    preview: bool,
+    has_request_user: bool,
+) -> tuple[schemas.LessonViewAccess, schemas.LessonViewProgression]:
+    required_source = _course_required_enrollment_source(course_pricing)
+    is_premium = required_source == _COURSE_ENROLLMENT_SOURCE_PURCHASE
+    is_intro = required_source == _COURSE_ENROLLMENT_SOURCE_INTRO
+    enrollment = course_access.get("enrollment")
+    is_enrolled = bool(enrollment) and not preview
+    course_has_access = bool(course_access.get("can_access")) and not preview
+    current_unlock_position = 0
+    if enrollment is not None:
+        try:
+            current_unlock_position = int(enrollment.get("current_unlock_position") or 0)
+        except (TypeError, ValueError):
+            current_unlock_position = 0
+
+    preview_unlocked = bool(preview)
+    learner_unlocked = bool(
+        course_has_access
+        and lesson_position >= 1
+        and lesson_position <= current_unlock_position
+    )
+    has_access = bool(preview_unlocked or learner_unlocked)
+    selection_locked = bool(course_access.get("selection_locked")) and not preview
+    drip_locked = bool(
+        (course_has_access and not learner_unlocked) or (is_intro and selection_locked)
+    )
+    can_enroll = bool(
+        has_request_user
+        and not preview
+        and is_intro
+        and not is_enrolled
+        and not selection_locked
+    )
+    sellable_course = _lesson_view_sellable_course(
+        course_pricing=course_pricing,
+        pricing=pricing,
+        is_premium=is_premium,
+    )
+    can_purchase = bool(
+        has_request_user
+        and not preview
+        and sellable_course
+        and not course_has_access
+    )
+
+    access = schemas.LessonViewAccess(
+        has_access=has_access,
+        is_enrolled=is_enrolled,
+        is_in_drip=drip_locked,
+        is_premium=is_premium,
+        can_enroll=can_enroll,
+        can_purchase=can_purchase,
+    )
+    if has_access:
+        progression = schemas.LessonViewProgression(
+            unlocked=True,
+            reason="available",
+        )
+    elif drip_locked:
+        progression = schemas.LessonViewProgression(
+            unlocked=False,
+            reason="drip",
+        )
+    else:
+        progression = schemas.LessonViewProgression(
+            unlocked=False,
+            reason="no_access",
+        )
+    return access, progression
+
+
+def _lesson_view_cta_projection(
+    *,
+    access: schemas.LessonViewAccess,
+    progression: schemas.LessonViewProgression,
+    pricing: schemas.LessonViewPricing | None,
+) -> schemas.LessonViewCTA | None:
+    if access.has_access:
+        return schemas.LessonViewCTA(
+            type="continue",
+            label="Fortsätt",
+            enabled=True,
+            reason_code=None,
+            reason_text=None,
+            price=None,
+            action={"type": "continue"},
+        )
+    if access.can_enroll:
+        return schemas.LessonViewCTA(
+            type="enroll",
+            label="Börja kursen",
+            enabled=True,
+            reason_code=None,
+            reason_text=None,
+            price=None,
+            action={"type": "enroll"},
+        )
+    if access.can_purchase:
+        return schemas.LessonViewCTA(
+            type="buy",
+            label="Köp kursen",
+            enabled=True,
+            reason_code=None,
+            reason_text=None,
+            price=pricing.model_dump(mode="json") if pricing is not None else None,
+            action={"type": "purchase"},
+        )
+    if progression.reason == "drip":
+        return schemas.LessonViewCTA(
+            type="blocked",
+            label="Låst",
+            enabled=False,
+            reason_code="drip",
+            reason_text="Lektionen är inte upplåst ännu.",
+            price=None,
+            action=None,
+        )
+    return schemas.LessonViewCTA(
+        type="unavailable",
+        label="Inte tillgänglig",
+        enabled=False,
+        reason_code="no_access",
+        reason_text="Du har inte åtkomst till den här lektionen.",
+        price=pricing.model_dump(mode="json") if access.is_premium and pricing else None,
+        action=None,
+    )
+
+
+def _lesson_view_media_item(row: Mapping[str, Any]) -> schemas.LessonViewMediaItem:
+    media_payload = row.get("media")
+    if not isinstance(media_payload, Mapping):
+        raise _canonical_lesson_surface_unavailable()
+
+    media_id = _lesson_view_string(media_payload.get("media_id"))
+    media_state = _normalized_surface_media_state(
+        media_payload.get("state") or row.get("state")
+    )
+    resolved_url = str(media_payload.get("resolved_url") or "").strip()
+    if not resolved_url:
+        raise _canonical_lesson_surface_unavailable()
+
+    return schemas.LessonViewMediaItem(
+        lesson_media_id=_lesson_view_string(
+            row.get("lesson_media_id") or row.get("id")
+        ),
+        position=_lesson_view_position(row.get("position")),
+        media_type=_normalized_surface_media_type(row.get("media_type")),
+        media=schemas.LessonViewMedia(
+            media_id=media_id,
+            state=media_state,
+            resolved_url=resolved_url,
+        ),
+    )
+
+
+async def _lesson_view_authorize_preview(
+    *,
+    course_id: str,
+    teacher_id: str | None,
+) -> str:
+    normalized_teacher_id = str(teacher_id or "").strip()
+    if not normalized_teacher_id:
+        raise PermissionError("teacher/studio authorization is required for preview")
+    if not await is_course_owner(normalized_teacher_id, course_id):
+        raise PermissionError("teacher/studio preview is not authorized")
+    return normalized_teacher_id
+
+
+async def read_lesson_view_surface(
+    lesson_id: str,
+    *,
+    user_id: str | None = None,
+    preview: bool = False,
+    teacher_id: str | None = None,
+) -> schemas.LessonViewResponse | None:
+    shell = await courses_repo.get_lesson_view_lesson_shell(lesson_id)
+    if shell is None:
+        return None
+
+    lesson_shell = _lesson_view_lesson_shell(shell)
+    course_id = str(lesson_shell.course_id)
+    navigation_row = await courses_repo.get_lesson_view_navigation(lesson_id)
+    if navigation_row is None or str(navigation_row.get("course_id") or "") != course_id:
+        raise _canonical_lesson_surface_unavailable()
+    navigation = _lesson_view_navigation_projection(navigation_row)
+
+    course_pricing = await courses_repo.get_lesson_view_course_pricing(course_id)
+    if course_pricing is None:
+        raise _canonical_lesson_surface_unavailable()
+    pricing = _lesson_view_pricing_projection(course_pricing)
+
+    normalized_user_id = str(user_id or "").strip()
+    preview_subject_id: str | None = None
+    if preview:
+        preview_subject_id = await _lesson_view_authorize_preview(
+            course_id=course_id,
+            teacher_id=teacher_id,
+        )
+        course_access: Mapping[str, Any] = {
+            "course": None,
+            "enrollment": None,
+            "required_enrollment_source": _course_required_enrollment_source(
+                course_pricing
+            ),
+            "selection_locked": False,
+            "can_access": False,
+        }
+    else:
+        course_access = await read_canonical_course_access(
+            normalized_user_id,
+            course_id,
+        )
+
+    access, progression = _lesson_view_access_projection(
+        course_pricing=course_pricing,
+        course_access=course_access,
+        lesson_position=lesson_shell.position,
+        pricing=pricing,
+        preview=preview,
+        has_request_user=bool(normalized_user_id),
+    )
+    cta = _lesson_view_cta_projection(
+        access=access,
+        progression=progression,
+        pricing=pricing,
+    )
+
+    if not access.has_access or not progression.unlocked:
+        return schemas.LessonViewResponse(
+            lesson=lesson_shell,
+            navigation=navigation,
+            access=access,
+            cta=cta,
+            pricing=pricing,
+            progression=progression,
+            media=[],
+        )
+
+    content_user_id = preview_subject_id if preview else normalized_user_id
+    if not content_user_id:
+        raise _canonical_lesson_surface_unavailable()
+    protected_content = await read_protected_lesson_content_surface(
+        lesson_id,
+        user_id=content_user_id,
+    )
+    if protected_content is None:
+        raise _canonical_lesson_surface_unavailable()
+    protected_lesson = protected_content.get("lesson")
+    if not isinstance(protected_lesson, Mapping):
+        raise _canonical_lesson_surface_unavailable()
+    protected_course_id = str(protected_lesson.get("course_id") or "").strip()
+    if protected_course_id != course_id:
+        raise _canonical_lesson_surface_unavailable()
+
+    content_document = _canonical_lesson_document(
+        protected_lesson.get("content_document")
+    )
+    unlocked_lesson = _lesson_view_lesson_shell(
+        protected_lesson,
+        content_document=content_document,
+    )
+    media_rows = protected_content.get("media")
+    if not isinstance(media_rows, list):
+        raise _canonical_lesson_surface_unavailable()
+
+    return schemas.LessonViewResponse(
+        lesson=unlocked_lesson,
+        navigation=navigation,
+        access=access,
+        cta=cta,
+        pricing=pricing,
+        progression=progression,
+        media=[_lesson_view_media_item(row) for row in media_rows],
+    )
 
 
 async def fetch_studio_lesson(lesson_id: str) -> dict[str, Any] | None:

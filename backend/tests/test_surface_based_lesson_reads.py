@@ -244,48 +244,55 @@ async def test_read_protected_lesson_content_surface_rejects_malformed_lesson_ro
     assert excinfo.value.status_code == 503
 
 
-async def test_lesson_detail_uses_surface_based_content_and_structure(monkeypatch):
-    async def _fake_access(user_id: str, lesson_id: str):
-        assert user_id == USER_ID
-        assert lesson_id == LESSON_ID
-        return {
-            "lesson": {
-                "id": LESSON_ID,
-                "course_id": COURSE_ID,
-                "lesson_title": "Lesson",
-                "position": 1,
-                "content_document": _document_with_text("Legacy should not win"),
-            },
-            "course": {"id": COURSE_ID},
-            "enrollment": {"course_id": COURSE_ID, "user_id": USER_ID},
-            "required_enrollment_source": "purchase",
-            "current_unlock_position": 1,
-            "can_access": True,
-        }
-
-    async def _fake_protected_content(lesson_id: str, *, user_id: str):
+async def test_lesson_detail_uses_lesson_view_surface_projection(monkeypatch):
+    async def _fake_lesson_view_surface(
+        lesson_id: str,
+        *,
+        user_id: str | None = None,
+        preview: bool = False,
+        teacher_id: str | None = None,
+    ):
         assert lesson_id == LESSON_ID
         assert user_id == USER_ID
-        return {
-            "lesson": {
-                "id": LESSON_ID,
-                "course_id": COURSE_ID,
-                "lesson_title": "Lesson",
-                "position": 1,
-                "content_document": _document_with_text("Surface content"),
-            },
-            "media": [],
-        }
-
-    async def _fake_structure(course_id: str):
-        assert course_id == COURSE_ID
-        return [
-            {
-                "id": LESSON_ID,
-                "lesson_title": "Lesson",
-                "position": 1,
-            }
-        ]
+        assert preview is False
+        assert teacher_id is None
+        return course_routes.schemas.LessonViewResponse(
+            lesson=course_routes.schemas.LessonViewLesson(
+                id=LESSON_ID,
+                course_id=COURSE_ID,
+                lesson_title="Lesson",
+                position=1,
+                content_document=_document_with_text("Surface content"),
+            ),
+            navigation=course_routes.schemas.LessonViewNavigation(
+                previous_lesson_id=None,
+                next_lesson_id=None,
+            ),
+            access=course_routes.schemas.LessonViewAccess(
+                has_access=True,
+                is_enrolled=True,
+                is_in_drip=False,
+                is_premium=True,
+                can_enroll=False,
+                can_purchase=False,
+            ),
+            cta=course_routes.schemas.LessonViewCTA(
+                type="continue",
+                label="Continue",
+                enabled=True,
+                action={"type": "continue"},
+            ),
+            pricing=course_routes.schemas.LessonViewPricing(
+                price_amount_cents=12000,
+                price_currency="sek",
+                formatted="120 SEK",
+            ),
+            progression=course_routes.schemas.LessonViewProgression(
+                unlocked=True,
+                reason="available",
+            ),
+            media=[],
+        )
 
     async def _fail_raw_lessons(course_id: str):
         raise AssertionError("raw list_course_lessons must not back mounted lesson reads")
@@ -300,20 +307,8 @@ async def test_lesson_detail_uses_surface_based_content_and_structure(monkeypatc
 
     monkeypatch.setattr(
         course_routes.courses_service,
-        "read_canonical_lesson_access",
-        _fake_access,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "read_protected_lesson_content_surface",
-        _fake_protected_content,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "list_course_lesson_structure",
-        _fake_structure,
+        "read_lesson_view_surface",
+        _fake_lesson_view_surface,
         raising=True,
     )
     monkeypatch.setattr(
@@ -332,6 +327,8 @@ async def test_lesson_detail_uses_surface_based_content_and_structure(monkeypatc
     response = await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
     assert response.lesson.content_document == _document_with_text("Surface content")
-    assert response.course_id == UUID(COURSE_ID)
-    assert len(response.lessons) == 1
+    assert response.lesson.course_id == UUID(COURSE_ID)
+    assert response.access.has_access is True
+    assert response.navigation.previous_lesson_id is None
+    assert response.navigation.next_lesson_id is None
     assert response.media == []

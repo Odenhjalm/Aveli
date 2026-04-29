@@ -41,19 +41,6 @@
         pointer-events: none;
         opacity: 0;
       }
-      #aveli-bootstrap-shell .aveli-shell-bg {
-        position: absolute;
-        inset: 0;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-size: cover;
-        opacity: 0;
-        transform: scale(1.01);
-        transition: opacity 240ms ease;
-      }
-      #aveli-bootstrap-shell[data-bg='ready'] .aveli-shell-bg {
-        opacity: 1;
-      }
       #aveli-bootstrap-shell .aveli-shell-scrim {
         position: absolute;
         inset: 0;
@@ -122,14 +109,12 @@
       This application requires JavaScript to run the Flutter client.
     </noscript>
 
-    <!-- BootstrapShell: deterministic, renderer-aware, and critical-asset safe. -->
+    <!-- BootstrapShell: deterministic and renderer-aware. -->
     <div
       id="aveli-bootstrap-shell"
       data-hidden="0"
-      data-bg="init"
       aria-label="Aveli loading"
     >
-      <div class="aveli-shell-bg" id="aveli-shell-bg"></div>
       <div class="aveli-shell-scrim" aria-hidden="true"></div>
       <div class="aveli-shell-center">
         <div class="aveli-shell-wordmark" aria-hidden="true">Aveli</div>
@@ -143,11 +128,9 @@
         'use strict';
 
         var BOOT_VERSION = 'rfc-deterministic-bootstrap-v1';
-        var ASSET_BG = 'assets/assets/images/bakgrund.png';
         var SW_RELOAD_KEY = 'aveli_sw_cleanup_done';
 
         var shell = document.getElementById('aveli-bootstrap-shell');
-        var bgEl = document.getElementById('aveli-shell-bg');
         var diagEl = document.getElementById('aveli-boot-diag');
 
         function bootNow() {
@@ -180,9 +163,6 @@
           state: 'init',
           events: [],
           renderer: { mode: 'unknown', policy: 'safe', reason: 'init' },
-          critical_assets: {
-            background: { path: ASSET_BG, status: 'init' },
-          },
         };
 
         function log(level, type, data) {
@@ -238,10 +218,6 @@
               ' (' +
               boot.renderer.reason +
               ')'
-          );
-          lines.push(
-            'assets:  bg=' +
-              boot.critical_assets.background.status
           );
           lines.push('');
           for (var i = 0; i < last.length; i++) {
@@ -389,66 +365,6 @@
           });
         }
 
-        function preloadImage(url, timeoutMs) {
-          return new Promise(function (resolve) {
-            var img = new Image();
-            var done = false;
-            var timer = null;
-            function finish(ok, reason) {
-              if (done) return;
-              done = true;
-              if (timer) clearTimeout(timer);
-              resolve({ ok: ok, reason: reason || '' });
-            }
-            try {
-              img.decoding = 'async';
-            } catch (_) {}
-            img.onload = function () {
-              finish(true, 'loaded');
-            };
-            img.onerror = function () {
-              finish(false, 'error');
-            };
-            timer = setTimeout(function () {
-              finish(false, 'timeout');
-            }, timeoutMs);
-            img.src = url;
-          });
-        }
-
-        function applyCriticalAssets() {
-          var bgUrl = resolveAssetUrl(ASSET_BG);
-
-          if (shell) {
-            shell.dataset.bg = 'init';
-          }
-
-          var bgPromise = preloadImage(bgUrl, 4500).then(function (res) {
-            if (res.ok) {
-              boot.critical_assets.background.status = 'loaded';
-              if (bgEl) bgEl.style.backgroundImage = 'url(\"' + bgUrl + '\")';
-              if (shell) shell.dataset.bg = 'ready';
-              log('info', 'critical_asset', {
-                name: 'background',
-                status: 'loaded',
-                path: ASSET_BG,
-              });
-            } else {
-              boot.critical_assets.background.status = 'fallback';
-              if (shell) shell.dataset.bg = 'fallback';
-              log('error', 'critical_asset', {
-                name: 'background',
-                status: 'fallback',
-                reason: res.reason,
-                path: ASSET_BG,
-              });
-            }
-            return res;
-          });
-
-          return Promise.all([bgPromise]);
-        }
-
         function injectFlutterBootstrap() {
           return new Promise(function (resolve, reject) {
             try {
@@ -505,9 +421,6 @@
           boot.renderer = detectRendererPolicy();
           setHtmlEffectsClass(boot.renderer.policy);
           log('info', 'renderer_detected', boot.renderer);
-
-          await applyCriticalAssets();
-          transition('critical_assets_ready', boot.critical_assets);
 
           await injectFlutterBootstrap();
           transition('flutter_bootstrap_loaded', {});

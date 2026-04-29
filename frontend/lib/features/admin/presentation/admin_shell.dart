@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/data/app_render_inputs_repository.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/brand_logo_image.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
@@ -42,7 +42,7 @@ class AdminShell extends StatelessWidget {
       maxContentWidth: 1680,
       contentPadding: EdgeInsets.zero,
       background: FullBleedBackground(
-        image: AppImages.observatoriumBackground,
+        background: UiBackgroundRenderInputKey.observatory,
         topOpacity: 0.22,
         sideVignette: 0.24,
         overlayColor: const Color(0x33050B17),

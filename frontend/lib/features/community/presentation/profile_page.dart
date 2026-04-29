@@ -22,7 +22,6 @@ import 'package:aveli/shared/widgets/app_avatar.dart';
 import 'package:aveli/shared/widgets/top_nav_action_buttons.dart';
 import 'package:aveli/features/community/presentation/widgets/profile_logout_section.dart';
 import 'package:aveli/shared/utils/snack.dart';
-import 'package:aveli/shared/utils/app_images.dart';
 
 class ProfilePage extends ConsumerStatefulWidget {
   const ProfilePage({super.key});
@@ -176,7 +175,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       onBack: () => context.goNamed(AppRoute.home),
       actions: const [TopNavActionButtons()],
       background: FullBleedBackground(
-        image: AppImages.background,
         alignment: Alignment.center,
         topOpacity: 0.38,
         sideVignette: 0.15,

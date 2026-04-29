@@ -61,19 +61,18 @@ class _StudioProfilePageState extends ConsumerState<StudioProfilePage> {
     _syncHomeUploadPolling(asyncState);
 
     final cached = asyncState.valueOrNull;
-    final title = cached?.textBundle.requireValue(
-      'studio_editor.profile_media.home_player_library_title',
-    ) ?? '';
+    final title =
+        cached?.textBundle.requireValue(
+          'studio_editor.profile_media.home_player_library_title',
+        ) ??
+        '';
     if (cached != null) {
       return AppScaffold(
         title: title,
         extendBodyBehindAppBar: true,
         onBack: () => context.goNamed(AppRoute.home),
         contentPadding: const EdgeInsets.fromLTRB(16, 120, 16, 32),
-        background: const HeroBackground(
-          assetPath: 'images/bakgrund.png',
-          opacity: 0.65,
-        ),
+        background: const HeroBackground(opacity: 0.65),
         body: _HomePlayerLibraryBody(state: cached, isBusy: false),
       );
     }
@@ -83,10 +82,7 @@ class _StudioProfilePageState extends ConsumerState<StudioProfilePage> {
       extendBodyBehindAppBar: true,
       onBack: () => context.goNamed(AppRoute.home),
       contentPadding: const EdgeInsets.fromLTRB(16, 120, 16, 32),
-      background: const HeroBackground(
-          assetPath: 'images/bakgrund.png',
-          opacity: 0.65,
-      ),
+      background: const HeroBackground(opacity: 0.65),
       body: asyncState.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ErrorView(
@@ -305,10 +301,7 @@ class _ErrorView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
           const SizedBox(height: 16),
-          IconButton(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-          ),
+          IconButton(onPressed: onRetry, icon: const Icon(Icons.refresh)),
         ],
       ),
     );
@@ -330,7 +323,8 @@ void _showErrorSnackBar(
   HomePlayerTextBundle texts,
   String fallbackTextId,
 ) {
-  final message = _backendOwnedErrorMessage(error) ?? texts.requireValue(fallbackTextId);
+  final message =
+      _backendOwnedErrorMessage(error) ?? texts.requireValue(fallbackTextId);
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(message),
@@ -1039,9 +1033,9 @@ Future<void> _uploadHomeMedia(
   final errorTextId = homePlayerUploadUnsupportedTextId(route);
   if (errorTextId != null) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(texts.requireValue(errorTextId))),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(texts.requireValue(errorTextId))));
     return;
   }
 
@@ -1049,7 +1043,9 @@ Future<void> _uploadHomeMedia(
   final title = await _promptRequiredTitle(
     context,
     texts: texts,
-    title: texts.requireValue('studio_editor.profile_media.upload_prompt_title'),
+    title: texts.requireValue(
+      'studio_editor.profile_media.upload_prompt_title',
+    ),
     hint: texts.requireValue('studio_editor.profile_media.upload_prompt_hint'),
     initialValue: suggested,
     confirmLabel: texts.requireValue('home.player_upload.submit_action'),
@@ -1070,9 +1066,7 @@ Future<void> _uploadHomeMedia(
 
   if (ok == true && context.mounted) {
     ref.invalidate(homePlayerLibraryProvider);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           texts.requireValue('studio_editor.profile_media.upload_ready_status'),
@@ -1093,9 +1087,7 @@ Future<void> _linkFromCourses(
       .where(_isHomeAudioCourseSource)
       .toList(growable: false);
   if (audioSources.isEmpty) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           texts.requireValue(
@@ -1130,9 +1122,7 @@ Future<void> _linkFromCourses(
   try {
     await controller.createCourseLink(lessonMediaId: picked.id, title: title);
     if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           texts.requireValue('studio_editor.profile_media.link_created_status'),

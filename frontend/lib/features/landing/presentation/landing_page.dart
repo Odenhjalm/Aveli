@@ -12,7 +12,6 @@ import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart';
-import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/effects_backdrop_filter.dart';
@@ -32,15 +31,9 @@ class LandingPage extends ConsumerStatefulWidget {
   ConsumerState<LandingPage> createState() => _LandingPageState();
 }
 
-class _LandingPageState extends ConsumerState<LandingPage>
-    with WidgetsBindingObserver {
+class _LandingPageState extends ConsumerState<LandingPage> {
   final _scroll = ScrollController();
   double _offset = 0.0;
-  // Bakgrundsmotivet ligger inbakat i appen för att WebView inte ska kräva API-token.
-  ImageProvider<Object> get _bg => AppImages.background;
-
-  // 🔒 säkerställ att vi bara precachar en gång, och först när inherited widgets finns
-  bool _didPrecache = false;
 
   // Data for sections
   bool _introCoursesLoading = true;
@@ -87,16 +80,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
     });
     // kick off data load
     _load();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // ✅ precache här (inte i initState) för att undvika “dependOnInheritedWidget”–felet
-    if (!_didPrecache) {
-      precacheImage(_bg, context);
-      _didPrecache = true;
-    }
   }
 
   @override
@@ -343,7 +326,6 @@ class _LandingPageState extends ConsumerState<LandingPage>
         fit: StackFit.expand,
         children: [
           FullBleedBackground(
-            image: _bg,
             focalX: focalX,
             pixelNudgeX: pixelNudgeX,
             topOpacity: topScrimOpacity,

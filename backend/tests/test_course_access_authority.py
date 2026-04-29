@@ -111,7 +111,7 @@ async def test_canonical_course_access_denies_paid_course_without_enrollment(
     }
 
 
-async def test_canonical_course_access_denies_intro_course_without_intro_enrollment(
+async def test_canonical_course_access_denies_intro_course_without_intro(
     monkeypatch,
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
@@ -120,7 +120,7 @@ async def test_canonical_course_access_denies_intro_course_without_intro_enrollm
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
@@ -148,18 +148,18 @@ async def test_canonical_course_access_denies_intro_course_without_intro_enrollm
 
     access = await courses_service.read_canonical_course_access("user-1", "course-intro")
 
-    assert access["required_enrollment_source"] == "intro_enrollment"
+    assert access["required_enrollment_source"] == "intro"
     assert access["is_intro_course"] is True
     assert access["enrollment"] is None
     assert access["can_access"] is False
     assert courses_service.build_course_access_model(access["course"]) == {
-        "required_enrollment_source": "intro_enrollment",
+        "required_enrollment_source": "intro",
         "enrollable": True,
         "purchasable": False,
     }
 
 
-async def test_canonical_course_access_allows_intro_only_with_intro_enrollment(
+async def test_canonical_course_access_allows_intro_only_with_intro(
     monkeypatch,
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
@@ -168,12 +168,12 @@ async def test_canonical_course_access_allows_intro_only_with_intro_enrollment(
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
-        return _enrollment(source="intro_enrollment")
+        return _enrollment(source="intro")
 
     monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
     monkeypatch.setattr(
@@ -196,9 +196,9 @@ async def test_canonical_course_access_allows_intro_only_with_intro_enrollment(
 
     access = await courses_service.read_canonical_course_access("user-1", "course-intro")
 
-    assert access["required_enrollment_source"] == "intro_enrollment"
+    assert access["required_enrollment_source"] == "intro"
     assert access["is_intro_course"] is True
-    assert access["enrollment"]["source"] == "intro_enrollment"
+    assert access["enrollment"]["source"] == "intro"
     assert access["can_access"] is True
 
 
@@ -271,7 +271,7 @@ async def test_canonical_course_access_denies_wrong_enrollment_source(
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
-        return _enrollment(source="intro_enrollment")
+        return _enrollment(source="intro")
 
     monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
     monkeypatch.setattr(
@@ -286,7 +286,7 @@ async def test_canonical_course_access_denies_wrong_enrollment_source(
     assert access["required_enrollment_source"] == "purchase"
     assert access["is_intro_course"] is False
     assert access["selection_locked"] is False
-    assert access["enrollment"]["source"] == "intro_enrollment"
+    assert access["enrollment"]["source"] == "intro"
     assert access["can_access"] is False
 
 
@@ -299,12 +299,12 @@ async def test_read_canonical_course_access_marks_intro_course_and_locked_when_g
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
-        return _enrollment(source="intro_enrollment")
+        return _enrollment(source="intro")
 
     async def _fake_read_intro_selection_lock(*, user_id: str):
         assert user_id == "user-1"
@@ -340,7 +340,7 @@ async def test_read_canonical_course_access_marks_intro_course_and_locked_when_g
 
     access = await courses_service.read_canonical_course_access("user-1", "course-intro")
 
-    assert access["required_enrollment_source"] == "intro_enrollment"
+    assert access["required_enrollment_source"] == "intro"
     assert access["is_intro_course"] is True
     assert access["selection_locked"] is True
     assert "selection_lock_reason" not in access
@@ -356,12 +356,12 @@ async def test_read_canonical_course_access_marks_intro_course_and_unlocked_when
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
-        return _enrollment(source="intro_enrollment")
+        return _enrollment(source="intro")
 
     async def _fake_read_intro_selection_lock(*, user_id: str):
         assert user_id == "user-1"
@@ -397,7 +397,7 @@ async def test_read_canonical_course_access_marks_intro_course_and_unlocked_when
 
     access = await courses_service.read_canonical_course_access("user-1", "course-intro")
 
-    assert access["required_enrollment_source"] == "intro_enrollment"
+    assert access["required_enrollment_source"] == "intro"
     assert access["is_intro_course"] is True
     assert access["selection_locked"] is False
     assert "selection_lock_reason" not in access
@@ -455,7 +455,7 @@ async def test_canonical_course_access_hides_next_unlock_at_for_wrong_source(
     async def _fake_get_enrollment(user_id: str, course_id: str):
         del user_id, course_id
         return _enrollment(
-            source="intro_enrollment",
+            source="intro",
             next_unlock_at="2026-01-08T00:00:00Z",
         )
 
@@ -484,7 +484,7 @@ async def test_canonical_course_access_denies_intro_course_with_purchase_enrollm
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     async def _fake_get_enrollment(user_id: str, course_id: str):
@@ -512,14 +512,14 @@ async def test_canonical_course_access_denies_intro_course_with_purchase_enrollm
 
     access = await courses_service.read_canonical_course_access("user-1", "course-intro")
 
-    assert access["required_enrollment_source"] == "intro_enrollment"
+    assert access["required_enrollment_source"] == "intro"
     assert access["is_intro_course"] is True
     assert access["selection_locked"] is False
     assert access["enrollment"]["source"] == "purchase"
     assert access["can_access"] is False
 
 
-async def test_create_intro_course_enrollment_uses_intro_enrollment_source(
+async def test_create_intro_course_enrollment_uses_intro_source(
     monkeypatch,
 ) -> None:
     async def _fake_fetch_course(*, course_id=None, slug=None):
@@ -528,11 +528,11 @@ async def test_create_intro_course_enrollment_uses_intro_enrollment_source(
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     create_course_enrollment = AsyncMock(
-        return_value=_enrollment(source="intro_enrollment")
+        return_value=_enrollment(source="intro")
     )
 
     monkeypatch.setattr(courses_service, "fetch_course", _fake_fetch_course, raising=True)
@@ -562,14 +562,14 @@ async def test_create_intro_course_enrollment_uses_intro_enrollment_source(
     create_course_enrollment.assert_awaited_once_with(
         user_id="user-1",
         course_id="course-intro",
-        source="intro_enrollment",
+        source="intro",
     )
-    assert state["required_enrollment_source"] == "intro_enrollment"
+    assert state["required_enrollment_source"] == "intro"
     assert state["is_intro_course"] is True
     assert state["selection_locked"] is True
     assert state["enrollable"] is True
     assert state["purchasable"] is False
-    assert state["enrollment"]["source"] == "intro_enrollment"
+    assert state["enrollment"]["source"] == "intro"
 
 
 async def test_create_intro_course_enrollment_purchase_required_behavior_remains_unchanged(
@@ -607,7 +607,7 @@ async def test_create_intro_course_enrollment_maps_incomplete_drip_sql_failure_t
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     async def _raise_incomplete_drip(**kwargs):
@@ -649,7 +649,7 @@ async def test_create_intro_course_enrollment_maps_incomplete_completion_sql_fai
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     async def _raise_incomplete_completion(**kwargs):
@@ -691,7 +691,7 @@ async def test_create_intro_course_enrollment_maps_sql_failure_using_str_fallbac
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     async def _raise_incomplete_drip(**kwargs):
@@ -728,7 +728,7 @@ async def test_create_intro_course_enrollment_propagates_unrelated_database_erro
             course_id or "course-intro",
             group_position=0,
             price_amount_cents=None,
-            required_enrollment_source="intro_enrollment",
+            required_enrollment_source="intro",
         )
 
     original_error = _FakePsycopgError(
@@ -968,7 +968,7 @@ async def test_course_access_route_projects_backend_can_access(monkeypatch) -> N
                 "id": "99999999-9999-9999-9999-999999999999",
                 "user_id": "88888888-8888-8888-8888-888888888888",
                 "course_id": course_id,
-                "source": "intro_enrollment",
+                "source": "intro",
                 "granted_at": "2026-01-01T00:00:00Z",
                 "drip_started_at": "2026-01-01T00:00:00Z",
                 "current_unlock_position": 1,
@@ -990,7 +990,7 @@ async def test_course_access_route_projects_backend_can_access(monkeypatch) -> N
     assert response.can_access is False
     assert response.next_unlock_at is None
     assert response.enrollment is not None
-    assert response.enrollment.source == "intro_enrollment"
+    assert response.enrollment.source == "intro"
 
 
 async def test_course_access_route_projects_backend_next_unlock_at(monkeypatch) -> None:
@@ -1001,7 +1001,7 @@ async def test_course_access_route_projects_backend_next_unlock_at(monkeypatch) 
         return {
             "course_id": course_id,
             "group_position": 0,
-            "required_enrollment_source": "intro_enrollment",
+            "required_enrollment_source": "intro",
             "is_intro_course": True,
             "selection_locked": False,
             "enrollable": True,
@@ -1012,7 +1012,7 @@ async def test_course_access_route_projects_backend_next_unlock_at(monkeypatch) 
                 "id": "99999999-9999-9999-9999-999999999999",
                 "user_id": "88888888-8888-8888-8888-888888888888",
                 "course_id": course_id,
-                "source": "intro_enrollment",
+                "source": "intro",
                 "granted_at": "2026-01-01T00:00:00Z",
                 "drip_started_at": "2026-01-01T00:00:00Z",
                 "current_unlock_position": 1,
@@ -1046,7 +1046,7 @@ async def test_course_access_route_projects_is_intro_course_and_selection_locked
         return {
             "course_id": course_id,
             "group_position": 0,
-            "required_enrollment_source": "intro_enrollment",
+            "required_enrollment_source": "intro",
             "is_intro_course": True,
             "selection_locked": True,
             "enrollable": True,
@@ -1057,7 +1057,7 @@ async def test_course_access_route_projects_is_intro_course_and_selection_locked
                 "id": "99999999-9999-9999-9999-999999999999",
                 "user_id": "88888888-8888-8888-8888-888888888888",
                 "course_id": course_id,
-                "source": "intro_enrollment",
+                "source": "intro",
                 "granted_at": "2026-01-01T00:00:00Z",
                 "drip_started_at": "2026-01-01T00:00:00Z",
                 "current_unlock_position": 1,
@@ -1094,7 +1094,7 @@ async def test_enrollment_status_route_projects_is_intro_course_and_selection_lo
         return {
             "course_id": course_id,
             "group_position": 0,
-            "required_enrollment_source": "intro_enrollment",
+            "required_enrollment_source": "intro",
             "is_intro_course": True,
             "selection_locked": False,
             "enrollable": True,
@@ -1105,7 +1105,7 @@ async def test_enrollment_status_route_projects_is_intro_course_and_selection_lo
                 "id": "99999999-9999-9999-9999-999999999999",
                 "user_id": "88888888-8888-8888-8888-888888888888",
                 "course_id": course_id,
-                "source": "intro_enrollment",
+                "source": "intro",
                 "granted_at": "2026-01-01T00:00:00Z",
                 "drip_started_at": "2026-01-01T00:00:00Z",
                 "current_unlock_position": 1,
@@ -1214,10 +1214,10 @@ async def test_lesson_playback_access_allows_canonical_lesson_access(
                 "course-intro",
                 group_position=0,
                 price_amount_cents=None,
-                required_enrollment_source="intro_enrollment",
+                required_enrollment_source="intro",
             ),
-            "enrollment": _enrollment(source="intro_enrollment"),
-            "required_enrollment_source": "intro_enrollment",
+            "enrollment": _enrollment(source="intro"),
+            "required_enrollment_source": "intro",
             "current_unlock_position": 1,
             "can_access": True,
         }

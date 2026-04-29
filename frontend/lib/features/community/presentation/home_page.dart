@@ -10,7 +10,6 @@ import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/application/media_providers.dart';
 import 'package:aveli/features/media/data/media_repository.dart';
 import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/shared/utils/app_images.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -50,8 +49,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       extendBodyBehindAppBar: true,
       transparentAppBar: true,
       background: FullBleedBackground(
-        // Den gemensamma bakgrunden ligger lokalt i appen för stabil rendering.
-        image: AppImages.background,
         alignment: Alignment.center,
         topOpacity: 0.28,
         overlayColor: Theme.of(context).brightness != Brightness.dark

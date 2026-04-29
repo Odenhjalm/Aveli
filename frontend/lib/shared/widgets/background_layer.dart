@@ -1,25 +1,52 @@
 import 'package:flutter/material.dart';
-import 'package:aveli/core/bootstrap/boot_log.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:aveli/core/bootstrap/safe_media.dart';
-import 'package:aveli/shared/utils/app_images.dart';
+import 'package:aveli/shared/data/app_render_inputs_repository.dart';
 
 /// Full-viewport background image with a soft, readable overlay.
-/// - Always covers the entire available space (desktop/web/mobile)
-/// - Subtle neutral scrim for readability (warm lift in light mode)
-/// - Does not capture gestures (content above remains interactive)
-class BackgroundLayer extends StatelessWidget {
-  const BackgroundLayer({super.key, this.image, this.imagePath});
+class BackgroundLayer extends ConsumerWidget {
+  const BackgroundLayer({
+    super.key,
+    this.background = UiBackgroundRenderInputKey.defaultBackground,
+  });
 
-  final ImageProvider<Object>? image;
-  final String? imagePath;
+  const BackgroundLayer.lesson({super.key})
+    : background = UiBackgroundRenderInputKey.lesson;
+
+  final UiBackgroundRenderInputKey background;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final isLightMode = theme.brightness != Brightness.dark;
+    final backgroundInput = ref.watch(
+      uiBackgroundRenderInputProvider(background),
+    );
+
+    return backgroundInput.when(
+      data: (input) => _ResolvedBackgroundLayer(
+        provider: NetworkImage(input.resolvedUrl),
+        isLightMode: isLightMode,
+      ),
+      loading: () => const ColoredBox(color: Colors.black),
+      error: (error, stackTrace) =>
+          Error.throwWithStackTrace(error, stackTrace),
+    );
+  }
+}
+
+class _ResolvedBackgroundLayer extends StatelessWidget {
+  const _ResolvedBackgroundLayer({
+    required this.provider,
+    required this.isLightMode,
+  });
+
+  final ImageProvider<Object> provider;
+  final bool isLightMode;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isLightMode = theme.brightness != Brightness.dark;
-    final provider = image ?? AppImages.background;
-    final assetPath = imagePath ?? AppImages.backgroundPath;
-
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -40,7 +67,6 @@ class BackgroundLayer extends StatelessWidget {
               );
 
               return Image(
-                // Bundlad bakgrund hålls lokalt för att undvika 401 från backend.
                 image: SafeMedia.resizedProvider(
                   provider,
                   cacheWidth: cacheWidth,
@@ -52,15 +78,6 @@ class BackgroundLayer extends StatelessWidget {
                   full: FilterQuality.high,
                 ),
                 gaplessPlayback: true,
-                errorBuilder: (context, error, stackTrace) {
-                  BootLog.criticalAsset(
-                    name: 'background',
-                    status: 'fallback',
-                    path: assetPath,
-                    error: error,
-                  );
-                  return const SizedBox.shrink();
-                },
               );
             },
           ),

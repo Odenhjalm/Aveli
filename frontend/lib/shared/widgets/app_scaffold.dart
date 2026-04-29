@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
+import 'package:aveli/shared/data/app_render_inputs_repository.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/brand_header.dart';
 import 'package:aveli/widgets/base_page.dart';
@@ -140,10 +142,10 @@ class AppScaffold extends StatelessWidget {
 }
 
 /// Full-bleed bakgrund i cover-läge med mjuk toppscrim (och valfri varm overlay).
-class FullBleedBackground extends StatefulWidget {
+class FullBleedBackground extends ConsumerWidget {
   const FullBleedBackground({
     super.key,
-    required this.image,
+    this.background = UiBackgroundRenderInputKey.defaultBackground,
     this.alignment = Alignment.center,
     this.yOffset = 0,
     this.scale = 1.0,
@@ -155,7 +157,7 @@ class FullBleedBackground extends StatefulWidget {
     this.pixelNudgeX = 0.0,
   });
 
-  final ImageProvider<Object> image;
+  final UiBackgroundRenderInputKey background;
   final Alignment alignment;
   final double yOffset;
   final double scale;
@@ -169,10 +171,62 @@ class FullBleedBackground extends StatefulWidget {
   final double pixelNudgeX;
 
   @override
-  State<FullBleedBackground> createState() => _FullBleedBackgroundState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final backgroundInput = ref.watch(
+      uiBackgroundRenderInputProvider(background),
+    );
+    return backgroundInput.when(
+      data: (input) => _ResolvedFullBleedBackground(
+        image: NetworkImage(input.resolvedUrl),
+        alignment: alignment,
+        yOffset: yOffset,
+        scale: scale,
+        topOpacity: topOpacity,
+        sideVignette: sideVignette,
+        overlayColor: overlayColor,
+        focalX: focalX,
+        pixelNudgeX: pixelNudgeX,
+        child: child,
+      ),
+      loading: () => const ColoredBox(color: Colors.black),
+      error: (error, stackTrace) =>
+          Error.throwWithStackTrace(error, stackTrace),
+    );
+  }
 }
 
-class _FullBleedBackgroundState extends State<FullBleedBackground> {
+class _ResolvedFullBleedBackground extends StatefulWidget {
+  const _ResolvedFullBleedBackground({
+    required this.image,
+    required this.alignment,
+    required this.yOffset,
+    required this.scale,
+    required this.topOpacity,
+    required this.sideVignette,
+    required this.pixelNudgeX,
+    this.overlayColor,
+    this.child,
+    this.focalX,
+  });
+
+  final ImageProvider<Object> image;
+  final Alignment alignment;
+  final double yOffset;
+  final double scale;
+  final double topOpacity;
+  final double sideVignette;
+  final Color? overlayColor;
+  final Widget? child;
+  final double? focalX;
+  final double pixelNudgeX;
+
+  @override
+  State<_ResolvedFullBleedBackground> createState() =>
+      _ResolvedFullBleedBackgroundState();
+}
+
+class _ResolvedFullBleedBackgroundState
+    extends State<_ResolvedFullBleedBackground> {
   Size? _imageSize;
   ImageStream? _imageStream;
   ImageStreamListener? _listener;
@@ -184,7 +238,7 @@ class _FullBleedBackgroundState extends State<FullBleedBackground> {
   }
 
   @override
-  void didUpdateWidget(covariant FullBleedBackground oldWidget) {
+  void didUpdateWidget(covariant _ResolvedFullBleedBackground oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.image, widget.image)) {
       _resolveImage(force: true);

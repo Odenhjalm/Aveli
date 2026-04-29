@@ -3,12 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
-import 'package:aveli/shared/utils/app_images.dart';
-
 import 'boot_bridge.dart';
 import 'boot_config.dart';
 import 'boot_log.dart';
-import 'critical_assets.dart';
 import 'effects_policy.dart';
 
 class BootGate extends StatefulWidget {
@@ -35,34 +32,6 @@ class _BootGateState extends State<BootGate> {
   Future<void> _run() async {
     BootLog.transition(from: 'dart_run_app', to: 'dart_warmup_start');
     EffectsPolicyController.set(widget.config.effectsPolicy);
-
-    Future<bool> warmAsset({
-      required String name,
-      required ImageProvider provider,
-      required String path,
-      Duration timeout = const Duration(milliseconds: 4500),
-    }) async {
-      try {
-        await precacheImage(provider, context).timeout(timeout);
-        BootLog.criticalAsset(name: name, status: 'loaded', path: path);
-        return true;
-      } catch (e) {
-        BootLog.criticalAsset(
-          name: name,
-          status: 'fallback',
-          path: path,
-          error: e,
-        );
-        return false;
-      }
-    }
-
-    final bgOk = await warmAsset(
-      name: 'background',
-      provider: AppImages.background,
-      path: AppImages.backgroundPath,
-    );
-    CriticalAssets.backgroundOk = bgOk;
 
     BootLog.transition(from: 'dart_warmup_start', to: 'dart_allow_first_frame');
 

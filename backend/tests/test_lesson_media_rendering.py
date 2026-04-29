@@ -22,72 +22,64 @@ LESSON_DOCUMENT = {
 }
 
 
-async def _allow_lesson_access(user_id: str, lesson_id: str):
-    assert user_id == USER_ID
-    assert lesson_id == LESSON_ID
-    return {
-        "lesson": {
-            "id": LESSON_ID,
-            "course_id": COURSE_ID,
-            "lesson_title": "Lesson",
-            "position": 1,
-        },
-        "course": {"id": COURSE_ID},
-        "enrollment": {
-            "id": "66666666-6666-6666-6666-666666666666",
-            "course_id": COURSE_ID,
-            "user_id": USER_ID,
-            "source": "purchase",
-            "current_unlock_position": 1,
-        },
-        "required_enrollment_source": "purchase",
-        "current_unlock_position": 1,
-        "can_access": True,
-    }
-
-
-async def _lesson_structure(course_id: str):
-    assert course_id == COURSE_ID
-    return [
-        {
-            "id": LESSON_ID,
-            "lesson_title": "Lesson",
-            "position": 1,
-        }
-    ]
+def _lesson_view_response(
+    *,
+    media: list[course_routes.schemas.LessonViewMediaItem] | None = None,
+) -> course_routes.schemas.LessonViewResponse:
+    return course_routes.schemas.LessonViewResponse(
+        lesson=course_routes.schemas.LessonViewLesson(
+            id=LESSON_ID,
+            course_id=COURSE_ID,
+            lesson_title="Lesson",
+            position=1,
+            content_document=LESSON_DOCUMENT,
+        ),
+        navigation=course_routes.schemas.LessonViewNavigation(),
+        access=course_routes.schemas.LessonViewAccess(
+            has_access=True,
+            is_enrolled=True,
+            is_in_drip=False,
+            is_premium=True,
+            can_enroll=False,
+            can_purchase=False,
+        ),
+        cta=course_routes.schemas.LessonViewCTA(
+            type="continue",
+            label="Continue",
+            enabled=True,
+            action={"type": "continue"},
+        ),
+        pricing=course_routes.schemas.LessonViewPricing(
+            price_amount_cents=12000,
+            price_currency="sek",
+            formatted="120 SEK",
+        ),
+        progression=course_routes.schemas.LessonViewProgression(
+            unlocked=True,
+            reason="available",
+        ),
+        media=media or [],
+    )
 
 
 async def test_lesson_detail_excludes_non_ready_media(monkeypatch):
-    async def _protected_content(lesson_id: str, *, user_id: str):
+    async def _lesson_view_surface(
+        lesson_id: str,
+        *,
+        user_id: str | None = None,
+        preview: bool = False,
+        teacher_id: str | None = None,
+    ):
         assert lesson_id == LESSON_ID
         assert user_id == USER_ID
-        return {
-            "lesson": {
-                "id": LESSON_ID,
-                "course_id": COURSE_ID,
-                "lesson_title": "Lesson",
-                "position": 1,
-                "content_document": LESSON_DOCUMENT,
-            },
-            "media": [],
-        }
+        assert preview is False
+        assert teacher_id is None
+        return _lesson_view_response()
 
     monkeypatch.setattr(
         course_routes.courses_service,
-        "read_canonical_lesson_access",
-        _allow_lesson_access,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "read_protected_lesson_content_surface",
-        _protected_content,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "list_course_lesson_structure",
-        _lesson_structure,
+        "read_lesson_view_surface",
+        _lesson_view_surface,
         raising=True,
     )
 
@@ -97,50 +89,36 @@ async def test_lesson_detail_excludes_non_ready_media(monkeypatch):
 
 
 async def test_lesson_detail_returns_ready_resolved_media(monkeypatch):
-    async def _protected_content(lesson_id: str, *, user_id: str):
+    async def _lesson_view_surface(
+        lesson_id: str,
+        *,
+        user_id: str | None = None,
+        preview: bool = False,
+        teacher_id: str | None = None,
+    ):
         assert lesson_id == LESSON_ID
         assert user_id == USER_ID
-        return {
-            "lesson": {
-                "id": LESSON_ID,
-                "course_id": COURSE_ID,
-                "lesson_title": "Lesson",
-                "position": 1,
-                "content_document": LESSON_DOCUMENT,
-            },
-            "media": [
-                {
-                    "id": LESSON_MEDIA_ID,
-                    "lesson_id": LESSON_ID,
-                    "media_asset_id": MEDIA_ASSET_ID,
-                    "position": 1,
-                    "media_type": "audio",
-                    "state": "ready",
-                    "media": {
-                        "media_id": MEDIA_ASSET_ID,
-                        "state": "ready",
-                        "resolved_url": "https://stream.local/lesson.mp3",
-                    },
-                }
-            ],
-        }
+        assert preview is False
+        assert teacher_id is None
+        return _lesson_view_response(
+            media=[
+                course_routes.schemas.LessonViewMediaItem(
+                    lesson_media_id=LESSON_MEDIA_ID,
+                    position=1,
+                    media_type="audio",
+                    media=course_routes.schemas.LessonViewMedia(
+                        media_id=MEDIA_ASSET_ID,
+                        state="ready",
+                        resolved_url="https://stream.local/lesson.mp3",
+                    ),
+                )
+            ]
+        )
 
     monkeypatch.setattr(
         course_routes.courses_service,
-        "read_canonical_lesson_access",
-        _allow_lesson_access,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "read_protected_lesson_content_surface",
-        _protected_content,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "list_course_lesson_structure",
-        _lesson_structure,
+        "read_lesson_view_surface",
+        _lesson_view_surface,
         raising=True,
     )
 
@@ -148,44 +126,31 @@ async def test_lesson_detail_returns_ready_resolved_media(monkeypatch):
 
     assert len(response.media) == 1
     item = response.media[0]
-    assert item.state == "ready"
-    assert item.media is not None
-    assert item.media.media_id == UUID(MEDIA_ASSET_ID)
+    assert item.lesson_media_id == UUID(LESSON_MEDIA_ID)
+    assert item.media_type == "audio"
+    assert item.media.media_id == MEDIA_ASSET_ID
     assert item.media.state == "ready"
     assert item.media.resolved_url == "https://stream.local/lesson.mp3"
 
 
-async def test_lesson_detail_rejects_malformed_protected_lesson(monkeypatch):
-    async def _protected_content(lesson_id: str, *, user_id: str):
+async def test_lesson_detail_maps_service_unavailable_to_safe_error(monkeypatch):
+    async def _lesson_view_surface(
+        lesson_id: str,
+        *,
+        user_id: str | None = None,
+        preview: bool = False,
+        teacher_id: str | None = None,
+    ):
         assert lesson_id == LESSON_ID
         assert user_id == USER_ID
-        return {
-            "lesson": {
-                "id": LESSON_ID,
-                "course_id": COURSE_ID,
-                "lesson_title": None,
-                "position": 1,
-                "content_document": LESSON_DOCUMENT,
-            },
-            "media": [],
-        }
+        assert preview is False
+        assert teacher_id is None
+        raise HTTPException(status_code=503, detail="canonical surface unavailable")
 
     monkeypatch.setattr(
         course_routes.courses_service,
-        "read_canonical_lesson_access",
-        _allow_lesson_access,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "read_protected_lesson_content_surface",
-        _protected_content,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "list_course_lesson_structure",
-        _lesson_structure,
+        "read_lesson_view_surface",
+        _lesson_view_surface,
         raising=True,
     )
 
@@ -193,57 +158,35 @@ async def test_lesson_detail_rejects_malformed_protected_lesson(monkeypatch):
         await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
     assert excinfo.value.status_code == 503
-    assert excinfo.value.detail == "Lektionen kunde inte laddas just nu."
+    assert excinfo.value.detail == course_routes._LESSON_CONTENT_UNAVAILABLE_DETAIL
     assert "canonical" not in str(excinfo.value.detail).lower()
 
 
-async def test_lesson_detail_rejects_malformed_structure_row(monkeypatch):
-    async def _protected_content(lesson_id: str, *, user_id: str):
+async def test_lesson_detail_passes_preview_flag_to_service(monkeypatch):
+    async def _lesson_view_surface(
+        lesson_id: str,
+        *,
+        user_id: str | None = None,
+        preview: bool = False,
+        teacher_id: str | None = None,
+    ):
         assert lesson_id == LESSON_ID
         assert user_id == USER_ID
-        return {
-            "lesson": {
-                "id": LESSON_ID,
-                "course_id": COURSE_ID,
-                "lesson_title": "Lesson",
-                "position": 1,
-                "content_document": LESSON_DOCUMENT,
-            },
-            "media": [],
-        }
-
-    async def _malformed_lesson_structure(course_id: str):
-        assert course_id == COURSE_ID
-        return [
-            {
-                "id": LESSON_ID,
-                "lesson_title": "",
-                "position": 1,
-            }
-        ]
+        assert preview is True
+        assert teacher_id == USER_ID
+        return _lesson_view_response()
 
     monkeypatch.setattr(
         course_routes.courses_service,
-        "read_canonical_lesson_access",
-        _allow_lesson_access,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "read_protected_lesson_content_surface",
-        _protected_content,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        course_routes.courses_service,
-        "list_course_lesson_structure",
-        _malformed_lesson_structure,
+        "read_lesson_view_surface",
+        _lesson_view_surface,
         raising=True,
     )
 
-    with pytest.raises(HTTPException) as excinfo:
-        await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
+    response = await course_routes.lesson_detail(
+        LESSON_ID,
+        {"id": UUID(USER_ID)},
+        preview=True,
+    )
 
-    assert excinfo.value.status_code == 503
-    assert excinfo.value.detail == "Lektionen kunde inte laddas just nu."
-    assert "canonical" not in str(excinfo.value.detail).lower()
+    assert response.lesson.id == UUID(LESSON_ID)

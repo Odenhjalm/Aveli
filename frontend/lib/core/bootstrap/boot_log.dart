@@ -41,18 +41,4 @@ class BootLog {
       print(text);
     }
   }
-
-  static void criticalAsset({
-    required String name,
-    required String status,
-    required String path,
-    Object? error,
-  }) {
-    event('critical_asset', {
-      'name': name,
-      'status': status,
-      'path': path,
-      if (error != null) 'error': error.toString(),
-    }, level: status == 'loaded' ? 800 : 1000);
-  }
 }

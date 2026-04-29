@@ -132,30 +132,47 @@ async def test_read_canonical_lesson_access_respects_current_unlock_position(
     assert access["can_access"] is False
 
 
-async def test_lesson_detail_denies_before_media_or_structure_reads(monkeypatch):
-    async def fake_read_canonical_lesson_access(user_id: str, lesson_id: str):
-        assert user_id == USER_ID
+async def test_lesson_detail_serializes_locked_view_before_protected_reads(monkeypatch):
+    async def fake_read_lesson_view_surface(
+        lesson_id: str,
+        *,
+        user_id: str | None = None,
+        preview: bool = False,
+        teacher_id: str | None = None,
+    ):
         assert lesson_id == LESSON_ID
-        return {
-            "lesson": {
-                "id": LESSON_ID,
-                "course_id": COURSE_ID,
-                "lesson_title": "Locked lesson",
-                "position": 2,
-                "content_markdown": "# Locked",
-            },
-            "course": {"id": COURSE_ID},
-            "enrollment": {
-                "id": "enrollment-1",
-                "course_id": COURSE_ID,
-                "user_id": USER_ID,
-                "source": "purchase",
-                "current_unlock_position": 1,
-            },
-            "required_enrollment_source": "purchase",
-            "current_unlock_position": 1,
-            "can_access": False,
-        }
+        assert user_id == USER_ID
+        assert preview is False
+        assert teacher_id is None
+        return course_routes.schemas.LessonViewResponse(
+            lesson=course_routes.schemas.LessonViewLesson(
+                id=LESSON_ID,
+                course_id=COURSE_ID,
+                lesson_title="Locked lesson",
+                position=2,
+            ),
+            navigation=course_routes.schemas.LessonViewNavigation(),
+            access=course_routes.schemas.LessonViewAccess(
+                has_access=False,
+                is_enrolled=True,
+                is_in_drip=True,
+                is_premium=True,
+                can_enroll=False,
+                can_purchase=False,
+            ),
+            cta=course_routes.schemas.LessonViewCTA(
+                type="blocked",
+                label="Låst",
+                enabled=False,
+                reason_code="drip",
+                reason_text="Lektionen är inte upplåst ännu.",
+            ),
+            progression=course_routes.schemas.LessonViewProgression(
+                unlocked=False,
+                reason="drip",
+            ),
+            media=[],
+        )
 
     async def fail_list_course_lessons(course_id: str):
         raise AssertionError("protected lesson structure must not load before access passes")
@@ -170,8 +187,8 @@ async def test_lesson_detail_denies_before_media_or_structure_reads(monkeypatch)
 
     monkeypatch.setattr(
         course_routes.courses_service,
-        "read_canonical_lesson_access",
-        fake_read_canonical_lesson_access,
+        "read_lesson_view_surface",
+        fake_read_lesson_view_surface,
         raising=True,
     )
     monkeypatch.setattr(
@@ -187,33 +204,36 @@ async def test_lesson_detail_denies_before_media_or_structure_reads(monkeypatch)
         raising=True,
     )
 
-    with pytest.raises(HTTPException) as excinfo:
-        await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
+    response = await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
-    assert excinfo.value.status_code == 403
-    assert excinfo.value.detail == "Du har inte åtkomst till den här lektionen."
-    assert "forbidden" not in str(excinfo.value.detail).lower()
+    payload = response.model_dump(mode="json", exclude_none=True)
+    assert "content_document" not in payload["lesson"]
+    assert payload["media"] == []
+    assert payload["progression"] == {"unlocked": False, "reason": "drip"}
+    assert "lesson_media_id" not in str(payload)
+    assert "resolved_url" not in str(payload)
 
 
 async def test_lesson_detail_missing_lesson_uses_swedish_safe_error(
     monkeypatch,
 ):
-    async def fake_read_canonical_lesson_access(user_id: str, lesson_id: str):
-        assert user_id == USER_ID
+    async def fake_read_lesson_view_surface(
+        lesson_id: str,
+        *,
+        user_id: str | None = None,
+        preview: bool = False,
+        teacher_id: str | None = None,
+    ):
         assert lesson_id == LESSON_ID
-        return {
-            "lesson": None,
-            "course": None,
-            "enrollment": None,
-            "required_enrollment_source": None,
-            "current_unlock_position": 0,
-            "can_access": False,
-        }
+        assert user_id == USER_ID
+        assert preview is False
+        assert teacher_id is None
+        return None
 
     monkeypatch.setattr(
         course_routes.courses_service,
-        "read_canonical_lesson_access",
-        fake_read_canonical_lesson_access,
+        "read_lesson_view_surface",
+        fake_read_lesson_view_surface,
         raising=True,
     )
 
@@ -221,28 +241,62 @@ async def test_lesson_detail_missing_lesson_uses_swedish_safe_error(
         await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
     assert excinfo.value.status_code == 404
-    assert excinfo.value.detail == "Lektionen kunde inte hittas."
+    assert excinfo.value.detail == course_routes._LESSON_NOT_FOUND_DETAIL
     assert "lesson not found" not in str(excinfo.value.detail).lower()
 
 
-async def test_lesson_detail_denies_admin_without_course_enrollment(monkeypatch):
-    async def fake_read_canonical_lesson_access(user_id: str, lesson_id: str):
-        assert user_id == USER_ID
+async def test_lesson_detail_serializes_locked_admin_without_course_enrollment(
+    monkeypatch,
+):
+    async def fake_read_lesson_view_surface(
+        lesson_id: str,
+        *,
+        user_id: str | None = None,
+        preview: bool = False,
+        teacher_id: str | None = None,
+    ):
         assert lesson_id == LESSON_ID
-        return {
-            "lesson": {
-                "id": LESSON_ID,
-                "course_id": COURSE_ID,
-                "lesson_title": "Admin still needs enrollment",
-                "position": 1,
-                "content_markdown": "# Protected",
-            },
-            "course": {"id": COURSE_ID},
-            "enrollment": None,
-            "required_enrollment_source": "purchase",
-            "current_unlock_position": 0,
-            "can_access": False,
-        }
+        assert user_id == USER_ID
+        assert preview is False
+        assert teacher_id is None
+        return course_routes.schemas.LessonViewResponse(
+            lesson=course_routes.schemas.LessonViewLesson(
+                id=LESSON_ID,
+                course_id=COURSE_ID,
+                lesson_title="Admin still needs enrollment",
+                position=1,
+            ),
+            navigation=course_routes.schemas.LessonViewNavigation(),
+            access=course_routes.schemas.LessonViewAccess(
+                has_access=False,
+                is_enrolled=False,
+                is_in_drip=False,
+                is_premium=True,
+                can_enroll=False,
+                can_purchase=True,
+            ),
+            cta=course_routes.schemas.LessonViewCTA(
+                type="buy",
+                label="Kop kursen",
+                enabled=True,
+                price={
+                    "price_amount_cents": 12000,
+                    "price_currency": "sek",
+                    "formatted": "120 SEK",
+                },
+                action={"type": "purchase"},
+            ),
+            pricing=course_routes.schemas.LessonViewPricing(
+                price_amount_cents=12000,
+                price_currency="sek",
+                formatted="120 SEK",
+            ),
+            progression=course_routes.schemas.LessonViewProgression(
+                unlocked=False,
+                reason="no_access",
+            ),
+            media=[],
+        )
 
     async def fail_list_course_lessons(course_id: str):
         raise AssertionError("admin must not reach protected lesson structure without enrollment")
@@ -256,8 +310,8 @@ async def test_lesson_detail_denies_admin_without_course_enrollment(monkeypatch)
 
     monkeypatch.setattr(
         course_routes.courses_service,
-        "read_canonical_lesson_access",
-        fake_read_canonical_lesson_access,
+        "read_lesson_view_surface",
+        fake_read_lesson_view_surface,
         raising=True,
     )
     monkeypatch.setattr(
@@ -273,15 +327,18 @@ async def test_lesson_detail_denies_admin_without_course_enrollment(monkeypatch)
         raising=True,
     )
 
-    with pytest.raises(HTTPException) as excinfo:
-        await course_routes.lesson_detail(
-            LESSON_ID,
-            {"id": UUID(USER_ID), "role": "admin"},
-        )
+    response = await course_routes.lesson_detail(
+        LESSON_ID,
+        {"id": UUID(USER_ID), "role": "admin"},
+    )
 
-    assert excinfo.value.status_code == 403
-    assert excinfo.value.detail == "Du har inte åtkomst till den här lektionen."
-    assert "forbidden" not in str(excinfo.value.detail).lower()
+    payload = response.model_dump(mode="json", exclude_none=True)
+    assert "content_document" not in payload["lesson"]
+    assert payload["media"] == []
+    assert payload["access"]["can_purchase"] is True
+    assert payload["progression"] == {"unlocked": False, "reason": "no_access"}
+    assert "lesson_media_id" not in str(payload)
+    assert "resolved_url" not in str(payload)
 
 
 async def test_course_enrollment_cannot_substitute_for_global_app_entry(
