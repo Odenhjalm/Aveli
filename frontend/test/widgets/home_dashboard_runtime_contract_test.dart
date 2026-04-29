@@ -176,6 +176,10 @@ void main() {
     expect(harness.adapter.requestsFor('/home/audio'), hasLength(1));
     expect(engineFactory.createCount, 1);
     expect(find.byKey(const ValueKey('home-audio-logo')), findsOneWidget);
+    _expectHomeAudioLogoUrl(
+      tester,
+      'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_closed.png',
+    );
     expect(
       find.byKey(const ValueKey('home-audio-track-list-toggle')),
       findsOneWidget,
@@ -213,14 +217,16 @@ void main() {
     );
     expect(container.read(homeAudioSessionControllerProvider).currentIndex, 0);
 
-    await tester.tap(
-      find.byKey(const ValueKey('home-audio-track-list-toggle')),
-    );
+    await tester.tap(find.byKey(const ValueKey('home-audio-logo')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.byKey(const ValueKey('home-audio-track-list')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-audio-logo')), findsOneWidget);
+    _expectHomeAudioLogoUrl(
+      tester,
+      'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_open.png',
+    );
     expect(find.byKey(const ValueKey('home-audio-track-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-audio-track-1')), findsOneWidget);
     expect(find.text('Kvällsmeditation'), findsOneWidget);
@@ -286,6 +292,58 @@ void main() {
     expect(find.text('Kvällsmeditation'), findsNothing);
     expect(find.text('Morgonandning'), findsNothing);
     expect(engineFactory.createCount, 1);
+  });
+
+  testWidgets('home player track list scrolls within a constrained area', (
+    tester,
+  ) async {
+    final items = List<Map<String, Object?>>.generate(18, (index) {
+      return _simpleHomeAudioItem(
+        title: 'Track ${index + 1}',
+        mediaId: 'media-${index + 1}',
+        resolvedUrl: 'https://cdn.test/audio/track-${index + 1}.mp3',
+        createdAt: '2026-04-22T10:${index.toString().padLeft(2, '0')}:00Z',
+      );
+    });
+    final harness = await _Harness.createWithHomeAudioHandler(
+      (_) => _jsonResponse(statusCode: 200, body: _simpleHomeAudioBody(items)),
+    );
+    final repository = HomeAudioRepository(harness.client);
+    final engineFactory = FakeHomeAudioEngineFactory();
+
+    final container = await _pumpDashboard(
+      tester,
+      homeAudioRepository: repository,
+      engineFactory: engineFactory,
+    );
+    addTearDown(container.dispose);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.byKey(const ValueKey('home-audio-logo')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final listFinder = find.byKey(const ValueKey('home-audio-track-list'));
+    final scrollFinder = find.byKey(
+      const ValueKey('home-audio-track-list-scroll'),
+    );
+    expect(listFinder, findsOneWidget);
+    expect(scrollFinder, findsOneWidget);
+    expect(tester.getRect(listFinder).height, lessThanOrEqualTo(250));
+    expect(
+      find.descendant(of: listFinder, matching: find.byType(Scrollable)),
+      findsOneWidget,
+    );
+
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey('home-audio-track-17')),
+      scrollFinder,
+      const Offset(0, -120),
+      maxIteration: 12,
+    );
+
+    expect(find.byKey(const ValueKey('home-audio-track-17')), findsOneWidget);
   });
 
   testWidgets('home dashboard renders notifications only in the header slot', (
@@ -618,6 +676,7 @@ class _Harness {
                 },
               },
             ],
+            'homeplayer_logo': _homeplayerLogoPayload(),
             'text_bundle': {
               'home.audio.section_title': {
                 'surface_id': 'TXT-SURF-076',
@@ -751,7 +810,37 @@ class _Harness {
 }
 
 Map<String, Object?> _simpleHomeAudioBody(List<Map<String, Object?>> items) {
-  return {'items': items, 'text_bundle': const <String, Object?>{}};
+  return {
+    'items': items,
+    'homeplayer_logo': _homeplayerLogoPayload(),
+    'text_bundle': const <String, Object?>{},
+  };
+}
+
+Map<String, Object?> _homeplayerLogoPayload() {
+  return const {
+    'closed': {
+      'asset_key': 'homeplayer_logo_closed',
+      'resolved_url':
+          'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_closed.png',
+    },
+    'open': {
+      'asset_key': 'homeplayer_logo_open',
+      'resolved_url':
+          'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_open.png',
+    },
+  };
+}
+
+void _expectHomeAudioLogoUrl(WidgetTester tester, String expectedUrl) {
+  final image = tester.widget<Image>(
+    find.descendant(
+      of: find.byKey(const ValueKey('home-audio-logo')),
+      matching: find.byType(Image),
+    ),
+  );
+  expect(image.image, isA<NetworkImage>());
+  expect((image.image as NetworkImage).url, expectedUrl);
 }
 
 Map<String, Object?> _simpleHomeAudioItem({

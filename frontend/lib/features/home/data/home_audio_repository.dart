@@ -89,6 +89,7 @@ class HomeAudioFeedItem extends Equatable {
 class HomeAudioFeedPayload extends Equatable {
   const HomeAudioFeedPayload({
     this.items = const [],
+    required this.homeplayerLogo,
     this.textBundle = const HomePlayerTextBundle(),
   });
 
@@ -102,15 +103,70 @@ class HomeAudioFeedPayload extends Equatable {
                 HomeAudioFeedItem.fromJson(Map<String, dynamic>.from(item)),
           )
           .toList(growable: false),
+      homeplayerLogo: HomePlayerLogoSet.fromJson(
+        _requiredMap(json['homeplayer_logo'], fieldName: 'homeplayer_logo'),
+      ),
       textBundle: HomePlayerTextBundle.fromJson(json['text_bundle']),
     );
   }
 
   final List<HomeAudioFeedItem> items;
+  final HomePlayerLogoSet homeplayerLogo;
   final HomePlayerTextBundle textBundle;
 
   @override
-  List<Object?> get props => [items, textBundle];
+  List<Object?> get props => [items, homeplayerLogo, textBundle];
+}
+
+class HomePlayerLogoAsset extends Equatable {
+  const HomePlayerLogoAsset({
+    required this.assetKey,
+    required this.resolvedUrl,
+  });
+
+  factory HomePlayerLogoAsset.fromJson(
+    Map<String, dynamic> json, {
+    required String expectedAssetKey,
+  }) {
+    final assetKey = (json['asset_key'] as String? ?? '').trim();
+    if (assetKey != expectedAssetKey) {
+      throw StateError('Invalid homeplayer logo asset_key: $assetKey');
+    }
+    final resolvedUrl = (json['resolved_url'] as String? ?? '').trim();
+    if (resolvedUrl.isEmpty) {
+      throw StateError('Missing homeplayer logo resolved_url: $assetKey');
+    }
+    return HomePlayerLogoAsset(assetKey: assetKey, resolvedUrl: resolvedUrl);
+  }
+
+  final String assetKey;
+  final String resolvedUrl;
+
+  @override
+  List<Object?> get props => [assetKey, resolvedUrl];
+}
+
+class HomePlayerLogoSet extends Equatable {
+  const HomePlayerLogoSet({required this.closed, required this.open});
+
+  factory HomePlayerLogoSet.fromJson(Map<String, dynamic> json) {
+    return HomePlayerLogoSet(
+      closed: HomePlayerLogoAsset.fromJson(
+        _requiredMap(json['closed'], fieldName: 'homeplayer_logo.closed'),
+        expectedAssetKey: 'homeplayer_logo_closed',
+      ),
+      open: HomePlayerLogoAsset.fromJson(
+        _requiredMap(json['open'], fieldName: 'homeplayer_logo.open'),
+        expectedAssetKey: 'homeplayer_logo_open',
+      ),
+    );
+  }
+
+  final HomePlayerLogoAsset closed;
+  final HomePlayerLogoAsset open;
+
+  @override
+  List<Object?> get props => [closed, open];
 }
 
 class HomeAudioRepository {

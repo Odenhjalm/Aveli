@@ -14,25 +14,26 @@ final homeAudioRepositoryProvider = Provider<HomeAudioRepository>((ref) {
 });
 
 class HomeAudioState extends Equatable {
-  const HomeAudioState({required this.items, required this.textBundle});
+  const HomeAudioState({
+    required this.items,
+    required this.homeplayerLogo,
+    required this.textBundle,
+  });
 
   factory HomeAudioState.fromPayload(HomeAudioFeedPayload payload) {
     return HomeAudioState(
       items: List<HomeAudioFeedItem>.unmodifiable(payload.items),
+      homeplayerLogo: payload.homeplayerLogo,
       textBundle: payload.textBundle,
     );
   }
 
-  static const empty = HomeAudioState(
-    items: [],
-    textBundle: HomePlayerTextBundle(),
-  );
-
   final List<HomeAudioFeedItem> items;
+  final HomePlayerLogoSet homeplayerLogo;
   final HomePlayerTextBundle textBundle;
 
   @override
-  List<Object?> get props => [items, textBundle];
+  List<Object?> get props => [items, homeplayerLogo, textBundle];
 }
 
 class HomeAudioController extends AutoDisposeAsyncNotifier<HomeAudioState> {

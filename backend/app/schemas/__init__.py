@@ -660,10 +660,33 @@ class HomeAudioItem(BaseModel):
     media: ResolvedMedia
 
 
+class HomePlayerLogoAsset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    asset_key: Literal["homeplayer_logo_closed", "homeplayer_logo_open"]
+    resolved_url: str = Field(min_length=1)
+
+    @field_validator("resolved_url")
+    @classmethod
+    def _validate_resolved_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("homeplayer logo resolved_url must be nonblank")
+        return normalized
+
+
+class HomePlayerLogoSet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    closed: HomePlayerLogoAsset
+    open: HomePlayerLogoAsset
+
+
 class HomeAudioFeedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: List[HomeAudioItem]
+    homeplayer_logo: HomePlayerLogoSet
     text_bundle: Dict[str, HomePlayerCatalogTextValue]
 
 

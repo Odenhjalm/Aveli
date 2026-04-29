@@ -32,6 +32,11 @@ void main() {
       expect(payload.items.last.courseTitle, 'Andning');
       expect(payload.items.last.media.resolvedUrl, isNull);
       expect(
+        payload.homeplayerLogo.closed.resolvedUrl,
+        'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_closed.png',
+      );
+      expect(payload.homeplayerLogo.open.assetKey, 'homeplayer_logo_open');
+      expect(
         payload.textBundle.requireValue('home.audio.section_title'),
         'Ljud i Home-spelaren',
       );
@@ -61,6 +66,7 @@ void main() {
               },
             },
           ],
+          'homeplayer_logo': _homeplayerLogoPayload(),
           'text_bundle': const {},
         },
       ),
@@ -136,6 +142,7 @@ ResponseBody _defaultHandler(RequestOptions options) {
             },
           },
         ],
+        'homeplayer_logo': _homeplayerLogoPayload(),
         'text_bundle': {
           'home.audio.section_title': {
             'surface_id': 'TXT-SURF-076',
@@ -159,6 +166,21 @@ ResponseBody _defaultHandler(RequestOptions options) {
     );
   }
   return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+}
+
+Map<String, Object?> _homeplayerLogoPayload() {
+  return const {
+    'closed': {
+      'asset_key': 'homeplayer_logo_closed',
+      'resolved_url':
+          'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_closed.png',
+    },
+    'open': {
+      'asset_key': 'homeplayer_logo_open',
+      'resolved_url':
+          'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_open.png',
+    },
+  };
 }
 
 ResponseBody _jsonResponse({

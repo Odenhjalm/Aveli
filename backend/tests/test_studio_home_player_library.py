@@ -15,6 +15,24 @@ from app.routes import studio as studio_routes
 pytestmark = pytest.mark.anyio("asyncio")
 
 
+class _StaticUrl:
+    def __init__(self, value: str):
+        self._value = value
+
+    def unicode_string(self) -> str:
+        return self._value
+
+
+@pytest.fixture(autouse=True)
+def _homeplayer_logo_public_storage_url(monkeypatch):
+    monkeypatch.setattr(
+        home_routes.home_audio_service.settings,
+        "supabase_url",
+        _StaticUrl("https://storage.test"),
+        raising=False,
+    )
+
+
 def _timestamp(*, minutes_ago: int = 0) -> datetime:
     return datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
 
@@ -368,10 +386,16 @@ async def test_home_audio_runtime_endpoint_shape_is_unaffected(
         response = await async_client.get("/home/audio", headers=headers)
         assert response.status_code == 200, response.text
         payload = response.json()
-        assert set(payload) == {"items", "text_bundle"}
+        assert set(payload) == {"items", "homeplayer_logo", "text_bundle"}
         assert "uploads" not in payload
         assert "course_links" not in payload
         assert "course_media" not in payload
+        assert payload["homeplayer_logo"]["closed"]["asset_key"] == (
+            "homeplayer_logo_closed"
+        )
+        assert payload["homeplayer_logo"]["open"]["asset_key"] == (
+            "homeplayer_logo_open"
+        )
         assert payload["text_bundle"]["home.audio.section_title"]["value"] == (
             "Ljud i Home-spelaren"
         )

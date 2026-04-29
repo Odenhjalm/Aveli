@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aveli/features/home/application/home_audio_controller.dart';
 import 'package:aveli/features/home/application/home_audio_session_controller.dart';
-import 'package:aveli/shared/utils/backend_assets.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
 import 'package:aveli/shared/widgets/inline_audio_player.dart';
 
@@ -13,6 +12,7 @@ const double _homeAudioLogoColumnWidth = 92;
 const double _homeAudioLogoColumnGap = 10;
 const double _homeAudioTrackListInset =
     _homeAudioLogoColumnWidth + _homeAudioLogoColumnGap;
+const double _homeAudioTrackListMaxHeight = 240;
 
 class HomeAudioSection extends ConsumerStatefulWidget {
   const HomeAudioSection({super.key});
@@ -23,6 +23,7 @@ class HomeAudioSection extends ConsumerStatefulWidget {
 
 class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
   ProviderSubscription<AsyncValue<HomeAudioState>>? _audioSub;
+  final ScrollController _trackListScrollController = ScrollController();
   bool _trackListExpanded = false;
 
   @override
@@ -55,16 +56,23 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
   @override
   void dispose() {
     _audioSub?.close();
+    _trackListScrollController.dispose();
     super.dispose();
+  }
+
+  void _toggleTrackList(List<HomeAudioQueueEntry> queue) {
+    if (queue.isEmpty) {
+      return;
+    }
+    setState(() {
+      _trackListExpanded = !_trackListExpanded;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final asyncState = ref.watch(homeAudioProvider);
     final sessionState = ref.watch(homeAudioSessionControllerProvider);
-    final logoProvider = ref
-        .watch(backendAssetResolverProvider)
-        .imageProvider('loggo_clean.png');
     final controller = ref.read(homeAudioSessionControllerProvider.notifier);
 
     if (!sessionState.hasQueue && asyncState.valueOrNull == null) {
@@ -75,13 +83,16 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
         );
       }
       return _HomeAudioErrorCard(
-        logoProvider: logoProvider,
         onRetry: () => ref.read(homeAudioProvider.notifier).refresh(),
       );
     }
 
     final queue = sessionState.queue;
     final selectedEntry = sessionState.currentEntry;
+    final logoSet = asyncState.valueOrNull?.homeplayerLogo;
+    final logoUrl = _trackListExpanded
+        ? logoSet?.open.resolvedUrl
+        : logoSet?.closed.resolvedUrl;
     final theme = Theme.of(context);
 
     return GlassCard(
@@ -101,15 +112,36 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
               SizedBox(
                 width: _homeAudioLogoColumnWidth,
                 child: Center(
-                  child: SizedBox(
+                  child: MouseRegion(
                     key: const ValueKey('home-audio-logo'),
-                    width: _homeAudioLogoColumnWidth,
-                    height: 72,
-                    child: Image(
-                      image: logoProvider,
-                      fit: BoxFit.contain,
-                      alignment: Alignment.center,
-                      filterQuality: FilterQuality.high,
+                    cursor: queue.isEmpty
+                        ? MouseCursor.defer
+                        : SystemMouseCursors.click,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: queue.isEmpty
+                          ? null
+                          : () => _toggleTrackList(queue),
+                      child: Semantics(
+                        button: queue.isNotEmpty,
+                        toggled: _trackListExpanded,
+                        label: 'Home-spelare',
+                        child: SizedBox(
+                          width: _homeAudioLogoColumnWidth,
+                          height: 72,
+                          child: logoUrl == null
+                              ? const SizedBox.shrink()
+                              : Image.network(
+                                  logoUrl,
+                                  fit: BoxFit.contain,
+                                  alignment: Alignment.center,
+                                  filterQuality: FilterQuality.high,
+                                  gaplessPlayback: true,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const SizedBox.shrink(),
+                                ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -137,13 +169,7 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
               const SizedBox(width: 2),
               IconButton(
                 key: const ValueKey('home-audio-track-list-toggle'),
-                onPressed: queue.isEmpty
-                    ? null
-                    : () {
-                        setState(() {
-                          _trackListExpanded = !_trackListExpanded;
-                        });
-                      },
+                onPressed: queue.isEmpty ? null : () => _toggleTrackList(queue),
                 icon: Icon(
                   _trackListExpanded
                       ? Icons.keyboard_arrow_up_rounded
@@ -177,25 +203,38 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
                           ),
                         ),
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final entry in queue) ...[
-                            _HomeAudioTrackRow(
-                              entry: entry,
-                              selected:
-                                  (selectedEntry?.index ?? -1) == entry.index,
-                              onTap: () => controller.selectIndex(entry.index),
-                            ),
-                            if (entry != queue.last)
-                              Divider(
-                                height: 1,
-                                color: theme.colorScheme.onSurface.withValues(
-                                  alpha: 0.05,
-                                ),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxHeight: _homeAudioTrackListMaxHeight,
+                        ),
+                        child: Scrollbar(
+                          controller: _trackListScrollController,
+                          thumbVisibility: queue.length > 4,
+                          child: ListView.separated(
+                            key: const ValueKey('home-audio-track-list-scroll'),
+                            controller: _trackListScrollController,
+                            primary: false,
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            itemCount: queue.length,
+                            separatorBuilder: (context, index) => Divider(
+                              height: 1,
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.05,
                               ),
-                          ],
-                        ],
+                            ),
+                            itemBuilder: (context, index) {
+                              final entry = queue[index];
+                              return _HomeAudioTrackRow(
+                                entry: entry,
+                                selected:
+                                    (selectedEntry?.index ?? -1) == entry.index,
+                                onTap: () =>
+                                    controller.selectIndex(entry.index),
+                              );
+                            },
+                          ),
+                        ),
                       ),
                     ),
                   )
@@ -210,12 +249,8 @@ class _HomeAudioSectionState extends ConsumerState<HomeAudioSection> {
 }
 
 class _HomeAudioErrorCard extends StatelessWidget {
-  const _HomeAudioErrorCard({
-    required this.logoProvider,
-    required this.onRetry,
-  });
+  const _HomeAudioErrorCard({required this.onRetry});
 
-  final ImageProvider<Object> logoProvider;
   final VoidCallback onRetry;
 
   @override
@@ -231,11 +266,6 @@ class _HomeAudioErrorCard extends StatelessWidget {
         key: const ValueKey('home-audio-error'),
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: 72,
-            child: Image(image: logoProvider, fit: BoxFit.contain),
-          ),
-          const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

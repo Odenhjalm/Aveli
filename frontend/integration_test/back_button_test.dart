@@ -10,6 +10,7 @@ import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/routing/app_router.dart';
+import 'package:aveli/data/models/home_player_library.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/domain/models/entry_state.dart';
 import 'package:aveli/features/community/application/community_providers.dart';
@@ -17,11 +18,25 @@ import 'package:aveli/features/community/presentation/community_page.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/home/application/home_audio_controller.dart';
+import 'package:aveli/features/home/data/home_audio_repository.dart';
 import 'package:aveli/features/home/presentation/home_dashboard_page.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
 import 'package:aveli/main.dart';
 import 'test_assets.dart';
+
+const _testHomeplayerLogo = HomePlayerLogoSet(
+  closed: HomePlayerLogoAsset(
+    assetKey: 'homeplayer_logo_closed',
+    resolvedUrl:
+        'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_closed.png',
+  ),
+  open: HomePlayerLogoAsset(
+    assetKey: 'homeplayer_logo_open',
+    resolvedUrl:
+        'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_open.png',
+  ),
+);
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(AuthState initialState)
@@ -43,7 +58,11 @@ class _FakeAuthController extends AuthController {
 
 class _FakeHomeAudioController extends HomeAudioController {
   @override
-  Future<HomeAudioState> build() async => HomeAudioState.empty;
+  Future<HomeAudioState> build() async => const HomeAudioState(
+    items: [],
+    homeplayerLogo: _testHomeplayerLogo,
+    textBundle: HomePlayerTextBundle(),
+  );
 }
 
 class _FakeAuthRepository implements AuthRepository {

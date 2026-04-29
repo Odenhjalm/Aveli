@@ -5,10 +5,17 @@ from typing import Any, Sequence
 
 from fastapi import HTTPException, status
 
+from ..config import settings
 from ..repositories import home_audio_runtime as home_audio_runtime_repo
+from . import storage_service
 from . import courses_service, lesson_playback_service
 
 logger = logging.getLogger(__name__)
+
+_HOMEPLAYER_LOGO_CLOSED_KEY = "homeplayer_logo_closed"
+_HOMEPLAYER_LOGO_OPEN_KEY = "homeplayer_logo_open"
+_HOMEPLAYER_LOGO_CLOSED_PATH = "home-player/logos/v1/homeplayer_logo_closed.png"
+_HOMEPLAYER_LOGO_OPEN_PATH = "home-player/logos/v1/homeplayer_logo_open.png"
 
 _HOME_AUDIO_MEDIA_STATES = frozenset(
     {"pending_upload", "uploaded", "processing", "ready", "failed"}
@@ -65,6 +72,29 @@ async def _compose_home_audio_media(
     }
     playback_cache[media_asset_id] = media
     return media
+
+
+def _public_homeplayer_logo_url(object_path: str) -> str:
+    url = storage_service.StorageService(
+        bucket=settings.media_public_bucket
+    ).public_url(object_path)
+    normalized = str(url or "").strip()
+    if not normalized:
+        raise storage_service.StorageServiceError("Home player logo URL is empty")
+    return normalized
+
+
+def build_homeplayer_logo_payload() -> dict[str, dict[str, str]]:
+    return {
+        "closed": {
+            "asset_key": _HOMEPLAYER_LOGO_CLOSED_KEY,
+            "resolved_url": _public_homeplayer_logo_url(_HOMEPLAYER_LOGO_CLOSED_PATH),
+        },
+        "open": {
+            "asset_key": _HOMEPLAYER_LOGO_OPEN_KEY,
+            "resolved_url": _public_homeplayer_logo_url(_HOMEPLAYER_LOGO_OPEN_PATH),
+        },
+    }
 
 
 async def list_home_audio_media(user_id: str, *, limit: int = 12) -> Sequence[dict[str, Any]]:

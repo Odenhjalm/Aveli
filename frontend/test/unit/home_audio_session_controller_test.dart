@@ -9,6 +9,19 @@ import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
 import '../helpers/fake_home_audio_engine.dart';
 
+const _testHomeplayerLogo = HomePlayerLogoSet(
+  closed: HomePlayerLogoAsset(
+    assetKey: 'homeplayer_logo_closed',
+    resolvedUrl:
+        'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_closed.png',
+  ),
+  open: HomePlayerLogoAsset(
+    assetKey: 'homeplayer_logo_open',
+    resolvedUrl:
+        'https://storage.test/storage/v1/object/public/public-media/home-player/logos/v1/homeplayer_logo_open.png',
+  ),
+);
+
 void main() {
   test('HomeAudioState preserves backend payload order exactly', () {
     final first = _item(
@@ -27,6 +40,7 @@ void main() {
     final state = HomeAudioState.fromPayload(
       HomeAudioFeedPayload(
         items: [first, second],
+        homeplayerLogo: _testHomeplayerLogo,
         textBundle: const HomePlayerTextBundle(),
       ),
     );

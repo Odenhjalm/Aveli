@@ -11,6 +11,24 @@ from app.repositories import media_assets as media_assets_repo
 from app.services import home_audio_service
 
 
+class _StaticUrl:
+    def __init__(self, value: str):
+        self._value = value
+
+    def unicode_string(self) -> str:
+        return self._value
+
+
+@pytest.fixture(autouse=True)
+def _homeplayer_logo_public_storage_url(monkeypatch):
+    monkeypatch.setattr(
+        home_audio_service.settings,
+        "supabase_url",
+        _StaticUrl("https://storage.test"),
+        raising=False,
+    )
+
+
 def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
@@ -482,7 +500,23 @@ async def test_home_audio_returns_items_with_canonical_nested_media(async_client
     )
     assert teacher_resp.status_code == 200, teacher_resp.text
     payload = teacher_resp.json()
-    assert set(payload) == {"items", "text_bundle"}
+    assert set(payload) == {"items", "homeplayer_logo", "text_bundle"}
+    assert payload["homeplayer_logo"] == {
+        "closed": {
+            "asset_key": "homeplayer_logo_closed",
+            "resolved_url": (
+                "https://storage.test/storage/v1/object/public/public-media/"
+                "home-player/logos/v1/homeplayer_logo_closed.png"
+            ),
+        },
+        "open": {
+            "asset_key": "homeplayer_logo_open",
+            "resolved_url": (
+                "https://storage.test/storage/v1/object/public/public-media/"
+                "home-player/logos/v1/homeplayer_logo_open.png"
+            ),
+        },
+    }
     assert payload["text_bundle"]["home.audio.section_title"]["value"] == (
         "Ljud i Home-spelaren"
     )
