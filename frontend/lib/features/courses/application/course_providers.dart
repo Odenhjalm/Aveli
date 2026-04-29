@@ -42,6 +42,15 @@ final courseDetailProvider =
       return repo.fetchCourseDetailBySlug(slug);
     });
 
+final courseEntryViewProvider =
+    AutoDisposeFutureProvider.family<CourseEntryViewData, String>((
+      ref,
+      courseIdOrSlug,
+    ) async {
+      final repo = ref.watch(coursesRepositoryProvider);
+      return repo.fetchCourseEntryView(courseIdOrSlug);
+    });
+
 final courseByIdProvider =
     AutoDisposeFutureProvider.family<CourseSummary?, String>((
       ref,

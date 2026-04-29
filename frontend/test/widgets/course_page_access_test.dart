@@ -1,629 +1,174 @@
-import 'package:aveli/api/auth_repository.dart';
-import 'package:aveli/core/auth/auth_controller.dart';
-import 'package:aveli/core/auth/auth_http_observer.dart';
+import 'dart:async';
+
+import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/env/app_config.dart';
-import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_page.dart';
-import 'package:aveli/shared/utils/course_cover_contract.dart';
+import 'package:aveli/shared/data/app_render_inputs_repository.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-
-class _MockAuthRepository extends Mock implements AuthRepository {}
-
-class _TestAuthController extends AuthController {
-  _TestAuthController({
-    required AuthRepository repo,
-    required AuthHttpObserver observer,
-    Profile? profile,
-  }) : super(repo, observer) {
-    state = AuthState(profile: profile, isLoading: false);
-  }
-}
-
-CourseDetailData _detail({
-  required String courseId,
-  required String slug,
-  required String title,
-  required int groupPosition,
-  String? coverMediaId,
-  CourseCoverData? cover,
-  int? priceCents = 0,
-  String? requiredEnrollmentSource = 'intro',
-  bool enrollable = true,
-  bool purchasable = false,
-  bool dripEnabled = false,
-  int? dripIntervalDays,
-  List<LessonSummary>? lessons,
-  String? description = 'Backendbeskriven kurs för startklara elever.',
-}) {
-  return CourseDetailData(
-    course: CourseSummary(
-      id: courseId,
-      slug: slug,
-      title: title,
-      description: description,
-      teacher: const CourseTeacherData(
-        userId: 'teacher-1',
-        displayName: 'Aveli Teacher',
-      ),
-      groupPosition: groupPosition,
-      courseGroupId: 'group-1',
-      coverMediaId: coverMediaId,
-      cover: cover,
-      priceCents: priceCents,
-      dripEnabled: dripEnabled,
-      dripIntervalDays: dripIntervalDays,
-      requiredEnrollmentSource: requiredEnrollmentSource,
-      enrollable: enrollable,
-      purchasable: purchasable,
-    ),
-    lessons:
-        lessons ??
-        const [
-          LessonSummary(id: 'lesson-1', lessonTitle: 'Lesson 1', position: 1),
-        ],
-    description: description,
-  );
-}
-
-CourseAccessData _courseState(
-  String courseId, {
-  bool canAccess = true,
-  bool isIntroCourse = true,
-  bool selectionLocked = false,
-  String? requiredEnrollmentSource = 'intro',
-  bool enrollable = true,
-  bool purchasable = false,
-  int currentUnlockPosition = 1,
-  String source = 'intro',
-  DateTime? grantedAt,
-  DateTime? nextUnlockAt,
-}) {
-  final effectiveGrantedAt = grantedAt ?? DateTime.utc(2024, 1, 1);
-  return CourseAccessData(
-    courseId: courseId,
-    groupPosition: 0,
-    requiredEnrollmentSource: requiredEnrollmentSource,
-    enrollable: enrollable,
-    purchasable: purchasable,
-    isIntroCourse: isIntroCourse,
-    selectionLocked: selectionLocked,
-    canAccess: canAccess,
-    nextUnlockAt: nextUnlockAt,
-    enrollment: CourseEnrollmentRecord(
-      id: 'enrollment-1',
-      userId: 'user-1',
-      courseId: courseId,
-      source: source,
-      grantedAt: effectiveGrantedAt,
-      dripStartedAt: effectiveGrantedAt,
-      currentUnlockPosition: currentUnlockPosition,
-    ),
-  );
-}
-
-CourseAccessData _enrolledState(String courseId) {
-  return _courseState(courseId);
-}
-
-CourseAccessData _deniedStateWithEnrollment(String courseId) {
-  return _courseState(
-    courseId,
-    canAccess: false,
-    isIntroCourse: false,
-    requiredEnrollmentSource: 'purchase',
-    enrollable: false,
-    purchasable: true,
-    source: 'purchase',
-  );
-}
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
-  Override authOverride({Profile? profile}) {
-    final repo = _MockAuthRepository();
-    final observer = AuthHttpObserver();
-    return authControllerProvider.overrideWith(
-      (ref) =>
-          _TestAuthController(repo: repo, observer: observer, profile: profile),
-    );
-  }
-
-  testWidgets('intro CTA renders only from backend unlocked intro state', (
+  testWidgets('Course Page renders from entry-view CTA and course fields', (
     tester,
   ) async {
-    final detail = _detail(
-      courseId: 'course-intro',
-      slug: 'intro-course',
-      title: 'Intro Course',
-      groupPosition: 2,
-      enrollable: true,
-      purchasable: false,
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith(
-            (ref, courseId) async => _courseState(courseId, canAccess: false),
-          ),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'intro-course')),
+    await _pumpCoursePage(
+      tester,
+      _entryView(
+        title: 'Intro Course',
+        description: 'Backend-authored intro description',
+        cta: const CourseEntryCtaData(
+          type: 'enroll',
+          label: 'Starta introduktion',
+          enabled: true,
+          reasonCode: null,
+          reasonText: null,
+          price: null,
+          action: {'type': 'enroll'},
+        ),
       ),
     );
 
-    await tester.pumpAndSettle();
-
+    expect(find.text('Intro Course'), findsWidgets);
+    expect(find.text('Backend-authored intro description'), findsOneWidget);
     expect(find.text('Starta introduktion'), findsOneWidget);
-  });
-
-  testWidgets(
-    'intro CTA does not fall back to course enrollable when access state is absent',
-    (tester) async {
-      final detail = _detail(
-        courseId: 'course-intro-null',
-        slug: 'intro-course-null',
-        title: 'Intro Course Null',
-        groupPosition: 2,
-        enrollable: true,
-        purchasable: false,
-      );
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appConfigProvider.overrideWithValue(
-              const AppConfig(
-                apiBaseUrl: 'http://localhost:8080',
-                subscriptionsEnabled: true,
-              ),
-            ),
-            authOverride(),
-            courseDetailProvider.overrideWith((ref, slug) async => detail),
-            courseStateProvider.overrideWith((ref, courseId) async => null),
-          ],
-          child: const MaterialApp(home: CoursePage(slug: 'intro-course-null')),
-        ),
-      );
-
-      await tester.pumpAndSettle();
-
-      expect(find.text('Starta introduktion'), findsNothing);
-    },
-  );
-
-  testWidgets('selection-locked intro courses do not show enrollment CTA', (
-    tester,
-  ) async {
-    final detail = _detail(
-      courseId: 'course-intro-locked',
-      slug: 'intro-course-locked',
-      title: 'Locked Intro Course',
-      groupPosition: 2,
-      enrollable: true,
-      purchasable: false,
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith(
-            (ref, courseId) async =>
-                _courseState(courseId, canAccess: false, selectionLocked: true),
-          ),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'intro-course-locked')),
-      ),
-    );
-
-    await tester.pumpAndSettle();
-
-    expect(find.text('Starta introduktion'), findsNothing);
-    expect(
-      find.text(
-        'Du behöver slutföra din pågående introduktion innan du kan välja en ny.',
-      ),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('course detail renders backend teacher and description', (
-    tester,
-  ) async {
-    final detail = _detail(
-      courseId: 'course-detail',
-      slug: 'detail-course',
-      title: 'Detail Course',
-      groupPosition: 0,
-      description: 'En tydlig kursbeskrivning från backend.',
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith((ref, courseId) async => null),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'detail-course')),
-      ),
-    );
-
-    await tester.pumpAndSettle();
-
-    expect(find.text('Lärare: Aveli Teacher'), findsOneWidget);
-    expect(
-      find.text('En tydlig kursbeskrivning från backend.'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('sellable position-zero courses do not show enrollment CTA', (
-    tester,
-  ) async {
-    final detail = _detail(
-      courseId: 'course-paid-zero',
-      slug: 'paid-zero-course',
-      title: 'Paid Zero Course',
-      groupPosition: 0,
-      priceCents: 9900,
-      requiredEnrollmentSource: 'purchase',
-      enrollable: false,
-      purchasable: true,
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith((ref, courseId) async => null),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'paid-zero-course')),
-      ),
-    );
-
-    await tester.pumpAndSettle();
-
-    expect(find.text('Starta introduktion'), findsNothing);
-  });
-
-  testWidgets('enrolled learners continue with unlocked lessons', (
-    tester,
-  ) async {
-    final detail = _detail(
-      courseId: 'course-enrolled',
-      slug: 'enrolled-course',
-      title: 'Enrolled Course',
-      groupPosition: 0,
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith(
-            (ref, courseId) async => _enrolledState(courseId),
-          ),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'enrolled-course')),
-      ),
-    );
-
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('Forts'), findsOneWidget);
     expect(find.text('Lesson 1'), findsOneWidget);
+    expect(find.text('current'), findsOneWidget);
   });
 
-  testWidgets('drip learners see availability states and next countdown', (
+  testWidgets('blocked intro CTA renders backend reason and disabled state', (
     tester,
   ) async {
-    final nextUnlockAt = DateTime.now().toUtc().add(const Duration(days: 7));
-    final detail = _detail(
-      courseId: 'course-drip',
-      slug: 'drip-course',
-      title: 'Drip Course',
-      groupPosition: 0,
-      dripEnabled: true,
-      dripIntervalDays: 7,
-      lessons: const [
-        LessonSummary(id: 'lesson-1', lessonTitle: 'Lesson 1', position: 1),
-        LessonSummary(id: 'lesson-2', lessonTitle: 'Lesson 2', position: 2),
-        LessonSummary(id: 'lesson-3', lessonTitle: 'Lesson 3', position: 3),
-      ],
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith(
-            (ref, courseId) async => _courseState(
-              courseId,
-              currentUnlockPosition: 1,
-              nextUnlockAt: nextUnlockAt,
-            ),
-          ),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'drip-course')),
+    await _pumpCoursePage(
+      tester,
+      _entryView(
+        access: const CourseEntryAccessData(
+          isEnrolled: false,
+          isInDrip: false,
+          isInAnyIntroDrip: true,
+          enrollAllowed: false,
+          purchaseAllowed: false,
+        ),
+        cta: const CourseEntryCtaData(
+          type: 'blocked',
+          label: 'Blocked',
+          enabled: false,
+          reasonCode: 'active_intro_drip',
+          reasonText:
+              'Finish your active intro course before starting another.',
+          price: null,
+          action: null,
+        ),
       ),
     );
 
-    await tester.pumpAndSettle();
-
-    expect(find.text('Kursen släpps stegvis'), findsOneWidget);
-    expect(find.text('Nästa lektion om 7 dagar'), findsOneWidget);
-
-    await tester.scrollUntilVisible(find.text('Lesson 3'), 200);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Lesson 2'), findsOneWidget);
-    expect(find.text('Låst'), findsWidgets);
-    expect(find.byIcon(Icons.lock_outline_rounded), findsWidgets);
-  });
-
-  testWidgets('fully unlocked learner courses show all lessons available', (
-    tester,
-  ) async {
-    final detail = _detail(
-      courseId: 'course-open',
-      slug: 'open-course',
-      title: 'Open Course',
-      groupPosition: 0,
-      lessons: const [
-        LessonSummary(id: 'lesson-1', lessonTitle: 'Lesson 1', position: 1),
-        LessonSummary(id: 'lesson-2', lessonTitle: 'Lesson 2', position: 2),
-      ],
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith(
-            (ref, courseId) async =>
-                _courseState(courseId, currentUnlockPosition: 2),
-          ),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'open-course')),
-      ),
-    );
-
-    await tester.pumpAndSettle();
-
-    expect(find.text('Alla lektioner tillgängliga'), findsOneWidget);
-    expect(find.text('Kursen släpps stegvis'), findsNothing);
-  });
-
-  testWidgets('locked lesson taps show the learner drip lock message', (
-    tester,
-  ) async {
-    final nextUnlockAt = DateTime.now().toUtc().add(const Duration(days: 7));
-    final detail = _detail(
-      courseId: 'course-tap-lock',
-      slug: 'tap-lock-course',
-      title: 'Tap Lock Course',
-      groupPosition: 0,
-      dripEnabled: true,
-      dripIntervalDays: 7,
-      lessons: const [
-        LessonSummary(id: 'lesson-1', lessonTitle: 'Lesson 1', position: 1),
-        LessonSummary(id: 'lesson-2', lessonTitle: 'Lesson 2', position: 2),
-      ],
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith(
-            (ref, courseId) async => _courseState(
-              courseId,
-              currentUnlockPosition: 1,
-              nextUnlockAt: nextUnlockAt,
-            ),
-          ),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'tap-lock-course')),
-      ),
-    );
-
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Lesson 2'), 200);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Lesson 2'));
-    await tester.pump();
-
+    final button = tester.widget<FilledButton>(find.byType(FilledButton));
+    expect(button.onPressed, isNull);
+    expect(find.text('Blocked'), findsOneWidget);
     expect(
-      find.text('Den här lektionen blir tillgänglig om 7 dagar'),
+      find.text('Finish your active intro course before starting another.'),
       findsOneWidget,
     );
   });
 
-  testWidgets(
-    'custom drip courses render backend-authored next unlock timing',
-    (tester) async {
-      final nextUnlockAt = DateTime.now().toUtc().add(const Duration(days: 3));
-      final detail = _detail(
-        courseId: 'course-custom',
-        slug: 'custom-course',
-        title: 'Custom Course',
-        groupPosition: 0,
-        lessons: const [
-          LessonSummary(id: 'lesson-1', lessonTitle: 'Lesson 1', position: 1),
-          LessonSummary(id: 'lesson-2', lessonTitle: 'Lesson 2', position: 2),
-        ],
-      );
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appConfigProvider.overrideWithValue(
-              const AppConfig(
-                apiBaseUrl: 'http://localhost:8080',
-                subscriptionsEnabled: true,
-              ),
-            ),
-            authOverride(),
-            courseDetailProvider.overrideWith((ref, slug) async => detail),
-            courseStateProvider.overrideWith(
-              (ref, courseId) async => _courseState(
-                courseId,
-                currentUnlockPosition: 1,
-                nextUnlockAt: nextUnlockAt,
-              ),
-            ),
-          ],
-          child: const MaterialApp(home: CoursePage(slug: 'custom-course')),
-        ),
-      );
-
-      await tester.pumpAndSettle();
-
-      expect(find.text('Kursen släpps stegvis'), findsOneWidget);
-      expect(find.text('Nästa lektion om 3 dagar'), findsOneWidget);
-
-      await tester.scrollUntilVisible(find.text('Lesson 2'), 200);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Lesson 2'));
-      await tester.pump();
-
-      expect(
-        find.text('Den här lektionen blir tillgänglig om 3 dagar'),
-        findsOneWidget,
-      );
-    },
-  );
-
-  testWidgets('course page locks lessons when backend can_access is false', (
+  testWidgets('premium course shows backend formatted price and buy CTA', (
     tester,
   ) async {
-    final detail = _detail(
-      courseId: 'course-denied',
-      slug: 'denied-course',
-      title: 'Denied Course',
-      groupPosition: 0,
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith(
-            (ref, courseId) async => _deniedStateWithEnrollment(courseId),
-          ),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'denied-course')),
+    await _pumpCoursePage(
+      tester,
+      _entryView(
+        requiredEnrollmentSource: 'purchase',
+        premium: true,
+        pricing: const CourseEntryPricingData(
+          priceAmountCents: 99000,
+          priceCurrency: 'sek',
+          formattedPrice: '990 kr',
+          sellable: true,
+        ),
+        cta: const CourseEntryCtaData(
+          type: 'buy',
+          label: 'K\u00f6p kursen',
+          enabled: true,
+          reasonCode: null,
+          reasonText: null,
+          price: {
+            'price_amount_cents': 99000,
+            'price_currency': 'sek',
+            'formatted_price': '990 kr',
+            'sellable': true,
+          },
+          action: {'type': 'checkout'},
+        ),
       ),
     );
 
-    await tester.pumpAndSettle();
+    expect(find.text('990 kr'), findsOneWidget);
+    expect(find.text('K\u00f6p kursen'), findsOneWidget);
+  });
 
-    expect(find.textContaining('Forts'), findsNothing);
+  testWidgets('locked lessons render backend availability without local math', (
+    tester,
+  ) async {
+    await _pumpCoursePage(
+      tester,
+      _entryView(
+        lessons: [
+          _lesson(
+            id: 'lesson-1',
+            title: 'Lesson 1',
+            availability: const CourseEntryLessonAvailabilityData(
+              state: 'unlocked',
+              canOpen: true,
+              reasonCode: null,
+              reasonText: null,
+              nextUnlockAt: null,
+            ),
+            progression: const CourseEntryLessonProgressionData(
+              state: 'completed',
+              completedAt: null,
+              isNextRecommended: false,
+            ),
+          ),
+          _lesson(
+            id: 'lesson-2',
+            title: 'Lesson 2',
+            availability: const CourseEntryLessonAvailabilityData(
+              state: 'locked',
+              canOpen: false,
+              reasonCode: 'drip_locked',
+              reasonText: 'Available later',
+              nextUnlockAt: null,
+            ),
+            progression: const CourseEntryLessonProgressionData(
+              state: 'upcoming',
+              completedAt: null,
+              isNextRecommended: false,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    expect(find.text('Lesson 1'), findsOneWidget);
+    expect(find.text('completed'), findsOneWidget);
+    expect(find.text('Lesson 2'), findsOneWidget);
+    expect(find.text('Available later'), findsOneWidget);
     expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
   });
 
-  testWidgets('learner course page renders backend cover resolved url', (
-    tester,
-  ) async {
-    final detail = _detail(
-      courseId: 'course-cover',
-      slug: 'cover-course',
-      title: 'Cover Course',
-      groupPosition: 0,
-      coverMediaId: 'media-1',
-      cover: const CourseCoverData(
-        mediaId: 'media-1',
-        state: 'ready',
-        resolvedUrl: 'https://cdn.test/course-cover.jpg',
+  testWidgets('Course Page renders entry-view cover URL', (tester) async {
+    await _pumpCoursePage(
+      tester,
+      _entryView(
+        cover: const CourseEntryCoverData(
+          url: 'https://cdn.test/course-cover.jpg',
+          alt: 'Course cover',
+        ),
       ),
     );
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith((ref, courseId) async => null),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'cover-course')),
-      ),
-    );
-
-    await tester.pump();
     await tester.pump();
 
     expect(
@@ -640,74 +185,14 @@ void main() {
     expect(tester.takeException(), isA<NetworkImageLoadException>());
   });
 
-  testWidgets('paid course page renders cover without enrollment state', (
-    tester,
-  ) async {
-    final detail = _detail(
-      courseId: 'course-paid-cover',
-      slug: 'paid-cover-course',
-      title: 'Paid Cover Course',
-      groupPosition: 1,
-      priceCents: 9900,
-      requiredEnrollmentSource: 'purchase',
-      enrollable: false,
-      purchasable: true,
-      coverMediaId: 'media-1',
-      cover: const CourseCoverData(
-        mediaId: 'media-1',
-        state: 'ready',
-        resolvedUrl: 'https://cdn.test/paid-course-cover.jpg',
-      ),
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith((ref, slug) async => detail),
-          courseStateProvider.overrideWith((ref, courseId) async => null),
-        ],
-        child: const MaterialApp(home: CoursePage(slug: 'paid-cover-course')),
-      ),
-    );
-
-    await tester.pump();
-    await tester.pump();
-
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is Image &&
-            widget.image is NetworkImage &&
-            (widget.image as NetworkImage).url ==
-                'https://cdn.test/paid-course-cover.jpg',
-        description: 'Image.network(https://cdn.test/paid-course-cover.jpg)',
-      ),
-      findsOneWidget,
-    );
-    expect(tester.takeException(), isA<NetworkImageLoadException>());
-  });
-
-  testWidgets('course page load error hides raw backend or parser text', (
+  testWidgets('Course Page load error hides raw backend or parser text', (
     tester,
   ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: 'http://localhost:8080',
-              subscriptionsEnabled: true,
-            ),
-          ),
-          authOverride(),
-          courseDetailProvider.overrideWith(
+          ..._scaffoldOverrides(),
+          courseEntryViewProvider.overrideWith(
             (ref, slug) async =>
                 throw StateError('Course not found: backend internal text'),
           ),
@@ -724,4 +209,119 @@ void main() {
     expect(find.textContaining('backend internal'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+}
+
+Future<void> _pumpCoursePage(
+  WidgetTester tester,
+  CourseEntryViewData view,
+) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        ..._scaffoldOverrides(),
+        courseEntryViewProvider.overrideWith((ref, slug) async => view),
+      ],
+      child: const MaterialApp(home: CoursePage(slug: 'intro-course')),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+List<Override> _scaffoldOverrides() {
+  return [
+    appConfigProvider.overrideWithValue(
+      const AppConfig(
+        apiBaseUrl: 'http://localhost:8080',
+        subscriptionsEnabled: true,
+      ),
+    ),
+    brandLogoRenderInputProvider.overrideWith((ref) => _pendingLogo),
+    uiBackgroundRenderInputProvider.overrideWith(
+      (ref, key) => _pendingBackground,
+    ),
+  ];
+}
+
+final _pendingLogo = Completer<BrandLogoRenderInput>().future;
+final _pendingBackground = Completer<UiBackgroundRenderInput>().future;
+
+CourseEntryViewData _entryView({
+  String title = 'Course Title',
+  String? description = 'Backend-authored description',
+  String? requiredEnrollmentSource = 'intro',
+  bool premium = false,
+  CourseEntryCoverData? cover,
+  CourseEntryAccessData access = const CourseEntryAccessData(
+    isEnrolled: true,
+    isInDrip: false,
+    isInAnyIntroDrip: false,
+    enrollAllowed: false,
+    purchaseAllowed: false,
+  ),
+  CourseEntryCtaData cta = const CourseEntryCtaData(
+    type: 'continue',
+    label: 'Continue',
+    enabled: true,
+    reasonCode: null,
+    reasonText: null,
+    price: null,
+    action: {'type': 'lesson', 'lesson_id': 'lesson-1'},
+  ),
+  CourseEntryPricingData? pricing,
+  List<CourseEntryLessonShellData>? lessons,
+  CourseEntryNextRecommendedLessonData? nextRecommendedLesson =
+      const CourseEntryNextRecommendedLessonData(
+        id: 'lesson-1',
+        lessonTitle: 'Lesson 1',
+        position: 1,
+      ),
+}) {
+  return CourseEntryViewData(
+    course: CourseEntryCourseData(
+      id: 'course-1',
+      slug: 'intro-course',
+      title: title,
+      description: description,
+      cover: cover,
+      requiredEnrollmentSource: requiredEnrollmentSource,
+      premium: premium,
+      priceAmountCents: pricing?.priceAmountCents,
+      priceCurrency: pricing?.priceCurrency,
+      formattedPrice: pricing?.formattedPrice,
+      sellable: pricing?.sellable ?? false,
+    ),
+    lessons: lessons ?? [_lesson()],
+    access: access,
+    cta: cta,
+    pricing: pricing,
+    nextRecommendedLesson: nextRecommendedLesson,
+  );
+}
+
+CourseEntryLessonShellData _lesson({
+  String id = 'lesson-1',
+  String title = 'Lesson 1',
+  int position = 1,
+  CourseEntryLessonAvailabilityData availability =
+      const CourseEntryLessonAvailabilityData(
+        state: 'unlocked',
+        canOpen: true,
+        reasonCode: null,
+        reasonText: null,
+        nextUnlockAt: null,
+      ),
+  CourseEntryLessonProgressionData progression =
+      const CourseEntryLessonProgressionData(
+        state: 'current',
+        completedAt: null,
+        isNextRecommended: true,
+      ),
+}) {
+  return CourseEntryLessonShellData(
+    id: id,
+    lessonTitle: title,
+    position: position,
+    availability: availability,
+    progression: progression,
+  );
 }

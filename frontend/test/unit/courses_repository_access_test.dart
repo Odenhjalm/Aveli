@@ -264,7 +264,7 @@ void main() {
       expect(state.canAccess, isTrue);
       expect(state.nextUnlockAt, DateTime.parse(nextUnlockAt));
       expect(state.enrollment!.source, 'purchase');
-      expect(state.enrollment!.currentUnlockPosition, 1);
+      expect(state.enrollment!.unlockPosition, 1);
       expect(adapter.requestsFor('/courses/course-1/access'), hasLength(1));
     });
 
@@ -459,6 +459,101 @@ void main() {
     });
   });
 
+  group('CoursesRepository.fetchCourseEntryView', () {
+    test(
+      'calls canonical entry-view route and maps backend projections',
+      () async {
+        const slug = 'aveli-course';
+        final adapter = _RecordingAdapter((options) {
+          if (options.path == '/courses/$slug/entry-view') {
+            return _jsonResponse(statusCode: 200, body: _entryViewPayload());
+          }
+          return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+        });
+        final repo = _repository(adapter);
+
+        final view = await repo.fetchCourseEntryView(slug);
+
+        expect(view.course.slug, slug);
+        expect(view.course.description, 'Backend-authored course description');
+        expect(
+          view.course.cover?.url,
+          '/api/files/public-media/course-cover.png',
+        );
+        expect(view.access.isInAnyIntroDrip, isFalse);
+        expect(view.cta.type, 'continue');
+        expect(view.cta.actionType, 'lesson');
+        expect(view.pricing?.formattedPrice, '990 kr');
+        expect(view.nextRecommendedLesson?.id, 'lesson-1');
+        expect(view.lessons.single.availability.state, 'unlocked');
+        expect(view.lessons.single.progression.isNextRecommended, isTrue);
+        expect(adapter.requestsFor('/courses/$slug/entry-view'), hasLength(1));
+        expect(adapter.requestsFor('/courses/by-slug/$slug'), isEmpty);
+        expect(adapter.requestsFor('/courses/course-1/access'), isEmpty);
+      },
+    );
+
+    test('rejects lesson runtime content from entry-view responses', () async {
+      const slug = 'aveli-course';
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/$slug/entry-view') {
+          return _jsonResponse(
+            statusCode: 200,
+            body: _entryViewPayload(
+              lessons: [
+                {
+                  ..._defaultEntryLesson,
+                  'content_document': const {'blocks': []},
+                },
+              ],
+            ),
+          );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      await expectLater(
+        repo.fetchCourseEntryView(slug),
+        throwsA(isA<AppFailure>()),
+      );
+    });
+
+    test(
+      'rejects media and resolved URL fields from entry-view responses',
+      () async {
+        const slug = 'aveli-course';
+        final adapter = _RecordingAdapter((options) {
+          if (options.path == '/courses/$slug/entry-view') {
+            return _jsonResponse(
+              statusCode: 200,
+              body: _entryViewPayload(
+                course: {
+                  ..._defaultEntryCourse,
+                  'cover': const {
+                    'url': '/api/files/public-media/course-cover.png',
+                    'alt': 'Course cover',
+                    'resolved_url': '/api/files/public-media/course-cover.png',
+                  },
+                },
+                lessons: [
+                  {..._defaultEntryLesson, 'lesson_media_id': 'lesson-media-1'},
+                ],
+              ),
+            );
+          }
+          return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+        });
+        final repo = _repository(adapter);
+
+        await expectLater(
+          repo.fetchCourseEntryView(slug),
+          throwsA(isA<AppFailure>()),
+        );
+      },
+    );
+  });
+
   group('CoursesRepository.fetchLessonDetail', () {
     test('maps null lesson body as safe absence', () async {
       final adapter = _RecordingAdapter((options) {
@@ -513,6 +608,87 @@ CoursesRepository _repository(_RecordingAdapter adapter) {
   client.raw.httpClientAdapter = adapter;
   return CoursesRepository(client: client);
 }
+
+Map<String, Object?> _entryViewPayload({
+  Object? course = _defaultEntryCourse,
+  List<Object?> lessons = const [_defaultEntryLesson],
+  Object? pricing = _defaultEntryPricing,
+  Object? nextRecommendedLesson = _defaultEntryNextLesson,
+  Map<String, Object?> cta = _defaultEntryCta,
+}) {
+  return {
+    'course': course,
+    'lessons': lessons,
+    'access': const {
+      'is_enrolled': true,
+      'is_in_drip': true,
+      'is_in_any_intro_drip': false,
+      'can_enroll': false,
+      'can_purchase': false,
+    },
+    'cta': cta,
+    'pricing': pricing,
+    'next_recommended_lesson': nextRecommendedLesson,
+  };
+}
+
+const Map<String, Object?> _defaultEntryCourse = {
+  'id': 'course-1',
+  'slug': 'aveli-course',
+  'title': 'Aveli 101',
+  'description': 'Backend-authored course description',
+  'cover': {
+    'url': '/api/files/public-media/course-cover.png',
+    'alt': 'Course cover',
+  },
+  'required_enrollment_source': 'purchase',
+  'is_premium': true,
+  'price_amount_cents': 99000,
+  'price_currency': 'sek',
+  'formatted_price': '990 kr',
+  'sellable': true,
+};
+
+const Map<String, Object?> _defaultEntryLesson = {
+  'id': 'lesson-1',
+  'lesson_title': 'Start here',
+  'position': 1,
+  'availability': {
+    'state': 'unlocked',
+    'can_open': true,
+    'reason_code': null,
+    'reason_text': null,
+    'next_unlock_at': null,
+  },
+  'progression': {
+    'state': 'current',
+    'completed_at': null,
+    'is_next_recommended': true,
+  },
+};
+
+const Map<String, Object?> _defaultEntryPricing = {
+  'price_amount_cents': 99000,
+  'price_currency': 'sek',
+  'formatted_price': '990 kr',
+  'sellable': true,
+};
+
+const Map<String, Object?> _defaultEntryCta = {
+  'type': 'continue',
+  'label': 'Continue',
+  'enabled': true,
+  'reason_code': null,
+  'reason_text': null,
+  'price': _defaultEntryPricing,
+  'action': {'type': 'lesson', 'lesson_id': 'lesson-1'},
+};
+
+const Map<String, Object?> _defaultEntryNextLesson = {
+  'id': 'lesson-1',
+  'lesson_title': 'Start here',
+  'position': 1,
+};
 
 Map<String, Object?> _coursePayload({
   String slug = 'aveli-course',

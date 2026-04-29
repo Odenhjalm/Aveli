@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
-import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
-import 'package:aveli/features/courses/presentation/learner_course_visibility.dart';
-import 'package:aveli/features/payments/presentation/paywall_prompt.dart';
-import 'package:aveli/shared/utils/course_cover_contract.dart';
+import 'package:aveli/features/paywall/application/checkout_flow.dart';
+import 'package:aveli/features/paywall/data/checkout_api.dart';
 import 'package:aveli/shared/utils/snack.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/glass_card.dart';
@@ -25,10 +22,12 @@ class CoursePage extends ConsumerStatefulWidget {
 }
 
 class _CoursePageState extends ConsumerState<CoursePage> {
+  bool _ctaInFlight = false;
+
   @override
   Widget build(BuildContext context) {
-    final asyncDetail = ref.watch(courseDetailProvider(widget.slug));
-    return asyncDetail.when(
+    final asyncView = ref.watch(courseEntryViewProvider(widget.slug));
+    return asyncView.when(
       loading: () => const AppScaffold(
         title: 'Kurs',
         body: Center(child: CircularProgressIndicator()),
@@ -42,50 +41,95 @@ class _CoursePageState extends ConsumerState<CoursePage> {
           ),
         ),
       ),
-      data: (detail) {
-        final courseCoverImageUrlFuture = Future<String?>.value(
-          courseCoverResolvedUrl(detail.course.cover),
-        );
-        final courseStateAsync = ref.watch(
-          courseStateProvider(detail.course.id),
-        );
-        return _CourseContent(
-          detail: detail,
-          courseStateAsync: courseStateAsync,
-          courseCoverImageUrlFuture: courseCoverImageUrlFuture,
-          onEnroll: () => _handleEnroll(detail),
-          onOpenLesson: _openLesson,
-          enrollState: ref.watch(enrollProvider(detail.course.id)),
-          buyButton: null,
-        );
-      },
+      data: (view) => _CourseContent(
+        view: view,
+        ctaBusy: _ctaInFlight,
+        onPrimaryCta: view.cta.enabled ? () => _handlePrimaryCta(view) : null,
+        onOpenLesson: _openLesson,
+      ),
     );
   }
 
-  Future<void> _handleEnroll(CourseDetailData detail) async {
-    if (!_ensureAuthenticated(
-      message: 'Logga in för att starta introduktionen.',
-    )) {
+  Future<void> _handlePrimaryCta(CourseEntryViewData view) async {
+    if (_ctaInFlight || !view.cta.enabled) {
       return;
     }
-    final notifier = ref.read(enrollProvider(detail.course.id).notifier);
-    await notifier.enroll();
-    final state = ref.read(enrollProvider(detail.course.id));
-    state.when(
-      data: (courseState) {
-        if (!mounted || !context.mounted) return;
-        if (courseState?.canAccess == true) {
-          showSnack(context, 'Du är nu anmäld till kursen.');
+    switch (view.cta.actionType) {
+      case 'lesson':
+        final lessonId =
+            _stringActionValue(view.cta.action, 'lesson_id') ??
+            view.nextRecommendedLesson?.id;
+        if (lessonId != null) {
+          _openLesson(lessonId);
         }
-        ref.invalidate(courseStateProvider(detail.course.id));
-        ref.invalidate(courseDetailProvider(widget.slug));
-      },
-      error: (error, _) {
-        if (!mounted || !context.mounted) return;
-        showSnack(context, _courseEnrollmentErrorMessage(error));
-      },
-      loading: () {},
-    );
+        return;
+      case 'enroll':
+        await _enroll(view);
+        return;
+      case 'checkout':
+        await _startCheckout(view);
+        return;
+    }
+
+    if (view.cta.type == 'continue' && view.nextRecommendedLesson != null) {
+      _openLesson(view.nextRecommendedLesson!.id);
+      return;
+    }
+    final message = view.cta.reasonText ?? view.cta.reasonCode;
+    if (message != null && message.isNotEmpty && mounted && context.mounted) {
+      showSnack(context, message);
+    }
+  }
+
+  Future<void> _enroll(CourseEntryViewData view) async {
+    setState(() => _ctaInFlight = true);
+    try {
+      await ref.read(coursesRepositoryProvider).enrollCourse(view.course.id);
+      ref.invalidate(courseEntryViewProvider(widget.slug));
+      ref.invalidate(myCoursesProvider);
+      if (!mounted || !context.mounted) return;
+      showSnack(context, 'Du \u00e4r nu anm\u00e4ld till kursen.');
+    } catch (error, stackTrace) {
+      if (!mounted || !context.mounted) return;
+      final failure = AppFailure.from(error, stackTrace);
+      showSnack(context, failure.message);
+    } finally {
+      if (mounted) {
+        setState(() => _ctaInFlight = false);
+      }
+    }
+  }
+
+  Future<void> _startCheckout(CourseEntryViewData view) async {
+    setState(() => _ctaInFlight = true);
+    try {
+      final launch = await ref
+          .read(checkoutApiProvider)
+          .createCourseCheckout(slug: view.course.slug);
+      ref.read(checkoutContextProvider.notifier).state = CheckoutContext(
+        type: CheckoutItemType.course,
+        courseSlug: view.course.slug,
+        courseTitle: view.course.title,
+        returnPath: _currentRoute(),
+      );
+      ref
+          .read(checkoutRedirectStateProvider.notifier)
+          .state = CheckoutRedirectState(
+        status: CheckoutRedirectStatus.processing,
+        sessionId: launch.sessionId,
+        orderId: launch.orderId,
+      );
+      if (!mounted || !context.mounted) return;
+      context.pushNamed(AppRoute.checkout, extra: launch.url);
+    } catch (error, stackTrace) {
+      if (!mounted || !context.mounted) return;
+      final failure = AppFailure.from(error, stackTrace);
+      showSnack(context, failure.message);
+    } finally {
+      if (mounted) {
+        setState(() => _ctaInFlight = false);
+      }
+    }
   }
 
   void _openLesson(String lessonId) {
@@ -93,32 +137,18 @@ class _CoursePageState extends ConsumerState<CoursePage> {
     context.pushNamed(AppRoute.lesson, pathParameters: {'id': lessonId});
   }
 
-  bool _ensureAuthenticated({
-    String message = 'Logga in för att fortsätta med köpet.',
-  }) {
-    final authState = ref.read(authControllerProvider);
-    if (authState.isAuthenticated) {
-      return true;
-    }
-    if (!mounted || !context.mounted) return false;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-    final redirectTarget = _currentRoute();
-    context.goNamed(
-      AppRoute.login,
-      queryParameters: {'redirect': redirectTarget},
-    );
-    return false;
-  }
-
   String _currentRoute() {
     try {
       return GoRouterState.of(context).uri.toString();
     } catch (_) {
-      return RoutePath.home;
+      return '/';
     }
   }
+}
+
+String? _stringActionValue(Map<String, Object?>? action, String key) {
+  final value = action?[key];
+  return value is String && value.isNotEmpty ? value : null;
 }
 
 String _courseLoadErrorMessage(Object error) {
@@ -127,10 +157,10 @@ String _courseLoadErrorMessage(Object error) {
     case AppFailureKind.notFound:
       return 'Kursen kunde inte hittas.';
     case AppFailureKind.unauthorized:
-      return 'Du har inte åtkomst till den här kursen.';
+      return 'Du har inte \u00e5tkomst till den h\u00e4r kursen.';
     case AppFailureKind.network:
     case AppFailureKind.timeout:
-      return 'Kursen kunde inte laddas. Kontrollera uppkopplingen och försök igen.';
+      return 'Kursen kunde inte laddas. Kontrollera uppkopplingen och f\u00f6rs\u00f6k igen.';
     case AppFailureKind.server:
     case AppFailureKind.validation:
     case AppFailureKind.configuration:
@@ -139,135 +169,53 @@ String _courseLoadErrorMessage(Object error) {
   }
 }
 
-String _courseEnrollmentErrorMessage(Object error) {
-  final failure = AppFailure.from(error);
-  switch (failure.kind) {
-    case AppFailureKind.unauthorized:
-      return 'Kursen kräver köp innan du kan fortsätta.';
-    case AppFailureKind.notFound:
-      return 'Kursen kunde inte hittas.';
-    case AppFailureKind.network:
-    case AppFailureKind.timeout:
-      return 'Kursen kunde inte startas. Kontrollera uppkopplingen och försök igen.';
-    case AppFailureKind.server:
-    case AppFailureKind.validation:
-    case AppFailureKind.configuration:
-    case AppFailureKind.unexpected:
-      return 'Kursen kunde inte startas just nu.';
-  }
-}
-
 class _CourseContent extends StatelessWidget {
   const _CourseContent({
-    required this.detail,
-    required this.courseStateAsync,
-    required this.courseCoverImageUrlFuture,
-    required this.onEnroll,
+    required this.view,
+    required this.ctaBusy,
+    required this.onPrimaryCta,
     required this.onOpenLesson,
-    required this.enrollState,
-    required this.buyButton,
   });
 
-  final CourseDetailData detail;
-  final AsyncValue<CourseAccessData?> courseStateAsync;
-  final Future<String?> courseCoverImageUrlFuture;
-  final VoidCallback onEnroll;
+  final CourseEntryViewData view;
+  final bool ctaBusy;
+  final VoidCallback? onPrimaryCta;
   final ValueChanged<String> onOpenLesson;
-  final AsyncValue<CourseAccessData?> enrollState;
-  final Widget? buyButton;
 
   @override
   Widget build(BuildContext context) {
-    final course = detail.course;
-    final teacherName = course.teacher?.displayName;
-    final description = detail.description;
+    final course = view.course;
+    final description = course.description;
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
-    final courseState = courseStateAsync.valueOrNull;
-    final visibility = LearnerCourseVisibility.fromState(
-      course: course,
-      lessons: detail.lessons,
-      courseState: courseState,
-      now: DateTime.now().toUtc(),
-    );
-    final canAccess = visibility.canAccess;
-    final canEnroll =
-        courseState != null &&
-        !canAccess &&
-        courseState.isIntroCourse &&
-        !courseState.selectionLocked;
-    final lockedIntroMessage =
-        courseState != null &&
-            !canAccess &&
-            courseState.isIntroCourse &&
-            courseState.selectionLocked
-        ? 'Du behöver slutföra din pågående introduktion innan du kan välja en ny.'
-        : null;
-    final lessons = visibility.lessons;
-    final unlockedLessons = visibility.unlockedLessons;
-    final isEnrolling = enrollState.isLoading;
-    final enrollError = enrollState.whenOrNull(error: (error, _) => error);
-
-    Widget? primaryCta;
-    if (canAccess && unlockedLessons.isNotEmpty) {
-      primaryCta = FilledButton(
-        onPressed: () => onOpenLesson(unlockedLessons.first.id),
-        child: const Text('Fortsätt kursen'),
-      );
-    } else if (canEnroll) {
-      primaryCta = ElevatedButton(
-        onPressed: isEnrolling ? null : onEnroll,
-        child: isEnrolling
-            ? const SizedBox(
-                height: 18,
-                width: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Text('Starta introduktion'),
-      );
-    } else if (buyButton != null) {
-      primaryCta = SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: buyButton,
-      );
-    } else if (canAccess) {
-      primaryCta = const FilledButton(
-        onPressed: null,
-        child: Text('Kurs aktiverad'),
-      );
-    }
+    final cover = course.cover;
+    final priceLabel = _backendPriceLabel(view);
+    final ctaReason = view.cta.reasonText ?? view.cta.reasonCode;
+    final nextLesson = view.nextRecommendedLesson;
 
     return AppScaffold(
       title: course.title,
       body: ListView(
         children: [
-          FutureBuilder<String?>(
-            future: courseCoverImageUrlFuture,
-            builder: (context, snapshot) {
-              final courseCoverImageUrl = snapshot.data;
-              if (courseCoverImageUrl == null || courseCoverImageUrl.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 720),
-                        child: Image.network(
-                          courseCoverImageUrl,
-                          fit: BoxFit.contain,
-                        ),
+          if (cover != null && cover.url.isNotEmpty)
+            Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: Image.network(
+                        cover.url,
+                        fit: BoxFit.contain,
+                        semanticLabel: cover.alt,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                ],
-              );
-            },
-          ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           GlassCard(
             padding: const EdgeInsets.all(20),
             opacity: 0.18,
@@ -282,18 +230,45 @@ class _CourseContent extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                if (teacherName != null) ...[
-                  const SizedBox(height: 8),
-                  Text('Lärare: $teacherName', style: t.bodyMedium),
-                ],
-                if (description != null) ...[
+                if (description != null && description.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(description, style: t.bodyLarge),
                 ],
-                const SizedBox(height: 12),
-                if (primaryCta != null)
-                  SizedBox(width: double.infinity, child: primaryCta),
-                if (visibility.isDripSummaryVisible) ...[
+                if (priceLabel != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    priceLabel,
+                    style: t.titleMedium?.copyWith(
+                      color: cs.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: ctaBusy ? null : onPrimaryCta,
+                    child: ctaBusy
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(view.cta.label),
+                  ),
+                ),
+                if (ctaReason != null && ctaReason.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    ctaReason,
+                    style: t.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                if (view.access.isInDrip) ...[
                   const SizedBox(height: 8),
                   _CourseStatusLine(
                     icon: Icons.schedule_rounded,
@@ -301,40 +276,19 @@ class _CourseContent extends StatelessWidget {
                     style: t.bodySmall,
                   ),
                 ],
-                if (visibility.showsNextLessonIndicator) ...[
+                if (nextLesson != null) ...[
                   const SizedBox(height: 8),
                   _CourseStatusLine(
-                    icon: visibility.firstLockedLesson == null
-                        ? Icons.check_circle_outline_rounded
-                        : Icons.timelapse_rounded,
-                    text: visibility.nextLessonIndicatorText!,
+                    icon: Icons.play_circle_outline_rounded,
+                    text: 'N\u00e4sta lektion: ${nextLesson.lessonTitle}',
                     style: t.bodySmall,
                   ),
                 ],
-                if (enrollError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      _courseEnrollmentErrorMessage(enrollError),
-                      style: t.bodyMedium?.copyWith(color: cs.error),
-                    ),
-                  )
-                else if (lockedIntroMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      lockedIntroMessage,
-                      style: t.bodyMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          if (lessons.isNotEmpty)
+          if (view.lessons.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: GlassCard(
@@ -345,43 +299,12 @@ class _CourseContent extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ...lessons.map((lesson) {
-                      final isLocked = visibility.isLessonLocked(lesson);
-                      return Opacity(
-                        opacity: isLocked ? 0.58 : 1,
-                        child: ListTile(
-                          leading: Icon(
-                            isLocked
-                                ? Icons.lock_outline_rounded
-                                : Icons.play_circle_outline_rounded,
-                            color: isLocked ? cs.onSurfaceVariant : cs.primary,
-                          ),
-                          title: Text(
-                            lesson.lessonTitle,
-                            style: isLocked
-                                ? t.titleMedium?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                  )
-                                : null,
-                          ),
-                          subtitle: Text(
-                            visibility.statusLabelFor(lesson),
-                            style: t.bodySmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: isLocked
-                                  ? cs.onSurfaceVariant
-                                  : cs.onSurface,
-                            ),
-                          ),
-                          onTap: () => _handleLessonTap(
-                            context,
-                            lesson,
-                            detail,
-                            visibility,
-                          ),
-                        ),
-                      );
-                    }),
+                    ...view.lessons.map(
+                      (entryLesson) => _EntryLessonTile(
+                        entryLesson: entryLesson,
+                        onOpenLesson: onOpenLesson,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -390,46 +313,90 @@ class _CourseContent extends StatelessWidget {
       ),
     );
   }
+}
 
-  void _handleLessonTap(
-    BuildContext context,
-    LessonSummary lesson,
-    CourseDetailData detail,
-    LearnerCourseVisibility visibility,
-  ) {
-    if (!visibility.isLessonLocked(lesson)) {
-      onOpenLesson(lesson.id);
-      return;
-    }
+class _EntryLessonTile extends StatelessWidget {
+  const _EntryLessonTile({
+    required this.entryLesson,
+    required this.onOpenLesson,
+  });
 
-    if (visibility.canAccess) {
-      showSnack(context, visibility.lockedLessonMessage(lesson));
-      return;
-    }
+  final CourseEntryLessonShellData entryLesson;
+  final ValueChanged<String> onOpenLesson;
 
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          ),
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: Material(
-              color: Theme.of(ctx).scaffoldBackgroundColor,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: PaywallPrompt(courseId: detail.course.id),
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final locked = entryLesson.availability.state == 'locked';
+    final status = _lessonStatusLabel(entryLesson);
+
+    return Opacity(
+      opacity: locked ? 0.58 : 1,
+      child: ListTile(
+        leading: Icon(
+          locked
+              ? Icons.lock_outline_rounded
+              : Icons.play_circle_outline_rounded,
+          color: locked ? cs.onSurfaceVariant : cs.primary,
+        ),
+        title: Text(
+          entryLesson.lessonTitle,
+          style: locked
+              ? theme.textTheme.titleMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                )
+              : null,
+        ),
+        subtitle: status == null
+            ? null
+            : Text(
+                status,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: locked ? cs.onSurfaceVariant : cs.onSurface,
+                ),
               ),
-            ),
-          ),
-        );
-      },
+        onTap: () {
+          if (entryLesson.availability.canOpen) {
+            onOpenLesson(entryLesson.id);
+            return;
+          }
+          final message =
+              entryLesson.availability.reasonText ??
+              entryLesson.availability.reasonCode;
+          if (message != null && message.isNotEmpty) {
+            showSnack(context, message);
+          }
+        },
+      ),
     );
   }
+}
+
+String? _backendPriceLabel(CourseEntryViewData view) {
+  final pricingPrice = view.pricing?.formattedPrice;
+  if (pricingPrice != null && pricingPrice.isNotEmpty) {
+    return pricingPrice;
+  }
+  final coursePrice = view.course.formattedPrice;
+  return coursePrice != null && coursePrice.isNotEmpty ? coursePrice : null;
+}
+
+String? _lessonStatusLabel(CourseEntryLessonShellData entryLesson) {
+  final reasonText = entryLesson.availability.reasonText;
+  if (reasonText != null && reasonText.isNotEmpty) {
+    return reasonText;
+  }
+  final availabilityState = entryLesson.availability.state;
+  if (availabilityState == 'locked') {
+    return 'L\u00e5st';
+  }
+  final progressionState = entryLesson.progression.state;
+  if (progressionState.isNotEmpty) {
+    return progressionState;
+  }
+  return availabilityState.isNotEmpty ? availabilityState : null;
 }
 
 class _CourseStatusLine extends StatelessWidget {

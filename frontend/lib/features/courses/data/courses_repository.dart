@@ -157,16 +157,12 @@ List<Object?> _requireList(Object? value, String fieldName) {
 }
 
 Map<String, Object?> _requireMap(Object? value, String fieldName) {
-  switch (value) {
-    case final Map<String, Object?> data:
-      return Map<String, Object?>.unmodifiable(data);
-    case final Map<String, dynamic> data:
-      return Map<String, Object?>.unmodifiable(data);
-    case final Map data:
-      return Map<String, Object?>.unmodifiable(data);
-    default:
-      throw StateError('Invalid field type for $fieldName');
+  if (value is Map) {
+    return Map<String, Object?>.unmodifiable(
+      value.map((key, value) => MapEntry(key.toString(), value)),
+    );
   }
+  throw StateError('Invalid field type for $fieldName');
 }
 
 Map<String, Object?>? _optionalMap(Object? value, String fieldName) {
@@ -353,9 +349,10 @@ class CourseEntryViewData {
       course: CourseEntryCourseData.fromResponse(
         _requiredField(payload, 'course'),
       ),
-      lessons: _requireList(_requiredField(payload, 'lessons'), 'lessons')
-          .map(CourseEntryLessonShellData.fromResponse)
-          .toList(growable: false),
+      lessons: _requireList(
+        _requiredField(payload, 'lessons'),
+        'lessons',
+      ).map(CourseEntryLessonShellData.fromResponse).toList(growable: false),
       access: CourseEntryAccessData.fromResponse(
         _requiredField(payload, 'access'),
       ),
@@ -364,12 +361,14 @@ class CourseEntryViewData {
         null => null,
         final Object pricing => CourseEntryPricingData.fromResponse(pricing),
       },
-      nextRecommendedLesson:
-          switch (_requiredField(payload, 'next_recommended_lesson')) {
-            null => null,
-            final Object lesson =>
-              CourseEntryNextRecommendedLessonData.fromResponse(lesson),
-          },
+      nextRecommendedLesson: switch (_requiredField(
+        payload,
+        'next_recommended_lesson',
+      )) {
+        null => null,
+        final Object lesson =>
+          CourseEntryNextRecommendedLessonData.fromResponse(lesson),
+      },
     );
   }
 }
@@ -382,7 +381,7 @@ class CourseEntryCourseData {
     required this.description,
     required this.cover,
     required this.requiredEnrollmentSource,
-    required this.isPremium,
+    required this.premium,
     required this.priceAmountCents,
     required this.priceCurrency,
     required this.formattedPrice,
@@ -395,7 +394,7 @@ class CourseEntryCourseData {
   final String? description;
   final CourseEntryCoverData? cover;
   final String? requiredEnrollmentSource;
-  final bool isPremium;
+  final bool premium;
   final int? priceAmountCents;
   final String? priceCurrency;
   final String? formattedPrice;
@@ -418,7 +417,10 @@ class CourseEntryCourseData {
         _requiredField(payload, 'required_enrollment_source'),
         'required_enrollment_source',
       ),
-      isPremium: _requireBool(_requiredField(payload, 'is_premium'), 'is_premium'),
+      premium: _requireBool(
+        _requiredField(payload, 'is_premium'),
+        'is_premium',
+      ),
       priceAmountCents: _optionalInt(
         _requiredField(payload, 'price_amount_cents'),
         'price_amount_cents',
@@ -549,15 +551,15 @@ class CourseEntryAccessData {
     required this.isEnrolled,
     required this.isInDrip,
     required this.isInAnyIntroDrip,
-    required this.canEnroll,
-    required this.canPurchase,
+    required this.enrollAllowed,
+    required this.purchaseAllowed,
   });
 
   final bool isEnrolled;
   final bool isInDrip;
   final bool isInAnyIntroDrip;
-  final bool canEnroll;
-  final bool canPurchase;
+  final bool enrollAllowed;
+  final bool purchaseAllowed;
 
   factory CourseEntryAccessData.fromResponse(Object? payload) {
     return CourseEntryAccessData(
@@ -565,13 +567,19 @@ class CourseEntryAccessData {
         _requiredField(payload, 'is_enrolled'),
         'is_enrolled',
       ),
-      isInDrip: _requireBool(_requiredField(payload, 'is_in_drip'), 'is_in_drip'),
+      isInDrip: _requireBool(
+        _requiredField(payload, 'is_in_drip'),
+        'is_in_drip',
+      ),
       isInAnyIntroDrip: _requireBool(
         _requiredField(payload, 'is_in_any_intro_drip'),
         'is_in_any_intro_drip',
       ),
-      canEnroll: _requireBool(_requiredField(payload, 'can_enroll'), 'can_enroll'),
-      canPurchase: _requireBool(
+      enrollAllowed: _requireBool(
+        _requiredField(payload, 'can_enroll'),
+        'can_enroll',
+      ),
+      purchaseAllowed: _requireBool(
         _requiredField(payload, 'can_purchase'),
         'can_purchase',
       ),
@@ -714,7 +722,7 @@ class CourseEnrollmentRecord {
     required this.source,
     required this.grantedAt,
     required this.dripStartedAt,
-    required this.currentUnlockPosition,
+    required this.unlockPosition,
   });
 
   final String id;
@@ -723,7 +731,7 @@ class CourseEnrollmentRecord {
   final String source;
   final DateTime grantedAt;
   final DateTime dripStartedAt;
-  final int currentUnlockPosition;
+  final int unlockPosition;
 
   factory CourseEnrollmentRecord.fromResponse(Object? payload) {
     return CourseEnrollmentRecord(
@@ -742,7 +750,7 @@ class CourseEnrollmentRecord {
         _requiredField(payload, 'drip_started_at'),
         'drip_started_at',
       ),
-      currentUnlockPosition: _requireInt(
+      unlockPosition: _requireInt(
         _requiredField(payload, 'current_unlock_position'),
         'current_unlock_position',
       ),
