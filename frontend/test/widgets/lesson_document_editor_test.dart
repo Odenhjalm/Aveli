@@ -764,6 +764,7 @@ void main() {
   testWidgets('document editor heading ignores out-of-range selections', (
     tester,
   ) async {
+    final controller = LessonDocumentEditorController();
     const initial = LessonDocument(
       blocks: [
         LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
@@ -780,6 +781,7 @@ void main() {
                 height: 520,
                 child: LessonDocumentEditor(
                   document: document,
+                  controller: controller,
                   onChanged: (next) => setState(() => document = next),
                 ),
               );
@@ -804,6 +806,10 @@ void main() {
     await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
 
     expect(document.toJson(), initial.toJson());
+    expect(
+      controller.lastCommandResult?.failure,
+      LessonEditorCommandFailure.invalidRange,
+    );
   });
 
   testWidgets('document editor applies heading to a full-block selection', (
@@ -855,6 +861,7 @@ void main() {
   testWidgets('document editor heading is a no-op for collapsed cursor', (
     tester,
   ) async {
+    final controller = LessonDocumentEditorController();
     const initial = LessonDocument(
       blocks: [
         LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
@@ -871,6 +878,7 @@ void main() {
                 height: 520,
                 child: LessonDocumentEditor(
                   document: document,
+                  controller: controller,
                   onChanged: (next) => setState(() => document = next),
                 ),
               );
@@ -891,6 +899,49 @@ void main() {
     await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
 
     expect(document.toJson(), initial.toJson());
+    expect(
+      controller.lastCommandResult?.failure,
+      LessonEditorCommandFailure.collapsedSelection,
+    );
+  });
+
+  testWidgets('document editor heading reports invalid selections', (
+    tester,
+  ) async {
+    final controller = LessonDocumentEditorController();
+    const initial = LessonDocument(
+      blocks: [
+        LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+      ],
+    );
+    var document = initial;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  controller: controller,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+    expect(document.toJson(), initial.toJson());
+    expect(
+      controller.lastCommandResult?.failure,
+      LessonEditorCommandFailure.invalidSelection,
+    );
   });
 
   testWidgets('document editor heading ignores stale invalid selections', (
@@ -940,7 +991,64 @@ void main() {
     await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
 
     expect(controller.currentDocument?.toJson(), resetDocument.toJson());
+    expect(
+      controller.lastCommandResult?.failure,
+      LessonEditorCommandFailure.textMismatch,
+    );
   });
+
+  testWidgets(
+    'document editor heading reports controller document text mismatch',
+    (tester) async {
+      final controller = LessonDocumentEditorController();
+      const initial = LessonDocument(
+        blocks: [
+          LessonParagraphBlock(children: [LessonTextRun('Alpha Beta Gamma')]),
+        ],
+      );
+      var document = initial;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 520,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    controller: controller,
+                    onChanged: (next) => setState(() => document = next),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await _focusTextField(
+        tester,
+        const ValueKey('lesson_document_editor_node_0'),
+      );
+      _forceControllerValue(
+        tester,
+        const ValueKey('lesson_document_editor_node_0'),
+        const TextEditingValue(
+          text: 'Controller drift',
+          selection: TextSelection(baseOffset: 0, extentOffset: 10),
+        ),
+      );
+      await tester.pump();
+      await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+      expect(document.toJson(), initial.toJson());
+      expect(
+        controller.lastCommandResult?.failure,
+        LessonEditorCommandFailure.textMismatch,
+      );
+    },
+  );
 
   testWidgets('document editor ignores inline formatting without selection', (
     tester,
@@ -1042,6 +1150,97 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'document editor heading reports ordered-list selections as deferred',
+    (tester) async {
+      final controller = LessonDocumentEditorController();
+      const initial = LessonDocument(
+        blocks: [
+          LessonListBlock.ordered(
+            items: [
+              LessonListItem(children: [LessonTextRun('One')]),
+              LessonListItem(children: [LessonTextRun('Two')]),
+            ],
+          ),
+        ],
+      );
+      var document = initial;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  height: 520,
+                  child: LessonDocumentEditor(
+                    document: document,
+                    controller: controller,
+                    onChanged: (next) => setState(() => document = next),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await _selectTextRange(
+        tester,
+        const ValueKey('lesson_document_editor_node_1'),
+        text: 'One',
+        start: 0,
+        end: 3,
+      );
+      await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+      expect(document.toJson(), initial.toJson());
+      expect(
+        controller.lastCommandResult?.failure,
+        LessonEditorCommandFailure.orderedListDeferred,
+      );
+    },
+  );
+
+  testWidgets('document editor heading reports unsupported targets', (
+    tester,
+  ) async {
+    final controller = LessonDocumentEditorController();
+    const initial = LessonDocument(
+      blocks: [
+        LessonMediaBlock(mediaType: 'image', lessonMediaId: 'lesson-media-1'),
+      ],
+    );
+    var document = initial;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 520,
+                child: LessonDocumentEditor(
+                  document: document,
+                  controller: controller,
+                  onChanged: (next) => setState(() => document = next),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _tapToolbar(tester, const Key('lesson_document_toolbar_heading'));
+
+    expect(document.toJson(), initial.toJson());
+    expect(
+      controller.lastCommandResult?.failure,
+      LessonEditorCommandFailure.unsupportedTarget,
+    );
+  });
 
   testWidgets('document editor applies list formatting only to selection', (
     tester,
@@ -2487,6 +2686,15 @@ void _forceControllerSelection(
   final textField = tester.widget<TextField>(find.byKey(key));
   final controller = textField.controller!;
   controller.value = controller.value.copyWith(selection: selection);
+}
+
+void _forceControllerValue(
+  WidgetTester tester,
+  ValueKey<String> key,
+  TextEditingValue value,
+) {
+  final textField = tester.widget<TextField>(find.byKey(key));
+  textField.controller!.value = value;
 }
 
 Future<void> _tapToolbar(WidgetTester tester, Key key) async {

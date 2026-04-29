@@ -21,8 +21,31 @@ class LessonEditorSaveSnapshot {
   final LessonDocument document;
 }
 
+enum LessonEditorCommandFailure {
+  collapsedSelection,
+  invalidSelection,
+  invalidRange,
+  textMismatch,
+  unsupportedTarget,
+  orderedListDeferred,
+  staleSelection,
+  identityRegistryMismatch,
+  emptyTarget,
+}
+
+final class LessonEditorCommandResult {
+  const LessonEditorCommandResult.applied() : failure = null;
+
+  const LessonEditorCommandResult.failed(this.failure);
+
+  final LessonEditorCommandFailure? failure;
+
+  bool get applied => failure == null;
+}
+
 class LessonDocumentEditorController extends ChangeNotifier {
   _LessonDocumentEditorState? _state;
+  LessonEditorCommandResult? _lastCommandResult;
 
   LessonEditorSaveSnapshot snapshotForSave() {
     final state = _requireAttachedState();
@@ -38,6 +61,8 @@ class LessonDocumentEditorController extends ChangeNotifier {
   int? get savedRevision => _state?._savedRevision;
 
   int? get currentInsertionIndex => _state?._currentInsertionIndex();
+
+  LessonEditorCommandResult? get lastCommandResult => _lastCommandResult;
 
   bool acknowledgeSave({
     required LessonEditorSaveSnapshot snapshot,
@@ -100,6 +125,11 @@ class LessonDocumentEditorController extends ChangeNotifier {
       _state = null;
     }
   }
+
+  void _recordCommandResult(LessonEditorCommandResult result) {
+    _lastCommandResult = result;
+    notifyListeners();
+  }
 }
 
 class LessonEditorSessionHost extends StatelessWidget {
@@ -112,6 +142,7 @@ class LessonEditorSessionHost extends StatelessWidget {
     this.onDirtyChanged,
     this.media = const <LessonDocumentPreviewMedia>[],
     this.onInsertionIndexChanged,
+    this.onCommandResult,
     this.enabled = true,
     this.minHeight = 280,
   });
@@ -123,6 +154,7 @@ class LessonEditorSessionHost extends StatelessWidget {
   final ValueChanged<bool>? onDirtyChanged;
   final List<LessonDocumentPreviewMedia> media;
   final ValueChanged<int>? onInsertionIndexChanged;
+  final ValueChanged<LessonEditorCommandResult>? onCommandResult;
   final bool enabled;
   final double minHeight;
 
@@ -136,6 +168,7 @@ class LessonEditorSessionHost extends StatelessWidget {
       onDirtyChanged: onDirtyChanged,
       media: media,
       onInsertionIndexChanged: onInsertionIndexChanged,
+      onCommandResult: onCommandResult,
       enabled: enabled,
       minHeight: minHeight,
     );
@@ -153,6 +186,7 @@ class LessonDocumentEditor extends StatefulWidget {
     this.onDirtyChanged,
     this.media = const <LessonDocumentPreviewMedia>[],
     this.onInsertionIndexChanged,
+    this.onCommandResult,
     this.enabled = true,
     this.minHeight = 280,
   });
@@ -165,6 +199,7 @@ class LessonDocumentEditor extends StatefulWidget {
   final ValueChanged<bool>? onDirtyChanged;
   final List<LessonDocumentPreviewMedia> media;
   final ValueChanged<int>? onInsertionIndexChanged;
+  final ValueChanged<LessonEditorCommandResult>? onCommandResult;
   final bool enabled;
   final double minHeight;
 
@@ -579,6 +614,44 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
     return _BlockTarget(identity.blockId);
   }
 
+  bool _identityRegistryMatchesDocument() {
+    if (_identityRegistry.blocks.length != _document.blocks.length) {
+      return false;
+    }
+    for (
+      var blockIndex = 0;
+      blockIndex < _document.blocks.length;
+      blockIndex += 1
+    ) {
+      final block = _document.blocks[blockIndex];
+      final identity = _identityRegistry.blocks[blockIndex];
+      if (block is LessonListBlock &&
+          identity.listItemIds.length != block.items.length) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  LessonEditorCommandResult _recordCommandFailure(
+    LessonEditorCommandFailure failure,
+  ) {
+    final result = LessonEditorCommandResult.failed(failure);
+    _recordCommandResult(result);
+    return result;
+  }
+
+  LessonEditorCommandResult _recordCommandApplied() {
+    const result = LessonEditorCommandResult.applied();
+    _recordCommandResult(result);
+    return result;
+  }
+
+  void _recordCommandResult(LessonEditorCommandResult result) {
+    widget.controller?._recordCommandResult(result);
+    widget.onCommandResult?.call(result);
+  }
+
   void _emit(LessonDocument document) {
     if (!widget.enabled) return;
     _applyDocument(document);
@@ -933,8 +1006,14 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   void _convertSelectedHeading() {
-    final selection = _selectedTextRange();
-    if (selection == null) return;
+    final selectionResult = _resolveSelectedTextRange();
+    final selection = selectionResult.range;
+    if (selection == null) {
+      _recordCommandFailure(
+        selectionResult.failure ?? LessonEditorCommandFailure.invalidSelection,
+      );
+      return;
+    }
 
     late final int blockIndex;
     late final _BlockIdentity sourceIdentity;
@@ -942,15 +1021,24 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
 
     if (selection.target case _BlockTextTarget(:final blockId)) {
       final resolvedBlockIndex = _blockIndexFor(blockId);
-      if (resolvedBlockIndex == null) return;
+      if (resolvedBlockIndex == null) {
+        _recordCommandFailure(_headingResolutionFailure());
+        return;
+      }
       final identity = _identityAtBlockIndex(resolvedBlockIndex);
-      if (identity == null) return;
+      if (identity == null) {
+        _recordCommandFailure(_headingResolutionFailure());
+        return;
+      }
       blockIndex = resolvedBlockIndex;
       sourceIdentity = identity;
       splitTarget = LessonTextBlockSelectionTarget(blockIndex: blockIndex);
     } else if (selection.target case _ListItemTextTarget(:final itemId)) {
       final location = _listItemLocationFor(itemId);
-      if (location == null) return;
+      if (location == null) {
+        _recordCommandFailure(_headingResolutionFailure());
+        return;
+      }
       blockIndex = location.blockIndex;
       sourceIdentity = location.blockIdentity;
       splitTarget = LessonListItemSelectionTarget(
@@ -958,6 +1046,7 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
         itemIndex: location.itemIndex,
       );
     } else {
+      _recordCommandFailure(LessonEditorCommandFailure.unsupportedTarget);
       return;
     }
 
@@ -971,7 +1060,10 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       ),
     );
     final metadata = result.metadata;
-    if (!result.applied || metadata == null) return;
+    if (!result.applied || metadata == null) {
+      _recordCommandFailure(_failureForSplitStatus(result.status));
+      return;
+    }
 
     final replacement = result.document.blocks
         .skip(blockIndex)
@@ -984,7 +1076,12 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       sourceIdentity: sourceIdentity,
       registry: nextRegistry,
     );
-    if (replacementIdentities == null) return;
+    if (replacementIdentities == null) {
+      _recordCommandFailure(
+        LessonEditorCommandFailure.identityRegistryMismatch,
+      );
+      return;
+    }
 
     nextRegistry.blocks
       ..removeAt(blockIndex)
@@ -994,13 +1091,42 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
       metadata: metadata,
       replacementIdentities: replacementIdentities,
     );
-    if (nextTarget == null) return;
+    if (nextTarget == null) {
+      _recordCommandFailure(
+        LessonEditorCommandFailure.identityRegistryMismatch,
+      );
+      return;
+    }
 
     _applyDocument(result.document, identityRegistry: nextRegistry);
     widget.onInsertionIndexChanged?.call(
       _insertionIndexForTarget(nextTarget) ?? blockIndex + 1,
     );
     setState(() => _selectedTarget = nextTarget);
+    _recordCommandApplied();
+  }
+
+  LessonEditorCommandFailure _headingResolutionFailure() {
+    return _identityRegistryMatchesDocument()
+        ? LessonEditorCommandFailure.staleSelection
+        : LessonEditorCommandFailure.identityRegistryMismatch;
+  }
+
+  LessonEditorCommandFailure _failureForSplitStatus(
+    LessonSelectionSplitStatus status,
+  ) {
+    return switch (status) {
+      LessonSelectionSplitStatus.applied =>
+        LessonEditorCommandFailure.invalidSelection,
+      LessonSelectionSplitStatus.collapsedSelection =>
+        LessonEditorCommandFailure.collapsedSelection,
+      LessonSelectionSplitStatus.invalidRange =>
+        LessonEditorCommandFailure.invalidRange,
+      LessonSelectionSplitStatus.unsupportedTarget =>
+        LessonEditorCommandFailure.unsupportedTarget,
+      LessonSelectionSplitStatus.orderedListDeferred =>
+        LessonEditorCommandFailure.orderedListDeferred,
+    };
   }
 
   List<_BlockIdentity>? _identityRemapForSplit({
@@ -1343,46 +1469,110 @@ class _LessonDocumentEditorState extends State<LessonDocumentEditor> {
   }
 
   _EditorTarget? _activeTextTarget() {
+    return _resolveActiveTextTarget().target;
+  }
+
+  _ActiveTextTargetResolution _resolveActiveTextTarget() {
     final target = _selectedTarget;
-    if (target == null) return null;
-    if (target is! _BlockTextTarget && target is! _ListItemTextTarget) {
-      return null;
+    if (target == null) {
+      return const _ActiveTextTargetResolution.failed(
+        LessonEditorCommandFailure.emptyTarget,
+      );
     }
-    if (!_targetExists(target)) return null;
+    if (!_identityRegistryMatchesDocument()) {
+      return const _ActiveTextTargetResolution.failed(
+        LessonEditorCommandFailure.identityRegistryMismatch,
+      );
+    }
+    if (target is! _BlockTextTarget && target is! _ListItemTextTarget) {
+      return const _ActiveTextTargetResolution.failed(
+        LessonEditorCommandFailure.unsupportedTarget,
+      );
+    }
+    if (!_targetExists(target)) {
+      return const _ActiveTextTargetResolution.failed(
+        LessonEditorCommandFailure.staleSelection,
+      );
+    }
     final key = _controlKeyForTarget(target);
-    if (key == null) return null;
+    if (key == null) {
+      return const _ActiveTextTargetResolution.failed(
+        LessonEditorCommandFailure.invalidSelection,
+      );
+    }
     final selection = _controllers[key]?.selection;
     if (selection == null || !selection.isValid) {
-      return null;
+      return const _ActiveTextTargetResolution.failed(
+        LessonEditorCommandFailure.invalidSelection,
+      );
     }
-    return target;
+    return _ActiveTextTargetResolution.resolved(target);
   }
 
   _SelectedTextRange? _selectedTextRange() {
-    final target = _activeTextTarget();
-    if (target == null) return null;
+    return _resolveSelectedTextRange().range;
+  }
+
+  _SelectedTextRangeResolution _resolveSelectedTextRange() {
+    final targetResult = _resolveActiveTextTarget();
+    final target = targetResult.target;
+    if (target == null) {
+      return _SelectedTextRangeResolution.failed(targetResult.failure);
+    }
     final children = _childrenForTarget(target);
     final text = _plainText(children);
     final length = text.length;
-    if (length == 0) return null;
+    if (length == 0) {
+      return const _SelectedTextRangeResolution.failed(
+        LessonEditorCommandFailure.emptyTarget,
+      );
+    }
     final key = _controlKeyForTarget(target);
-    if (key == null) return null;
+    if (key == null) {
+      return const _SelectedTextRangeResolution.failed(
+        LessonEditorCommandFailure.invalidSelection,
+      );
+    }
     final controller = _controllers[key];
-    if (controller == null || controller.text != text) return null;
+    if (controller == null) {
+      return const _SelectedTextRangeResolution.failed(
+        LessonEditorCommandFailure.invalidSelection,
+      );
+    }
+    if (controller.text != text) {
+      return const _SelectedTextRangeResolution.failed(
+        LessonEditorCommandFailure.textMismatch,
+      );
+    }
     final selection = controller.selection;
-    if (selection == null || selection.isCollapsed) {
-      return null;
+    if (!selection.isValid) {
+      return const _SelectedTextRangeResolution.failed(
+        LessonEditorCommandFailure.invalidSelection,
+      );
+    }
+    if (selection.isCollapsed) {
+      return const _SelectedTextRangeResolution.failed(
+        LessonEditorCommandFailure.collapsedSelection,
+      );
     }
     final start = selection.start;
     final end = selection.end;
     if (start < 0 || end < 0 || start > length || end > length) {
-      return null;
+      return const _SelectedTextRangeResolution.failed(
+        LessonEditorCommandFailure.invalidRange,
+      );
     }
-    if (start == end) return null;
-    return _SelectedTextRange(
-      target: target,
-      start: start < end ? start : end,
-      end: end > start ? end : start,
+    if (start == end) {
+      return const _SelectedTextRangeResolution.failed(
+        LessonEditorCommandFailure.collapsedSelection,
+      );
+    }
+    return _SelectedTextRangeResolution.resolved(
+      _SelectedTextRange(
+        target: target,
+        start: start < end ? start : end,
+        end: end > start ? end : start,
+      ),
     );
   }
 
@@ -2205,6 +2395,24 @@ class _Toolbar extends StatelessWidget {
 }
 
 enum _BlockConversion { paragraph, heading, bulletList, orderedList }
+
+class _ActiveTextTargetResolution {
+  const _ActiveTextTargetResolution.resolved(this.target) : failure = null;
+
+  const _ActiveTextTargetResolution.failed(this.failure) : target = null;
+
+  final _EditorTarget? target;
+  final LessonEditorCommandFailure? failure;
+}
+
+class _SelectedTextRangeResolution {
+  const _SelectedTextRangeResolution.resolved(this.range) : failure = null;
+
+  const _SelectedTextRangeResolution.failed(this.failure) : range = null;
+
+  final _SelectedTextRange? range;
+  final LessonEditorCommandFailure? failure;
+}
 
 class _SelectedTextRange {
   const _SelectedTextRange({

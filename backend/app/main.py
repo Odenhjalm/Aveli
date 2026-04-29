@@ -63,6 +63,7 @@ from .routes import (
     profiles,
     profile_avatar,
     referrals,
+    render_inputs,
     special_offers,
     stripe_observability_mcp,
     stripe_webhooks,
@@ -265,6 +266,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(referrals.router)
     app.include_router(admin.router)
     app.include_router(special_offers.router)
+    app.include_router(render_inputs.router)
     app.include_router(home.router)
     app.include_router(landing.router)
     app.include_router(playback.router)

@@ -613,6 +613,32 @@ class ResolvedMedia(BaseModel):
     resolved_url: str | None = None
 
 
+class BrandLogoRenderInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resolved_url: str = Field(min_length=1)
+
+    @field_validator("resolved_url")
+    @classmethod
+    def _validate_resolved_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("brand logo resolved_url must be nonblank")
+        return normalized
+
+
+class BrandRenderInputs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    logo: BrandLogoRenderInput
+
+
+class AppRenderInputsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    brand: BrandRenderInputs
+
+
 class CourseCoverMedia(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
