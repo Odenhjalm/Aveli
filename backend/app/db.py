@@ -92,6 +92,7 @@ class ContextAwareAsyncConnectionPool(AsyncConnectionPool):
 
 pool = ContextAwareAsyncConnectionPool(
     conninfo=settings.database_url.unicode_string(),
+    kwargs={"prepare_threshold": None},
     min_size=1,
     max_size=10,
     check=ContextAwareAsyncConnectionPool.check_connection,
