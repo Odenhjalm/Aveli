@@ -482,7 +482,12 @@ void main() {
         );
         expect(view.access.isInAnyIntroDrip, isFalse);
         expect(view.cta.type, 'continue');
+        expect(view.cta.textId, 'course.cta.continue');
         expect(view.cta.actionType, 'lesson');
+        expect(
+          view.textBundles.single.texts['course.cta.continue']?.value,
+          'Fortsätt',
+        );
         expect(view.pricing?.formattedPrice, '990 kr');
         expect(view.nextRecommendedLesson?.id, 'lesson-1');
         expect(view.lessons.single.availability.state, 'unlocked');
@@ -508,6 +513,23 @@ void main() {
               ],
             ),
           );
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      await expectLater(
+        repo.fetchCourseEntryView(slug),
+        throwsA(isA<AppFailure>()),
+      );
+    });
+
+    test('rejects entry-view CTA payload without text bundles', () async {
+      const slug = 'aveli-course';
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/$slug/entry-view') {
+          final body = _entryViewPayload()..remove('text_bundles');
+          return _jsonResponse(statusCode: 200, body: body);
         }
         return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
       });
@@ -627,6 +649,7 @@ Map<String, Object?> _entryViewPayload({
       'can_purchase': false,
     },
     'cta': cta,
+    'text_bundles': _courseCtaTextBundles,
     'pricing': pricing,
     'next_recommended_lesson': nextRecommendedLesson,
   };
@@ -676,7 +699,7 @@ const Map<String, Object?> _defaultEntryPricing = {
 
 const Map<String, Object?> _defaultEntryCta = {
   'type': 'continue',
-  'label': 'Continue',
+  'text_id': 'course.cta.continue',
   'enabled': true,
   'reason_code': null,
   'reason_text': null,
@@ -832,6 +855,7 @@ Map<String, Object?> _lessonPayload({
       'can_purchase': false,
     },
     'cta': null,
+    'text_bundles': _courseCtaTextBundles,
     'pricing': null,
     'progression': const {'unlocked': true, 'reason': 'available'},
     'media': media,
@@ -853,6 +877,25 @@ Map<String, Object?> _lessonDocument([String? text]) {
           ],
   };
 }
+
+const List<Object?> _courseCtaTextBundles = [
+  {
+    'bundle_id': 'course_cta.v1',
+    'locale': 'sv-SE',
+    'version': 'catalog_v1',
+    'hash': 'sha256:test',
+    'texts': {
+      'course.cta.continue': 'Fortsätt',
+      'course.cta.enroll': 'Börja kursen',
+      'course.cta.buy': 'Köp kursen',
+      'course.cta.unavailable': 'Inte tillgänglig',
+      'lesson.cta.continue': 'Fortsätt',
+      'lesson.cta.start': 'Börja kursen',
+      'lesson.cta.buy': 'Köp kursen',
+      'lesson.cta.unavailable': 'Inte tillgänglig',
+    },
+  },
+];
 
 ResponseBody _jsonResponse({
   required int statusCode,

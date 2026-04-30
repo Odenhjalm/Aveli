@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/data/models/text_bundle.dart';
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/editor/document/lesson_document_renderer.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
@@ -208,6 +209,9 @@ class _LessonSurfaceStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cta = surface.cta;
+    final ctaText = cta == null
+        ? null
+        : _resolveCtaText(cta.textId, surface.textBundles);
     final pricing = surface.pricing;
     return GlassCard(
       padding: const EdgeInsets.all(16),
@@ -221,20 +225,16 @@ class _LessonSurfaceStatusCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (cta != null) ...[
-            Text(
-              cta.label,
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.onSurface,
-                fontWeight: FontWeight.w700,
+            if (ctaText == null)
+              const SizedBox.shrink()
+            else
+              Text(
+                ctaText,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              cta.type,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
           ],
           if (cta?.reasonText != null) ...[
             const SizedBox(height: 8),
@@ -254,16 +254,17 @@ class _LessonSurfaceStatusCard extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 8),
-          Text(
-            surface.progression.reason,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
         ],
       ),
     );
+  }
+}
+
+String? _resolveCtaText(String textId, List<TextBundle> textBundles) {
+  try {
+    return resolveText(textId, textBundles);
+  } catch (_) {
+    return null;
   }
 }
 

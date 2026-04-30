@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:aveli/data/models/text_bundle.dart';
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/shared/utils/resolved_media_contract.dart';
 
@@ -88,7 +89,9 @@ class LessonViewSurface {
     required List<LessonViewMediaItem> media,
     this.cta,
     this.pricing,
-  }) : media = List<LessonViewMediaItem>.unmodifiable(media);
+    List<TextBundle> textBundles = const <TextBundle>[],
+  }) : media = List<LessonViewMediaItem>.unmodifiable(media),
+       textBundles = List<TextBundle>.unmodifiable(textBundles);
 
   final LessonViewLesson lesson;
   final LessonViewNavigation navigation;
@@ -97,6 +100,7 @@ class LessonViewSurface {
   final List<LessonViewMediaItem> media;
   final LessonViewCTA? cta;
   final LessonViewPricing? pricing;
+  final List<TextBundle> textBundles;
 
   factory LessonViewSurface.fromResponse(
     Object? payload, {
@@ -118,6 +122,10 @@ class LessonViewSurface {
       pricing: pricingPayload == null
           ? null
           : LessonViewPricing.fromResponse(pricingPayload),
+      textBundles: parseTextBundles(
+        _requireResponseField(payload, 'text_bundles', label),
+        label: label,
+      ),
       progression: LessonViewProgression.fromResponse(
         _requireResponseField(payload, 'progression', label),
       ),
@@ -256,7 +264,7 @@ class LessonViewAccess {
 class LessonViewCTA {
   const LessonViewCTA({
     required this.type,
-    required this.label,
+    this.textId = '',
     required this.enabled,
     this.reasonCode,
     this.reasonText,
@@ -265,7 +273,7 @@ class LessonViewCTA {
   });
 
   final String type;
-  final String label;
+  final String textId;
   final bool enabled;
   final String? reasonCode;
   final String? reasonText;
@@ -275,7 +283,7 @@ class LessonViewCTA {
   factory LessonViewCTA.fromResponse(Object? payload) {
     return LessonViewCTA(
       type: _requiredResponseString(payload, 'type', 'LessonViewCTA'),
-      label: _requiredResponseString(payload, 'label', 'LessonViewCTA'),
+      textId: _requiredResponseString(payload, 'text_id', 'LessonViewCTA'),
       enabled: _requiredResponseBool(payload, 'enabled', 'LessonViewCTA'),
       reasonCode: _nullableResponseString(
         payload,

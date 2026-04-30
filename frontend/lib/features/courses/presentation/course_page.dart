@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/data/models/text_bundle.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/paywall/application/checkout_flow.dart';
@@ -71,11 +72,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
         return;
     }
 
-    if (view.cta.type == 'continue' && view.nextRecommendedLesson != null) {
-      _openLesson(view.nextRecommendedLesson!.id);
-      return;
-    }
-    final message = view.cta.reasonText ?? view.cta.reasonCode;
+    final message = view.cta.reasonText;
     if (message != null && message.isNotEmpty && mounted && context.mounted) {
       showSnack(context, message);
     }
@@ -190,7 +187,8 @@ class _CourseContent extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final cover = course.cover;
     final priceLabel = _backendPriceLabel(view);
-    final ctaReason = view.cta.reasonText ?? view.cta.reasonCode;
+    final ctaText = _resolveCtaText(view.cta.textId, view.textBundles);
+    final ctaReason = view.cta.reasonText;
     final nextLesson = view.nextRecommendedLesson;
 
     return AppScaffold(
@@ -248,14 +246,16 @@ class _CourseContent extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: ctaBusy ? null : onPrimaryCta,
+                    onPressed: ctaBusy || ctaText == null ? null : onPrimaryCta,
                     child: ctaBusy
                         ? const SizedBox(
                             height: 18,
                             width: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Text(view.cta.label),
+                        : ctaText == null
+                        ? const SizedBox.shrink()
+                        : Text(ctaText),
                   ),
                 ),
                 if (ctaReason != null && ctaReason.isNotEmpty) ...[
@@ -362,9 +362,7 @@ class _EntryLessonTile extends StatelessWidget {
             onOpenLesson(entryLesson.id);
             return;
           }
-          final message =
-              entryLesson.availability.reasonText ??
-              entryLesson.availability.reasonCode;
+          final message = entryLesson.availability.reasonText;
           if (message != null && message.isNotEmpty) {
             showSnack(context, message);
           }
@@ -383,6 +381,14 @@ String? _backendPriceLabel(CourseEntryViewData view) {
   return coursePrice != null && coursePrice.isNotEmpty ? coursePrice : null;
 }
 
+String? _resolveCtaText(String textId, List<TextBundle> textBundles) {
+  try {
+    return resolveText(textId, textBundles);
+  } catch (_) {
+    return null;
+  }
+}
+
 String? _lessonStatusLabel(CourseEntryLessonShellData entryLesson) {
   final reasonText = entryLesson.availability.reasonText;
   if (reasonText != null && reasonText.isNotEmpty) {
@@ -392,11 +398,7 @@ String? _lessonStatusLabel(CourseEntryLessonShellData entryLesson) {
   if (availabilityState == 'locked') {
     return 'L\u00e5st';
   }
-  final progressionState = entryLesson.progression.state;
-  if (progressionState.isNotEmpty) {
-    return progressionState;
-  }
-  return availabilityState.isNotEmpty ? availabilityState : null;
+  return null;
 }
 
 class _CourseStatusLine extends StatelessWidget {

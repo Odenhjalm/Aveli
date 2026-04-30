@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:aveli/core/errors/app_failure.dart';
 import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/data/models/text_bundle.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/courses/presentation/course_page.dart';
@@ -21,7 +21,7 @@ void main() {
         description: 'Backend-authored intro description',
         cta: const CourseEntryCtaData(
           type: 'enroll',
-          label: 'Starta introduktion',
+          textId: 'course.cta.enroll',
           enabled: true,
           reasonCode: null,
           reasonText: null,
@@ -33,9 +33,9 @@ void main() {
 
     expect(find.text('Intro Course'), findsWidgets);
     expect(find.text('Backend-authored intro description'), findsOneWidget);
-    expect(find.text('Starta introduktion'), findsOneWidget);
+    expect(find.text('Börja kursen'), findsOneWidget);
     expect(find.text('Lesson 1'), findsOneWidget);
-    expect(find.text('current'), findsOneWidget);
+    expect(find.text('current'), findsNothing);
   });
 
   testWidgets('blocked intro CTA renders backend reason and disabled state', (
@@ -53,7 +53,7 @@ void main() {
         ),
         cta: const CourseEntryCtaData(
           type: 'blocked',
-          label: 'Blocked',
+          textId: 'course.cta.unavailable',
           enabled: false,
           reasonCode: 'active_intro_drip',
           reasonText:
@@ -66,7 +66,7 @@ void main() {
 
     final button = tester.widget<FilledButton>(find.byType(FilledButton));
     expect(button.onPressed, isNull);
-    expect(find.text('Blocked'), findsOneWidget);
+    expect(find.text('Inte tillgänglig'), findsOneWidget);
     expect(
       find.text('Finish your active intro course before starting another.'),
       findsOneWidget,
@@ -89,7 +89,7 @@ void main() {
         ),
         cta: const CourseEntryCtaData(
           type: 'buy',
-          label: 'K\u00f6p kursen',
+          textId: 'course.cta.buy',
           enabled: true,
           reasonCode: null,
           reasonText: null,
@@ -152,7 +152,7 @@ void main() {
     );
 
     expect(find.text('Lesson 1'), findsOneWidget);
-    expect(find.text('completed'), findsOneWidget);
+    expect(find.text('completed'), findsNothing);
     expect(find.text('Lesson 2'), findsOneWidget);
     expect(find.text('Available later'), findsOneWidget);
     expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
@@ -260,7 +260,7 @@ CourseEntryViewData _entryView({
   ),
   CourseEntryCtaData cta = const CourseEntryCtaData(
     type: 'continue',
-    label: 'Continue',
+    textId: 'course.cta.continue',
     enabled: true,
     reasonCode: null,
     reasonText: null,
@@ -293,10 +293,30 @@ CourseEntryViewData _entryView({
     lessons: lessons ?? [_lesson()],
     access: access,
     cta: cta,
+    textBundles: _courseCtaTextBundles,
     pricing: pricing,
     nextRecommendedLesson: nextRecommendedLesson,
   );
 }
+
+const List<TextBundle> _courseCtaTextBundles = <TextBundle>[
+  TextBundle(
+    bundleId: 'course_cta.v1',
+    locale: 'sv-SE',
+    version: 'catalog_v1',
+    hash: 'sha256:test',
+    texts: <String, TextNode>{
+      'course.cta.continue': TextNode(value: 'Fortsätt'),
+      'course.cta.enroll': TextNode(value: 'Börja kursen'),
+      'course.cta.buy': TextNode(value: 'Köp kursen'),
+      'course.cta.unavailable': TextNode(value: 'Inte tillgänglig'),
+      'lesson.cta.continue': TextNode(value: 'Fortsätt'),
+      'lesson.cta.start': TextNode(value: 'Börja kursen'),
+      'lesson.cta.buy': TextNode(value: 'Köp kursen'),
+      'lesson.cta.unavailable': TextNode(value: 'Inte tillgänglig'),
+    },
+  ),
+];
 
 CourseEntryLessonShellData _lesson({
   String id = 'lesson-1',

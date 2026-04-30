@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/data/models/text_bundle.dart';
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/courses/data/lesson_view_surface.dart';
@@ -46,6 +47,7 @@ LessonViewSurface _buildLessonData({
       canPurchase: false,
     ),
     cta: cta,
+    textBundles: _courseCtaTextBundles,
     pricing: pricing,
     progression:
         progression ??
@@ -401,7 +403,7 @@ void main() {
       contentDocument: null,
       cta: const LessonViewCTA(
         type: 'blocked',
-        label: 'V\u00e4nta p\u00e5 n\u00e4sta lektion',
+        textId: 'lesson.cta.unavailable',
         enabled: false,
         reasonText: 'Tillg\u00e4nglig senare',
       ),
@@ -416,13 +418,32 @@ void main() {
     await _pumpLessonPage(tester, data: data);
     await tester.pumpAndSettle();
 
-    expect(find.text('V\u00e4nta p\u00e5 n\u00e4sta lektion'), findsOneWidget);
-    expect(find.text('blocked'), findsOneWidget);
+    expect(find.text('Inte tillgänglig'), findsOneWidget);
+    expect(find.text('blocked'), findsNothing);
     expect(find.text('Tillg\u00e4nglig senare'), findsOneWidget);
     expect(find.text('99 kr'), findsOneWidget);
-    expect(find.text('drip'), findsOneWidget);
+    expect(find.text('drip'), findsNothing);
     expect(find.byType(LearnerLessonContentRenderer), findsNothing);
     expect(_lessonAudioMediaPlayerFinder(), findsNothing);
     expect(_takeUnexpectedException(tester), isNull);
   });
 }
+
+const List<TextBundle> _courseCtaTextBundles = <TextBundle>[
+  TextBundle(
+    bundleId: 'course_cta.v1',
+    locale: 'sv-SE',
+    version: 'catalog_v1',
+    hash: 'sha256:test',
+    texts: <String, TextNode>{
+      'course.cta.continue': TextNode(value: 'Fortsätt'),
+      'course.cta.enroll': TextNode(value: 'Börja kursen'),
+      'course.cta.buy': TextNode(value: 'Köp kursen'),
+      'course.cta.unavailable': TextNode(value: 'Inte tillgänglig'),
+      'lesson.cta.continue': TextNode(value: 'Fortsätt'),
+      'lesson.cta.start': TextNode(value: 'Börja kursen'),
+      'lesson.cta.buy': TextNode(value: 'Köp kursen'),
+      'lesson.cta.unavailable': TextNode(value: 'Inte tillgänglig'),
+    },
+  ),
+];

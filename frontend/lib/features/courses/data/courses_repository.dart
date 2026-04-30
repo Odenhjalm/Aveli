@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/errors/app_failure.dart';
+import 'package:aveli/data/models/text_bundle.dart';
 import 'package:aveli/features/courses/data/lesson_view_surface.dart';
 import 'package:aveli/shared/utils/course_cover_contract.dart';
 
@@ -334,6 +335,7 @@ class CourseEntryViewData {
     required this.cta,
     required this.pricing,
     required this.nextRecommendedLesson,
+    this.textBundles = const <TextBundle>[],
   });
 
   final CourseEntryCourseData course;
@@ -342,6 +344,7 @@ class CourseEntryViewData {
   final CourseEntryCtaData cta;
   final CourseEntryPricingData? pricing;
   final CourseEntryNextRecommendedLessonData? nextRecommendedLesson;
+  final List<TextBundle> textBundles;
 
   factory CourseEntryViewData.fromResponse(Object? payload) {
     _rejectCourseEntryRuntimeFields(payload, 'course_entry_view');
@@ -357,6 +360,10 @@ class CourseEntryViewData {
         _requiredField(payload, 'access'),
       ),
       cta: CourseEntryCtaData.fromResponse(_requiredField(payload, 'cta')),
+      textBundles: parseTextBundles(
+        _requiredField(payload, 'text_bundles'),
+        label: 'CourseEntryViewData',
+      ),
       pricing: switch (_requiredField(payload, 'pricing')) {
         null => null,
         final Object pricing => CourseEntryPricingData.fromResponse(pricing),
@@ -590,7 +597,7 @@ class CourseEntryAccessData {
 class CourseEntryCtaData {
   const CourseEntryCtaData({
     required this.type,
-    required this.label,
+    this.textId = '',
     required this.enabled,
     required this.reasonCode,
     required this.reasonText,
@@ -599,7 +606,7 @@ class CourseEntryCtaData {
   });
 
   final String type;
-  final String label;
+  final String textId;
   final bool enabled;
   final String? reasonCode;
   final String? reasonText;
@@ -614,7 +621,7 @@ class CourseEntryCtaData {
   factory CourseEntryCtaData.fromResponse(Object? payload) {
     return CourseEntryCtaData(
       type: _requireString(_requiredField(payload, 'type'), 'type'),
-      label: _requireString(_requiredField(payload, 'label'), 'label'),
+      textId: _requireString(_requiredField(payload, 'text_id'), 'text_id'),
       enabled: _requireBool(_requiredField(payload, 'enabled'), 'enabled'),
       reasonCode: _optionalString(
         _requiredField(payload, 'reason_code'),
