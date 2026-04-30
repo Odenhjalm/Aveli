@@ -487,6 +487,7 @@ Learner frontend may use only these canonical read surfaces:
 - `GET /courses`
 - `GET /courses/{course_id}`
 - `GET /courses/by-slug/{slug}`
+- `GET /home/entry-view`
 - `GET /courses/{course_id_or_slug}/entry-view`
 - `GET /courses/lessons/{lesson_id}`
 

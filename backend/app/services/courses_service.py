@@ -34,6 +34,7 @@ from . import media_cleanup
 from . import studio_authority
 from . import storage_service
 from . import intro_selection_state
+from . import text_catalog_service
 
 logger = logging.getLogger(__name__)
 _CANONICAL_COURSE_STRIPE_CURRENCY = "sek"
@@ -74,12 +75,100 @@ _STUDIO_COURSE_DRIP_MODES = frozenset(
     }
 )
 _STUDIO_COURSE_LOCK_REASON = "first_enrollment_exists"
+_COURSE_CTA_LOCALE = text_catalog_service.DEFAULT_LOCALE
+_COURSE_CTA_BUNDLE_ID = text_catalog_service.COURSE_CTA_BUNDLE_ID
+_COURSE_CTA_CONTINUE_TEXT_ID = "course.cta.continue"
+_COURSE_CTA_ENROLL_TEXT_ID = "course.cta.enroll"
+_COURSE_CTA_BUY_TEXT_ID = "course.cta.buy"
+_COURSE_CTA_UNAVAILABLE_TEXT_ID = "course.cta.unavailable"
+_LESSON_CTA_CONTINUE_TEXT_ID = "lesson.cta.continue"
+_LESSON_CTA_START_TEXT_ID = "lesson.cta.start"
+_LESSON_CTA_BUY_TEXT_ID = "lesson.cta.buy"
+_LESSON_CTA_UNAVAILABLE_TEXT_ID = "lesson.cta.unavailable"
 
 
 @dataclass(frozen=True)
 class CoursePublishReadiness:
     requires_monetization: bool
     amount_cents: int | None
+
+
+def get_course_cta_text_bundle() -> dict[str, object]:
+    return text_catalog_service.get_bundle(_COURSE_CTA_BUNDLE_ID, _COURSE_CTA_LOCALE)
+
+
+def course_cta_response_payload(response: Any) -> dict[str, Any]:
+    if hasattr(response, "model_dump"):
+        payload = response.model_dump(mode="json")
+    elif isinstance(response, Mapping):
+        payload = dict(response)
+    else:
+        raise text_catalog_service.TextCatalogError(
+            "Course CTA response cannot be serialized"
+        )
+
+    text_bundle = get_course_cta_text_bundle()
+    _replace_cta_label_with_text_id(payload, text_bundle=text_bundle)
+    payload["text_bundle"] = text_bundle
+    return payload
+
+
+def _replace_cta_label_with_text_id(
+    payload: dict[str, Any],
+    *,
+    text_bundle: Mapping[str, Any],
+) -> None:
+    cta = payload.get("cta")
+    if cta is None:
+        return
+    if not isinstance(cta, dict):
+        raise text_catalog_service.TextCatalogError("CTA payload must be an object")
+
+    cta.pop("label", None)
+    text_id = _cta_text_id_for_payload(payload, cta)
+    cta["text_id"] = _catalog_text_id(text_bundle, text_id)
+
+
+def _cta_text_id_for_payload(payload: Mapping[str, Any], cta: Mapping[str, Any]) -> str:
+    cta_type = cta.get("type")
+    if not isinstance(cta_type, str):
+        raise text_catalog_service.TextCatalogError("CTA type is missing")
+
+    if "course" in payload:
+        text_ids = {
+            "continue": _COURSE_CTA_CONTINUE_TEXT_ID,
+            "enroll": _COURSE_CTA_ENROLL_TEXT_ID,
+            "buy": _COURSE_CTA_BUY_TEXT_ID,
+            "blocked": _COURSE_CTA_UNAVAILABLE_TEXT_ID,
+            "unavailable": _COURSE_CTA_UNAVAILABLE_TEXT_ID,
+        }
+    elif "lesson" in payload:
+        text_ids = {
+            "continue": _LESSON_CTA_CONTINUE_TEXT_ID,
+            "enroll": _LESSON_CTA_START_TEXT_ID,
+            "buy": _LESSON_CTA_BUY_TEXT_ID,
+            "blocked": _LESSON_CTA_UNAVAILABLE_TEXT_ID,
+            "unavailable": _LESSON_CTA_UNAVAILABLE_TEXT_ID,
+        }
+    else:
+        raise text_catalog_service.TextCatalogError("CTA surface is missing")
+
+    try:
+        return text_ids[cta_type]
+    except KeyError as exc:
+        raise text_catalog_service.TextCatalogError(
+            f"Unknown CTA type: {cta_type}"
+        ) from exc
+
+
+def _catalog_text_id(text_bundle: Mapping[str, Any], text_id: str) -> str:
+    texts = text_bundle.get("texts")
+    if not isinstance(texts, Mapping) or text_id not in texts:
+        bundle_id = text_bundle.get("bundle_id", _COURSE_CTA_BUNDLE_ID)
+        raise text_catalog_service.TextCatalogError(
+            f"Missing text catalog value: {bundle_id}:{text_id}"
+        )
+    return text_id
 
 
 class CourseCreationError(Exception):
@@ -1203,11 +1292,12 @@ def _course_entry_cta_projection(
     next_recommended_lesson: schemas.CourseEntryNextRecommendedLesson | None,
     pricing: schemas.CourseEntryPricing | None,
     has_request_user: bool,
+    text_bundle: Mapping[str, Any],
 ) -> schemas.CourseEntryCTA:
     if access.is_enrolled and next_recommended_lesson is not None:
         return schemas.CourseEntryCTA(
             type="continue",
-            label="Continue",
+            label=_catalog_text_id(text_bundle, _COURSE_CTA_CONTINUE_TEXT_ID),
             enabled=True,
             action={
                 "type": "lesson",
@@ -1217,10 +1307,10 @@ def _course_entry_cta_projection(
     if not has_request_user:
         return schemas.CourseEntryCTA(
             type="unavailable",
-            label="Sign in required",
+            label=_catalog_text_id(text_bundle, _COURSE_CTA_UNAVAILABLE_TEXT_ID),
             enabled=False,
             reason_code="auth_required",
-            reason_text="Sign in to continue.",
+            reason_text=None,
             price=pricing.model_dump(mode="json") if pricing is not None else None,
             action=None,
         )
@@ -1228,17 +1318,17 @@ def _course_entry_cta_projection(
         if active_intro_drip_other_course:
             return schemas.CourseEntryCTA(
                 type="blocked",
-                label="Blocked",
+                label=_catalog_text_id(text_bundle, _COURSE_CTA_UNAVAILABLE_TEXT_ID),
                 enabled=False,
                 reason_code="active_intro_drip",
-                reason_text="Finish your active intro course before starting another.",
+                reason_text=None,
                 price=None,
                 action=None,
             )
         if access.can_enroll:
             return schemas.CourseEntryCTA(
                 type="enroll",
-                label="Enroll",
+                label=_catalog_text_id(text_bundle, _COURSE_CTA_ENROLL_TEXT_ID),
                 enabled=True,
                 action={"type": "enroll"},
             )
@@ -1246,26 +1336,26 @@ def _course_entry_cta_projection(
         if access.can_purchase:
             return schemas.CourseEntryCTA(
                 type="buy",
-                label="Buy",
+                label=_catalog_text_id(text_bundle, _COURSE_CTA_BUY_TEXT_ID),
                 enabled=True,
                 price=pricing.model_dump(mode="json") if pricing is not None else None,
                 action={"type": "checkout"},
             )
         return schemas.CourseEntryCTA(
             type="unavailable",
-            label="Unavailable",
+            label=_catalog_text_id(text_bundle, _COURSE_CTA_UNAVAILABLE_TEXT_ID),
             enabled=False,
             reason_code="premium_unavailable",
-            reason_text="This course is not available for purchase.",
+            reason_text=None,
             price=pricing.model_dump(mode="json") if pricing is not None else None,
             action=None,
         )
     return schemas.CourseEntryCTA(
         type="unavailable",
-        label="Unavailable",
+        label=_catalog_text_id(text_bundle, _COURSE_CTA_UNAVAILABLE_TEXT_ID),
         enabled=False,
         reason_code="classification_unavailable",
-        reason_text="This course is not currently available.",
+        reason_text=None,
         price=None,
         action=None,
     )
@@ -1325,6 +1415,7 @@ async def read_course_entry_view_surface(
         has_request_user=user_id is not None,
         sellable_course=sellable_course,
     )
+    cta_text_bundle = get_course_cta_text_bundle()
     cta = _course_entry_cta_projection(
         required_source=required_source,
         access=access,
@@ -1332,6 +1423,7 @@ async def read_course_entry_view_surface(
         next_recommended_lesson=next_recommended_lesson,
         pricing=pricing,
         has_request_user=user_id is not None,
+        text_bundle=cta_text_bundle,
     )
     cover = await _course_entry_cover_projection(course)
     price_amount_cents = _course_entry_price_amount(course.get("price_amount_cents"))
@@ -1473,11 +1565,12 @@ def _lesson_view_cta_projection(
     access: schemas.LessonViewAccess,
     progression: schemas.LessonViewProgression,
     pricing: schemas.LessonViewPricing | None,
+    text_bundle: Mapping[str, Any],
 ) -> schemas.LessonViewCTA | None:
     if access.has_access:
         return schemas.LessonViewCTA(
             type="continue",
-            label="Fortsätt",
+            label=_catalog_text_id(text_bundle, _LESSON_CTA_CONTINUE_TEXT_ID),
             enabled=True,
             reason_code=None,
             reason_text=None,
@@ -1487,7 +1580,7 @@ def _lesson_view_cta_projection(
     if access.can_enroll:
         return schemas.LessonViewCTA(
             type="enroll",
-            label="Börja kursen",
+            label=_catalog_text_id(text_bundle, _LESSON_CTA_START_TEXT_ID),
             enabled=True,
             reason_code=None,
             reason_text=None,
@@ -1497,7 +1590,7 @@ def _lesson_view_cta_projection(
     if access.can_purchase:
         return schemas.LessonViewCTA(
             type="buy",
-            label="Köp kursen",
+            label=_catalog_text_id(text_bundle, _LESSON_CTA_BUY_TEXT_ID),
             enabled=True,
             reason_code=None,
             reason_text=None,
@@ -1507,19 +1600,19 @@ def _lesson_view_cta_projection(
     if progression.reason == "drip":
         return schemas.LessonViewCTA(
             type="blocked",
-            label="Låst",
+            label=_catalog_text_id(text_bundle, _LESSON_CTA_UNAVAILABLE_TEXT_ID),
             enabled=False,
             reason_code="drip",
-            reason_text="Lektionen är inte upplåst ännu.",
+            reason_text=None,
             price=None,
             action=None,
         )
     return schemas.LessonViewCTA(
         type="unavailable",
-        label="Inte tillgänglig",
+        label=_catalog_text_id(text_bundle, _LESSON_CTA_UNAVAILABLE_TEXT_ID),
         enabled=False,
         reason_code="no_access",
-        reason_text="Du har inte åtkomst till den här lektionen.",
+        reason_text=None,
         price=pricing.model_dump(mode="json") if access.is_premium and pricing else None,
         action=None,
     )
@@ -1618,10 +1711,12 @@ async def read_lesson_view_surface(
         preview=preview,
         has_request_user=bool(normalized_user_id),
     )
+    cta_text_bundle = get_course_cta_text_bundle()
     cta = _lesson_view_cta_projection(
         access=access,
         progression=progression,
         pricing=pricing,
+        text_bundle=cta_text_bundle,
     )
 
     if not access.has_access or not progression.unlocked:

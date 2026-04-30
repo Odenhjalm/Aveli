@@ -2,6 +2,8 @@ from typing import Any, Mapping
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 
 from .. import schemas
 from ..auth import AppEntryUser, OptionalCurrentUser
@@ -173,7 +175,9 @@ async def lesson_detail(
 
     if response is None:
         raise HTTPException(status_code=404, detail=_LESSON_NOT_FOUND_DETAIL)
-    return response
+    return JSONResponse(
+        content=jsonable_encoder(courses_service.course_cta_response_payload(response))
+    )
 
 
 @router.post(
@@ -314,7 +318,9 @@ async def course_entry_view(
     )
     if response is None:
         raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL)
-    return response
+    return JSONResponse(
+        content=jsonable_encoder(courses_service.course_cta_response_payload(response))
+    )
 
 
 @router.get("/{course_id}/public", response_model=schemas.CoursePublicContent)
