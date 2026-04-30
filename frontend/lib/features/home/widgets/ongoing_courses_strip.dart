@@ -21,6 +21,7 @@ class OngoingCoursesStrip extends StatelessWidget {
 
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final visibleCourses = courses.take(2).toList(growable: false);
 
     return Semantics(
       label: 'Mina kurser',
@@ -34,35 +35,35 @@ class OngoingCoursesStrip extends StatelessWidget {
             color: colorScheme.outline.withValues(alpha: 0.16),
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Mina kurser',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: colorScheme.onSurface.withValues(alpha: 0.82),
-              ),
-            ),
-            const SizedBox(width: 10),
-            for (final course in courses) ...[
-              OngoingCourseCard(
-                key: ValueKey('home-ongoing-course-${course.courseId}'),
-                course: course,
-                onPressed: _ctaPressed(course),
-              ),
-              if (course != courses.last)
-                Container(
-                  width: 1,
-                  height: 20,
-                  margin: const EdgeInsets.symmetric(horizontal: 10),
-                  color: colorScheme.outline.withValues(alpha: 0.18),
+        child: visibleCourses.length == 1
+            ? Center(
+                child: OngoingCourseCard(
+                  key: ValueKey(
+                    'home-ongoing-course-${visibleCourses.first.courseId}',
+                  ),
+                  course: visibleCourses.first,
+                  onPressed: _ctaPressed(visibleCourses.first),
                 ),
-            ],
-          ],
-        ),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final course in visibleCourses) ...[
+                    OngoingCourseCard(
+                      key: ValueKey('home-ongoing-course-${course.courseId}'),
+                      course: course,
+                      onPressed: _ctaPressed(course),
+                    ),
+                    if (course != visibleCourses.last)
+                      Container(
+                        width: 1,
+                        height: 20,
+                        margin: const EdgeInsets.symmetric(horizontal: 10),
+                        color: colorScheme.outline.withValues(alpha: 0.18),
+                      ),
+                  ],
+                ],
+              ),
       ),
     );
   }
