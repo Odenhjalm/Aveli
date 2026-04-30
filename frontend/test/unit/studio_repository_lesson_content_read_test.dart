@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/core/auth/token_storage.dart';
+import 'package:aveli/data/models/text_bundle.dart';
 import 'package:aveli/editor/document/lesson_document.dart';
 import 'package:aveli/features/studio/data/studio_models.dart';
 import 'package:aveli/features/studio/data/studio_repository.dart';
@@ -170,13 +171,14 @@ void main() {
               },
               'cta': {
                 'type': 'continue',
-                'label': 'Continue',
+                'text_id': 'lesson.cta.continue',
                 'enabled': true,
                 'reason_code': null,
                 'reason_text': null,
                 'price': null,
                 'action': {'type': 'continue'},
               },
+              'text_bundles': [_courseCtaBundle(), _courseLessonChromeBundle()],
               'pricing': {
                 'price_amount_cents': 12000,
                 'price_currency': 'sek',
@@ -216,7 +218,15 @@ void main() {
       );
       expect(result.navigation.nextLessonId, 'lesson-2');
       expect(result.progression.reason, 'available');
-      expect(result.cta?.label, 'Continue');
+      expect(result.cta?.textId, 'lesson.cta.continue');
+      expect(
+        resolveText(result.cta!.textId, result.textBundles),
+        'Forts\u00e4tt',
+      );
+      expect(
+        result.textBundles.map((bundle) => bundle.bundleId),
+        containsAll(['course_cta.v1', 'course_lesson.chrome.v1']),
+      );
       expect(result.pricing?.formatted, '120 SEK');
       expect(result.media.single.lessonMediaId, imageMediaId);
       expect(
@@ -411,6 +421,42 @@ Map<String, Object?> _contentMediaItem(String lessonMediaId, String mediaType) {
     'position': 1,
     'media_type': mediaType,
     'state': 'ready',
+  };
+}
+
+Map<String, Object?> _courseCtaBundle() {
+  return {
+    'bundle_id': 'course_cta.v1',
+    'locale': 'sv-SE',
+    'version': 'catalog_v1',
+    'hash': 'course-cta-test-hash',
+    'texts': {
+      'course.cta.continue': 'Forts\u00e4tt',
+      'course.cta.enroll': 'B\u00f6rja kursen',
+      'course.cta.buy': 'K\u00f6p kursen',
+      'course.cta.unavailable': 'Inte tillg\u00e4nglig',
+      'lesson.cta.continue': 'Forts\u00e4tt',
+      'lesson.cta.start': 'B\u00f6rja kursen',
+      'lesson.cta.buy': 'K\u00f6p kursen',
+      'lesson.cta.unavailable': 'Inte tillg\u00e4nglig',
+    },
+  };
+}
+
+Map<String, Object?> _courseLessonChromeBundle() {
+  return {
+    'bundle_id': 'course_lesson.chrome.v1',
+    'locale': 'sv-SE',
+    'version': 'catalog_v1',
+    'hash': 'course-lesson-chrome-test-hash',
+    'texts': {
+      'course_lesson.course.title_fallback': 'Kurs',
+      'course_lesson.course.drip_release_notice': 'Kursen sl\u00e4pps stegvis',
+      'course_lesson.lesson.title_fallback': 'Lektion',
+      'course_lesson.lesson.content_missing': 'Lektionsinneh\u00e5llet saknas.',
+      'course_lesson.lesson.previous': 'F\u00f6reg\u00e5ende',
+      'course_lesson.lesson.next': 'N\u00e4sta',
+    },
   };
 }
 

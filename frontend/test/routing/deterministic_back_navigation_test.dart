@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
+import 'package:aveli/shared/data/app_render_inputs_repository.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/shared/widgets/brand_header.dart';
 import 'package:aveli/shared/widgets/go_router_back_button.dart';
@@ -22,7 +26,24 @@ AppScaffold _page({
   required Widget body,
   required VoidCallback onBack,
 }) {
-  return AppScaffold(title: title, onBack: onBack, body: body);
+  return AppScaffold(
+    title: title,
+    onBack: onBack,
+    body: body,
+    neutralBackground: true,
+    showHomeAction: false,
+    useBasePage: false,
+  );
+}
+
+Widget _routerHarness(GoRouter router) {
+  final pendingLogo = Completer<BrandLogoRenderInput>();
+  return ProviderScope(
+    overrides: [
+      brandLogoRenderInputProvider.overrideWith((_) => pendingLogo.future),
+    ],
+    child: MaterialApp.router(routerConfig: router),
+  );
 }
 
 Future<void> _pumpRouter(WidgetTester tester) async {
@@ -65,7 +86,7 @@ void main() {
     );
     addTearDown(router.dispose);
 
-    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpWidget(_routerHarness(router));
     await _pumpRouter(tester);
 
     router.goNamed(AppRoute.profile);
@@ -104,15 +125,6 @@ void main() {
           ),
         ),
         GoRoute(
-          path: '/teacher/bundles',
-          name: AppRoute.teacherBundles,
-          builder: (context, _) => _page(
-            title: 'Paket',
-            onBack: () => context.goNamed(AppRoute.teacherHome),
-            body: const SizedBox(key: ValueKey('bundles')),
-          ),
-        ),
-        GoRoute(
           path: '/teacher/editor',
           name: AppRoute.teacherEditor,
           builder: (context, _) => _page(
@@ -125,7 +137,7 @@ void main() {
     );
     addTearDown(router.dispose);
 
-    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpWidget(_routerHarness(router));
     await _pumpRouter(tester);
 
     router.goNamed(AppRoute.teacherHome);
@@ -134,13 +146,6 @@ void main() {
     await tester.tap(_headerBackButton());
     await _pumpRouter(tester);
     expect(router.routeInformationProvider.value.uri.path, '/home');
-
-    router.goNamed(AppRoute.teacherBundles);
-    await _pumpRouter(tester);
-    expect(find.byType(GoRouterBackButton), findsNothing);
-    await tester.tap(_headerBackButton());
-    await _pumpRouter(tester);
-    expect(router.routeInformationProvider.value.uri.path, '/teacher');
 
     router.goNamed(AppRoute.teacherEditor);
     await _pumpRouter(tester);
@@ -155,8 +160,8 @@ void main() {
       initialLocation: '/home',
       routes: [
         GoRoute(
-          path: '/landing',
-          name: AppRoute.landing,
+          path: '/',
+          name: AppRoute.landingRoot,
           builder: (_, _) => const SizedBox(key: ValueKey('landing')),
         ),
         GoRoute(
@@ -172,11 +177,11 @@ void main() {
     );
     addTearDown(router.dispose);
 
-    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpWidget(_routerHarness(router));
     await _pumpRouter(tester);
 
     await tester.tap(find.text('Aveli').last);
     await _pumpRouter(tester);
-    expect(router.routeInformationProvider.value.uri.path, '/landing');
+    expect(router.routeInformationProvider.value.uri.path, '/');
   });
 }

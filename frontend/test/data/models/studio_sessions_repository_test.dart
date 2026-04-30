@@ -5,7 +5,7 @@ import 'package:aveli/features/studio/data/studio_sessions_repository.dart';
 void main() {
   test('rejects missing items in session list payloads', () {
     expect(
-      () => StudioSession.fromJson({
+      () => StudioSession.fromResponse({
         'id': 'session-1',
         'title': 'Session',
         'description': null,
@@ -25,7 +25,7 @@ void main() {
 
   test('rejects invalid datetime instead of coercing it', () {
     expect(
-      () => StudioSession.fromJson({
+      () => StudioSession.fromResponse({
         'id': 'session-1',
         'title': 'Session',
         'description': null,

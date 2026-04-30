@@ -42,26 +42,11 @@ void main() {
         },
       );
 
-      when(
-        () => apiClient.get<Map<String, dynamic>>('/profiles/me'),
-      ).thenAnswer(
-        (_) async => {
-          'user_id': 'user-1',
-          'email': 'teacher@example.com',
-          'display_name': 'Teacher',
-          'bio': null,
-          'photo_url': null,
-          'created_at': '2024-01-01T00:00:00Z',
-          'updated_at': '2024-01-01T00:00:00Z',
-        },
-      );
-
-      final profile = await authRepository.login(
+      await authRepository.login(
         email: 'teacher@example.com',
         password: 'secret123',
       );
 
-      expect(profile.email, 'teacher@example.com');
       verify(
         () => tokenStorage.saveTokens(
           accessToken: 'access_123',

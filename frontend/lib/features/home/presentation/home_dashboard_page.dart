@@ -146,17 +146,19 @@ class _HomeCoursesShowcaseArea extends ConsumerWidget {
           gridMainAxisSpacing: 2,
         ),
         Positioned(
-          top: 8,
-          left: 154,
-          right: 74,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: OngoingCoursesStrip(
-              key: const ValueKey('home-ongoing-courses-strip'),
-              courses: courses,
-              onOpenLesson: (lessonId) => context.pushNamed(
-                AppRoute.lesson,
-                pathParameters: {'id': lessonId},
+          top: 24,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: OngoingCoursesStrip(
+                key: const ValueKey('home-ongoing-courses-strip'),
+                courses: courses,
+                onOpenLesson: (lessonId) => context.pushNamed(
+                  AppRoute.lesson,
+                  pathParameters: {'id': lessonId},
+                ),
               ),
             ),
           ),

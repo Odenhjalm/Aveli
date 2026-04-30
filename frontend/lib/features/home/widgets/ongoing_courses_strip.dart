@@ -24,42 +24,44 @@ class OngoingCoursesStrip extends StatelessWidget {
 
     return Semantics(
       label: 'Mina kurser',
-      child: DecoratedBox(
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 40, maxHeight: 50),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: colorScheme.surface.withValues(alpha: 0.74),
-          borderRadius: BorderRadius.circular(8),
+          color: Colors.white.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: colorScheme.outline.withValues(alpha: 0.14),
+            color: colorScheme.outline.withValues(alpha: 0.16),
           ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Mina kurser',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: colorScheme.onSurface.withValues(alpha: 0.82),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                for (final course in courses) ...[
-                  OngoingCourseCard(
-                    key: ValueKey('home-ongoing-course-${course.courseId}'),
-                    course: course,
-                    onPressed: _ctaPressed(course),
-                  ),
-                  if (course != courses.last) const SizedBox(width: 6),
-                ],
-              ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Mina kurser',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: colorScheme.onSurface.withValues(alpha: 0.82),
+              ),
             ),
-          ),
+            const SizedBox(width: 10),
+            for (final course in courses) ...[
+              OngoingCourseCard(
+                key: ValueKey('home-ongoing-course-${course.courseId}'),
+                course: course,
+                onPressed: _ctaPressed(course),
+              ),
+              if (course != courses.last)
+                Container(
+                  width: 1,
+                  height: 20,
+                  margin: const EdgeInsets.symmetric(horizontal: 10),
+                  color: colorScheme.outline.withValues(alpha: 0.18),
+                ),
+            ],
+          ],
         ),
       ),
     );

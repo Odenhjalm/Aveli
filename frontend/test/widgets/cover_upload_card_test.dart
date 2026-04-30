@@ -79,6 +79,28 @@ class _FakeMediaPipelineRepository implements MediaPipelineRepository {
   Future<Map<String, String>> uploadHeaders(MediaUploadTarget target) async {
     return const <String, String>{};
   }
+
+  @override
+  Uri resolveEndpoint(String endpoint) {
+    return Uri.parse(endpoint);
+  }
+
+  @override
+  Future<Map<String, String>> uploadSessionHeaders({
+    required String endpoint,
+    required String uploadSessionId,
+    String method = 'PUT',
+    Map<String, String> headers = const <String, String>{},
+  }) async {
+    return headers;
+  }
+
+  @override
+  Future<MediaStatus> finalizeHomePlayerUpload({
+    required MediaUploadTarget target,
+  }) {
+    throw UnimplementedError();
+  }
 }
 
 void main() {

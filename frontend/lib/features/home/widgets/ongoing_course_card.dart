@@ -16,68 +16,49 @@ class OngoingCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final coverUrl = course.coverMedia.resolvedUrl;
 
     return Semantics(
       button: onPressed != null,
       label: course.title,
-      child: Material(
-        color: colorScheme.surface.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(8),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
+      child: MouseRegion(
+        cursor: onPressed == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: onPressed,
-          child: SizedBox(
-            width: 188,
-            height: 58,
-            child: Row(
-              children: [
-                if (coverUrl != null && coverUrl.isNotEmpty)
-                  SizedBox(
-                    width: 52,
-                    height: 58,
-                    child: Image.network(coverUrl, fit: BoxFit.cover),
-                  ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          course.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        LinearProgressIndicator(
-                          value: course.progress.percent,
-                          minHeight: 3,
-                          borderRadius: BorderRadius.circular(999),
-                          backgroundColor: colorScheme.outline.withValues(
-                            alpha: 0.18,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          course.cta.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: onPressed == null
-                                ? colorScheme.onSurfaceVariant
-                                : colorScheme.primary,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 158, minHeight: 30),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      course.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.86),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Text(
+                    '${course.cta.label} →',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: onPressed == null
+                          ? colorScheme.onSurfaceVariant
+                          : colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
