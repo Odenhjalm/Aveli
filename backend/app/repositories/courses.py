@@ -1471,6 +1471,121 @@ async def list_my_courses(user_id: str) -> Sequence[CourseRow]:
     return [dict(row) for row in rows]
 
 
+async def list_home_entry_ongoing_course_rows(
+    *,
+    user_id: str,
+    limit: int = 2,
+    conn: Any | None = None,
+) -> Sequence[CourseRow]:
+    normalized_limit = max(0, int(limit))
+    if normalized_limit == 0:
+        return []
+
+    query = """
+        with candidate_enrollments as (
+            select
+                ce.id as enrollment_id,
+                ce.user_id,
+                ce.course_id,
+                ce.granted_at,
+                ce.current_unlock_position,
+                c.slug,
+                c.title,
+                c.group_position,
+                c.cover_media_id
+            from app.course_enrollments as ce
+            join app.courses as c
+              on c.id = ce.course_id
+            where ce.user_id = %s::uuid
+              and ce.source = c.required_enrollment_source
+              and c.visibility = 'public'::app.course_visibility
+              and c.content_ready is true
+        ),
+        lesson_counts as (
+            select
+                ce.course_id,
+                count(l.id)::integer as total_lesson_count,
+                count(l.id) filter (
+                    where l.position <= ce.current_unlock_position
+                )::integer as available_lesson_count
+            from candidate_enrollments as ce
+            join app.lessons as l
+              on l.course_id = ce.course_id
+            group by ce.course_id
+        ),
+        completion_counts as (
+            select
+                ce.course_id,
+                count(lc.id)::integer as completed_lesson_count,
+                max(lc.completed_at) as last_activity_at
+            from candidate_enrollments as ce
+            left join app.lesson_completions as lc
+              on lc.user_id = ce.user_id
+             and lc.course_id = ce.course_id
+            group by ce.course_id
+        ),
+        next_lessons as (
+            select distinct on (ce.course_id)
+                ce.course_id,
+                l.id as next_lesson_id,
+                l.lesson_title as next_lesson_title,
+                l.position as next_lesson_position
+            from candidate_enrollments as ce
+            join app.lessons as l
+              on l.course_id = ce.course_id
+            left join app.lesson_completions as lc
+              on lc.user_id = ce.user_id
+             and lc.course_id = ce.course_id
+             and lc.lesson_id = l.id
+            where l.position <= ce.current_unlock_position
+              and lc.id is null
+            order by ce.course_id, l.position asc, l.id asc
+        )
+        select
+            ce.course_id::text as course_id,
+            ce.slug,
+            ce.title,
+            ce.cover_media_id::text as cover_media_id,
+            ce.group_position,
+            lc.total_lesson_count,
+            lc.available_lesson_count,
+            cc.completed_lesson_count,
+            cc.last_activity_at,
+            coalesce(cc.last_activity_at, ce.granted_at) as activity_sort_at,
+            nl.next_lesson_id::text as next_lesson_id,
+            nl.next_lesson_title,
+            nl.next_lesson_position
+        from candidate_enrollments as ce
+        join lesson_counts as lc
+          on lc.course_id = ce.course_id
+        join completion_counts as cc
+          on cc.course_id = ce.course_id
+        join next_lessons as nl
+          on nl.course_id = ce.course_id
+        where lc.total_lesson_count > 0
+          and cc.completed_lesson_count < lc.total_lesson_count
+        order by
+            coalesce(cc.last_activity_at, ce.granted_at) desc,
+            nl.next_lesson_position asc,
+            cc.completed_lesson_count desc,
+            ce.group_position asc,
+            ce.course_id asc
+        limit %s
+    """
+
+    async def _execute(active_conn: Any) -> list[CourseRow]:
+        async with active_conn.cursor(row_factory=dict_row) as cur:  # type: ignore[attr-defined]
+            await cur.execute(query, (user_id, normalized_limit))
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
+    if conn is not None:
+        return await _execute(conn)
+
+    async with pool.connection() as active_conn:  # type: ignore
+        return await _execute(active_conn)
+
+
 async def list_intro_selection_progress_rows(
     *,
     user_id: str,

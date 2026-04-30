@@ -3,9 +3,20 @@ from fastapi import APIRouter, Query
 from .. import schemas
 from ..auth import AppEntryUser
 from ..services import home_audio_service
+from ..services import home_entry_view_service
 from ..services import studio_home_player_text_catalog
 
 router = APIRouter(prefix="/home", tags=["home"])
+
+
+@router.get(
+    "/entry-view",
+    response_model=schemas.HomeEntryViewResponse,
+)
+async def home_entry_view(
+    current: AppEntryUser,
+) -> schemas.HomeEntryViewResponse:
+    return await home_entry_view_service.read_home_entry_view(str(current["id"]))
 
 
 @router.get(

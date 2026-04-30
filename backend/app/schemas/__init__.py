@@ -737,6 +737,98 @@ class HomeAudioFeedResponse(BaseModel):
     text_bundle: Dict[str, HomePlayerCatalogTextValue]
 
 
+class HomeEntryCoverMedia(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    media_id: UUID | None = None
+    state: str
+    resolved_url: str | None = None
+
+
+class HomeEntryProgress(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["not_started", "in_progress"]
+    completed_lesson_count: int = Field(ge=0)
+    total_lesson_count: int = Field(ge=0)
+    available_lesson_count: int = Field(ge=0)
+    percent: float = Field(ge=0.0, le=1.0)
+    last_activity_at: datetime | None = None
+
+
+class HomeEntryNextLesson(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    lesson_title: str
+    position: int = Field(ge=1)
+
+
+class HomeEntryCTAAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["lesson"]
+    lesson_id: UUID
+
+
+class HomeEntryCTA(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["continue", "unavailable"]
+    label: str
+    enabled: bool
+    action: HomeEntryCTAAction | None = None
+    reason_code: str | None = None
+    reason_text: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_action_contract(self):
+        if self.type == "continue":
+            if self.enabled is not True:
+                raise ValueError("continue CTA must be enabled")
+            if self.action is None:
+                raise ValueError("continue CTA must include an action")
+        if self.type == "unavailable":
+            if self.enabled is not False:
+                raise ValueError("unavailable CTA must be disabled")
+            if self.action is not None:
+                raise ValueError("unavailable CTA must not include an action")
+        return self
+
+
+class HomeEntryStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    eligibility: Literal["ongoing"]
+    reason_code: str | None = None
+
+
+class HomeEntryOngoingCourse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    course_id: UUID
+    slug: str
+    title: str
+    cover_media: HomeEntryCoverMedia
+    progress: HomeEntryProgress
+    next_lesson: HomeEntryNextLesson
+    cta: HomeEntryCTA
+    status: HomeEntryStatus
+
+    @model_validator(mode="after")
+    def _validate_cta_targets_next_lesson(self):
+        action = self.cta.action
+        if action is not None and action.lesson_id != self.next_lesson.id:
+            raise ValueError("CTA lesson action must target next_lesson.id")
+        return self
+
+
+class HomeEntryViewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ongoing_courses: List[HomeEntryOngoingCourse]
+
+
 class MessageRecord(BaseModel):
     id: UUID
     channel: str
