@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aveli/core/routing/app_routes.dart';
 import 'package:aveli/core/bootstrap/safe_media.dart';
+import 'package:aveli/data/models/text_bundle.dart';
 import 'package:aveli/shared/data/app_render_inputs_repository.dart';
 import 'package:aveli/shared/widgets/background_layer.dart';
 import 'package:aveli/shared/widgets/brand_header.dart';
@@ -17,7 +18,7 @@ import 'go_router_back_button.dart';
 /// All pages MUST render via AppScaffold.
 /// BrandHeader is mandatory.
 /// Headings/names must use semantic wrappers (no raw `Text()` for headings).
-class AppScaffold extends StatelessWidget {
+class AppScaffold extends ConsumerWidget {
   final String title;
   final Widget body;
   final List<Widget>? actions;
@@ -81,14 +82,17 @@ class AppScaffold extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final showBack = !disableBack;
     final fg = appBarForegroundColor ?? theme.colorScheme.onSurface;
-    final backTooltip = MaterialLocalizations.of(context).backButtonTooltip;
+    final renderInputs = showHomeAction
+        ? ref.watch(appRenderInputsProvider)
+        : null;
     final computedActions = <Widget>[
       if (actions != null) ...actions!,
-      if (showHomeAction) _HomeActionButton(color: fg),
+      if (showHomeAction)
+        _HomeActionButton(color: fg, renderInputs: renderInputs!),
     ];
 
     return Scaffold(
@@ -116,7 +120,6 @@ class AppScaffold extends StatelessWidget {
                               ? const GoRouterBackButton()
                               : IconButton(
                                   icon: const Icon(Icons.arrow_back_rounded),
-                                  tooltip: backTooltip,
                                   onPressed: onBack,
                                 ))
                         : null,
@@ -431,16 +434,33 @@ class _SideVignette extends StatelessWidget {
 }
 
 class _HomeActionButton extends StatelessWidget {
-  const _HomeActionButton({required this.color});
+  const _HomeActionButton({required this.color, required this.renderInputs});
 
   final Color color;
+  final AsyncValue<AppRenderInputs> renderInputs;
 
   @override
   Widget build(BuildContext context) {
+    final label = renderInputs.hasValue
+        ? _resolveNavigationText(
+            'global_system.navigation.home',
+            renderInputs.requireValue.textBundles,
+          )
+        : null;
     return IconButton(
-      tooltip: 'Hem',
+      tooltip: label,
       icon: Icon(Icons.home_outlined, color: color),
-      onPressed: () => context.goNamed(AppRoute.courseCatalog),
+      onPressed: label == null
+          ? null
+          : () => context.goNamed(AppRoute.courseCatalog),
     );
+  }
+
+  String? _resolveNavigationText(String textId, List<TextBundle> textBundles) {
+    try {
+      return resolveText(textId, textBundles);
+    } on StateError {
+      return null;
+    }
   }
 }

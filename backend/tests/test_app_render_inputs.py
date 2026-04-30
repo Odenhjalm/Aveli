@@ -4,7 +4,7 @@ from pydantic import ValidationError
 
 from app import schemas
 from app.routes import render_inputs
-from app.services import app_render_inputs_service, storage_service
+from app.services import app_render_inputs_service, storage_service, text_catalog_service
 
 
 class _StaticUrl:
@@ -89,6 +89,17 @@ def _expected_payload() -> dict:
     }
 
 
+def _expected_endpoint_payload() -> dict:
+    payload = _expected_payload()
+    payload["text_bundles"] = [
+        text_catalog_service.get_bundle(
+            text_catalog_service.GLOBAL_SYSTEM_NAVIGATION_BUNDLE_ID,
+            text_catalog_service.DEFAULT_LOCALE,
+        )
+    ]
+    return payload
+
+
 def test_app_render_inputs_payload_resolves_assets_from_public_storage():
     payload = app_render_inputs_service.build_app_render_inputs_payload()
 
@@ -135,6 +146,12 @@ def test_app_render_inputs_schema_forbids_authority_leaks():
                     },
                 },
             },
+            text_bundles=[
+                text_catalog_service.get_bundle(
+                    text_catalog_service.GLOBAL_SYSTEM_NAVIGATION_BUNDLE_ID,
+                    text_catalog_service.DEFAULT_LOCALE,
+                )
+            ],
         )
 
     with pytest.raises(ValidationError):
@@ -157,7 +174,35 @@ def test_app_render_inputs_schema_forbids_authority_leaks():
                 },
                 "bucket": "public-media",
             },
+            text_bundles=[
+                text_catalog_service.get_bundle(
+                    text_catalog_service.GLOBAL_SYSTEM_NAVIGATION_BUNDLE_ID,
+                    text_catalog_service.DEFAULT_LOCALE,
+                )
+            ],
         )
+
+
+def test_navigation_text_bundle_is_deterministic():
+    first = text_catalog_service.get_bundle(
+        text_catalog_service.GLOBAL_SYSTEM_NAVIGATION_BUNDLE_ID,
+        text_catalog_service.DEFAULT_LOCALE,
+    )
+    second = text_catalog_service.get_bundle(
+        text_catalog_service.GLOBAL_SYSTEM_NAVIGATION_BUNDLE_ID,
+        text_catalog_service.DEFAULT_LOCALE,
+    )
+
+    assert first == second
+    assert first["bundle_id"] == "global_system.navigation.v1"
+    assert first["locale"] == "sv-SE"
+    assert first["version"] == "catalog_v1"
+    assert first["texts"] == {
+        "global_system.navigation.home": "Hem",
+        "global_system.navigation.teacher_home": "Lärarhem",
+        "global_system.navigation.profile": "Profil",
+    }
+    assert str(first["hash"]).startswith("sha256:")
 
 
 def test_app_render_inputs_payload_fails_when_any_url_is_empty(monkeypatch):
@@ -185,7 +230,7 @@ async def test_app_render_inputs_endpoint_returns_resolved_url_only(async_client
     response = await async_client.get("/app/render-inputs")
 
     assert response.status_code == 200, response.text
-    assert response.json() == _expected_payload()
+    assert response.json() == _expected_endpoint_payload()
 
 
 def test_app_render_inputs_endpoint_fails_when_render_input_url_is_empty(monkeypatch):

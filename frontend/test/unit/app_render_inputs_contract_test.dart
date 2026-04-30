@@ -14,6 +14,19 @@ void main() {
         'observatory': {'resolved_url': 'https://cdn.test/observatory.png'},
       },
     },
+    'text_bundles': [
+      {
+        'bundle_id': 'global_system.navigation.v1',
+        'locale': 'sv-SE',
+        'version': 'catalog_v1',
+        'hash': 'sha256:test-navigation',
+        'texts': {
+          'global_system.navigation.home': 'Hem',
+          'global_system.navigation.teacher_home': 'Lärarhem',
+          'global_system.navigation.profile': 'Profil',
+        },
+      },
+    ],
   };
 
   test('parses brand and ui background render inputs', () {
@@ -32,6 +45,21 @@ void main() {
       inputs.ui.backgrounds.observatory.resolvedUrl,
       'https://cdn.test/observatory.png',
     );
+    expect(inputs.textBundles.single.bundleId, 'global_system.navigation.v1');
+    expect(
+      inputs
+          .textBundles
+          .single
+          .texts['global_system.navigation.teacher_home']
+          ?.value,
+      'Lärarhem',
+    );
+  });
+
+  test('fails closed when navigation text_bundles are missing', () {
+    final data = payload()..remove('text_bundles');
+
+    expect(() => AppRenderInputs.fromJson(data), throwsStateError);
   });
 
   test('fails closed when ui backgrounds are missing', () {

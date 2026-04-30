@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aveli/api/api_client.dart';
 import 'package:aveli/api/api_paths.dart';
 import 'package:aveli/api/auth_repository.dart';
+import 'package:aveli/data/models/text_bundle.dart';
 
 class BrandLogoRenderInput extends Equatable {
   const BrandLogoRenderInput({required this.resolvedUrl});
@@ -121,23 +122,36 @@ class BrandRenderInputs extends Equatable {
 }
 
 class AppRenderInputs extends Equatable {
-  const AppRenderInputs({required this.brand, required this.ui});
+  const AppRenderInputs({
+    required this.brand,
+    required this.ui,
+    required this.textBundles,
+  });
 
   factory AppRenderInputs.fromJson(Map<String, dynamic> json) {
-    _assertExactFields(json, const {'brand', 'ui'}, 'app.render_inputs');
+    _assertExactFields(json, const {
+      'brand',
+      'ui',
+      'text_bundles',
+    }, 'app.render_inputs');
     return AppRenderInputs(
       brand: BrandRenderInputs.fromJson(
         _requiredMap(json['brand'], fieldName: 'brand'),
       ),
       ui: UiRenderInputs.fromJson(_requiredMap(json['ui'], fieldName: 'ui')),
+      textBundles: parseTextBundles(
+        json['text_bundles'],
+        label: 'app.render_inputs',
+      ),
     );
   }
 
   final BrandRenderInputs brand;
   final UiRenderInputs ui;
+  final List<TextBundle> textBundles;
 
   @override
-  List<Object?> get props => [brand, ui];
+  List<Object?> get props => [brand, ui, textBundles];
 }
 
 enum UiBackgroundRenderInputKey { defaultBackground, lesson, observatory }

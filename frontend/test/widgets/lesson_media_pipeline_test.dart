@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,6 +67,20 @@ const LessonDocument _defaultLessonDocument = LessonDocument(
   ],
 );
 
+const List<TextBundle> _navigationTextBundles = <TextBundle>[
+  TextBundle(
+    bundleId: 'global_system.navigation.v1',
+    locale: 'sv-SE',
+    version: 'catalog_v1',
+    hash: 'sha256:test-navigation',
+    texts: {
+      'global_system.navigation.home': TextNode(value: 'Hem'),
+      'global_system.navigation.teacher_home': TextNode(value: 'Lärarhem'),
+      'global_system.navigation.profile': TextNode(value: 'Profil'),
+    },
+  ),
+];
+
 const AppRenderInputs _testAppRenderInputs = AppRenderInputs(
   brand: BrandRenderInputs(
     logo: BrandLogoRenderInput(resolvedUrl: 'https://cdn.test/logo.png'),
@@ -82,7 +98,12 @@ const AppRenderInputs _testAppRenderInputs = AppRenderInputs(
       ),
     ),
   ),
+  textBundles: _navigationTextBundles,
 );
+
+final _pendingLogoRenderInput = Completer<BrandLogoRenderInput>().future;
+final _pendingBackgroundRenderInput =
+    Completer<UiBackgroundRenderInput>().future;
 
 LessonDocument _paragraphDocument(List<String> paragraphs) {
   return LessonDocument(
@@ -160,9 +181,7 @@ Future<void> _pumpLessonPage(
             subscriptionsEnabled: false,
           ),
         ),
-        appRenderInputsProvider.overrideWith(
-          (ref) async => _testAppRenderInputs,
-        ),
+        ..._renderInputOverrides(),
         lessonDetailProvider.overrideWith((ref, lessonId) async => data),
       ],
       child: const MaterialApp(home: LessonPage(lessonId: 'lesson-1')),
@@ -180,9 +199,7 @@ Future<void> _pumpLessonPageWithError(WidgetTester tester) async {
             subscriptionsEnabled: false,
           ),
         ),
-        appRenderInputsProvider.overrideWith(
-          (ref) async => _testAppRenderInputs,
-        ),
+        ..._renderInputOverrides(),
         lessonDetailProvider.overrideWith(
           (ref, lessonId) async => throw StateError('Malformed lesson payload'),
         ),
@@ -190,6 +207,16 @@ Future<void> _pumpLessonPageWithError(WidgetTester tester) async {
       child: const MaterialApp(home: LessonPage(lessonId: 'lesson-1')),
     ),
   );
+}
+
+List<Override> _renderInputOverrides() {
+  return [
+    appRenderInputsProvider.overrideWith((ref) async => _testAppRenderInputs),
+    brandLogoRenderInputProvider.overrideWith((ref) => _pendingLogoRenderInput),
+    uiBackgroundRenderInputProvider.overrideWith(
+      (ref, key) => _pendingBackgroundRenderInput,
+    ),
+  ];
 }
 
 void main() {

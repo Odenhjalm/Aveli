@@ -653,11 +653,32 @@ class UiRenderInputs(BaseModel):
     backgrounds: UiBackgroundRenderInputs
 
 
+class TextBundleResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bundle_id: str = Field(min_length=1)
+    locale: str = Field(min_length=1)
+    version: str = Field(min_length=1)
+    hash: str = Field(min_length=1)
+    texts: Dict[str, str] = Field(min_length=1)
+
+    @field_validator("texts")
+    @classmethod
+    def _validate_texts(cls, value: Dict[str, str]) -> Dict[str, str]:
+        for text_id, text in value.items():
+            if not text_id:
+                raise ValueError("text bundle text_id must be non-empty")
+            if not text:
+                raise ValueError("text bundle value must be non-empty")
+        return value
+
+
 class AppRenderInputsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     brand: BrandRenderInputs
     ui: UiRenderInputs
+    text_bundles: List[TextBundleResponse] = Field(min_length=1)
 
 
 class CourseCoverMedia(BaseModel):

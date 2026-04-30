@@ -7,6 +7,7 @@ from typing import Any, Final, Mapping
 CATALOG_VERSION: Final[str] = "catalog_v1"
 COURSE_CTA_BUNDLE_ID: Final[str] = "course_cta.v1"
 COURSE_LESSON_CHROME_BUNDLE_ID: Final[str] = "course_lesson.chrome.v1"
+GLOBAL_SYSTEM_NAVIGATION_BUNDLE_ID: Final[str] = "global_system.navigation.v1"
 DEFAULT_LOCALE: Final[str] = "sv-SE"
 
 
@@ -34,6 +35,12 @@ _COURSE_LESSON_CHROME_TEXT_IDS: Final[tuple[str, ...]] = (
     "course_lesson.lesson.next",
 )
 
+_GLOBAL_SYSTEM_NAVIGATION_TEXT_IDS: Final[tuple[str, ...]] = (
+    "global_system.navigation.home",
+    "global_system.navigation.teacher_home",
+    "global_system.navigation.profile",
+)
+
 _TEXTS_BY_BUNDLE: Final[dict[str, dict[str, str]]] = {
     COURSE_CTA_BUNDLE_ID: {
         "course.cta.continue": "Fortsätt",
@@ -53,11 +60,17 @@ _TEXTS_BY_BUNDLE: Final[dict[str, dict[str, str]]] = {
         "course_lesson.lesson.previous": "Föregående",
         "course_lesson.lesson.next": "Nästa",
     },
+    GLOBAL_SYSTEM_NAVIGATION_BUNDLE_ID: {
+        "global_system.navigation.home": "Hem",
+        "global_system.navigation.teacher_home": "Lärarhem",
+        "global_system.navigation.profile": "Profil",
+    },
 }
 
 _REQUIRED_TEXT_IDS_BY_BUNDLE: Final[dict[str, tuple[str, ...]]] = {
     COURSE_CTA_BUNDLE_ID: _COURSE_CTA_TEXT_IDS,
     COURSE_LESSON_CHROME_BUNDLE_ID: _COURSE_LESSON_CHROME_TEXT_IDS,
+    GLOBAL_SYSTEM_NAVIGATION_BUNDLE_ID: _GLOBAL_SYSTEM_NAVIGATION_TEXT_IDS,
 }
 
 _COURSE_CTA_TEXT_ID_BY_TYPE: Final[dict[str, str]] = {

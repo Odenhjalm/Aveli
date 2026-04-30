@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +11,7 @@ import 'package:aveli/core/auth/auth_controller.dart';
 import 'package:aveli/core/auth/auth_http_observer.dart';
 import 'package:aveli/core/env/env_state.dart';
 import 'package:aveli/core/env/app_config.dart';
+import 'package:aveli/data/models/text_bundle.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/models/service.dart';
 import 'package:aveli/domain/models/entry_state.dart';
@@ -25,6 +28,7 @@ import 'package:aveli/features/onboarding/onboarding_profile_page.dart';
 import 'package:aveli/features/payments/presentation/subscribe_screen.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
 import 'package:aveli/main.dart';
+import 'package:aveli/shared/data/app_render_inputs_repository.dart';
 import 'package:aveli/shared/utils/backend_assets.dart';
 import '../helpers/backend_asset_resolver_stub.dart';
 
@@ -97,6 +101,64 @@ const _transparentPng = <int>[
   0x60,
   0x82,
 ];
+
+const List<TextBundle> _navigationTextBundles = <TextBundle>[
+  TextBundle(
+    bundleId: 'global_system.navigation.v1',
+    locale: 'sv-SE',
+    version: 'catalog_v1',
+    hash: 'sha256:test-navigation',
+    texts: {
+      'global_system.navigation.home': TextNode(value: 'Hem'),
+      'global_system.navigation.teacher_home': TextNode(value: 'Lärarhem'),
+      'global_system.navigation.profile': TextNode(value: 'Profil'),
+    },
+  ),
+];
+
+const AppRenderInputs _testAppRenderInputs = AppRenderInputs(
+  brand: BrandRenderInputs(
+    logo: BrandLogoRenderInput(resolvedUrl: 'https://cdn.test/logo.png'),
+  ),
+  ui: UiRenderInputs(
+    backgrounds: UiBackgroundRenderInputs(
+      defaultBackground: UiBackgroundRenderInput(
+        resolvedUrl: 'https://cdn.test/default.jpg',
+      ),
+      lesson: UiBackgroundRenderInput(
+        resolvedUrl: 'https://cdn.test/lesson.jpg',
+      ),
+      observatory: UiBackgroundRenderInput(
+        resolvedUrl: 'https://cdn.test/observatory.jpg',
+      ),
+    ),
+  ),
+  textBundles: _navigationTextBundles,
+);
+
+const AppRenderInputs _testAppRenderInputsWithoutTextBundles = AppRenderInputs(
+  brand: BrandRenderInputs(
+    logo: BrandLogoRenderInput(resolvedUrl: 'https://cdn.test/logo.png'),
+  ),
+  ui: UiRenderInputs(
+    backgrounds: UiBackgroundRenderInputs(
+      defaultBackground: UiBackgroundRenderInput(
+        resolvedUrl: 'https://cdn.test/default.jpg',
+      ),
+      lesson: UiBackgroundRenderInput(
+        resolvedUrl: 'https://cdn.test/lesson.jpg',
+      ),
+      observatory: UiBackgroundRenderInput(
+        resolvedUrl: 'https://cdn.test/observatory.jpg',
+      ),
+    ),
+  ),
+  textBundles: <TextBundle>[],
+);
+
+final _pendingLogoRenderInput = Completer<BrandLogoRenderInput>().future;
+final _pendingBackgroundRenderInput =
+    Completer<UiBackgroundRenderInput>().future;
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(AuthState initialState)
@@ -197,12 +259,23 @@ List<Override> _commonOverrides(AuthState authState) {
     backendAssetResolverProvider.overrideWith(
       (ref) => TestBackendAssetResolver(),
     ),
+    ..._renderInputOverrides(_testAppRenderInputs),
     landing.popularCoursesProvider.overrideWith(
       (ref) =>
           Future.value(const landing.LandingSection<CourseSummary>(items: [])),
     ),
     communityServicesProvider.overrideWith(
       (ref) => Future.value(const <Service>[]),
+    ),
+  ];
+}
+
+List<Override> _renderInputOverrides(AppRenderInputs inputs) {
+  return [
+    appRenderInputsProvider.overrideWith((ref) async => inputs),
+    brandLogoRenderInputProvider.overrideWith((ref) => _pendingLogoRenderInput),
+    uiBackgroundRenderInputProvider.overrideWith(
+      (ref, key) => _pendingBackgroundRenderInput,
     ),
   ];
 }
@@ -214,6 +287,7 @@ void main() {
 
   setUpAll(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    HttpOverrides.global = _TestImageHttpOverrides();
     binding.defaultBinaryMessenger.setMockMessageHandler('flutter/assets', (
       message,
     ) async {
@@ -232,6 +306,10 @@ void main() {
       }
       return transparentData;
     });
+  });
+
+  tearDownAll(() {
+    HttpOverrides.global = null;
   });
 
   testWidgets('unauthenticated users land on login first', (tester) async {
@@ -345,6 +423,7 @@ void main() {
             backendAssetResolverProvider.overrideWith(
               (ref) => TestBackendAssetResolver(),
             ),
+            ..._renderInputOverrides(_testAppRenderInputs),
             landing.popularCoursesProvider.overrideWith(
               (ref) => Future.value(
                 const landing.LandingSection<CourseSummary>(items: []),
@@ -492,6 +571,7 @@ void main() {
           backendAssetResolverProvider.overrideWith(
             (ref) => TestBackendAssetResolver(),
           ),
+          ..._renderInputOverrides(_testAppRenderInputs),
         ],
         child: const MaterialApp(
           home: AppScaffold(
@@ -504,6 +584,101 @@ void main() {
       ),
     );
 
+    await tester.pump();
     expect(find.byIcon(Icons.home_outlined), findsOneWidget);
+    expect(find.byTooltip('Hem'), findsOneWidget);
   });
+
+  testWidgets(
+    'AppScaffold disables home action when navigation bundle is missing',
+    (tester) async {
+      final view = tester.view;
+      view.physicalSize = const Size(1200, 800);
+      view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        view.resetPhysicalSize();
+        view.resetDevicePixelRatio();
+      });
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(
+              const AppConfig(
+                apiBaseUrl: 'http://localhost',
+                subscriptionsEnabled: false,
+              ),
+            ),
+            backendAssetResolverProvider.overrideWith(
+              (ref) => TestBackendAssetResolver(),
+            ),
+            ..._renderInputOverrides(_testAppRenderInputsWithoutTextBundles),
+          ],
+          child: const MaterialApp(
+            home: AppScaffold(
+              title: 'Test',
+              body: SizedBox.shrink(),
+              neutralBackground: true,
+              logoSize: 48,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      final homeAction = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.home_outlined),
+      );
+      expect(homeAction.onPressed, isNull);
+      expect(find.byTooltip('Hem'), findsNothing);
+    },
+  );
+}
+
+class _TestImageHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) =>
+      _TestImageHttpClient();
+}
+
+class _TestImageHttpClient implements HttpClient {
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async => _TestImageHttpRequest();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TestImageHttpRequest implements HttpClientRequest {
+  @override
+  Future<HttpClientResponse> close() async => _TestImageHttpResponse();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TestImageHttpResponse extends Stream<List<int>>
+    implements HttpClientResponse {
+  @override
+  int get statusCode => HttpStatus.ok;
+
+  @override
+  int get contentLength => _transparentPng.length;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    return Stream<List<int>>.value(Uint8List.fromList(_transparentPng)).listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
