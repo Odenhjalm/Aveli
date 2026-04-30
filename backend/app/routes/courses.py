@@ -12,6 +12,7 @@ from ..services import (
     courses_service,
     intro_course_progression_service,
     lesson_completion_service,
+    text_catalog_service,
 )
 from ..services.lesson_completion_service import LessonCompletionServiceInvariantError
 
@@ -107,6 +108,18 @@ def _course_access_response(payload: dict) -> schemas.CourseAccessStateResponse:
     )
 
 
+def _cta_text_response(response: Any) -> JSONResponse:
+    return JSONResponse(
+        content=jsonable_encoder(
+            text_catalog_service.attach_text_bundles(
+                response,
+                [text_catalog_service.COURSE_CTA_BUNDLE_ID],
+                text_catalog_service.DEFAULT_LOCALE,
+            )
+        )
+    )
+
+
 @router.get("", response_model=schemas.CourseListResponse)
 async def list_courses(
     search: str | None = Query(default=None, min_length=2),
@@ -149,7 +162,7 @@ async def course_pricing_api(slug: str):
     return await course_pricing(slug)
 
 
-@router.get("/lessons/{lesson_id}", response_model=schemas.LessonViewResponse)
+@router.get("/lessons/{lesson_id}")
 async def lesson_detail(
     lesson_id: str,
     current: AppEntryUser,
@@ -175,9 +188,7 @@ async def lesson_detail(
 
     if response is None:
         raise HTTPException(status_code=404, detail=_LESSON_NOT_FOUND_DETAIL)
-    return JSONResponse(
-        content=jsonable_encoder(courses_service.course_cta_response_payload(response))
-    )
+    return _cta_text_response(response)
 
 
 @router.post(
@@ -306,7 +317,6 @@ async def course_detail_by_slug(slug: str, current: OptionalCurrentUser = None):
 
 @router.get(
     "/{course_id_or_slug}/entry-view",
-    response_model=schemas.CourseEntryViewResponse,
 )
 async def course_entry_view(
     course_id_or_slug: str,
@@ -318,9 +328,7 @@ async def course_entry_view(
     )
     if response is None:
         raise HTTPException(status_code=404, detail=_COURSE_NOT_FOUND_DETAIL)
-    return JSONResponse(
-        content=jsonable_encoder(courses_service.course_cta_response_payload(response))
-    )
+    return _cta_text_response(response)
 
 
 @router.get("/{course_id}/public", response_model=schemas.CoursePublicContent)

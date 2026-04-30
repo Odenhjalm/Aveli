@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Final
+from typing import Any, Final, Mapping
 
 CATALOG_VERSION: Final[str] = "catalog_v1"
 COURSE_CTA_BUNDLE_ID: Final[str] = "course_cta.v1"
@@ -41,6 +41,22 @@ _REQUIRED_TEXT_IDS_BY_BUNDLE: Final[dict[str, tuple[str, ...]]] = {
     COURSE_CTA_BUNDLE_ID: _COURSE_CTA_TEXT_IDS,
 }
 
+_COURSE_CTA_TEXT_ID_BY_TYPE: Final[dict[str, str]] = {
+    "continue": "course.cta.continue",
+    "enroll": "course.cta.enroll",
+    "buy": "course.cta.buy",
+    "blocked": "course.cta.unavailable",
+    "unavailable": "course.cta.unavailable",
+}
+
+_LESSON_CTA_TEXT_ID_BY_TYPE: Final[dict[str, str]] = {
+    "continue": "lesson.cta.continue",
+    "enroll": "lesson.cta.start",
+    "buy": "lesson.cta.buy",
+    "blocked": "lesson.cta.unavailable",
+    "unavailable": "lesson.cta.unavailable",
+}
+
 
 def get_bundle(bundle_id: str, locale: str) -> dict[str, object]:
     if locale != DEFAULT_LOCALE:
@@ -69,6 +85,103 @@ def get_bundle(bundle_id: str, locale: str) -> dict[str, object]:
     }
     bundle["hash"] = _stable_hash(bundle)
     return bundle
+
+
+def attach_text_bundles(
+    response: Any,
+    required_bundle_ids: list[str],
+    locale: str,
+) -> dict[str, Any]:
+    payload = _response_payload(response)
+    if "text_bundle" in payload:
+        raise TextCatalogError("Singular text_bundle is not a valid response field")
+
+    bundles = _required_bundles(required_bundle_ids, locale)
+    payload["text_bundles"] = bundles
+    _validate_cta_text_bundle_contract(payload, bundles)
+    return payload
+
+
+def _response_payload(response: Any) -> dict[str, Any]:
+    if hasattr(response, "model_dump"):
+        return response.model_dump(mode="json")
+    if isinstance(response, Mapping):
+        return dict(response)
+    raise TextCatalogError("Text bundle response cannot be serialized")
+
+
+def _required_bundles(bundle_ids: list[str], locale: str) -> list[dict[str, object]]:
+    seen: set[tuple[str, str]] = set()
+    bundles: list[dict[str, object]] = []
+    for bundle_id in bundle_ids:
+        bundle = get_bundle(bundle_id, locale)
+        key = _bundle_key(bundle)
+        if key in seen:
+            raise TextCatalogError(
+                f"Duplicate text bundle requested: {bundle_id}:{locale}"
+            )
+        seen.add(key)
+        bundles.append(bundle)
+    return bundles
+
+
+def _bundle_key(bundle: Mapping[str, object]) -> tuple[str, str]:
+    bundle_id = bundle.get("bundle_id")
+    locale = bundle.get("locale")
+    if not isinstance(bundle_id, str) or not isinstance(locale, str):
+        raise TextCatalogError("Text bundle identity is incomplete")
+    return bundle_id, locale
+
+
+def _validate_cta_text_bundle_contract(
+    payload: dict[str, Any],
+    bundles: list[Mapping[str, object]],
+) -> None:
+    cta = payload.get("cta")
+    if cta is None:
+        return
+    if not isinstance(cta, dict):
+        raise TextCatalogError("CTA payload must be an object")
+
+    cta.pop("label", None)
+    text_id = cta.get("text_id")
+    if text_id is None:
+        text_id = _cta_text_id_for_payload(payload, cta)
+        cta["text_id"] = text_id
+    if not isinstance(text_id, str) or not text_id:
+        raise TextCatalogError("CTA text_id is missing")
+
+    if not _bundle_contains_text_id(bundles, text_id):
+        raise TextCatalogError(f"CTA text_id has no text bundle value: {text_id}")
+
+
+def _cta_text_id_for_payload(payload: Mapping[str, Any], cta: Mapping[str, Any]) -> str:
+    cta_type = cta.get("type")
+    if not isinstance(cta_type, str):
+        raise TextCatalogError("CTA type is missing")
+
+    if "course" in payload:
+        text_ids = _COURSE_CTA_TEXT_ID_BY_TYPE
+    elif "lesson" in payload:
+        text_ids = _LESSON_CTA_TEXT_ID_BY_TYPE
+    else:
+        raise TextCatalogError("CTA surface is missing")
+
+    try:
+        return text_ids[cta_type]
+    except KeyError as exc:
+        raise TextCatalogError(f"Unknown CTA type: {cta_type}") from exc
+
+
+def _bundle_contains_text_id(
+    bundles: list[Mapping[str, object]],
+    text_id: str,
+) -> bool:
+    for bundle in bundles:
+        texts = bundle.get("texts")
+        if isinstance(texts, Mapping) and text_id in texts:
+            return True
+    return False
 
 
 def _stable_hash(bundle: dict[str, object]) -> str:
