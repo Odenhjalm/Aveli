@@ -86,7 +86,7 @@ class _LessonContent extends StatelessWidget {
               ) ??
               ''
         : lesson.lessonTitle;
-    final contentMissingText = _resolveCatalogText(
+    final emptyContentMessage = _resolveCatalogText(
       'course_lesson.lesson.content_missing',
       surface.textBundles,
     );
@@ -109,11 +109,10 @@ class _LessonContent extends StatelessWidget {
             LearnerLessonContentRenderer(
               document: documentContent,
               lessonMedia: surface.media,
-              contentMissingText: contentMissingText,
               onLaunchUrl: (url) => unawaited(_handleLinkTap(context, url)),
             )
           else
-            _LessonEmptyContentState(message: contentMissingText),
+            _LessonEmptyContentState(message: emptyContentMessage),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -319,13 +318,11 @@ class LearnerLessonContentRenderer extends StatefulWidget {
     super.key,
     required this.document,
     required this.lessonMedia,
-    this.contentMissingText,
     this.onLaunchUrl,
   });
 
   final LessonDocument document;
   final List<LessonViewMediaItem> lessonMedia;
-  final String? contentMissingText;
   final ValueChanged<String>? onLaunchUrl;
 
   @override
@@ -342,7 +339,6 @@ class _LearnerLessonContentRendererState
     final renderer = LessonPageRenderer(
       document: widget.document,
       lessonMedia: widget.lessonMedia,
-      contentMissingText: widget.contentMissingText,
       onLaunchUrl: widget.onLaunchUrl,
       readingMode: _readingMode,
     );
@@ -371,14 +367,12 @@ class LessonPageRenderer extends StatelessWidget {
   const LessonPageRenderer({
     super.key,
     required this.document,
-    this.contentMissingText,
     this.lessonMedia = const <LessonViewMediaItem>[],
     this.onLaunchUrl,
     this.readingMode = LessonDocumentReadingMode.glass,
   });
 
   final LessonDocument document;
-  final String? contentMissingText;
   final List<LessonViewMediaItem> lessonMedia;
   final ValueChanged<String>? onLaunchUrl;
   final LessonDocumentReadingMode readingMode;
@@ -386,11 +380,7 @@ class LessonPageRenderer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (document.blocks.isEmpty) {
-      final message = contentMissingText;
-      if (message == null) {
-        return const SizedBox.shrink();
-      }
-      return _LessonRendererErrorState(message: message);
+      return const SizedBox.shrink();
     }
     final previewMedia = lessonMedia
         .map(_previewMediaFromLessonViewMediaItem)
@@ -400,32 +390,6 @@ class LessonPageRenderer extends StatelessWidget {
       media: previewMedia,
       readingMode: readingMode,
       onLaunchUrl: onLaunchUrl ?? (url) => unawaited(_tryLaunchExternal(url)),
-    );
-  }
-}
-
-class _LessonRendererErrorState extends StatelessWidget {
-  const _LessonRendererErrorState({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.error,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
