@@ -8,7 +8,10 @@ import 'package:aveli/features/community/application/community_providers.dart';
 import 'package:aveli/features/community/data/notifications_repository.dart';
 import 'package:aveli/features/courses/application/course_providers.dart';
 import 'package:aveli/features/home/application/home_audio_controller.dart';
+import 'package:aveli/features/home/application/home_entry_view_provider.dart';
+import 'package:aveli/features/home/data/home_entry_view_repository.dart';
 import 'package:aveli/features/home/presentation/widgets/home_audio_section.dart';
+import 'package:aveli/features/home/widgets/ongoing_courses_strip.dart';
 import 'package:aveli/features/landing/application/landing_providers.dart'
     as landing;
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -85,6 +88,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           ref.invalidate(landing.popularCoursesProvider);
           ref.invalidate(coursesProvider);
           ref.invalidate(homeAudioProvider);
+          ref.invalidate(homeEntryViewProvider);
           ref.invalidate(notificationsProvider);
           await ref.read(authControllerProvider.notifier).loadSession();
         },
@@ -103,19 +107,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
                     children: [
                       HomeAudioSection(),
                       SizedBox(height: 18),
-                      CoursesShowcaseSection(
-                        title: 'Utforska kurser',
-                        layout: CoursesShowcaseLayout.vertical,
-                        desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
-                        includeOuterChrome: false,
-                        showHeroBadge: false,
-                        showSeeAll: true,
-                        ctaGradient: kBrandBluePurpleGradient,
-                        tileScale: 0.85,
-                        tileTextColor: DesignTokens.bodyTextColor,
-                        gridCrossAxisSpacing: 2,
-                        gridMainAxisSpacing: 2,
-                      ),
+                      _HomeCoursesShowcaseArea(),
                     ],
                   ),
                 ),
@@ -124,6 +116,52 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           },
         ),
       ),
+    );
+  }
+}
+
+class _HomeCoursesShowcaseArea extends ConsumerWidget {
+  const _HomeCoursesShowcaseArea();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final courses =
+        ref.watch(homeEntryViewProvider).valueOrNull ??
+        const <HomeEntryOngoingCourse>[];
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        const CoursesShowcaseSection(
+          title: 'Utforska kurser',
+          layout: CoursesShowcaseLayout.vertical,
+          desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
+          includeOuterChrome: false,
+          showHeroBadge: false,
+          showSeeAll: true,
+          ctaGradient: kBrandBluePurpleGradient,
+          tileScale: 0.85,
+          tileTextColor: DesignTokens.bodyTextColor,
+          gridCrossAxisSpacing: 2,
+          gridMainAxisSpacing: 2,
+        ),
+        Positioned(
+          top: 8,
+          left: 154,
+          right: 74,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: OngoingCoursesStrip(
+              key: const ValueKey('home-ongoing-courses-strip'),
+              courses: courses,
+              onOpenLesson: (lessonId) => context.pushNamed(
+                AppRoute.lesson,
+                pathParameters: {'id': lessonId},
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
