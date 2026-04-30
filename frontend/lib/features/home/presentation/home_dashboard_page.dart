@@ -99,18 +99,18 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
             return SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: pagePadding,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: isWide ? 860 : 720),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      HomeAudioSection(),
-                      SizedBox(height: 18),
-                      _HomeCoursesShowcaseArea(),
-                    ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: isWide ? 860 : 720),
+                      child: const HomeAudioSection(),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 18),
+                  const _HomeCoursesShowcaseArea(),
+                ],
               ),
             );
           },
@@ -129,41 +129,54 @@ class _HomeCoursesShowcaseArea extends ConsumerWidget {
         ref.watch(homeEntryViewProvider).valueOrNull ??
         const <HomeEntryOngoingCourse>[];
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        const CoursesShowcaseSection(
-          title: 'Utforska kurser',
-          layout: CoursesShowcaseLayout.vertical,
-          desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
-          includeOuterChrome: false,
-          showHeroBadge: false,
-          showSeeAll: true,
-          ctaGradient: kBrandBluePurpleGradient,
-          tileScale: 0.85,
-          tileTextColor: DesignTokens.bodyTextColor,
-          gridCrossAxisSpacing: 2,
-          gridMainAxisSpacing: 2,
-        ),
-        Positioned(
-          top: 24,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 430),
-              child: OngoingCoursesStrip(
-                key: const ValueKey('home-ongoing-courses-strip'),
-                courses: courses,
-                onOpenLesson: (lessonId) => context.pushNamed(
-                  AppRoute.lesson,
-                  pathParameters: {'id': lessonId},
-                ),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1000),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const CoursesShowcaseSection(
+                    title: 'Utforska kurser',
+                    layout: CoursesShowcaseLayout.vertical,
+                    desktop: CoursesShowcaseDesktop(columns: 2, rows: 3),
+                    includeOuterChrome: false,
+                    showHeroBadge: false,
+                    showSeeAll: true,
+                    ctaGradient: kBrandBluePurpleGradient,
+                    tileScale: 0.85,
+                    tileTextColor: DesignTokens.bodyTextColor,
+                    gridCrossAxisSpacing: 2,
+                    gridMainAxisSpacing: 2,
+                  ),
+                  Positioned(
+                    top: 24,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 430),
+                        child: OngoingCoursesStrip(
+                          key: const ValueKey('home-ongoing-courses-strip'),
+                          courses: courses,
+                          onOpenLesson: (lessonId) => context.pushNamed(
+                            AppRoute.lesson,
+                            pathParameters: {'id': lessonId},
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
