@@ -33,7 +33,7 @@ void main() {
 
     expect(find.text('Intro Course'), findsWidgets);
     expect(find.text('Backend-authored intro description'), findsOneWidget);
-    expect(find.text('Börja kursen'), findsOneWidget);
+    expect(find.text(_catalogText('course.cta.enroll')), findsOneWidget);
     expect(find.text('Lesson 1'), findsOneWidget);
     expect(find.text('current'), findsNothing);
   });
@@ -66,7 +66,7 @@ void main() {
 
     final button = tester.widget<FilledButton>(find.byType(FilledButton));
     expect(button.onPressed, isNull);
-    expect(find.text('Inte tillgänglig'), findsOneWidget);
+    expect(find.text(_catalogText('course.cta.unavailable')), findsOneWidget);
     expect(
       find.text('Finish your active intro course before starting another.'),
       findsOneWidget,
@@ -105,7 +105,21 @@ void main() {
     );
 
     expect(find.text('990 kr'), findsOneWidget);
-    expect(find.text('K\u00f6p kursen'), findsOneWidget);
+    expect(find.text(_catalogText('course.cta.buy')), findsOneWidget);
+  });
+
+  testWidgets('missing course text bundles disables CTA without fallback', (
+    tester,
+  ) async {
+    await _pumpCoursePage(
+      tester,
+      _entryView(textBundles: const <TextBundle>[]),
+    );
+
+    final button = tester.widget<FilledButton>(find.byType(FilledButton));
+    expect(button.onPressed, isNull);
+    expect(find.text(_catalogText('course.cta.continue')), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('locked lessons render backend availability without local math', (
@@ -269,12 +283,7 @@ CourseEntryViewData _entryView({
   ),
   CourseEntryPricingData? pricing,
   List<CourseEntryLessonShellData>? lessons,
-  CourseEntryNextRecommendedLessonData? nextRecommendedLesson =
-      const CourseEntryNextRecommendedLessonData(
-        id: 'lesson-1',
-        lessonTitle: 'Lesson 1',
-        position: 1,
-      ),
+  List<TextBundle> textBundles = _courseTextBundles,
 }) {
   return CourseEntryViewData(
     course: CourseEntryCourseData(
@@ -293,13 +302,14 @@ CourseEntryViewData _entryView({
     lessons: lessons ?? [_lesson()],
     access: access,
     cta: cta,
-    textBundles: _courseCtaTextBundles,
+    textBundles: textBundles,
     pricing: pricing,
-    nextRecommendedLesson: nextRecommendedLesson,
   );
 }
 
-const List<TextBundle> _courseCtaTextBundles = <TextBundle>[
+String _catalogText(String textId) => resolveText(textId, _courseTextBundles);
+
+const List<TextBundle> _courseTextBundles = <TextBundle>[
   TextBundle(
     bundleId: 'course_cta.v1',
     locale: 'sv-SE',
@@ -314,6 +324,24 @@ const List<TextBundle> _courseCtaTextBundles = <TextBundle>[
       'lesson.cta.start': TextNode(value: 'Börja kursen'),
       'lesson.cta.buy': TextNode(value: 'Köp kursen'),
       'lesson.cta.unavailable': TextNode(value: 'Inte tillgänglig'),
+    },
+  ),
+  TextBundle(
+    bundleId: 'course_lesson.chrome.v1',
+    locale: 'sv-SE',
+    version: 'catalog_v1',
+    hash: 'sha256:chrome-test',
+    texts: <String, TextNode>{
+      'course_lesson.course.title_fallback': TextNode(value: 'Kurs'),
+      'course_lesson.course.drip_release_notice': TextNode(
+        value: 'Kursen släpps stegvis',
+      ),
+      'course_lesson.lesson.title_fallback': TextNode(value: 'Lektion'),
+      'course_lesson.lesson.content_missing': TextNode(
+        value: 'Lektionsinnehållet saknas.',
+      ),
+      'course_lesson.lesson.previous': TextNode(value: 'Föregående'),
+      'course_lesson.lesson.next': TextNode(value: 'Nästa'),
     },
   ),
 ];

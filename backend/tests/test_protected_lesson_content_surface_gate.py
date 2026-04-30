@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 import pytest
@@ -15,6 +16,10 @@ pytestmark = pytest.mark.anyio("asyncio")
 USER_ID = "11111111-1111-1111-1111-111111111111"
 COURSE_ID = "22222222-2222-2222-2222-222222222222"
 LESSON_ID = "33333333-3333-3333-3333-333333333333"
+
+
+def _json_payload(response) -> dict:
+    return json.loads(response.body.decode("utf-8"))
 
 
 def test_lesson_content_surface_sql_is_projection_not_access_authority():
@@ -162,7 +167,7 @@ async def test_lesson_detail_serializes_locked_view_before_protected_reads(monke
             ),
             cta=course_routes.schemas.LessonViewCTA(
                 type="blocked",
-                label="Låst",
+                label="lesson.cta.unavailable",
                 enabled=False,
                 reason_code="drip",
                 reason_text="Lektionen är inte upplåst ännu.",
@@ -206,10 +211,13 @@ async def test_lesson_detail_serializes_locked_view_before_protected_reads(monke
 
     response = await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
-    payload = response.model_dump(mode="json", exclude_none=True)
-    assert "content_document" not in payload["lesson"]
+    payload = _json_payload(response)
+    assert payload["lesson"]["content_document"] is None
     assert payload["media"] == []
     assert payload["progression"] == {"unlocked": False, "reason": "drip"}
+    assert payload["cta"]["text_id"] == "lesson.cta.unavailable"
+    assert "label" not in payload["cta"]
+    assert "text_bundle" not in payload
     assert "lesson_media_id" not in str(payload)
     assert "resolved_url" not in str(payload)
 
@@ -277,7 +285,7 @@ async def test_lesson_detail_serializes_locked_admin_without_course_enrollment(
             ),
             cta=course_routes.schemas.LessonViewCTA(
                 type="buy",
-                label="Kop kursen",
+                label="lesson.cta.buy",
                 enabled=True,
                 price={
                     "price_amount_cents": 12000,
@@ -332,11 +340,14 @@ async def test_lesson_detail_serializes_locked_admin_without_course_enrollment(
         {"id": UUID(USER_ID), "role": "admin"},
     )
 
-    payload = response.model_dump(mode="json", exclude_none=True)
-    assert "content_document" not in payload["lesson"]
+    payload = _json_payload(response)
+    assert payload["lesson"]["content_document"] is None
     assert payload["media"] == []
     assert payload["access"]["can_purchase"] is True
     assert payload["progression"] == {"unlocked": False, "reason": "no_access"}
+    assert payload["cta"]["text_id"] == "lesson.cta.buy"
+    assert "label" not in payload["cta"]
+    assert "text_bundle" not in payload
     assert "lesson_media_id" not in str(payload)
     assert "resolved_url" not in str(payload)
 

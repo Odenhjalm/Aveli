@@ -68,7 +68,7 @@ def _entry_response() -> course_routes.schemas.CourseEntryViewResponse:
         ),
         cta=course_routes.schemas.CourseEntryCTA(
             type="enroll",
-            label="Enroll",
+            label="course.cta.enroll",
             enabled=True,
             action={"type": "enroll"},
         ),
@@ -104,6 +104,13 @@ async def test_course_entry_view_route_returns_projection(
     payload = response.json()
     assert payload["course"]["slug"] == COURSE_SLUG
     assert payload["cta"]["type"] == "enroll"
+    assert payload["cta"]["text_id"] == "course.cta.enroll"
+    assert "label" not in payload["cta"]
+    assert "text_bundle" not in payload
+    assert [bundle["bundle_id"] for bundle in payload["text_bundles"]] == [
+        "course_cta.v1",
+        "course_lesson.chrome.v1",
+    ]
     assert payload["lessons"][0]["availability"]["state"] == "locked"
 
 

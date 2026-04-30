@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aveli/editor/document/lesson_document.dart';
-import 'package:aveli/editor/document/lesson_document_editor.dart';
 import 'package:aveli/editor/document/lesson_document_renderer.dart';
 import 'package:aveli/features/courses/data/lesson_view_surface.dart';
 import 'package:aveli/features/courses/presentation/lesson_page.dart';
@@ -224,7 +223,7 @@ void main() {
     },
   );
 
-  testWidgets('learner renderer treats empty document as missing content', (
+  testWidgets('learner renderer leaves empty documents to page chrome', (
     tester,
   ) async {
     await _pumpLearnerRenderer(
@@ -234,7 +233,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Lektionsinnehållet saknas.'), findsOneWidget);
+    expect(find.byType(LessonDocumentPreview), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

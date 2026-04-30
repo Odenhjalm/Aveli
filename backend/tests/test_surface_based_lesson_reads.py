@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 import pytest
@@ -18,6 +19,10 @@ LESSON_ID = "33333333-3333-3333-3333-333333333333"
 LESSON_MEDIA_ID = "44444444-4444-4444-4444-444444444444"
 MEDIA_ASSET_ID = "55555555-5555-5555-5555-555555555555"
 EMPTY_DOCUMENT = {"schema_version": "lesson_document_v1", "blocks": []}
+
+
+def _json_payload(response) -> dict:
+    return json.loads(response.body.decode("utf-8"))
 
 
 def _document_with_text(text: str) -> dict[str, object]:
@@ -278,7 +283,7 @@ async def test_lesson_detail_uses_lesson_view_surface_projection(monkeypatch):
             ),
             cta=course_routes.schemas.LessonViewCTA(
                 type="continue",
-                label="Continue",
+                label="lesson.cta.continue",
                 enabled=True,
                 action={"type": "continue"},
             ),
@@ -326,9 +331,15 @@ async def test_lesson_detail_uses_lesson_view_surface_projection(monkeypatch):
 
     response = await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
-    assert response.lesson.content_document == _document_with_text("Surface content")
-    assert response.lesson.course_id == UUID(COURSE_ID)
-    assert response.access.has_access is True
-    assert response.navigation.previous_lesson_id is None
-    assert response.navigation.next_lesson_id is None
-    assert response.media == []
+    payload = _json_payload(response)
+    assert payload["lesson"]["content_document"] == _document_with_text(
+        "Surface content"
+    )
+    assert payload["lesson"]["course_id"] == COURSE_ID
+    assert payload["access"]["has_access"] is True
+    assert payload["navigation"]["previous_lesson_id"] is None
+    assert payload["navigation"]["next_lesson_id"] is None
+    assert payload["media"] == []
+    assert payload["cta"]["text_id"] == "lesson.cta.continue"
+    assert "label" not in payload["cta"]
+    assert "text_bundle" not in payload

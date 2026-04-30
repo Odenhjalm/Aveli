@@ -366,7 +366,7 @@ void main() {
   });
 
   group('CoursesRepository.fetchCourseDetailBySlug', () {
-    test('maps canonical detail without access enrichment', () async {
+    test('maps canonical detail preserving backend lesson order', () async {
       const slug = 'aveli-course';
       final adapter = _RecordingAdapter((options) {
         if (options.path == '/courses/by-slug/$slug') {
@@ -393,7 +393,7 @@ void main() {
       expect(detail.description, 'Backend-authored course description');
       expect(
         detail.lessons.map((lesson) => lesson.lessonTitle),
-        orderedEquals(['First', 'Second']),
+        orderedEquals(['Second', 'First']),
       );
       expect(adapter.requestsFor('/courses/by-slug/$slug'), hasLength(1));
       expect(adapter.requestsFor('/courses/course-1/access'), isEmpty);
@@ -485,11 +485,17 @@ void main() {
         expect(view.cta.textId, 'course.cta.continue');
         expect(view.cta.actionType, 'lesson');
         expect(
-          view.textBundles.single.texts['course.cta.continue']?.value,
-          'Fortsätt',
+          view.textBundles
+              .singleWhere((bundle) => bundle.bundleId == 'course_cta.v1')
+              .texts['course.cta.continue']
+              ?.value,
+          _catalogText('course.cta.continue'),
+        );
+        expect(
+          view.textBundles.map((bundle) => bundle.bundleId),
+          containsAll(['course_cta.v1', 'course_lesson.chrome.v1']),
         );
         expect(view.pricing?.formattedPrice, '990 kr');
-        expect(view.nextRecommendedLesson?.id, 'lesson-1');
         expect(view.lessons.single.availability.state, 'unlocked');
         expect(view.lessons.single.progression.isNextRecommended, isTrue);
         expect(adapter.requestsFor('/courses/$slug/entry-view'), hasLength(1));
@@ -619,6 +625,23 @@ void main() {
       );
       expect(adapter.requestsFor('/courses/lessons/lesson-1'), hasLength(1));
     });
+
+    test('rejects lesson detail payload without text bundles', () async {
+      final adapter = _RecordingAdapter((options) {
+        if (options.path == '/courses/lessons/lesson-1') {
+          final body = _lessonPayload()..remove('text_bundles');
+          return _jsonResponse(statusCode: 200, body: body);
+        }
+        return _jsonResponse(statusCode: 500, body: {'detail': 'unexpected'});
+      });
+      final repo = _repository(adapter);
+
+      await expectLater(
+        repo.fetchLessonDetail('lesson-1'),
+        throwsA(isA<AppFailure>()),
+      );
+      expect(adapter.requestsFor('/courses/lessons/lesson-1'), hasLength(1));
+    });
   });
 }
 
@@ -635,7 +658,6 @@ Map<String, Object?> _entryViewPayload({
   Object? course = _defaultEntryCourse,
   List<Object?> lessons = const [_defaultEntryLesson],
   Object? pricing = _defaultEntryPricing,
-  Object? nextRecommendedLesson = _defaultEntryNextLesson,
   Map<String, Object?> cta = _defaultEntryCta,
 }) {
   return {
@@ -649,9 +671,8 @@ Map<String, Object?> _entryViewPayload({
       'can_purchase': false,
     },
     'cta': cta,
-    'text_bundles': _courseCtaTextBundles,
+    'text_bundles': _courseTextBundles,
     'pricing': pricing,
-    'next_recommended_lesson': nextRecommendedLesson,
   };
 }
 
@@ -705,12 +726,6 @@ const Map<String, Object?> _defaultEntryCta = {
   'reason_text': null,
   'price': _defaultEntryPricing,
   'action': {'type': 'lesson', 'lesson_id': 'lesson-1'},
-};
-
-const Map<String, Object?> _defaultEntryNextLesson = {
-  'id': 'lesson-1',
-  'lesson_title': 'Start here',
-  'position': 1,
 };
 
 Map<String, Object?> _coursePayload({
@@ -855,7 +870,7 @@ Map<String, Object?> _lessonPayload({
       'can_purchase': false,
     },
     'cta': null,
-    'text_bundles': _courseCtaTextBundles,
+    'text_bundles': _courseTextBundles,
     'pricing': null,
     'progression': const {'unlocked': true, 'reason': 'available'},
     'media': media,
@@ -878,7 +893,24 @@ Map<String, Object?> _lessonDocument([String? text]) {
   };
 }
 
-const List<Object?> _courseCtaTextBundles = [
+String _catalogText(String textId) {
+  for (final bundle in _courseTextBundles) {
+    if (bundle is! Map<String, Object?>) {
+      continue;
+    }
+    final texts = bundle['texts'];
+    if (texts is! Map<String, Object?>) {
+      continue;
+    }
+    final value = texts[textId];
+    if (value is String && value.isNotEmpty) {
+      return value;
+    }
+  }
+  throw StateError('Missing test text value: $textId');
+}
+
+const List<Object?> _courseTextBundles = [
   {
     'bundle_id': 'course_cta.v1',
     'locale': 'sv-SE',
@@ -893,6 +925,20 @@ const List<Object?> _courseCtaTextBundles = [
       'lesson.cta.start': 'Börja kursen',
       'lesson.cta.buy': 'Köp kursen',
       'lesson.cta.unavailable': 'Inte tillgänglig',
+    },
+  },
+  {
+    'bundle_id': 'course_lesson.chrome.v1',
+    'locale': 'sv-SE',
+    'version': 'catalog_v1',
+    'hash': 'sha256:chrome-test',
+    'texts': {
+      'course_lesson.course.title_fallback': 'Kurs',
+      'course_lesson.course.drip_release_notice': 'Kursen släpps stegvis',
+      'course_lesson.lesson.title_fallback': 'Lektion',
+      'course_lesson.lesson.content_missing': 'Lektionsinnehållet saknas.',
+      'course_lesson.lesson.previous': 'Föregående',
+      'course_lesson.lesson.next': 'Nästa',
     },
   },
 ];

@@ -17,7 +17,7 @@ LessonViewSurface _buildLessonData({
   required List<LessonViewMediaItem> media,
   LessonDocument? contentDocument = _defaultLessonDocument,
   String id = 'lesson-1',
-  String lessonTitle = 'Lektion',
+  String lessonTitle = 'Backend lesson title',
   int position = 1,
   String? previousLessonId,
   String? nextLessonId,
@@ -47,7 +47,7 @@ LessonViewSurface _buildLessonData({
       canPurchase: false,
     ),
     cta: cta,
-    textBundles: _courseCtaTextBundles,
+    textBundles: _courseTextBundles,
     pricing: pricing,
     progression:
         progression ??
@@ -204,7 +204,10 @@ void main() {
     await _pumpLessonPage(tester, data: data);
     await tester.pumpAndSettle();
 
-    expect(find.text('Lektionsinnehållet saknas.'), findsOneWidget);
+    expect(
+      find.text(_catalogText('course_lesson.lesson.content_missing')),
+      findsOneWidget,
+    );
     expect(_takeUnexpectedException(tester), isNull);
   });
 
@@ -418,7 +421,7 @@ void main() {
     await _pumpLessonPage(tester, data: data);
     await tester.pumpAndSettle();
 
-    expect(find.text('Inte tillgänglig'), findsOneWidget);
+    expect(find.text(_catalogText('lesson.cta.unavailable')), findsOneWidget);
     expect(find.text('blocked'), findsNothing);
     expect(find.text('Tillg\u00e4nglig senare'), findsOneWidget);
     expect(find.text('99 kr'), findsOneWidget);
@@ -429,7 +432,9 @@ void main() {
   });
 }
 
-const List<TextBundle> _courseCtaTextBundles = <TextBundle>[
+String _catalogText(String textId) => resolveText(textId, _courseTextBundles);
+
+const List<TextBundle> _courseTextBundles = <TextBundle>[
   TextBundle(
     bundleId: 'course_cta.v1',
     locale: 'sv-SE',
@@ -444,6 +449,24 @@ const List<TextBundle> _courseCtaTextBundles = <TextBundle>[
       'lesson.cta.start': TextNode(value: 'Börja kursen'),
       'lesson.cta.buy': TextNode(value: 'Köp kursen'),
       'lesson.cta.unavailable': TextNode(value: 'Inte tillgänglig'),
+    },
+  ),
+  TextBundle(
+    bundleId: 'course_lesson.chrome.v1',
+    locale: 'sv-SE',
+    version: 'catalog_v1',
+    hash: 'sha256:chrome-test',
+    texts: <String, TextNode>{
+      'course_lesson.course.title_fallback': TextNode(value: 'Kurs'),
+      'course_lesson.course.drip_release_notice': TextNode(
+        value: 'Kursen släpps stegvis',
+      ),
+      'course_lesson.lesson.title_fallback': TextNode(value: 'Lektion'),
+      'course_lesson.lesson.content_missing': TextNode(
+        value: 'Lektionsinnehållet saknas.',
+      ),
+      'course_lesson.lesson.previous': TextNode(value: 'Föregående'),
+      'course_lesson.lesson.next': TextNode(value: 'Nästa'),
     },
   ),
 ];

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 import pytest
@@ -20,6 +21,10 @@ LESSON_DOCUMENT = {
     "schema_version": "lesson_document_v1",
     "blocks": [{"type": "paragraph", "children": [{"text": "Lesson"}]}],
 }
+
+
+def _json_payload(response) -> dict:
+    return json.loads(response.body.decode("utf-8"))
 
 
 def _lesson_view_response(
@@ -45,7 +50,7 @@ def _lesson_view_response(
         ),
         cta=course_routes.schemas.LessonViewCTA(
             type="continue",
-            label="Continue",
+            label="lesson.cta.continue",
             enabled=True,
             action={"type": "continue"},
         ),
@@ -85,7 +90,15 @@ async def test_lesson_detail_excludes_non_ready_media(monkeypatch):
 
     response = await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
-    assert response.media == []
+    payload = _json_payload(response)
+    assert payload["media"] == []
+    assert payload["cta"]["text_id"] == "lesson.cta.continue"
+    assert "label" not in payload["cta"]
+    assert "text_bundle" not in payload
+    assert [bundle["bundle_id"] for bundle in payload["text_bundles"]] == [
+        "course_cta.v1",
+        "course_lesson.chrome.v1",
+    ]
 
 
 async def test_lesson_detail_returns_ready_resolved_media(monkeypatch):
@@ -124,13 +137,14 @@ async def test_lesson_detail_returns_ready_resolved_media(monkeypatch):
 
     response = await course_routes.lesson_detail(LESSON_ID, {"id": UUID(USER_ID)})
 
-    assert len(response.media) == 1
-    item = response.media[0]
-    assert item.lesson_media_id == UUID(LESSON_MEDIA_ID)
-    assert item.media_type == "audio"
-    assert item.media.media_id == MEDIA_ASSET_ID
-    assert item.media.state == "ready"
-    assert item.media.resolved_url == "https://stream.local/lesson.mp3"
+    payload = _json_payload(response)
+    assert len(payload["media"]) == 1
+    item = payload["media"][0]
+    assert item["lesson_media_id"] == LESSON_MEDIA_ID
+    assert item["media_type"] == "audio"
+    assert item["media"]["media_id"] == MEDIA_ASSET_ID
+    assert item["media"]["state"] == "ready"
+    assert item["media"]["resolved_url"] == "https://stream.local/lesson.mp3"
 
 
 async def test_lesson_detail_maps_service_unavailable_to_safe_error(monkeypatch):
@@ -189,4 +203,5 @@ async def test_lesson_detail_passes_preview_flag_to_service(monkeypatch):
         preview=True,
     )
 
-    assert response.lesson.id == UUID(LESSON_ID)
+    payload = _json_payload(response)
+    assert payload["lesson"]["id"] == LESSON_ID
