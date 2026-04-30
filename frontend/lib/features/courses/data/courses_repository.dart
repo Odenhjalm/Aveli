@@ -334,7 +334,6 @@ class CourseEntryViewData {
     required this.access,
     required this.cta,
     required this.pricing,
-    required this.nextRecommendedLesson,
     this.textBundles = const <TextBundle>[],
   });
 
@@ -343,7 +342,6 @@ class CourseEntryViewData {
   final CourseEntryAccessData access;
   final CourseEntryCtaData cta;
   final CourseEntryPricingData? pricing;
-  final CourseEntryNextRecommendedLessonData? nextRecommendedLesson;
   final List<TextBundle> textBundles;
 
   factory CourseEntryViewData.fromResponse(Object? payload) {
@@ -367,14 +365,6 @@ class CourseEntryViewData {
       pricing: switch (_requiredField(payload, 'pricing')) {
         null => null,
         final Object pricing => CourseEntryPricingData.fromResponse(pricing),
-      },
-      nextRecommendedLesson: switch (_requiredField(
-        payload,
-        'next_recommended_lesson',
-      )) {
-        null => null,
-        final Object lesson =>
-          CourseEntryNextRecommendedLessonData.fromResponse(lesson),
       },
     );
   }
@@ -669,29 +659,6 @@ class CourseEntryPricingData {
   }
 }
 
-class CourseEntryNextRecommendedLessonData {
-  const CourseEntryNextRecommendedLessonData({
-    required this.id,
-    required this.lessonTitle,
-    required this.position,
-  });
-
-  final String id;
-  final String lessonTitle;
-  final int position;
-
-  factory CourseEntryNextRecommendedLessonData.fromResponse(Object? payload) {
-    return CourseEntryNextRecommendedLessonData(
-      id: _requireString(_requiredField(payload, 'id'), 'id'),
-      lessonTitle: _requireString(
-        _requiredField(payload, 'lesson_title'),
-        'lesson_title',
-      ),
-      position: _requireInt(_requiredField(payload, 'position'), 'position'),
-    );
-  }
-}
-
 class CourseDetailData {
   const CourseDetailData({
     required this.course,
@@ -704,15 +671,12 @@ class CourseDetailData {
   final String? description;
 
   factory CourseDetailData.fromResponse(Object? payload) {
-    final lessons =
-        _requireList(
-            _requiredField(payload, 'lessons'),
-            'lessons',
-          ).map(LessonSummary.fromResponse).toList(growable: false)
-          ..sort((a, b) => a.position.compareTo(b.position));
     return CourseDetailData(
       course: CourseSummary.fromResponse(_requiredField(payload, 'course')),
-      lessons: lessons,
+      lessons: _requireList(
+        _requiredField(payload, 'lessons'),
+        'lessons',
+      ).map(LessonSummary.fromResponse).toList(growable: false),
       description: _optionalString(
         _requiredField(payload, 'description'),
         'description',

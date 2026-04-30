@@ -131,7 +131,7 @@ class CoursesShowcaseSection extends ConsumerWidget {
         : hasAllCoursesValue
         ? allCourses
         : popular;
-    final visible = _sortCoursesForDisplay(items);
+    final visible = items;
 
     final sectionTextColor = tileTextColor;
     final cardsVisible = !loading && visible.isNotEmpty;
@@ -268,14 +268,6 @@ class CoursesShowcaseSection extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  static List<CourseSummary> _sortCoursesForDisplay(
-    List<CourseSummary> courses,
-  ) {
-    if (courses.length < 2) return courses;
-    courses.sort(_compareCourses);
-    return courses;
   }
 
   static Widget _buildLayout(
@@ -961,8 +953,6 @@ class _CourseTileGlass extends StatelessWidget {
   }
 }
 
-String _normalizedCourseValue(String value) => value.trim().toLowerCase();
-
 String? _coursePriceLabel(
   CourseSummary course, {
   required String debugContext,
@@ -974,27 +964,4 @@ String? _coursePriceLabel(
     ),
     _ => null,
   };
-}
-
-int _compareCourses(CourseSummary a, CourseSummary b) {
-  final levelCompare = a.groupPosition.compareTo(b.groupPosition);
-  if (levelCompare != 0) {
-    return levelCompare;
-  }
-
-  final titleCompare = _normalizedCourseValue(
-    a.title,
-  ).compareTo(_normalizedCourseValue(b.title));
-  if (titleCompare != 0) {
-    return titleCompare;
-  }
-
-  final slugCompare = _normalizedCourseValue(
-    a.slug,
-  ).compareTo(_normalizedCourseValue(b.slug));
-  if (slugCompare != 0) {
-    return slugCompare;
-  }
-
-  return _normalizedCourseValue(a.id).compareTo(_normalizedCourseValue(b.id));
 }

@@ -6,6 +6,7 @@ from typing import Any, Final, Mapping
 
 CATALOG_VERSION: Final[str] = "catalog_v1"
 COURSE_CTA_BUNDLE_ID: Final[str] = "course_cta.v1"
+COURSE_LESSON_CHROME_BUNDLE_ID: Final[str] = "course_lesson.chrome.v1"
 DEFAULT_LOCALE: Final[str] = "sv-SE"
 
 
@@ -24,6 +25,15 @@ _COURSE_CTA_TEXT_IDS: Final[tuple[str, ...]] = (
     "lesson.cta.unavailable",
 )
 
+_COURSE_LESSON_CHROME_TEXT_IDS: Final[tuple[str, ...]] = (
+    "course_lesson.course.title_fallback",
+    "course_lesson.course.drip_release_notice",
+    "course_lesson.lesson.title_fallback",
+    "course_lesson.lesson.content_missing",
+    "course_lesson.lesson.previous",
+    "course_lesson.lesson.next",
+)
+
 _TEXTS_BY_BUNDLE: Final[dict[str, dict[str, str]]] = {
     COURSE_CTA_BUNDLE_ID: {
         "course.cta.continue": "Fortsätt",
@@ -34,11 +44,20 @@ _TEXTS_BY_BUNDLE: Final[dict[str, dict[str, str]]] = {
         "lesson.cta.start": "Börja kursen",
         "lesson.cta.buy": "Köp kursen",
         "lesson.cta.unavailable": "Inte tillgänglig",
-    }
+    },
+    COURSE_LESSON_CHROME_BUNDLE_ID: {
+        "course_lesson.course.title_fallback": "Kurs",
+        "course_lesson.course.drip_release_notice": "Kursen släpps stegvis",
+        "course_lesson.lesson.title_fallback": "Lektion",
+        "course_lesson.lesson.content_missing": "Lektionsinnehållet saknas.",
+        "course_lesson.lesson.previous": "Föregående",
+        "course_lesson.lesson.next": "Nästa",
+    },
 }
 
 _REQUIRED_TEXT_IDS_BY_BUNDLE: Final[dict[str, tuple[str, ...]]] = {
     COURSE_CTA_BUNDLE_ID: _COURSE_CTA_TEXT_IDS,
+    COURSE_LESSON_CHROME_BUNDLE_ID: _COURSE_LESSON_CHROME_TEXT_IDS,
 }
 
 _COURSE_CTA_TEXT_ID_BY_TYPE: Final[dict[str, str]] = {

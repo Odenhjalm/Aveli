@@ -30,11 +30,11 @@ class _CoursePageState extends ConsumerState<CoursePage> {
     final asyncView = ref.watch(courseEntryViewProvider(widget.slug));
     return asyncView.when(
       loading: () => const AppScaffold(
-        title: 'Kurs',
+        title: '',
         body: Center(child: CircularProgressIndicator()),
       ),
       error: (error, _) => AppScaffold(
-        title: 'Kurs',
+        title: '',
         body: Center(
           child: Text(
             _courseLoadErrorMessage(error),
@@ -45,7 +45,9 @@ class _CoursePageState extends ConsumerState<CoursePage> {
       data: (view) => _CourseContent(
         view: view,
         ctaBusy: _ctaInFlight,
-        onPrimaryCta: view.cta.enabled ? () => _handlePrimaryCta(view) : null,
+        onPrimaryCta: view.cta.enabled && view.cta.action != null
+            ? () => _handlePrimaryCta(view)
+            : null,
         onOpenLesson: _openLesson,
       ),
     );
@@ -57,9 +59,7 @@ class _CoursePageState extends ConsumerState<CoursePage> {
     }
     switch (view.cta.actionType) {
       case 'lesson':
-        final lessonId =
-            _stringActionValue(view.cta.action, 'lesson_id') ??
-            view.nextRecommendedLesson?.id;
+        final lessonId = _stringActionValue(view.cta.action, 'lesson_id');
         if (lessonId != null) {
           _openLesson(lessonId);
         }
@@ -187,12 +187,24 @@ class _CourseContent extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final cover = course.cover;
     final priceLabel = _backendPriceLabel(view);
-    final ctaText = _resolveCtaText(view.cta.textId, view.textBundles);
+    final ctaText = _resolveCatalogText(view.cta.textId, view.textBundles);
     final ctaReason = view.cta.reasonText;
-    final nextLesson = view.nextRecommendedLesson;
+    final title = course.title.isEmpty
+        ? _resolveCatalogText(
+                'course_lesson.course.title_fallback',
+                view.textBundles,
+              ) ??
+              ''
+        : course.title;
+    final dripReleaseNotice = view.access.isInDrip
+        ? _resolveCatalogText(
+            'course_lesson.course.drip_release_notice',
+            view.textBundles,
+          )
+        : null;
 
     return AppScaffold(
-      title: course.title,
+      title: title,
       body: ListView(
         children: [
           if (cover != null && cover.url.isNotEmpty)
@@ -223,7 +235,7 @@ class _CourseContent extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  course.title,
+                  title,
                   style: t.headlineMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -268,19 +280,11 @@ class _CourseContent extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (view.access.isInDrip) ...[
+                if (dripReleaseNotice != null) ...[
                   const SizedBox(height: 8),
                   _CourseStatusLine(
                     icon: Icons.schedule_rounded,
-                    text: 'Kursen sl\u00e4pps stegvis',
-                    style: t.bodySmall,
-                  ),
-                ],
-                if (nextLesson != null) ...[
-                  const SizedBox(height: 8),
-                  _CourseStatusLine(
-                    icon: Icons.play_circle_outline_rounded,
-                    text: 'N\u00e4sta lektion: ${nextLesson.lessonTitle}',
+                    text: dripReleaseNotice,
                     style: t.bodySmall,
                   ),
                 ],
@@ -381,7 +385,7 @@ String? _backendPriceLabel(CourseEntryViewData view) {
   return coursePrice != null && coursePrice.isNotEmpty ? coursePrice : null;
 }
 
-String? _resolveCtaText(String textId, List<TextBundle> textBundles) {
+String? _resolveCatalogText(String textId, List<TextBundle> textBundles) {
   try {
     return resolveText(textId, textBundles);
   } catch (_) {

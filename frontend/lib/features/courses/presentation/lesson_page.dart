@@ -31,11 +31,11 @@ class _LessonPageState extends ConsumerState<LessonPage> {
     final asyncLesson = ref.watch(lessonDetailProvider(widget.lessonId));
     return asyncLesson.when(
       loading: () => const AppScaffold(
-        title: 'Lektion',
+        title: '',
         body: Center(child: CircularProgressIndicator()),
       ),
       error: (error, _) => AppScaffold(
-        title: 'Lektion',
+        title: '',
         body: Center(
           child: Text(
             _lessonLoadErrorMessage(error),
@@ -79,6 +79,25 @@ class _LessonContent extends StatelessWidget {
         : 1200.0;
     final contentWidth = (safeScreenWidth - 32).clamp(720.0, 1200.0).toDouble();
     final documentContent = lesson.contentDocument;
+    final title = lesson.lessonTitle.isEmpty
+        ? _resolveCatalogText(
+                'course_lesson.lesson.title_fallback',
+                surface.textBundles,
+              ) ??
+              ''
+        : lesson.lessonTitle;
+    final contentMissingText = _resolveCatalogText(
+      'course_lesson.lesson.content_missing',
+      surface.textBundles,
+    );
+    final previousText = _resolveCatalogText(
+      'course_lesson.lesson.previous',
+      surface.textBundles,
+    );
+    final nextText = _resolveCatalogText(
+      'course_lesson.lesson.next',
+      surface.textBundles,
+    );
     final coreContent = MouseRegion(
       cursor: SystemMouseCursors.basic,
       child: ListView(
@@ -90,40 +109,49 @@ class _LessonContent extends StatelessWidget {
             LearnerLessonContentRenderer(
               document: documentContent,
               lessonMedia: surface.media,
+              contentMissingText: contentMissingText,
               onLaunchUrl: (url) => unawaited(_handleLinkTap(context, url)),
             )
           else
-            const _LessonEmptyContentState(),
+            _LessonEmptyContentState(message: contentMissingText),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    final prev = surface.navigation.previousLessonId;
-                    if (prev == null) return;
-                    context.goNamed(
-                      AppRoute.lesson,
-                      pathParameters: {'id': prev},
-                    );
-                  },
+                  onPressed: previousText == null
+                      ? null
+                      : () {
+                          final prev = surface.navigation.previousLessonId;
+                          if (prev == null) return;
+                          context.goNamed(
+                            AppRoute.lesson,
+                            pathParameters: {'id': prev},
+                          );
+                        },
                   icon: const Icon(Icons.chevron_left_rounded),
-                  label: const Text('F\u00f6reg\u00e5ende'),
+                  label: previousText == null
+                      ? const SizedBox.shrink()
+                      : Text(previousText),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    final nxt = surface.navigation.nextLessonId;
-                    if (nxt == null) return;
-                    context.goNamed(
-                      AppRoute.lesson,
-                      pathParameters: {'id': nxt},
-                    );
-                  },
+                  onPressed: nextText == null
+                      ? null
+                      : () {
+                          final nxt = surface.navigation.nextLessonId;
+                          if (nxt == null) return;
+                          context.goNamed(
+                            AppRoute.lesson,
+                            pathParameters: {'id': nxt},
+                          );
+                        },
                   icon: const Icon(Icons.chevron_right_rounded),
-                  label: const Text('N\u00e4sta'),
+                  label: nextText == null
+                      ? const SizedBox.shrink()
+                      : Text(nextText),
                 ),
               ),
             ],
@@ -133,7 +161,7 @@ class _LessonContent extends StatelessWidget {
     );
 
     return AppScaffold(
-      title: lesson.lessonTitle,
+      title: title,
       body: coreContent,
       background: const BackgroundLayer.lesson(),
       maxContentWidth: contentWidth,
@@ -177,10 +205,16 @@ void _showLessonActionError(BuildContext context, String message) {
 }
 
 class _LessonEmptyContentState extends StatelessWidget {
-  const _LessonEmptyContentState();
+  const _LessonEmptyContentState({required this.message});
+
+  final String? message;
 
   @override
   Widget build(BuildContext context) {
+    final resolvedMessage = message;
+    if (resolvedMessage == null) {
+      return const SizedBox.shrink();
+    }
     final theme = Theme.of(context);
     return GlassCard(
       padding: const EdgeInsets.all(16),
@@ -190,7 +224,7 @@ class _LessonEmptyContentState extends StatelessWidget {
       borderRadius: BorderRadius.circular(22),
       borderColor: Colors.white.withValues(alpha: 0.16),
       child: Text(
-        'Lektionsinneh\u00e5llet saknas.',
+        resolvedMessage,
         textAlign: TextAlign.center,
         style: theme.textTheme.bodyMedium?.copyWith(
           color: theme.colorScheme.onSurface,
@@ -211,7 +245,7 @@ class _LessonSurfaceStatusCard extends StatelessWidget {
     final cta = surface.cta;
     final ctaText = cta == null
         ? null
-        : _resolveCtaText(cta.textId, surface.textBundles);
+        : _resolveCatalogText(cta.textId, surface.textBundles);
     final pricing = surface.pricing;
     return GlassCard(
       padding: const EdgeInsets.all(16),
@@ -260,7 +294,7 @@ class _LessonSurfaceStatusCard extends StatelessWidget {
   }
 }
 
-String? _resolveCtaText(String textId, List<TextBundle> textBundles) {
+String? _resolveCatalogText(String textId, List<TextBundle> textBundles) {
   try {
     return resolveText(textId, textBundles);
   } catch (_) {
@@ -285,11 +319,13 @@ class LearnerLessonContentRenderer extends StatefulWidget {
     super.key,
     required this.document,
     required this.lessonMedia,
+    this.contentMissingText,
     this.onLaunchUrl,
   });
 
   final LessonDocument document;
   final List<LessonViewMediaItem> lessonMedia;
+  final String? contentMissingText;
   final ValueChanged<String>? onLaunchUrl;
 
   @override
@@ -306,6 +342,7 @@ class _LearnerLessonContentRendererState
     final renderer = LessonPageRenderer(
       document: widget.document,
       lessonMedia: widget.lessonMedia,
+      contentMissingText: widget.contentMissingText,
       onLaunchUrl: widget.onLaunchUrl,
       readingMode: _readingMode,
     );
@@ -334,12 +371,14 @@ class LessonPageRenderer extends StatelessWidget {
   const LessonPageRenderer({
     super.key,
     required this.document,
+    this.contentMissingText,
     this.lessonMedia = const <LessonViewMediaItem>[],
     this.onLaunchUrl,
     this.readingMode = LessonDocumentReadingMode.glass,
   });
 
   final LessonDocument document;
+  final String? contentMissingText;
   final List<LessonViewMediaItem> lessonMedia;
   final ValueChanged<String>? onLaunchUrl;
   final LessonDocumentReadingMode readingMode;
@@ -347,9 +386,11 @@ class LessonPageRenderer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (document.blocks.isEmpty) {
-      return const _LessonRendererErrorState(
-        message: 'Lektionsinnehållet saknas.',
-      );
+      final message = contentMissingText;
+      if (message == null) {
+        return const SizedBox.shrink();
+      }
+      return _LessonRendererErrorState(message: message);
     }
     final previewMedia = lessonMedia
         .map(_previewMediaFromLessonViewMediaItem)

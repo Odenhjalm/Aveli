@@ -3408,7 +3408,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
             if (previewCta != null)
               Chip(
                 key: const ValueKey<String>('lesson_preview_cta_badge'),
-                label: Text(previewCta.label),
+                label: Text(previewCta.textId),
               ),
           ],
         ),
@@ -3428,7 +3428,7 @@ class _CourseEditorScreenState extends ConsumerState<CourseEditorScreen> {
                   child: Text(
                     previewError ??
                         previewCta?.reasonText ??
-                        previewCta?.label ??
+                        previewCta?.textId ??
                         'Sparad förhandsgranskning kunde inte läsas.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: previewError == null

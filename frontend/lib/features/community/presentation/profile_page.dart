@@ -9,9 +9,6 @@ import 'package:aveli/core/routing/route_paths.dart';
 import 'package:aveli/features/auth/application/user_access_provider.dart';
 import 'package:aveli/data/models/profile.dart';
 import 'package:aveli/data/repositories/profile_repository.dart';
-import 'package:aveli/features/courses/application/course_providers.dart'
-    as courses_front;
-import 'package:aveli/features/courses/data/courses_repository.dart';
 import 'package:aveli/features/media/application/profile_avatar_upload_controller.dart';
 import 'package:aveli/core/env/app_config.dart';
 import 'package:aveli/shared/widgets/app_scaffold.dart';
@@ -152,7 +149,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final authState = ref.watch(authControllerProvider);
     final access = ref.watch(userAccessProvider);
     final profile = authState.profile;
-    final coursesAsync = ref.watch(courses_front.myCoursesProvider);
     if (authState.isLoading && profile == null) {
       return const AppScaffold(
         title: 'Profil',
@@ -183,27 +179,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             : const Color(0xFFFFE2B8).withValues(alpha: 0.22),
       ),
       body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 880;
+        builder: (context, _) {
           const columnGap = SizedBox(height: 16);
-          const rowGap = SizedBox(width: 16);
-
-          Widget buildRow(Widget left, Widget right) {
-            if (!isWide) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [left, columnGap, right],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: left),
-                rowGap,
-                Expanded(child: right),
-              ],
-            );
-          }
 
           return SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -232,16 +209,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   controller: _bioCtrl,
                 ),
                 columnGap,
-                buildRow(
-                  _ServicesSection(
-                    isTeacher: access.isTeacher,
-                    onOpenStudio: () => context.goNamed(AppRoute.studio),
-                  ),
-                  _CoursesSection(
-                    coursesAsync: coursesAsync,
-                    onSeeAll: () =>
-                        context.goNamed(AppRoute.courseIntroRedirect),
-                  ),
+                _ServicesSection(
+                  isTeacher: access.isTeacher,
+                  onOpenStudio: () => context.goNamed(AppRoute.studio),
                 ),
                 columnGap,
                 _SubscriptionEntry(
@@ -293,13 +263,17 @@ class _IdentitySection extends StatelessWidget {
     final displayName = profile.displayName?.trim().isNotEmpty == true
         ? profile.displayName!
         : profile.email;
-    final initials = displayName
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty)
-        .map((part) => part.characters.first.toUpperCase())
-        .take(2)
-        .join();
+    final initialsBuffer = StringBuffer();
+    for (final part in displayName.trim().split(RegExp(r'\s+'))) {
+      if (part.isEmpty) {
+        continue;
+      }
+      initialsBuffer.write(part.characters.first.toUpperCase());
+      if (initialsBuffer.length >= 2) {
+        break;
+      }
+    }
+    final initials = initialsBuffer.toString();
     final joinDate = MaterialLocalizations.of(
       context,
     ).formatFullDate(profile.createdAt.toLocal());
@@ -636,88 +610,6 @@ class _BioSection extends StatelessWidget {
                   : 'Berätta kort om dig själv och vad du erbjuder. Denna text visas i communityt och för potentiella kunder.',
               style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
             ),
-    );
-  }
-}
-
-class _CoursesSection extends StatelessWidget {
-  const _CoursesSection({required this.coursesAsync, required this.onSeeAll});
-
-  final AsyncValue<List<CourseSummary>> coursesAsync;
-  final VoidCallback onSeeAll;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return _GlassSection(
-      title: 'Pågående kurser',
-      actions: [
-        TextButton(onPressed: onSeeAll, child: const Text('Utforska fler')),
-      ],
-      child: coursesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Text(
-          error is AppFailure ? error.message : error.toString(),
-          style: theme.textTheme.bodyMedium,
-        ),
-        data: (courses) {
-          if (courses.isEmpty) {
-            return Text(
-              'Du är inte inskriven i någon kurs ännu.',
-              style: theme.textTheme.bodyMedium,
-            );
-          }
-          return Column(
-            children: courses
-                .take(5)
-                .map((course) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: InkWell(
-                      onTap: () {
-                        final slug = course.slug;
-                        // TODO: Keep course detail routing strictly slug-based.
-                        // Falling back to UUID course.id breaks /course/:slug navigation.
-                        if (slug.isEmpty) {
-                          debugPrint(
-                            '[NAV_BLOCKED] Course missing slug: ${course.id}',
-                          );
-                          return;
-                        }
-                        context.goNamed(
-                          AppRoute.course,
-                          pathParameters: {'slug': slug},
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.12),
-                          ),
-                          color: Colors.white.withValues(alpha: 0.1),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              course.title,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                })
-                .toList(growable: false),
-          );
-        },
-      ),
     );
   }
 }

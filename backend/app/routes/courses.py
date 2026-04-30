@@ -113,7 +113,10 @@ def _cta_text_response(response: Any) -> JSONResponse:
         content=jsonable_encoder(
             text_catalog_service.attach_text_bundles(
                 response,
-                [text_catalog_service.COURSE_CTA_BUNDLE_ID],
+                [
+                    text_catalog_service.COURSE_CTA_BUNDLE_ID,
+                    text_catalog_service.COURSE_LESSON_CHROME_BUNDLE_ID,
+                ],
                 text_catalog_service.DEFAULT_LOCALE,
             )
         )
